@@ -1,0 +1,25 @@
+fn main() -> void
+  effects [io]
+{
+  println("a REPL v0.32 -- type 'exit' to quit")
+  println("")
+  while true {
+    io.write(">> ")
+    let line = io.read_line()
+    let trimmed = str.trim(line)
+    if trimmed == "exit" || trimmed == "quit" { break }
+    if len(trimmed) == 0 { continue }
+    let result = eval(trimmed)
+    if type_of(result) == "str" {
+      if str.starts_with(result, "eval error:") {
+        eprintln(result)
+      } else {
+        println(result)
+      }
+    } else {
+      if type_of(result) != "void" {
+        println(to_str(result))
+      }
+    }
+  }
+}

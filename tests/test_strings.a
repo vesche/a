@@ -1,0 +1,89 @@
+use std.testing
+use std.strings
+
+fn test_repeat() -> void effects [io] {
+  assert_eq(strings.repeat("ab", 3), "ababab")
+  assert_eq(strings.repeat("x", 0), "")
+  assert_eq(strings.repeat("", 5), "")
+}
+
+fn test_pad_left() -> void effects [io] {
+  assert_eq(strings.pad_left("42", 5, "0"), "00042")
+  assert_eq(strings.pad_left("hello", 3, " "), "hello")
+  assert_eq(strings.pad_left("a", 4, "."), "...a")
+}
+
+fn test_pad_right() -> void effects [io] {
+  assert_eq(strings.pad_right("hi", 5, " "), "hi   ")
+  assert_eq(strings.pad_right("hello", 3, " "), "hello")
+}
+
+fn test_reverse() -> void effects [io] {
+  assert_eq(strings.reverse("abc"), "cba")
+  assert_eq(strings.reverse(""), "")
+  assert_eq(strings.reverse("a"), "a")
+}
+
+fn test_count() -> void effects [io] {
+  assert_int_eq(strings.count("banana", "a"), 3)
+  assert_int_eq(strings.count("hello", "ll"), 1)
+  assert_int_eq(strings.count("abc", "z"), 0)
+}
+
+fn test_center() -> void effects [io] {
+  assert_eq(strings.center("hi", 6, "-"), "--hi--")
+  assert_eq(strings.center("abc", 7, " "), "  abc  ")
+  assert_eq(strings.center("long", 2, " "), "long")
+}
+
+fn test_is_empty() -> void effects [io] {
+  assert_true(strings.is_empty(""))
+  assert_false(strings.is_empty("a"))
+  assert_false(strings.is_empty(" "))
+}
+
+fn test_str_builtins() -> void effects [io] {
+  assert_eq(str.trim("  hello  "), "hello")
+  assert_eq(str.trim("  "), "")
+  assert_true(str.contains("hello world", "world"))
+  assert_false(str.contains("hello", "xyz"))
+  assert_true(str.starts_with("hello", "hel"))
+  assert_false(str.starts_with("hello", "world"))
+  assert_true(str.ends_with("hello", "llo"))
+}
+
+fn test_str_split_join() -> void effects [io] {
+  let parts = str.split("a,b,c", ",")
+  assert_int_eq(len(parts), 3)
+  assert_eq(parts[0], "a")
+  assert_eq(parts[2], "c")
+  assert_eq(str.join(parts, "-"), "a-b-c")
+}
+
+fn test_str_replace() -> void effects [io] {
+  assert_eq(str.replace("hello world", "world", "earth"), "hello earth")
+  assert_eq(str.replace("aaa", "a", "bb"), "bbbbbb")
+}
+
+fn test_str_slice() -> void effects [io] {
+  assert_eq(str.slice("hello", 0, 3), "hel")
+  assert_eq(str.slice("hello", 1, 4), "ell")
+}
+
+fn test_str_chars() -> void effects [io] {
+  let cs = str.chars("abc")
+  assert_int_eq(len(cs), 3)
+  assert_eq(cs[0], "a")
+  assert_eq(cs[1], "b")
+  assert_eq(cs[2], "c")
+}
+
+fn test_str_find() -> void effects [io] {
+  assert_int_eq(str.find("hello world", "world"), 6)
+  assert_int_eq(str.find("abc", "z"), -1)
+}
+
+fn test_str_count() -> void effects [io] {
+  assert_int_eq(str.count("banana", "a"), 3)
+  assert_int_eq(str.count("hello", "z"), 0)
+}

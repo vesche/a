@@ -1,0 +1,382 @@
+; Modular parser: imports the lexer from std/lexer.a
+use std.lexer
+
+; Parse result: [ast_string, new_pos_as_string]
+fn ok(ast: str, p: i64) -> [str] {
+  ret [ast, to_str(p)]
+}
+fn rast(r: [str]) -> str { ret r[0] }
+fn rpos(r: [str]) -> i64 { ret int(r[1]) }
+
+; TYPE PARSER
+fn parse_type(toks: [str], p: i64) -> [str] {
+  let k: str = lexer.tk(toks, p)
+  let v: str = lexer.tv(toks, p)
+  if str.starts_with(k, "Ty") { ret ok(v, p + 1) }
+  if k == "Ident" { ret ok(v, p + 1) }
+  if k == "LBracket" {
+    let inner: [str] = parse_type(toks, p + 1)
+    ret ok(str.concat(str.concat("[", rast(inner)), "]"), rpos(inner) + 1)
+  }
+  ret ok("?type", p + 1)
+}
+
+; EXPRESSION PARSER
+fn parse_expr(toks: [str], p: i64) -> [str] { ret parse_or(toks, p) }
+
+fn parse_or(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_and(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "PipePipe" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_and(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat("(|| ", left), " "), rast(r)), ")")
+  }
+  ret ok(left, pos)
+}
+
+fn parse_and(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_eq(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "AmpAmp" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_eq(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat("(&& ", left), " "), rast(r)), ")")
+  }
+  ret ok(left, pos)
+}
+
+fn parse_eq(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_cmp(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "EqEq" || lexer.tk(toks, pos) == "NotEq" {
+    let op: str = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_cmp(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_cmp(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_add(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "Lt" || lexer.tk(toks, pos) == "LtEq" || lexer.tk(toks, pos) == "Gt" || lexer.tk(toks, pos) == "GtEq" {
+    let op: str = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_add(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_add(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_mul(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "Plus" || lexer.tk(toks, pos) == "Minus" {
+    let op: str = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_mul(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_mul(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_unary(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while lexer.tk(toks, pos) == "Star" || lexer.tk(toks, pos) == "Slash" || lexer.tk(toks, pos) == "Percent" {
+    let op: str = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = parse_unary(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_unary(toks: [str], p: i64) -> [str] {
+  let k: str = lexer.tk(toks, p)
+  if k == "Minus" {
+    let r: [str] = parse_unary(toks, p + 1)
+    ret ok(str.concat("(- ", str.concat(rast(r), ")")), rpos(r))
+  }
+  if k == "Bang" {
+    let r: [str] = parse_unary(toks, p + 1)
+    ret ok(str.concat("(! ", str.concat(rast(r), ")")), rpos(r))
+  }
+  ret parse_postfix(toks, p)
+}
+
+fn parse_postfix(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_primary(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut expr: str = rast(r)
+  let mut cont: bool = true
+  while cont {
+    let k: str = lexer.tk(toks, pos)
+    if k == "LParen" {
+      pos = pos + 1
+      let mut args: str = ""
+      let mut first: bool = true
+      while lexer.tk(toks, pos) != "RParen" {
+        if first { first = false } else { args = str.concat(args, " ")
+          pos = pos + 1 }
+        r = parse_expr(toks, pos)
+        pos = rpos(r)
+        args = str.concat(args, rast(r))
+      }
+      pos = pos + 1
+      expr = str.concat(str.concat(str.concat(str.concat("(call ", expr), " "), args), ")")
+    } else {
+      if k == "Dot" {
+        pos = pos + 1
+        let field: str = lexer.tv(toks, pos)
+        pos = pos + 1
+        expr = str.concat(str.concat(expr, "."), field)
+      } else {
+        if k == "LBracket" {
+          pos = pos + 1
+          r = parse_expr(toks, pos)
+          pos = rpos(r)
+          pos = pos + 1
+          expr = str.concat(str.concat(str.concat(str.concat("(index ", expr), " "), rast(r)), ")")
+        } else {
+          if k == "Question" {
+            pos = pos + 1
+            expr = str.concat(str.concat("(? ", expr), ")")
+          } else { cont = false }
+        }
+      }
+    }
+  }
+  ret ok(expr, pos)
+}
+
+fn parse_primary(toks: [str], p: i64) -> [str] {
+  let k: str = lexer.tk(toks, p)
+  let v: str = lexer.tv(toks, p)
+  if k == "Int" { ret ok(v, p + 1) }
+  if k == "Float" { ret ok(v, p + 1) }
+  if k == "Str" { ret ok(v, p + 1) }
+  if k == "KwTrue" { ret ok("true", p + 1) }
+  if k == "KwFalse" { ret ok("false", p + 1) }
+  if k == "Ident" { ret ok(v, p + 1) }
+  if k == "TyStr" { ret ok("str", p + 1) }
+  if k == "LParen" {
+    let r: [str] = parse_expr(toks, p + 1)
+    ret ok(rast(r), rpos(r) + 1)
+  }
+  if k == "LBracket" {
+    let mut pos: i64 = p + 1
+    let mut items: str = ""
+    let mut first: bool = true
+    while lexer.tk(toks, pos) != "RBracket" {
+      if first { first = false } else { items = str.concat(items, " ")
+        pos = pos + 1 }
+      let r: [str] = parse_expr(toks, pos)
+      pos = rpos(r)
+      items = str.concat(items, rast(r))
+    }
+    ret ok(str.concat(str.concat("[", items), "]"), pos + 1)
+  }
+  ret ok(str.concat("??", v), p + 1)
+}
+
+; STATEMENT PARSER
+fn parse_block(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = lexer.skip_nl(toks, p)
+  let mut stmts: str = ""
+  while lexer.tk(toks, pos) != "RBrace" {
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "RBrace" { break }
+    let r: [str] = parse_stmt(toks, pos)
+    pos = rpos(r)
+    stmts = str.concat(stmts, str.concat(rast(r), "\n"))
+    pos = lexer.skip_nl(toks, pos)
+  }
+  ret ok(stmts, pos)
+}
+
+fn parse_stmt(toks: [str], p: i64) -> [str] {
+  let k: str = lexer.tk(toks, p)
+  if k == "KwLet" { ret parse_let(toks, p) }
+  if k == "KwRet" {
+    let r: [str] = parse_expr(toks, p + 1)
+    ret ok(str.concat("(ret ", str.concat(rast(r), ")")), lexer.skip_nl(toks, rpos(r)))
+  }
+  if k == "KwIf" { ret parse_if(toks, p) }
+  if k == "KwWhile" {
+    let cond_r: [str] = parse_expr(toks, p + 1)
+    let mut pos: i64 = lexer.skip_nl(toks, rpos(cond_r))
+    pos = pos + 1
+    let body_r: [str] = parse_block(toks, pos)
+    pos = rpos(body_r) + 1
+    ret ok(str.concat(str.concat(str.concat("(while ", rast(cond_r)), "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+  }
+  if k == "KwFor" {
+    let var: str = lexer.tv(toks, p + 1)
+    let mut pos: i64 = p + 3
+    let ty_r: [str] = parse_type(toks, pos)
+    pos = rpos(ty_r) + 1
+    let iter_r: [str] = parse_expr(toks, pos)
+    pos = lexer.skip_nl(toks, rpos(iter_r))
+    pos = pos + 1
+    let body_r: [str] = parse_block(toks, pos)
+    pos = rpos(body_r) + 1
+    ret ok(str.concat(str.concat(str.concat(str.concat(str.concat("(for ", var), " "), rast(iter_r)), "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+  }
+  if k == "KwBreak" { ret ok("(break)", lexer.skip_nl(toks, p + 1)) }
+  if k == "KwContinue" { ret ok("(continue)", lexer.skip_nl(toks, p + 1)) }
+
+  let r: [str] = parse_expr(toks, p)
+  let mut pos: i64 = rpos(r)
+  if lexer.tk(toks, pos) == "Eq" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    let val_r: [str] = parse_expr(toks, pos)
+    ret ok(str.concat(str.concat(str.concat("(assign ", rast(r)), " "), str.concat(rast(val_r), ")")), lexer.skip_nl(toks, rpos(val_r)))
+  }
+  ret ok(str.concat("(expr ", str.concat(rast(r), ")")), lexer.skip_nl(toks, pos))
+}
+
+fn parse_let(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p + 1
+  let mut is_mut: str = ""
+  if lexer.tk(toks, pos) == "KwMut" { is_mut = "mut "
+    pos = pos + 1 }
+  let name: str = lexer.tv(toks, pos)
+  pos = pos + 2
+  let ty_r: [str] = parse_type(toks, pos)
+  pos = rpos(ty_r) + 1
+  pos = lexer.skip_nl(toks, pos)
+  let val_r: [str] = parse_expr(toks, pos)
+  ret ok(str.concat(str.concat(str.concat(str.concat(str.concat(str.concat("(let ", is_mut), name), " "), rast(ty_r)), " "), str.concat(rast(val_r), ")")), lexer.skip_nl(toks, rpos(val_r)))
+}
+
+fn parse_if(toks: [str], p: i64) -> [str] {
+  let cond_r: [str] = parse_expr(toks, p + 1)
+  let mut pos: i64 = lexer.skip_nl(toks, rpos(cond_r))
+  pos = pos + 1
+  let then_r: [str] = parse_block(toks, pos)
+  pos = rpos(then_r) + 1
+  pos = lexer.skip_nl(toks, pos)
+  if lexer.tk(toks, pos) == "KwElse" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    if lexer.tk(toks, pos) == "KwIf" {
+      let else_r: [str] = parse_if(toks, pos)
+      ret ok(str.concat(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.concat(str.trim(rast(then_r)), "\n")), str.concat(rast(else_r), ")")), rpos(else_r))
+    }
+    pos = pos + 1
+    let else_r: [str] = parse_block(toks, pos)
+    pos = rpos(else_r) + 1
+    ret ok(str.concat(str.concat(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.trim(rast(then_r))), "\n(else\n"), str.concat(str.concat(str.trim(rast(else_r)), ")"), ")")), pos)
+  }
+  ret ok(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.concat(str.trim(rast(then_r)), ")")), pos)
+}
+
+; TOP-LEVEL PARSER
+fn parse_fn_decl(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p + 1
+  let name: str = lexer.tv(toks, pos)
+  pos = pos + 2
+  let mut params: str = ""
+  let mut first: bool = true
+  while lexer.tk(toks, pos) != "RParen" {
+    if first { first = false } else { params = str.concat(params, " ")
+      pos = pos + 1 }
+    let pname: str = lexer.tv(toks, pos)
+    pos = pos + 2
+    let ty_r: [str] = parse_type(toks, pos)
+    pos = rpos(ty_r)
+    params = str.concat(params, str.concat(str.concat(pname, ":"), rast(ty_r)))
+  }
+  pos = pos + 2
+  let ret_ty_r: [str] = parse_type(toks, pos)
+  pos = lexer.skip_nl(toks, rpos(ret_ty_r))
+
+  if lexer.tk(toks, pos) == "KwEffects" {
+    pos = pos + 2
+    while lexer.tk(toks, pos) != "RBracket" { pos = pos + 1 }
+    pos = lexer.skip_nl(toks, pos + 1)
+  }
+  if lexer.tk(toks, pos) == "KwPost" || lexer.tk(toks, pos) == "KwPre" {
+    pos = pos + 1
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "LBrace" {
+      pos = pos + 1
+      let mut depth: i64 = 1
+      while depth > 0 {
+        if lexer.tk(toks, pos) == "LBrace" { depth = depth + 1 }
+        if lexer.tk(toks, pos) == "RBrace" { depth = depth - 1 }
+        if depth > 0 { pos = pos + 1 }
+      }
+      pos = lexer.skip_nl(toks, pos + 1)
+    }
+  }
+
+  pos = pos + 1
+  let body_r: [str] = parse_block(toks, pos)
+  pos = rpos(body_r) + 1
+  let header: str = str.concat(str.concat(str.concat(str.concat("(fn ", name), "("), params), str.concat(") -> ", rast(ret_ty_r)))
+  ret ok(str.concat(str.concat(header, "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+}
+
+fn parse_program(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = lexer.skip_nl(toks, p)
+  let mut decls: str = ""
+  while lexer.tk(toks, pos) != "Eof" {
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "Eof" { break }
+    let k: str = lexer.tk(toks, pos)
+    if k == "KwFn" {
+      let r: [str] = parse_fn_decl(toks, pos)
+      pos = rpos(r)
+      decls = str.concat(decls, str.concat(rast(r), "\n\n"))
+    } else {
+      if k == "KwTy" {
+        let mut tpos: i64 = pos + 1
+        let tname: str = lexer.tv(toks, tpos)
+        tpos = tpos + 1
+        tpos = tpos + 1
+        let mut body: str = ""
+        while lexer.tk(toks, tpos) != "Newline" {
+          if lexer.tk(toks, tpos) == "Eof" { break }
+          body = str.concat(body, str.concat(lexer.tv(toks, tpos), " "))
+          tpos = tpos + 1
+        }
+        pos = tpos
+        decls = str.concat(decls, str.concat(str.concat(str.concat("(ty ", tname), " "), str.concat(str.trim(body), ")\n\n")))
+      } else {
+        if k == "KwUse" {
+          while lexer.tk(toks, pos) != "Newline" {
+            if lexer.tk(toks, pos) == "Eof" { break }
+            pos = pos + 1
+          }
+        } else { pos = pos + 1 }
+      }
+    }
+    pos = lexer.skip_nl(toks, pos)
+  }
+  ret ok(str.trim(decls), pos)
+}
+
+; MAIN
+fn main() -> void effects [io] {
+  let src: str = io.read_file("examples/math.a")
+  println("=== Parsing math.a (using imported lexer) ===")
+  let toks: [str] = lexer.lex(src)
+  println("{to_str(lexer.tcount(toks))} tokens")
+  let r: [str] = parse_program(toks, 0)
+  println(rast(r))
+}

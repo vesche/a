@@ -1,0 +1,154 @@
+fn assert_eq(a: i64, b: i64) -> void {
+  if a != b {
+    fail("expected " + to_str(a) + " == " + to_str(b))
+  }
+}
+
+fn assert_true(b: bool) -> void {
+  if !b {
+    fail("expected true, got false")
+  }
+}
+
+fn assert_str_eq(a: str, b: str) -> void {
+  if a != b {
+    fail("expected '" + a + "' == '" + b + "'")
+  }
+}
+
+fn test_map_literal() -> void {
+  let m = #{"name": "Alice", "age": "30"}
+  assert_eq(len(m), 2)
+}
+
+fn test_map_bracket_read() -> void {
+  let m = #{"greeting": "hello"}
+  assert_str_eq(m["greeting"], "hello")
+}
+
+fn test_map_bracket_write() -> void {
+  let mut m = #{"x": 1}
+  m["x"] = 42
+  assert_eq(m["x"], 42)
+}
+
+fn test_map_bracket_add_key() -> void {
+  let mut m = #{"a": 1}
+  m["b"] = 2
+  assert_eq(len(m), 2)
+  assert_eq(m["b"], 2)
+}
+
+fn test_map_field_access() -> void {
+  let m = #{"name": "Bob"}
+  assert_str_eq(m.name, "Bob")
+}
+
+fn test_map_get() -> void {
+  let m = #{"x": 99}
+  assert_eq(map.get(m, "x"), 99)
+}
+
+fn test_map_set() -> void {
+  let m = #{"a": 1}
+  let m2 = map.set(m, "b", 2)
+  assert_eq(len(m2), 2)
+  assert_eq(m2["b"], 2)
+}
+
+fn test_map_has() -> void {
+  let m = #{"key": 1}
+  assert_true(map.has(m, "key"))
+  assert_true(!map.has(m, "missing"))
+}
+
+fn test_map_keys() -> void {
+  let m = #{"a": 1, "b": 2}
+  assert_eq(len(map.keys(m)), 2)
+}
+
+fn test_map_values() -> void {
+  let m = #{"x": 10, "y": 20}
+  assert_eq(len(map.values(m)), 2)
+}
+
+fn test_map_delete() -> void {
+  let m = #{"a": 1, "b": 2, "c": 3}
+  let m2 = map.delete(m, "b")
+  assert_eq(len(m2), 2)
+  assert_true(!map.has(m2, "b"))
+  assert_true(map.has(m2, "a"))
+  assert_true(map.has(m2, "c"))
+}
+
+fn test_map_merge() -> void {
+  let a = #{"x": 1, "y": 2}
+  let b = #{"y": 99, "z": 3}
+  let c = map.merge(a, b)
+  assert_eq(len(c), 3)
+  assert_eq(c["y"], 99)
+  assert_eq(c["z"], 3)
+}
+
+fn test_map_entries() -> void {
+  let m = #{"a": 1, "b": 2}
+  let entries = map.entries(m)
+  assert_eq(len(entries), 2)
+}
+
+fn test_map_from_entries() -> void {
+  let m = map.from_entries([["name", "Alice"], ["city", "NYC"]])
+  assert_eq(len(m), 2)
+  assert_str_eq(m["name"], "Alice")
+  assert_str_eq(m["city"], "NYC")
+}
+
+fn test_map_roundtrip_entries() -> void {
+  let m = #{"a": 1, "b": 2}
+  let m2 = map.from_entries(map.entries(m))
+  assert_eq(m2["a"], 1)
+  assert_eq(m2["b"], 2)
+}
+
+fn test_map_iteration_for() -> void {
+  let m = #{"a": 10, "b": 20}
+  let mut total = 0
+  for [k, v] in m {
+    total = total + v
+  }
+  assert_eq(total, 30)
+}
+
+fn test_map_iteration_destructure() -> void {
+  let m = #{"x": 1, "y": 2, "z": 3}
+  let mut count = 0
+  for [k, v] in m {
+    count = count + 1
+  }
+  assert_eq(count, 3)
+}
+
+fn test_map_empty() -> void {
+  let m = #{}
+  assert_eq(len(m), 0)
+}
+
+fn test_map_overwrite_key() -> void {
+  let mut m = #{"x": 1}
+  m["x"] = 100
+  assert_eq(m["x"], 100)
+  assert_eq(len(m), 1)
+}
+
+fn test_map_original_unchanged_after_set() -> void {
+  let m = #{"a": 1}
+  let m2 = map.set(m, "b", 2)
+  assert_eq(len(m), 1)
+  assert_eq(len(m2), 2)
+}
+
+fn test_map_pipeline() -> void {
+  let data = #{"alice": 90, "bob": 85, "carol": 95}
+  let names = map.keys(data)
+  assert_eq(len(names), 3)
+}

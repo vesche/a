@@ -1,0 +1,149 @@
+(* "a" Programming Language -- Formal Grammar *)
+(* Context-free, LL(1), designed for unambiguous AI generation *)
+
+program        = { top_level } ;
+
+top_level      = mod_decl
+               | type_decl
+               | fn_decl
+               | use_decl ;
+
+(* Module declaration *)
+mod_decl       = "mod" IDENT "{" { top_level } "}" ;
+
+(* Use / import *)
+use_decl       = "use" mod_path NEWLINE ;
+mod_path       = IDENT { "." IDENT } ;
+
+(* Type declarations *)
+type_decl      = "ty" IDENT [ type_params ] "=" type_body NEWLINE ;
+type_body      = record_type
+               | sum_type
+               | type_expr [ where_clause ] ;
+
+record_type    = "{" field_list "}" ;
+field_list     = field { "," field } ;
+field          = IDENT ":" type_expr ;
+
+sum_type       = variant { "|" variant } ;
+variant        = IDENT [ "(" type_list ")" ] ;
+
+where_clause   = "where" "{" expr "}" ;
+
+(* Type expressions *)
+type_expr      = base_type
+               | IDENT [ "<" type_list ">" ]
+               | "[" type_expr "]"
+               | "(" type_list ")"
+               | "fn" "(" type_list ")" "->" type_expr
+               | "#{" type_expr ":" type_expr "}" ;
+
+base_type      = "i8" | "i16" | "i32" | "i64"
+               | "u8" | "u16" | "u32" | "u64"
+               | "f32" | "f64"
+               | "bool" | "str" | "bytes" | "void" ;
+
+type_params    = "<" IDENT { "," IDENT } ">" ;
+type_list      = type_expr { "," type_expr } ;
+
+(* Function declaration *)
+fn_decl        = "fn" IDENT "(" [ param_list ] ")" "->" type_expr
+                 [ effects_clause ]
+                 [ pre_clause ]
+                 [ post_clause ]
+                 block ;
+
+param_list     = param { "," param } ;
+param          = IDENT ":" type_expr ;
+
+effects_clause = "effects" "[" effect_list "]" ;
+effect_list    = IDENT { "," IDENT } ;
+
+pre_clause     = "pre" "{" expr "}" ;
+post_clause    = "post" "{" expr "}" ;
+
+(* Statements *)
+block          = "{" { statement } "}" ;
+
+statement      = let_stmt
+               | assign_stmt
+               | ret_stmt
+               | expr_stmt
+               | if_stmt
+               | match_stmt
+               | for_stmt ;
+
+let_stmt       = "let" [ "mut" ] IDENT ":" type_expr "=" expr NEWLINE ;
+assign_stmt    = place "=" expr NEWLINE ;
+ret_stmt       = "ret" expr NEWLINE ;
+expr_stmt      = expr NEWLINE ;
+
+if_stmt        = "if" expr block [ "else" ( if_stmt | block ) ] ;
+
+match_stmt     = "match" expr "{" { match_arm } "}" ;
+match_arm      = pattern "=>" ( expr | block ) NEWLINE ;
+
+for_stmt       = "for" IDENT ":" type_expr "in" expr block ;
+
+(* Patterns *)
+pattern        = IDENT [ "(" pattern_list ")" ]
+               | LITERAL
+               | "_" ;
+pattern_list   = pattern { "," pattern } ;
+
+(* Expressions -- precedence low to high *)
+expr           = pipe_expr ;
+
+pipe_expr      = or_expr { "|>" or_expr } ;
+or_expr        = and_expr { "||" and_expr } ;
+and_expr       = eq_expr { "&&" eq_expr } ;
+eq_expr        = cmp_expr { ( "==" | "!=" ) cmp_expr } ;
+cmp_expr       = add_expr { ( "<" | ">" | "<=" | ">=" ) add_expr } ;
+add_expr       = mul_expr { ( "+" | "-" ) mul_expr } ;
+mul_expr       = unary_expr { ( "*" | "/" | "%" ) unary_expr } ;
+
+unary_expr     = ( "-" | "!" | "try" ) unary_expr
+               | postfix_expr ;
+
+postfix_expr   = primary_expr { postfix_op } ;
+postfix_op     = "(" [ arg_list ] ")"
+               | "." IDENT
+               | "[" expr "]"
+               | "?" ;
+
+primary_expr   = INT_LIT | FLOAT_LIT | STRING_LIT | BOOL_LIT
+               | IDENT
+               | array_lit
+               | map_lit
+               | lambda_expr
+               | try_block
+               | interp_string
+               | "(" expr ")" ;
+
+arg_list       = expr { "," expr } ;
+array_lit      = "[" [ expr { "," expr } ] "]" ;
+map_lit        = "#{" [ expr ":" expr { "," expr ":" expr } ] "}" ;
+lambda_expr    = "fn" "(" [ param_list ] ")" "=>" expr ;
+try_block      = "try" block ;
+interp_string  = '"' { CHAR | "{" expr "}" } '"' ;
+
+(* Place expressions *)
+place          = IDENT
+               | place "." IDENT
+               | place "[" expr "]" ;
+
+(* Tokens *)
+INT_LIT        = DIGIT { DIGIT } ;
+FLOAT_LIT      = DIGIT { DIGIT } "." DIGIT { DIGIT } ;
+STRING_LIT     = '"' { CHAR } '"' ;
+BOOL_LIT       = "true" | "false" ;
+IDENT          = ALPHA { ALPHA | DIGIT | "_" } ;
+NEWLINE        = '\n' ;
+
+ALPHA          = 'a'..'z' | 'A'..'Z' | '_' ;
+DIGIT          = '0'..'9' ;
+CHAR           = ? any character except '"' or '\' ? | '\' ESCAPE ;
+ESCAPE         = 'n' | 't' | 'r' | '\' | '"' | '{' | '}' ;
+
+(* Comments *)
+COMMENT        = ';' { ? any character except newline ? } NEWLINE ;

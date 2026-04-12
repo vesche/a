@@ -1,0 +1,263 @@
+use std.strings
+use std.cli
+
+; lines.a -- universal line processing tool for pipelines
+;
+; reads from stdin, applies transformations, writes to stdout
+; designed to replace common awk/sed/grep patterns
+;
+; usage: <source> | a run examples/lines.a [flags]
+;
+;   --filter <pat>   keep lines containing pattern
+;   --reject <pat>   drop lines containing pattern
+;   --trim           trim whitespace from each line
+;   --upper          convert to uppercase
+;   --lower          convert to lowercase
+;   --number         prepend line numbers
+;   --count          print line count instead of lines
+;   --head <n>       take first n lines
+;   --tail <n>       take last n lines
+;   --skip <n>       skip first n lines
+;   --col <n>        extract whitespace-delimited column (1-based)
+;   --unique         deduplicate consecutive identical lines
+;   --sort           sort lines alphabetically
+;   --reverse        reverse line order
+;   --nonempty       drop blank lines
+
+fn parse_int(s: str) -> i64 {
+  ret int(s)
+}
+
+fn split_cols(line: str) -> [str] {
+  let parts = str.split(line, " ")
+  let mut out = []
+  for p in parts {
+    if str.trim(p) != "" {
+      out = push(out, str.trim(p))
+    }
+  }
+  ret out
+}
+
+fn main() -> void effects [io] {
+  let a = args()
+
+  ; parse flags
+  let mut filter_pat = ""
+  let mut reject_pat = ""
+  let mut do_trim = false
+  let mut do_upper = false
+  let mut do_lower = false
+  let mut do_number = false
+  let mut do_count = false
+  let mut head_n = -1
+  let mut tail_n = -1
+  let mut skip_n = 0
+  let mut col_n = -1
+  let mut do_unique = false
+  let mut do_sort = false
+  let mut do_reverse = false
+  let mut do_nonempty = false
+
+  let mut i = 0
+  while i < len(a) {
+    let flag = a[i]
+    if flag == "--filter" {
+      i = i + 1
+      filter_pat = a[i]
+    } else {
+    if flag == "--reject" {
+      i = i + 1
+      reject_pat = a[i]
+    } else {
+    if flag == "--trim" {
+      do_trim = true
+    } else {
+    if flag == "--upper" {
+      do_upper = true
+    } else {
+    if flag == "--lower" {
+      do_lower = true
+    } else {
+    if flag == "--number" {
+      do_number = true
+    } else {
+    if flag == "--count" {
+      do_count = true
+    } else {
+    if flag == "--head" {
+      i = i + 1
+      head_n = parse_int(a[i])
+    } else {
+    if flag == "--tail" {
+      i = i + 1
+      tail_n = parse_int(a[i])
+    } else {
+    if flag == "--skip" {
+      i = i + 1
+      skip_n = parse_int(a[i])
+    } else {
+    if flag == "--col" {
+      i = i + 1
+      col_n = parse_int(a[i])
+    } else {
+    if flag == "--unique" {
+      do_unique = true
+    } else {
+    if flag == "--sort" {
+      do_sort = true
+    } else {
+    if flag == "--reverse" {
+      do_reverse = true
+    } else {
+    if flag == "--nonempty" {
+      do_nonempty = true
+    } else {
+      eprintln(cli.red("unknown flag: {flag}"))
+      exit(1)
+    }}}}}}}}}}}}}}}
+    i = i + 1
+  }
+
+  ; read stdin
+  let input = io.read_stdin()
+  let mut lines = str.lines(input)
+
+  ; skip
+  if skip_n > 0 {
+    if skip_n < len(lines) {
+      lines = slice(lines, skip_n, len(lines))
+    } else {
+      lines = []
+    }
+  }
+
+  ; filter / reject
+  if filter_pat != "" {
+    let mut out = []
+    for line in lines {
+      if str.find(line, filter_pat) >= 0 {
+        out = push(out, line)
+      }
+    }
+    lines = out
+  }
+  if reject_pat != "" {
+    let mut out = []
+    for line in lines {
+      if str.find(line, reject_pat) < 0 {
+        out = push(out, line)
+      }
+    }
+    lines = out
+  }
+
+  ; nonempty
+  if do_nonempty {
+    let mut out = []
+    for line in lines {
+      if str.trim(line) != "" {
+        out = push(out, line)
+      }
+    }
+    lines = out
+  }
+
+  ; column extraction
+  if col_n > 0 {
+    let mut out = []
+    for line in lines {
+      let cols = split_cols(line)
+      if col_n <= len(cols) {
+        out = push(out, cols[col_n - 1])
+      } else {
+        out = push(out, "")
+      }
+    }
+    lines = out
+  }
+
+  ; trim
+  if do_trim {
+    let mut out = []
+    for line in lines {
+      out = push(out, str.trim(line))
+    }
+    lines = out
+  }
+
+  ; case transforms
+  if do_upper {
+    let mut out = []
+    for line in lines {
+      out = push(out, str.upper(line))
+    }
+    lines = out
+  }
+  if do_lower {
+    let mut out = []
+    for line in lines {
+      out = push(out, str.lower(line))
+    }
+    lines = out
+  }
+
+  ; sort
+  if do_sort {
+    lines = sort(lines)
+  }
+
+  ; unique (after sort so consecutive duplicates collapse)
+  if do_unique {
+    let mut out = []
+    let mut prev = ""
+    let mut first = true
+    for line in lines {
+      if first {
+        out = push(out, line)
+        prev = line
+        first = false
+      } else {
+        if line != prev {
+          out = push(out, line)
+          prev = line
+        }
+      }
+    }
+    lines = out
+  }
+
+  ; reverse
+  if do_reverse {
+    lines = reverse_arr(lines)
+  }
+
+  ; head / tail
+  if head_n >= 0 {
+    if head_n < len(lines) {
+      lines = slice(lines, 0, head_n)
+    }
+  }
+  if tail_n >= 0 {
+    if tail_n < len(lines) {
+      lines = slice(lines, len(lines) - tail_n, len(lines))
+    }
+  }
+
+  ; output
+  if do_count {
+    println(to_str(len(lines)))
+  } else {
+    let sp = " "
+    let mut n = 1
+    for line in lines {
+      if do_number {
+        let num = strings.pad_left(to_str(n), 6, sp)
+        println("{cli.dim(num)}  {line}")
+      } else {
+        println(line)
+      }
+      n = n + 1
+    }
+  }
+}

@@ -1,0 +1,331 @@
+use std.compiler.compiler
+
+fn assert_true(val, test_name) {
+  if !val {
+    println("FAIL: " + test_name)
+    ret false
+  }
+  println("PASS: " + test_name)
+  ret true
+}
+
+fn test_compile_simple_fn() -> bool {
+  let prog = compiler.compile("fn f() \{ ret 42 \}")
+  if type_of(prog) != "map" { ret false }
+  if !assert_true(prog["main_idx"] < 0, "no main") { ret false }
+  let fns = prog["functions"]
+  if !assert_true(len(fns) == 1, "one function") { ret false }
+  let f = fns[0]
+  if !assert_true(f["name"] == "f", "fn name") { ret false }
+  if !assert_true(len(f["params"]) == 0, "no params") { ret false }
+  let code = f["chunk"]["code"]
+  if !assert_true(len(code) > 0, "has code") { ret false }
+  if !assert_true(code[0][0] == "Const", "first op is Const") { ret false }
+  if !assert_true(code[1][0] == "Return", "second op is Return (before TCO)") { ret false }
+  ret true
+}
+
+fn test_compile_with_params() -> bool {
+  let prog = compiler.compile("fn add(x, y) \{ ret x + y \}")
+  let f = prog["functions"][0]
+  if !assert_true(f["name"] == "add", "fn name") { ret false }
+  if !assert_true(len(f["params"]) == 2, "two params") { ret false }
+  if !assert_true(f["params"][0] == "x", "param x") { ret false }
+  if !assert_true(f["params"][1] == "y", "param y") { ret false }
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "GetLocal", "get x") { ret false }
+  if !assert_true(code[0][1] == 0, "x is local 0") { ret false }
+  if !assert_true(code[1][0] == "GetLocal", "get y") { ret false }
+  if !assert_true(code[1][1] == 1, "y is local 1") { ret false }
+  if !assert_true(code[2][0] == "Add", "add op") { ret false }
+  ret true
+}
+
+fn test_compile_let() -> bool {
+  let prog = compiler.compile("fn f() \{ let x = 42\n ret x \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "Const", "const 42") { ret false }
+  if !assert_true(code[1][0] == "SetLocal", "set x") { ret false }
+  if !assert_true(code[2][0] == "GetLocal", "get x") { ret false }
+  if !assert_true(code[3][0] == "Return", "return") { ret false }
+  ret true
+}
+
+fn test_compile_if() -> bool {
+  let prog = compiler.compile("fn f(x) \{ if x > 0 \{ ret 1 \} else \{ ret 0 \} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "GetLocal", "get x") { ret false }
+  if !assert_true(code[1][0] == "Const", "const 0") { ret false }
+  if !assert_true(code[2][0] == "Gt", "gt op") { ret false }
+  if !assert_true(code[3][0] == "JumpIfFalse", "cond jump") { ret false }
+  ret true
+}
+
+fn test_compile_call() -> bool {
+  let prog = compiler.compile("fn f() \{ println(\"hi\") \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "Const", "string const") { ret false }
+  if !assert_true(code[1][0] == "Call", "call") { ret false }
+  if !assert_true(code[1][2] == 1, "1 arg") { ret false }
+  if !assert_true(code[2][0] == "Pop", "pop result") { ret false }
+  ret true
+}
+
+fn test_compile_while() -> bool {
+  let prog = compiler.compile("fn f() \{ let mut x = 0\n while x < 10 \{ x = x + 1 \} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_loop = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "Loop" { has_loop = true }
+    i = i + 1
+  }
+  if !assert_true(has_loop, "has Loop opcode") { ret false }
+  ret true
+}
+
+fn test_compile_for() -> bool {
+  let prog = compiler.compile("fn f() \{ for i in [1, 2, 3] \{ println(to_str(i)) \} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_loop = false
+  let mut has_array = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "Loop" { has_loop = true }
+    if code[i][0] == "Array" { has_array = true }
+    i = i + 1
+  }
+  if !assert_true(has_loop, "has Loop") { ret false }
+  if !assert_true(has_array, "has Array") { ret false }
+  ret true
+}
+
+fn test_compile_main() -> bool {
+  let prog = compiler.compile("fn main() \{ println(\"hello\") \}")
+  if !assert_true(prog["main_idx"] >= 0, "has main_idx") { ret false }
+  ret true
+}
+
+fn test_compile_map_literal() -> bool {
+  let prog = compiler.compile("fn f() \{ let m = #\{\"a\": 1\} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_map = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "MapNew" { has_map = true }
+    i = i + 1
+  }
+  if !assert_true(has_map, "has MapNew") { ret false }
+  ret true
+}
+
+fn test_compile_field_access() -> bool {
+  let prog = compiler.compile("fn f(x) \{ ret x.name \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "GetLocal", "get x") { ret false }
+  if !assert_true(code[1][0] == "Field", "field access") { ret false }
+  ret true
+}
+
+fn test_compile_index() -> bool {
+  let prog = compiler.compile("fn f(a) \{ ret a[0] \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  if !assert_true(code[0][0] == "GetLocal", "get a") { ret false }
+  if !assert_true(code[1][0] == "Const", "const 0") { ret false }
+  if !assert_true(code[2][0] == "Index", "index op") { ret false }
+  ret true
+}
+
+fn test_compile_binops() -> bool {
+  let prog = compiler.compile("fn f(a, b) \{ ret a + b * 2 - 1 \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_add = false
+  let mut has_mul = false
+  let mut has_sub = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "Add" { has_add = true }
+    if code[i][0] == "Mul" { has_mul = true }
+    if code[i][0] == "Sub" { has_sub = true }
+    i = i + 1
+  }
+  if !assert_true(has_add, "has Add") { ret false }
+  if !assert_true(has_mul, "has Mul") { ret false }
+  if !assert_true(has_sub, "has Sub") { ret false }
+  ret true
+}
+
+fn test_compile_and_or() -> bool {
+  let prog = compiler.compile("fn f(a, b) \{ ret a && b || false \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_keep = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "JumpIfFalseKeep" { has_keep = true }
+    i = i + 1
+  }
+  if !assert_true(has_keep, "has short-circuit jump") { ret false }
+  ret true
+}
+
+fn test_compile_method_call() -> bool {
+  let prog = compiler.compile("fn f(s) \{ ret str.split(s, \",\") \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_cm = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "CallMethod" { has_cm = true }
+    i = i + 1
+  }
+  if !assert_true(has_cm, "has CallMethod") { ret false }
+  ret true
+}
+
+fn test_compile_tco() -> bool {
+  let prog = compiler.compile("fn f(n) \{ ret f(n - 1) \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_tc = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "TailCall" { has_tc = true }
+    i = i + 1
+  }
+  if !assert_true(has_tc, "has TailCall") { ret false }
+  ret true
+}
+
+fn test_compile_match() -> bool {
+  let prog = compiler.compile("fn f(x) \{ match x \{ 1 => \{ ret \"one\" \}\n _ => \{ ret \"other\" \} \} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_ml = false
+  let mut has_dup = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "MatchLiteral" { has_ml = true }
+    if code[i][0] == "Dup" { has_dup = true }
+    i = i + 1
+  }
+  if !assert_true(has_ml, "has MatchLiteral") { ret false }
+  if !assert_true(has_dup, "has Dup") { ret false }
+  ret true
+}
+
+fn test_compile_lambda() -> bool {
+  let prog = compiler.compile("fn f() \{ let add = fn(a, b) => a + b \}")
+  let fns = prog["functions"]
+  if !assert_true(len(fns) == 2, "2 functions (f + lambda)") { ret false }
+  let f = fns[0]
+  let code = f["chunk"]["code"]
+  let mut has_mc = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "MakeClosure" { has_mc = true }
+    i = i + 1
+  }
+  if !assert_true(has_mc, "has MakeClosure") { ret false }
+  let lambda_fn = fns[1]
+  if !assert_true(str.starts_with(lambda_fn["name"], "__lambda_"), "lambda name") { ret false }
+  ret true
+}
+
+fn test_compile_try() -> bool {
+  let prog = compiler.compile("fn f() \{ let r = try \{ 42 \} \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_ts = false
+  let mut has_ok = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "TryStart" { has_ts = true }
+    if code[i][0] == "MakeOk" { has_ok = true }
+    i = i + 1
+  }
+  if !assert_true(has_ts, "has TryStart") { ret false }
+  if !assert_true(has_ok, "has MakeOk") { ret false }
+  ret true
+}
+
+fn test_compile_interp() -> bool {
+  let prog = compiler.compile("fn f(name) \{ ret \"hello \{name\}\" \}")
+  let f = prog["functions"][0]
+  let code = f["chunk"]["code"]
+  let mut has_concat = false
+  let mut i = 0
+  while i < len(code) {
+    if code[i][0] == "Concat" { has_concat = true }
+    i = i + 1
+  }
+  if !assert_true(has_concat, "has Concat") { ret false }
+  ret true
+}
+
+fn test_compile_locals() -> bool {
+  let prog = compiler.compile("fn f(x) \{ let y = x + 1\n let z = y * 2\n ret z \}")
+  let f = prog["functions"][0]
+  if !assert_true(len(f["locals"]) >= 3, "at least 3 locals") { ret false }
+  if !assert_true(f["locals"][0] == "x", "local 0 = x") { ret false }
+  if !assert_true(f["locals"][1] == "y", "local 1 = y") { ret false }
+  if !assert_true(f["locals"][2] == "z", "local 2 = z") { ret false }
+  ret true
+}
+
+fn test_compile_constants() -> bool {
+  let prog = compiler.compile("fn f() \{ ret 42 \}")
+  let f = prog["functions"][0]
+  let consts = f["chunk"]["constants"]
+  if !assert_true(contains(consts, 42), "has 42 in constants") { ret false }
+  ret true
+}
+
+fn test_compile_strings_table() -> bool {
+  let prog = compiler.compile("fn f() \{ println(\"test\") \}")
+  let f = prog["functions"][0]
+  let strs = f["chunk"]["strings"]
+  if !assert_true(contains(strs, "println"), "println in strings") { ret false }
+  ret true
+}
+
+fn main() -> void
+  effects [io]
+{
+  let mut pass = 0
+  let mut fail = 0
+
+  if test_compile_simple_fn() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_with_params() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_let() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_if() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_call() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_while() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_for() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_main() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_map_literal() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_field_access() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_index() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_binops() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_and_or() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_method_call() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_tco() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_match() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_lambda() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_try() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_interp() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_locals() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_constants() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_compile_strings_table() { pass = pass + 1 } else { fail = fail + 1 }
+
+  println(to_str(pass) + "/" + to_str(pass + fail) + " compiler tests passed")
+}

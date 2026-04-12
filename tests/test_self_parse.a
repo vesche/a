@@ -1,0 +1,493 @@
+use std.compiler.parser
+
+fn assert_tag(node, expected, test_name) {
+  if type_of(node) != "map" {
+    println("FAIL: " + test_name + " - expected map, got " + type_of(node))
+    ret false
+  }
+  if !map.has(node, "tag") {
+    println("FAIL: " + test_name + " - no tag field")
+    ret false
+  }
+  if node["tag"] != expected {
+    println("FAIL: " + test_name + " - expected tag " + expected + ", got " + node["tag"])
+    ret false
+  }
+  ret true
+}
+
+fn is_parse_error(node) {
+  if type_of(node) == "map" {
+    if map.has(node, "tag") {
+      ret node["tag"] == "ParseError"
+    }
+  }
+  ret false
+}
+
+fn show_err(node, test_name) {
+  if is_parse_error(node) {
+    println("FAIL: " + test_name + " - " + node["msg"] + " at pos " + to_str(node["pos"]))
+  }
+}
+
+; --- Basic expression tests ---
+
+fn test_int_literal() -> bool {
+  let ast = parser.parse("fn main() -> void \{ let x = 42 \}")
+  if is_parse_error(ast) { show_err(ast, "test_int_literal")
+    ret false }
+  if !assert_tag(ast, "Program", "test_int_literal") { ret false }
+  let items = ast["items"]
+  if len(items) != 1 { ret false }
+  let func = items[0]
+  if !assert_tag(func, "FnDecl", "test_int_literal fn") { ret false }
+  if func["name"] != "main" { ret false }
+  let body = func["body"]
+  let stmts = body["stmts"]
+  if len(stmts) != 1 { ret false }
+  let stmt = stmts[0]
+  if !assert_tag(stmt, "Let", "test_int_literal let") { ret false }
+  if stmt["name"] != "x" { ret false }
+  let val = stmt["value"]
+  if !assert_tag(val, "Int", "test_int_literal val") { ret false }
+  if val["value"] != 42 { ret false }
+  ret true
+}
+
+fn test_binop() -> bool {
+  let ast = parser.parse("fn f() -> i64 \{ ret 1 + 2 * 3 \}")
+  if is_parse_error(ast) { show_err(ast, "test_binop")
+    ret false }
+  let func = ast["items"][0]
+  let body = func["body"]["stmts"]
+  let ret_stmt = body[0]
+  if !assert_tag(ret_stmt, "Return", "test_binop ret") { ret false }
+  let expr = ret_stmt["expr"]
+  if !assert_tag(expr, "BinOp", "test_binop binop") { ret false }
+  if expr["op"] != "+" { ret false }
+  let right = expr["right"]
+  if !assert_tag(right, "BinOp", "test_binop right") { ret false }
+  if right["op"] != "*" { ret false }
+  ret true
+}
+
+fn test_function_call() -> bool {
+  let ast = parser.parse("fn f() \{ println(\"hello\") \}")
+  if is_parse_error(ast) { show_err(ast, "test_function_call")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "ExprStmt", "test_function_call") { ret false }
+  let call = stmt["expr"]
+  if !assert_tag(call, "Call", "test_function_call call") { ret false }
+  let func_node = call["func"]
+  if !assert_tag(func_node, "Ident", "test_function_call func") { ret false }
+  if func_node["name"] != "println" { ret false }
+  if len(call["args"]) != 1 { ret false }
+  ret true
+}
+
+fn test_if_else() -> bool {
+  let src = "fn f() \{ if x > 0 \{ ret 1 \} else \{ ret 0 \} \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_if_else")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "If", "test_if_else") { ret false }
+  let cond = stmt["cond"]
+  if !assert_tag(cond, "BinOp", "test_if_else cond") { ret false }
+  if cond["op"] != ">" { ret false }
+  ret true
+}
+
+fn test_match() -> bool {
+  let src = "fn f() \{\n  match x \{\n    1 => \{ ret \"one\" \}\n    _ => \{ ret \"other\" \}\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_match")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "Match", "test_match") { ret false }
+  let arms = stmt["arms"]
+  if len(arms) != 2 { ret false }
+  let arm1 = arms[0]
+  if !assert_tag(arm1, "MatchArm", "test_match arm1") { ret false }
+  let pat = arm1["pattern"]
+  if !assert_tag(pat, "PatLiteral", "test_match pat1") { ret false }
+  let arm2 = arms[1]
+  let pat2 = arm2["pattern"]
+  if !assert_tag(pat2, "PatWildcard", "test_match pat2") { ret false }
+  ret true
+}
+
+fn test_for_loop() -> bool {
+  let src = "fn f() \{\n  for i in items \{\n    println(to_str(i))\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_for_loop")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "For", "test_for_loop") { ret false }
+  if stmt["var"] != "i" { ret false }
+  ret true
+}
+
+fn test_while_loop() -> bool {
+  let src = "fn f() \{\n  while x > 0 \{\n    x = x - 1\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_while_loop")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "While", "test_while_loop") { ret false }
+  ret true
+}
+
+fn test_lambda() -> bool {
+  let src = "fn f() \{\n  let add = fn(a, b) => a + b\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_lambda")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "Let", "test_lambda let") { ret false }
+  let val = stmt["value"]
+  if !assert_tag(val, "Lambda", "test_lambda lambda") { ret false }
+  if len(val["params"]) != 2 { ret false }
+  ret true
+}
+
+fn test_array_literal() -> bool {
+  let src = "fn f() \{ let a = [1, 2, 3] \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_array_literal")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  let val = stmt["value"]
+  if !assert_tag(val, "Array", "test_array_literal") { ret false }
+  if len(val["elems"]) != 3 { ret false }
+  ret true
+}
+
+fn test_map_literal() -> bool {
+  let src = "fn f() \{ let m = #\{\"a\": 1, \"b\": 2\} \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_map_literal")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  let val = stmt["value"]
+  if !assert_tag(val, "MapLiteral", "test_map_literal") { ret false }
+  if len(val["entries"]) != 2 { ret false }
+  ret true
+}
+
+fn test_field_access() -> bool {
+  let src = "fn f() \{ let x = a.b.c \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_field_access")
+    ret false }
+  let val = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(val, "FieldAccess", "test_field_access outer") { ret false }
+  if val["field"] != "c" { ret false }
+  let inner = val["expr"]
+  if !assert_tag(inner, "FieldAccess", "test_field_access inner") { ret false }
+  if inner["field"] != "b" { ret false }
+  ret true
+}
+
+fn test_index_expr() -> bool {
+  let src = "fn f() \{ let x = a[0] \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_index_expr")
+    ret false }
+  let val = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(val, "Index", "test_index_expr") { ret false }
+  ret true
+}
+
+fn test_unary() -> bool {
+  let src = "fn f() \{ let x = -5 \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_unary")
+    ret false }
+  let val = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(val, "UnaryOp", "test_unary") { ret false }
+  if val["op"] != "-" { ret false }
+  ret true
+}
+
+fn test_use_decl() -> bool {
+  let src = "use std.compiler.lexer\nfn f() \{ \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_use_decl")
+    ret false }
+  let items = ast["items"]
+  if len(items) != 2 { ret false }
+  let use_d = items[0]
+  if !assert_tag(use_d, "UseDecl", "test_use_decl") { ret false }
+  let path = use_d["path"]
+  if len(path) != 3 { ret false }
+  if path[0] != "std" { ret false }
+  if path[1] != "compiler" { ret false }
+  if path[2] != "lexer" { ret false }
+  ret true
+}
+
+fn test_typed_params() -> bool {
+  let src = "fn add(a: i64, b: i64) -> i64 \{ ret a + b \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_typed_params")
+    ret false }
+  let func = ast["items"][0]
+  if func["name"] != "add" { ret false }
+  let params = func["params"]
+  if len(params) != 2 { ret false }
+  if params[0]["name"] != "a" { ret false }
+  let param_type = params[0]["type"]
+  if !assert_tag(param_type, "TyPrim", "test_typed_params type") { ret false }
+  if param_type["name"] != "i64" { ret false }
+  let ret_type = func["ret_type"]
+  if !assert_tag(ret_type, "TyPrim", "test_typed_params ret") { ret false }
+  if ret_type["name"] != "i64" { ret false }
+  ret true
+}
+
+fn test_effects() -> bool {
+  let src = "fn f() -> void\n  effects [io]\n\{ println(\"hi\") \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_effects")
+    ret false }
+  let func = ast["items"][0]
+  let effs = func["effects"]
+  if len(effs) != 1 { ret false }
+  if effs[0] != "io" { ret false }
+  ret true
+}
+
+fn test_let_mut() -> bool {
+  let src = "fn f() \{ let mut x = 0 \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_let_mut")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "Let", "test_let_mut") { ret false }
+  if stmt["mutable"] != true { ret false }
+  if stmt["name"] != "x" { ret false }
+  ret true
+}
+
+fn test_assign() -> bool {
+  let src = "fn f() \{\n  x = 42\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_assign")
+    ret false }
+  let stmt = ast["items"][0]["body"]["stmts"][0]
+  if !assert_tag(stmt, "Assign", "test_assign") { ret false }
+  ret true
+}
+
+fn test_break_continue() -> bool {
+  let src = "fn f() \{\n  while true \{\n    break\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_break_continue")
+    ret false }
+  let wh = ast["items"][0]["body"]["stmts"][0]
+  let inner = wh["body"]["stmts"][0]
+  if !assert_tag(inner, "Break", "test_break") { ret false }
+  ret true
+}
+
+fn test_array_pattern() -> bool {
+  let src = "fn f() \{\n  match arr \{\n    [a, b, ...rest] => \{ ret a \}\n    _ => \{ ret 0 \}\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_array_pattern")
+    ret false }
+  let match_stmt = ast["items"][0]["body"]["stmts"][0]
+  let arm = match_stmt["arms"][0]
+  let pat = arm["pattern"]
+  if !assert_tag(pat, "PatArray", "test_array_pattern") { ret false }
+  let elems = pat["elems"]
+  if len(elems) != 3 { ret false }
+  if !assert_tag(elems[2], "PatRest", "test_array_pattern rest") { ret false }
+  if elems[2]["name"] != "rest" { ret false }
+  ret true
+}
+
+fn test_map_pattern() -> bool {
+  let src = "fn f() \{\n  match m \{\n    #\{\"tag\": tag, \"name\": name\} => \{ ret tag \}\n    _ => \{ ret \"\" \}\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_map_pattern")
+    ret false }
+  let arm = ast["items"][0]["body"]["stmts"][0]["arms"][0]
+  let pat = arm["pattern"]
+  if !assert_tag(pat, "PatMap", "test_map_pattern") { ret false }
+  let entries = pat["entries"]
+  if len(entries) != 2 { ret false }
+  ret true
+}
+
+fn test_guard() -> bool {
+  let src = "fn f() \{\n  match x \{\n    n if n > 0 => \{ ret n \}\n    _ => \{ ret 0 \}\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_guard")
+    ret false }
+  let arm = ast["items"][0]["body"]["stmts"][0]["arms"][0]
+  let guard = arm["guard"]
+  if !assert_tag(guard, "BinOp", "test_guard") { ret false }
+  if guard["op"] != ">" { ret false }
+  ret true
+}
+
+fn test_pipe() -> bool {
+  let src = "fn f() \{ let x = data |> map(fn(x) => x * 2) |> filter(fn(x) => x > 0) \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_pipe")
+    ret false }
+  let val = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(val, "Pipe", "test_pipe outer") { ret false }
+  let inner = val["left"]
+  if !assert_tag(inner, "Pipe", "test_pipe inner") { ret false }
+  ret true
+}
+
+fn test_spread() -> bool {
+  let src = "fn f() \{ let a = [1, ...b, 2] \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_spread")
+    ret false }
+  let arr = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(arr, "Array", "test_spread") { ret false }
+  let elems = arr["elems"]
+  if len(elems) != 3 { ret false }
+  if !assert_tag(elems[1], "Spread", "test_spread elem") { ret false }
+  ret true
+}
+
+fn test_string_interp() -> bool {
+  let src = "fn f() \{ let x = \"hello \{name\}\" \}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_string_interp")
+    ret false }
+  let val = ast["items"][0]["body"]["stmts"][0]["value"]
+  if !assert_tag(val, "Interpolation", "test_string_interp") { ret false }
+  ret true
+}
+
+fn test_type_decl() -> bool {
+  let src = "ty Color = Red | Green | Blue"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_type_decl")
+    ret false }
+  let td = ast["items"][0]
+  if !assert_tag(td, "TypeDecl", "test_type_decl") { ret false }
+  if td["name"] != "Color" { ret false }
+  let body = td["body"]
+  if !assert_tag(body, "TypeSum", "test_type_decl body") { ret false }
+  if len(body["variants"]) != 3 { ret false }
+  ret true
+}
+
+fn test_type_decl_with_fields() -> bool {
+  let src = "ty Option<T> = Some(T) | None"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_type_with_fields")
+    ret false }
+  let td = ast["items"][0]
+  if td["name"] != "Option" { ret false }
+  if len(td["params"]) != 1 { ret false }
+  if td["params"][0] != "T" { ret false }
+  let body = td["body"]
+  let variants = body["variants"]
+  if len(variants) != 2 { ret false }
+  let some = variants[0]
+  if some["name"] != "Some" { ret false }
+  if len(some["fields"]) != 1 { ret false }
+  ret true
+}
+
+fn test_constructor_pattern() -> bool {
+  let src = "fn f() \{\n  match opt \{\n    Some(x) => \{ ret x \}\n    None => \{ ret 0 \}\n  \}\n\}"
+  let ast = parser.parse(src)
+  if is_parse_error(ast) { show_err(ast, "test_constructor_pattern")
+    ret false }
+  let arm = ast["items"][0]["body"]["stmts"][0]["arms"][0]
+  let pat = arm["pattern"]
+  if !assert_tag(pat, "PatConstructor", "test_constructor_pattern") { ret false }
+  if pat["name"] != "Some" { ret false }
+  if len(pat["args"]) != 1 { ret false }
+  ret true
+}
+
+; --- Parse real source files ---
+
+fn test_parse_math_a() -> bool {
+  let src = io.read_file("examples/math.a")
+  let ast = parser.parse(src)
+  if is_parse_error(ast) {
+    show_err(ast, "test_parse_math_a")
+    ret false
+  }
+  if !assert_tag(ast, "Program", "test_parse_math_a") { ret false }
+  let items = ast["items"]
+  if len(items) != 4 {
+    println("FAIL: test_parse_math_a - expected 4 items, got " + to_str(len(items)))
+    ret false
+  }
+  if items[0]["name"] != "square" { ret false }
+  if items[1]["name"] != "add" { ret false }
+  if items[2]["name"] != "distance" { ret false }
+  if items[3]["name"] != "main" { ret false }
+  ret true
+}
+
+fn test_parse_self_lexer() -> bool {
+  let src = io.read_file("std/compiler/lexer.a")
+  let ast = parser.parse(src)
+  if is_parse_error(ast) {
+    show_err(ast, "test_parse_self_lexer")
+    ret false
+  }
+  if !assert_tag(ast, "Program", "test_parse_self_lexer") { ret false }
+  let items = ast["items"]
+  if len(items) < 10 {
+    println("FAIL: test_parse_self_lexer - expected >= 10 items, got " + to_str(len(items)))
+    ret false
+  }
+  ret true
+}
+
+fn main() -> void
+  effects [io]
+{
+  let mut pass = 0
+  let mut fail = 0
+
+  if test_int_literal() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_binop() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_function_call() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_if_else() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_match() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_for_loop() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_while_loop() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_lambda() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_array_literal() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_map_literal() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_field_access() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_index_expr() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_unary() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_use_decl() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_typed_params() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_effects() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_let_mut() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_assign() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_break_continue() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_array_pattern() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_map_pattern() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_guard() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_pipe() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_spread() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_string_interp() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_type_decl() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_type_decl_with_fields() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_constructor_pattern() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_parse_math_a() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_parse_self_lexer() { pass = pass + 1 } else { fail = fail + 1 }
+
+  println(to_str(pass) + "/" + to_str(pass + fail) + " parser tests passed")
+}

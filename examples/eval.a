@@ -1,0 +1,1036 @@
+use std.lexer
+
+; eval.a -- self-interpreter for "a", written in "a"
+;
+; usage: a run examples/eval.a -- <source_file.a>
+;
+; this program lexes, parses, and evaluates "a" source code
+; entirely within the "a" runtime. the rust compiler is just
+; the bootstrap loader.
+;
+; AST node format: arrays with string tag at index 0
+;   ["int", 42]
+;   ["str", "hello"]
+;   ["bool", true]
+;   ["ident", "x"]
+;   ["binop", "+", left, right]
+;   ["unop", "-", operand]
+;   ["call", "name", [arg1, arg2, ...]]
+;   ["mcall", "mod", "fn", [arg1, arg2, ...]]
+;   ["index", expr, idx_expr]
+;   ["field", expr, "fieldname"]
+;   ["array", [elem1, elem2, ...]]
+;   ["interp", [part1, part2, ...]]  ; string interpolation
+;   ["let", "name", value_node]
+;   ["assign", "name", value_node]
+;   ["ret", value_node]
+;   ["expr", node]
+;   ["if", cond, [then_stmts], [else_stmts]]
+;   ["while", cond, [body_stmts]]
+;   ["for", "var", iter_node, [body_stmts]]
+;   ["break"]
+;   ["continue"]
+;   ["fn", "name", [[pname1, pname2, ...]], [body_stmts]]
+;   ["program", [decl1, decl2, ...]]
+
+; ============================================================
+; PARSER: tokens -> structured AST
+; ============================================================
+
+; parser state: returns [node, new_position]
+; node is a heterogeneous array, position is an integer
+
+fn p_ok(node: [str], pos: i64) -> [str] {
+  ret [node, pos]
+}
+fn p_node(r: [str]) -> [str] { ret r[0] }
+fn p_pos(r: [str]) -> i64 { ret r[1] }
+
+; --- Expression parsing (precedence climbing) ---
+
+fn p_expr(toks: [str], p: i64) -> [str] { ret p_or(toks, p) }
+
+fn p_or(toks: [str], p: i64) -> [str] {
+  let mut r = p_and(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "PipePipe" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_and(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", "||", left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_and(toks: [str], p: i64) -> [str] {
+  let mut r = p_eq(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "AmpAmp" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_eq(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", "&&", left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_eq(toks: [str], p: i64) -> [str] {
+  let mut r = p_cmp(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "EqEq" || lexer.tk(toks, pos) == "NotEq" {
+    let op = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_cmp(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", op, left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_cmp(toks: [str], p: i64) -> [str] {
+  let mut r = p_add(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "Lt" || lexer.tk(toks, pos) == "LtEq" || lexer.tk(toks, pos) == "Gt" || lexer.tk(toks, pos) == "GtEq" {
+    let op = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_add(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", op, left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_add(toks: [str], p: i64) -> [str] {
+  let mut r = p_mul(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "Plus" || lexer.tk(toks, pos) == "Minus" {
+    let op = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_mul(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", op, left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_mul(toks: [str], p: i64) -> [str] {
+  let mut r = p_unary(toks, p)
+  let mut pos = p_pos(r)
+  let mut left = p_node(r)
+  while lexer.tk(toks, pos) == "Star" || lexer.tk(toks, pos) == "Slash" || lexer.tk(toks, pos) == "Percent" {
+    let op = lexer.tv(toks, pos)
+    pos = lexer.skip_nl(toks, pos + 1)
+    r = p_unary(toks, pos)
+    pos = p_pos(r)
+    left = ["binop", op, left, p_node(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_unary(toks: [str], p: i64) -> [str] {
+  let k = lexer.tk(toks, p)
+  if k == "Minus" {
+    let r = p_unary(toks, p + 1)
+    ret p_ok(["unop", "-", p_node(r)], p_pos(r))
+  }
+  if k == "Bang" {
+    let r = p_unary(toks, p + 1)
+    ret p_ok(["unop", "!", p_node(r)], p_pos(r))
+  }
+  ret p_postfix(toks, p)
+}
+
+fn p_postfix(toks: [str], p: i64) -> [str] {
+  let mut r = p_primary(toks, p)
+  let mut pos = p_pos(r)
+  let mut expr = p_node(r)
+  let mut cont = true
+  while cont {
+    let k = lexer.tk(toks, pos)
+    if k == "LParen" {
+      pos = lexer.skip_nl(toks, pos + 1)
+      let mut call_args = []
+      let mut first = true
+      while lexer.tk(toks, pos) != "RParen" {
+        if first { first = false } else {
+          pos = lexer.skip_nl(toks, pos + 1)
+        }
+        r = p_expr(toks, pos)
+        pos = p_pos(r)
+        call_args = push(call_args, p_node(r))
+      }
+      pos = pos + 1
+      if expr[0] == "field" {
+        let obj = expr[1]
+        let mname = expr[2]
+        if obj[0] == "ident" {
+          expr = ["mcall", obj[1], mname, call_args]
+        } else {
+          expr = ["mcall", obj, mname, call_args]
+        }
+      } else {
+        if expr[0] == "ident" {
+          expr = ["call", expr[1], call_args]
+        } else {
+          expr = ["call", expr, call_args]
+        }
+      }
+    } else {
+    if k == "Dot" {
+      pos = pos + 1
+      let fname = lexer.tv(toks, pos)
+      pos = pos + 1
+      expr = ["field", expr, fname]
+    } else {
+    if k == "LBracket" {
+      pos = lexer.skip_nl(toks, pos + 1)
+      r = p_expr(toks, pos)
+      pos = p_pos(r)
+      pos = pos + 1
+      expr = ["index", expr, p_node(r)]
+    } else {
+      cont = false
+    }}}
+  }
+  ret p_ok(expr, pos)
+}
+
+fn p_primary(toks: [str], p: i64) -> [str] {
+  let k = lexer.tk(toks, p)
+  let v = lexer.tv(toks, p)
+  if k == "Int" { ret p_ok(["int", v], p + 1) }
+  if k == "Float" { ret p_ok(["float", v], p + 1) }
+  if k == "Str" {
+    ; strip surrounding quotes from token value
+    let raw = str.slice(v, 1, len(str.chars(v)) - 1)
+    ret p_ok(["str", raw], p + 1)
+  }
+  if k == "KwTrue" { ret p_ok(["bool", "true"], p + 1) }
+  if k == "KwFalse" { ret p_ok(["bool", "false"], p + 1) }
+  if k == "Ident" { ret p_ok(["ident", v], p + 1) }
+  if k == "TyStr" { ret p_ok(["ident", "str"], p + 1) }
+  if k == "TyI64" { ret p_ok(["ident", "i64"], p + 1) }
+  if k == "TyF64" { ret p_ok(["ident", "f64"], p + 1) }
+  if k == "TyBool" { ret p_ok(["ident", "bool"], p + 1) }
+  if k == "LParen" {
+    let r = p_expr(toks, lexer.skip_nl(toks, p + 1))
+    ret p_ok(p_node(r), lexer.skip_nl(toks, p_pos(r)) + 1)
+  }
+  if k == "LBracket" {
+    let mut pos = lexer.skip_nl(toks, p + 1)
+    let mut items = []
+    let mut first = true
+    while lexer.tk(toks, pos) != "RBracket" {
+      if first { first = false } else {
+        pos = lexer.skip_nl(toks, pos + 1)
+      }
+      let r = p_expr(toks, pos)
+      pos = p_pos(r)
+      items = push(items, p_node(r))
+      pos = lexer.skip_nl(toks, pos)
+    }
+    ret p_ok(["array", items], pos + 1)
+  }
+  ret p_ok(["ident", v], p + 1)
+}
+
+; --- Statement parsing ---
+
+fn p_block(toks: [str], p: i64) -> [str] {
+  let mut pos = lexer.skip_nl(toks, p)
+  let mut stmts = []
+  while lexer.tk(toks, pos) != "RBrace" {
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "RBrace" { break }
+    let r = p_stmt(toks, pos)
+    pos = p_pos(r)
+    stmts = push(stmts, p_node(r))
+    pos = lexer.skip_nl(toks, pos)
+  }
+  ret p_ok(stmts, pos)
+}
+
+fn p_stmt(toks: [str], p: i64) -> [str] {
+  let k = lexer.tk(toks, p)
+
+  if k == "KwLet" { ret p_let(toks, p) }
+
+  if k == "KwRet" {
+    let r = p_expr(toks, p + 1)
+    ret p_ok(["ret", p_node(r)], lexer.skip_nl(toks, p_pos(r)))
+  }
+
+  if k == "KwIf" { ret p_if(toks, p) }
+
+  if k == "KwWhile" {
+    let cond_r = p_expr(toks, p + 1)
+    let mut pos = lexer.skip_nl(toks, p_pos(cond_r))
+    pos = pos + 1
+    let body_r = p_block(toks, pos)
+    pos = p_pos(body_r) + 1
+    ret p_ok(["while", p_node(cond_r), p_node(body_r)], pos)
+  }
+
+  if k == "KwFor" {
+    let var_name = lexer.tv(toks, p + 1)
+    let mut pos = p + 2
+    ; skip optional type annotation
+    if lexer.tk(toks, pos) == "Colon" {
+      pos = pos + 1
+      while lexer.tk(toks, pos) != "KwIn" { pos = pos + 1 }
+    }
+    if lexer.tk(toks, pos) == "KwIn" { pos = pos + 1 }
+    let iter_r = p_expr(toks, pos)
+    pos = lexer.skip_nl(toks, p_pos(iter_r))
+    pos = pos + 1
+    let body_r = p_block(toks, pos)
+    pos = p_pos(body_r) + 1
+    ret p_ok(["for", var_name, p_node(iter_r), p_node(body_r)], pos)
+  }
+
+  if k == "KwBreak" { ret p_ok(["break"], lexer.skip_nl(toks, p + 1)) }
+  if k == "KwContinue" { ret p_ok(["continue"], lexer.skip_nl(toks, p + 1)) }
+
+  ; expression or assignment
+  let r = p_expr(toks, p)
+  let mut pos = p_pos(r)
+  if lexer.tk(toks, pos) == "Eq" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    let val_r = p_expr(toks, pos)
+    let target = p_node(r)
+    if target[0] == "index" {
+      ret p_ok(["idx_assign", target[1], target[2], p_node(val_r)], lexer.skip_nl(toks, p_pos(val_r)))
+    }
+    ret p_ok(["assign", target[1], p_node(val_r)], lexer.skip_nl(toks, p_pos(val_r)))
+  }
+  ret p_ok(["expr", p_node(r)], lexer.skip_nl(toks, pos))
+}
+
+fn p_let(toks: [str], p: i64) -> [str] {
+  let mut pos = p + 1
+  if lexer.tk(toks, pos) == "KwMut" { pos = pos + 1 }
+  let name = lexer.tv(toks, pos)
+  pos = pos + 1
+  ; skip optional type annotation
+  if lexer.tk(toks, pos) == "Colon" {
+    pos = pos + 1
+    while lexer.tk(toks, pos) != "Eq" { pos = pos + 1 }
+  }
+  if lexer.tk(toks, pos) == "Eq" { pos = pos + 1 }
+  pos = lexer.skip_nl(toks, pos)
+  let val_r = p_expr(toks, pos)
+  ret p_ok(["let", name, p_node(val_r)], lexer.skip_nl(toks, p_pos(val_r)))
+}
+
+fn p_if(toks: [str], p: i64) -> [str] {
+  let cond_r = p_expr(toks, p + 1)
+  let mut pos = lexer.skip_nl(toks, p_pos(cond_r))
+  pos = pos + 1
+  let then_r = p_block(toks, pos)
+  pos = p_pos(then_r) + 1
+  pos = lexer.skip_nl(toks, pos)
+  if lexer.tk(toks, pos) == "KwElse" {
+    pos = lexer.skip_nl(toks, pos + 1)
+    if lexer.tk(toks, pos) == "KwIf" {
+      let else_r = p_if(toks, pos)
+      let else_stmt = p_node(else_r)
+      ret p_ok(["if", p_node(cond_r), p_node(then_r), [else_stmt]], p_pos(else_r))
+    }
+    pos = pos + 1
+    let else_r = p_block(toks, pos)
+    pos = p_pos(else_r) + 1
+    ret p_ok(["if", p_node(cond_r), p_node(then_r), p_node(else_r)], pos)
+  }
+  ret p_ok(["if", p_node(cond_r), p_node(then_r), []], pos)
+}
+
+; --- Top-level parsing ---
+
+fn p_fn_decl(toks: [str], p: i64) -> [str] {
+  let mut pos = p + 1
+  let name = lexer.tv(toks, pos)
+  pos = pos + 2
+  let mut params = []
+  while lexer.tk(toks, pos) != "RParen" {
+    if len(params) > 0 { pos = pos + 1 }
+    let pname = lexer.tv(toks, pos)
+    pos = pos + 1
+    ; skip colon and type
+    if lexer.tk(toks, pos) == "Colon" {
+      pos = pos + 1
+      while lexer.tk(toks, pos) != "Comma" && lexer.tk(toks, pos) != "RParen" {
+        pos = pos + 1
+      }
+    }
+    params = push(params, pname)
+  }
+  pos = pos + 1
+  ; skip -> return_type
+  if lexer.tk(toks, pos) == "Arrow" {
+    pos = pos + 1
+    while lexer.tk(toks, pos) != "LBrace" && lexer.tk(toks, pos) != "KwEffects" && lexer.tk(toks, pos) != "KwPre" && lexer.tk(toks, pos) != "KwPost" && lexer.tk(toks, pos) != "Newline" {
+      pos = pos + 1
+    }
+  }
+  pos = lexer.skip_nl(toks, pos)
+  ; skip effects clause
+  if lexer.tk(toks, pos) == "KwEffects" {
+    while lexer.tk(toks, pos) != "RBracket" { pos = pos + 1 }
+    pos = lexer.skip_nl(toks, pos + 1)
+  }
+  ; skip pre/post clauses
+  while lexer.tk(toks, pos) == "KwPre" || lexer.tk(toks, pos) == "KwPost" {
+    pos = pos + 1
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "LBrace" {
+      pos = pos + 1
+      let mut depth = 1
+      while depth > 0 {
+        if lexer.tk(toks, pos) == "LBrace" { depth = depth + 1 }
+        if lexer.tk(toks, pos) == "RBrace" { depth = depth - 1 }
+        if depth > 0 { pos = pos + 1 }
+      }
+      pos = lexer.skip_nl(toks, pos + 1)
+    }
+  }
+  ; parse body
+  pos = pos + 1
+  let body_r = p_block(toks, pos)
+  pos = p_pos(body_r) + 1
+  ret p_ok(["fn", name, params, p_node(body_r)], pos)
+}
+
+fn p_program(toks: [str], p: i64) -> [str] {
+  let mut pos = lexer.skip_nl(toks, p)
+  let mut decls = []
+  while lexer.tk(toks, pos) != "Eof" {
+    pos = lexer.skip_nl(toks, pos)
+    if lexer.tk(toks, pos) == "Eof" { break }
+    let k = lexer.tk(toks, pos)
+    if k == "KwFn" {
+      let r = p_fn_decl(toks, pos)
+      pos = p_pos(r)
+      decls = push(decls, p_node(r))
+    } else {
+    if k == "KwTy" {
+      ; skip type declarations
+      while lexer.tk(toks, pos) != "Newline" {
+        if lexer.tk(toks, pos) == "Eof" { break }
+        pos = pos + 1
+      }
+    } else {
+    if k == "KwUse" {
+      pos = pos + 1
+      let mut mod_parts = []
+      while lexer.tk(toks, pos) != "Newline" && lexer.tk(toks, pos) != "Eof" {
+        if lexer.tk(toks, pos) == "Ident" {
+          mod_parts = push(mod_parts, lexer.tv(toks, pos))
+        }
+        pos = pos + 1
+      }
+      if len(mod_parts) > 0 {
+        decls = push(decls, ["use", str.join(mod_parts, ".")])
+      }
+    } else {
+      pos = pos + 1
+    }}}
+    pos = lexer.skip_nl(toks, pos)
+  }
+  ret p_ok(["program", decls], pos)
+}
+
+; ============================================================
+; EVALUATOR: walk AST, execute
+; ============================================================
+
+; environment: flat array [name, value, name, value, ...]
+
+fn env_new() -> [str] { ret [] }
+
+fn env_get(env: [str], name: str) -> [str] {
+  let mut i = len(env) - 2
+  while i >= 0 {
+    if env[i] == name { ret env[i + 1] }
+    i = i - 2
+  }
+  ret "__undefined__"
+}
+
+fn env_set(env: [str], name: str, val: [str]) -> [str] {
+  ret push(push(env, name), val)
+}
+
+fn env_update(env: [str], name: str, val: [str]) -> [str] {
+  let mut i = len(env) - 2
+  while i >= 0 {
+    if env[i] == name {
+      let mut new_env = []
+      let mut j = 0
+      while j < len(env) {
+        if j == i {
+          new_env = push(new_env, name)
+          new_env = push(new_env, val)
+          j = j + 2
+        } else {
+          new_env = push(new_env, env[j])
+          j = j + 1
+        }
+      }
+      ret new_env
+    }
+    i = i - 2
+  }
+  ret push(push(env, name), val)
+}
+
+; function table: flat array [name, fn_node, name, fn_node, ...]
+fn fns_get(fns: [str], name: str) -> [str] {
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i] == name { ret fns[i + 1] }
+    i = i + 2
+  }
+  ret []
+}
+
+; sentinel values for control flow
+fn is_return(v: [str]) -> bool {
+  if type_of(v) == "array" {
+    if len(v) == 2 {
+      if v[0] == "__return__" { ret true }
+    }
+  }
+  ret false
+}
+fn return_val(v: [str]) -> [str] { ret v[1] }
+
+fn is_break(v: [str]) -> bool {
+  if type_of(v) == "str" {
+    ret v == "__break__"
+  }
+  ret false
+}
+fn is_continue(v: [str]) -> bool {
+  if type_of(v) == "str" {
+    ret v == "__continue__"
+  }
+  ret false
+}
+
+; --- Truthiness ---
+fn is_truthy(v: [str]) -> bool {
+  if type_of(v) == "bool" { ret v }
+  if type_of(v) == "int" { ret v != 0 }
+  if type_of(v) == "str" { ret v != "" }
+  if type_of(v) == "void" { ret false }
+  ret true
+}
+
+; --- String conversion ---
+fn val_str(v: [str]) -> str {
+  if type_of(v) == "int" { ret to_str(v) }
+  if type_of(v) == "float" { ret to_str(v) }
+  if type_of(v) == "str" { ret v }
+  if type_of(v) == "bool" { ret to_str(v) }
+  if type_of(v) == "array" {
+    let mut parts = []
+    for item in v {
+      parts = push(parts, val_str(item))
+    }
+    ret str.concat("[", str.concat(str.join(parts, ", "), "]"))
+  }
+  ret to_str(v)
+}
+
+; --- String interpolation ---
+fn interp_str(raw: str, env: [str], fns: [str]) -> str {
+  let lbrace = from_code(123)
+  let rbrace = from_code(125)
+  let bslash = from_code(92)
+  let dquote = from_code(34)
+  let chars = str.chars(raw)
+  let n = len(chars)
+  let mut result = ""
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == bslash && i + 1 < n {
+      let nc = chars[i + 1]
+      if nc == "n" {
+        result = str.concat(result, "\n")
+        i = i + 2
+        continue
+      }
+      if nc == "t" {
+        result = str.concat(result, "\t")
+        i = i + 2
+        continue
+      }
+      if nc == bslash {
+        result = str.concat(result, bslash)
+        i = i + 2
+        continue
+      }
+      if nc == dquote {
+        result = str.concat(result, dquote)
+        i = i + 2
+        continue
+      }
+      if nc == lbrace {
+        result = str.concat(result, lbrace)
+        i = i + 2
+        continue
+      }
+      if nc == rbrace {
+        result = str.concat(result, rbrace)
+        i = i + 2
+        continue
+      }
+      result = str.concat(result, c)
+      i = i + 1
+      continue
+    }
+    if c == lbrace {
+      let mut expr_str = ""
+      i = i + 1
+      let mut depth = 1
+      while i < n && depth > 0 {
+        if chars[i] == lbrace { depth = depth + 1 }
+        if chars[i] == rbrace {
+          depth = depth - 1
+          if depth == 0 { break }
+        }
+        expr_str = str.concat(expr_str, chars[i])
+        i = i + 1
+      }
+      i = i + 1
+      let val = eval_interp_expr(expr_str, env, fns)
+      result = str.concat(result, val_str(val))
+      continue
+    }
+    result = str.concat(result, c)
+    i = i + 1
+  }
+  ret result
+}
+
+fn eval_interp_expr(expr_str: str, env: [str], fns: [str]) -> [str] {
+  if str.contains(expr_str, "[") {
+    let idx_pos = str.find(expr_str, "[")
+    let name = str.slice(expr_str, 0, idx_pos)
+    let idx_end = str.find(expr_str, "]")
+    let idx_str = str.slice(expr_str, idx_pos + 1, idx_end)
+    let arr = env_get(env, name)
+    let idx = int(idx_str)
+    ret arr[idx]
+  }
+  if str.contains(expr_str, "(") {
+    let paren_pos = str.find(expr_str, "(")
+    let fname = str.slice(expr_str, 0, paren_pos)
+    let close_pos = str.find(expr_str, ")")
+    let arg_str = str.slice(expr_str, paren_pos + 1, close_pos)
+    let arg_val = env_get(env, str.trim(arg_str))
+    ret eval_call(fname, [arg_val], fns, env)
+  }
+  ret env_get(env, str.trim(expr_str))
+}
+
+; --- Eval expression ---
+fn eval_expr(node: [str], env: [str], fns: [str]) -> [str] {
+  let kind = node[0]
+
+  if kind == "int" { ret int(node[1]) }
+  if kind == "float" { ret float(node[1]) }
+  if kind == "str" {
+    let raw = node[1]
+    ret interp_str(raw, env, fns)
+  }
+  if kind == "bool" {
+    if node[1] == "true" { ret true }
+    ret false
+  }
+  if kind == "ident" {
+    ret env_get(env, node[1])
+  }
+
+  if kind == "array" {
+    let elems = node[1]
+    let mut result = []
+    for e in elems {
+      result = push(result, eval_expr(e, env, fns))
+    }
+    ret result
+  }
+
+  if kind == "binop" {
+    let op = node[1]
+    let left = eval_expr(node[2], env, fns)
+    let right = eval_expr(node[3], env, fns)
+    if op == "+" { ret left + right }
+    if op == "-" { ret left - right }
+    if op == "*" { ret left * right }
+    if op == "/" { ret left / right }
+    if op == "%" { ret left % right }
+    if op == "==" { ret left == right }
+    if op == "!=" { ret left != right }
+    if op == "<" { ret left < right }
+    if op == ">" { ret left > right }
+    if op == "<=" { ret left <= right }
+    if op == ">=" { ret left >= right }
+    if op == "&&" { ret left && right }
+    if op == "||" { ret left || right }
+    ret 0
+  }
+
+  if kind == "unop" {
+    let op = node[1]
+    let val = eval_expr(node[2], env, fns)
+    if op == "-" { ret 0 - val }
+    if op == "!" {
+      if val { ret false }
+      ret true
+    }
+    ret 0
+  }
+
+  if kind == "index" {
+    let arr = eval_expr(node[1], env, fns)
+    let idx = eval_expr(node[2], env, fns)
+    ret arr[idx]
+  }
+
+  if kind == "call" {
+    let fname = node[1]
+    let call_args = node[2]
+    let mut arg_vals = []
+    for a in call_args {
+      arg_vals = push(arg_vals, eval_expr(a, env, fns))
+    }
+    ret eval_call(fname, arg_vals, fns, env)
+  }
+
+  if kind == "mcall" {
+    let mod_name = node[1]
+    let fn_name = node[2]
+    let call_args = node[3]
+    let mut arg_vals = []
+    for a in call_args {
+      arg_vals = push(arg_vals, eval_expr(a, env, fns))
+    }
+    let mn = val_str(mod_name)
+    let full = str.concat(str.concat(mn, "."), fn_name)
+    ret eval_call(full, arg_vals, fns, env)
+  }
+
+  if kind == "field" {
+    let obj = eval_expr(node[1], env, fns)
+    let fname = node[2]
+    if type_of(obj) == "record" {
+      ; use the host runtime's field access by calling a helper
+      ret obj.fname
+    }
+    ret 0
+  }
+
+  ret 0
+}
+
+; --- Eval builtin/function call ---
+fn eval_call(name: str, args: [str], fns: [str], env: [str]) -> [str] {
+  ; builtins
+  if name == "println" {
+    println(val_str(args[0]))
+    ret 0
+  }
+  if name == "print" {
+    print(val_str(args[0]))
+    ret 0
+  }
+  if name == "to_str" { ret val_str(args[0]) }
+
+  ; std.lexer builtins (use host runtime for performance)
+  if name == "lexer.lex" || name == "lex" { ret lexer.lex(args[0]) }
+  if name == "lexer.tk" || name == "tk" { ret lexer.tk(args[0], args[1]) }
+  if name == "lexer.tv" || name == "tv" { ret lexer.tv(args[0], args[1]) }
+  if name == "lexer.tcount" || name == "tcount" { ret lexer.tcount(args[0]) }
+  if name == "lexer.skip_nl" || name == "skip_nl" { ret lexer.skip_nl(args[0], args[1]) }
+  if name == "len" { ret len(args[0]) }
+  if name == "push" { ret push(args[0], args[1]) }
+  if name == "int" { ret int(args[0]) }
+  if name == "float" { ret float(args[0]) }
+  if name == "type_of" { ret type_of(args[0]) }
+  if name == "sort" { ret sort(args[0]) }
+  if name == "reverse_arr" { ret reverse_arr(args[0]) }
+  if name == "contains" { ret contains(args[0], args[1]) }
+  if name == "abs" { ret abs(args[0]) }
+  if name == "sqrt" { ret sqrt(args[0]) }
+  if name == "slice" {
+    if len(args) >= 3 { ret slice(args[0], args[1], args[2]) }
+    ret slice(args[0], args[1], len(args[0]))
+  }
+
+  ; io builtins
+  if name == "io.read_file" { ret io.read_file(args[0]) }
+  if name == "args" { ret args() }
+  if name == "exit" {
+    exit(args[0])
+    ret 0
+  }
+  if name == "fail" {
+    fail(args[0])
+    ret 0
+  }
+
+  ; character builtins
+  if name == "is_alpha" { ret is_alpha(args[0]) }
+  if name == "is_digit" { ret is_digit(args[0]) }
+  if name == "is_alnum" { ret is_alnum(args[0]) }
+  if name == "char_code" { ret char_code(args[0]) }
+  if name == "from_code" { ret from_code(args[0]) }
+
+  ; string builtins
+  if name == "str.concat" { ret str.concat(args[0], args[1]) }
+  if name == "str.split" { ret str.split(args[0], args[1]) }
+  if name == "str.join" { ret str.join(args[0], args[1]) }
+  if name == "str.trim" { ret str.trim(args[0]) }
+  if name == "str.upper" { ret str.upper(args[0]) }
+  if name == "str.lower" { ret str.lower(args[0]) }
+  if name == "str.contains" { ret str.contains(args[0], args[1]) }
+  if name == "str.starts_with" { ret str.starts_with(args[0], args[1]) }
+  if name == "str.ends_with" { ret str.ends_with(args[0], args[1]) }
+  if name == "str.replace" { ret str.replace(args[0], args[1], args[2]) }
+  if name == "str.find" { ret str.find(args[0], args[1]) }
+  if name == "str.count" { ret str.count(args[0], args[1]) }
+  if name == "str.chars" { ret str.chars(args[0]) }
+  if name == "str.slice" { ret str.slice(args[0], args[1], args[2]) }
+  if name == "str.lines" { ret str.lines(args[0]) }
+
+  ; user-defined function
+  let fn_node = fns_get(fns, name)
+  if len(fn_node) > 0 {
+    let params = fn_node[2]
+    let body = fn_node[3]
+    let mut fn_env = env_new()
+    let mut i = 0
+    while i < len(params) {
+      fn_env = env_set(fn_env, params[i], args[i])
+      i = i + 1
+    }
+    let result = eval_block(body, fn_env, fns)
+    if is_return(result) { ret return_val(result) }
+    ret result
+  }
+
+  println("ERROR: undefined function: {name}")
+  ret 0
+}
+
+; --- Eval statement ---
+fn eval_stmt(stmt: [str], env: [str], fns: [str]) -> [str] {
+  let kind = stmt[0]
+
+  if kind == "let" {
+    let name = stmt[1]
+    let val = eval_expr(stmt[2], env, fns)
+    ret ["__env__", env_set(env, name, val)]
+  }
+
+  if kind == "assign" {
+    let name = stmt[1]
+    let val = eval_expr(stmt[2], env, fns)
+    ret ["__env__", env_update(env, name, val)]
+  }
+
+  if kind == "idx_assign" {
+    let arr_node = stmt[1]
+    let idx_node = stmt[2]
+    let val = eval_expr(stmt[3], env, fns)
+    let arr_name = arr_node[1]
+    let idx = eval_expr(idx_node, env, fns)
+    let arr = env_get(env, arr_name)
+    let mut new_arr = []
+    let mut j = 0
+    while j < len(arr) {
+      if j == idx {
+        new_arr = push(new_arr, val)
+      } else {
+        new_arr = push(new_arr, arr[j])
+      }
+      j = j + 1
+    }
+    ret ["__env__", env_update(env, arr_name, new_arr)]
+  }
+
+  if kind == "ret" {
+    let val = eval_expr(stmt[1], env, fns)
+    ret ["__return__", val]
+  }
+
+  if kind == "expr" {
+    eval_expr(stmt[1], env, fns)
+    ret ["__env__", env]
+  }
+
+  if kind == "if" {
+    let cond = eval_expr(stmt[1], env, fns)
+    if is_truthy(cond) {
+      ret eval_block_with_env(stmt[2], env, fns)
+    } else {
+      if len(stmt) > 3 {
+        let else_body = stmt[3]
+        if len(else_body) > 0 {
+          ret eval_block_with_env(else_body, env, fns)
+        }
+      }
+    }
+    ret ["__env__", env]
+  }
+
+  if kind == "while" {
+    let cond_node = stmt[1]
+    let body = stmt[2]
+    let mut cur_env = env
+    let mut done = false
+    while done == false {
+      let cv = eval_expr(cond_node, cur_env, fns)
+      let truthy = is_truthy(cv)
+      if truthy == false { done = true } else {
+        let r = eval_block_with_env(body, cur_env, fns)
+        if is_return(r) { ret r }
+        if is_break(r) { done = true } else {
+          if r[0] == "__env__" { cur_env = r[1] }
+        }
+      }
+    }
+    ret ["__env__", cur_env]
+  }
+
+  if kind == "for" {
+    let var_name = stmt[1]
+    let iter_val = eval_expr(stmt[2], env, fns)
+    let body = stmt[3]
+    let mut cur_env = env
+    for item in iter_val {
+      cur_env = env_set(cur_env, var_name, item)
+      let r = eval_block_with_env(body, cur_env, fns)
+      if is_return(r) { ret r }
+      if is_break(r) { break }
+      if r[0] == "__env__" { cur_env = r[1] }
+    }
+    ret ["__env__", cur_env]
+  }
+
+  if kind == "break" { ret "__break__" }
+  if kind == "continue" { ret "__continue__" }
+
+  ret ["__env__", env]
+}
+
+fn eval_block_with_env(stmts: [str], env: [str], fns: [str]) -> [str] {
+  let mut cur_env = env
+  for stmt in stmts {
+    let result = eval_stmt(stmt, cur_env, fns)
+    if is_return(result) { ret result }
+    if is_break(result) { ret result }
+    if is_continue(result) { ret result }
+    if type_of(result) == "array" {
+      if len(result) == 2 {
+        if result[0] == "__env__" {
+          cur_env = result[1]
+        }
+      }
+    }
+  }
+  ret ["__env__", cur_env]
+}
+
+fn eval_block(stmts: [str], env: [str], fns: [str]) -> [str] {
+  let r = eval_block_with_env(stmts, env, fns)
+  if is_return(r) { ret r }
+  ret 0
+}
+
+; ============================================================
+; MODULE LOADING
+; ============================================================
+
+fn load_module(mod_path: str, src_dir: str, fns: [str]) -> [str] {
+  let parts = str.split(mod_path, ".")
+  let mod_name = parts[len(parts) - 1]
+  let file_path = str.concat(str.replace(mod_path, ".", "/"), ".a")
+  let mod_src = io.read_file(file_path)
+  let mod_toks = lexer.lex(mod_src)
+  let mod_r = p_program(mod_toks, 0)
+  let mod_prog = p_node(mod_r)
+  let mod_decls = mod_prog[1]
+  let mut new_fns = fns
+  for d in mod_decls {
+    if d[0] == "fn" {
+      let namespaced = str.concat(str.concat(mod_name, "."), d[1])
+      new_fns = push(new_fns, namespaced)
+      new_fns = push(new_fns, d)
+      new_fns = push(new_fns, d[1])
+      new_fns = push(new_fns, d)
+    }
+  }
+  ret new_fns
+}
+
+; ============================================================
+; MAIN
+; ============================================================
+
+fn main() -> void effects [io] {
+  let a = args()
+  if len(a) < 1 {
+    println("usage: a run examples/eval.a -- <source_file.a>")
+    exit(1)
+  }
+
+  let file = a[0]
+  let src = io.read_file(file)
+  let toks = lexer.lex(src)
+  let r = p_program(toks, 0)
+  let program = p_node(r)
+
+  ; resolve source directory for imports
+  let file_chars = str.chars(file)
+  let mut src_dir = ""
+  let mut last_slash = -1
+  let mut ci = 0
+  while ci < len(file_chars) {
+    if file_chars[ci] == "/" { last_slash = ci }
+    ci = ci + 1
+  }
+  if last_slash >= 0 {
+    src_dir = str.slice(file, 0, last_slash + 1)
+  }
+
+  ; collect function declarations and load imports
+  let decls = program[1]
+  let mut fns = []
+  for d in decls {
+    if d[0] == "fn" {
+      fns = push(fns, d[1])
+      fns = push(fns, d)
+    }
+    if d[0] == "use" {
+      fns = load_module(d[1], src_dir, fns)
+    }
+  }
+
+  ; find and call main
+  let main_fn = fns_get(fns, "main")
+  if len(main_fn) > 0 {
+    let body = main_fn[3]
+    let env = env_new()
+    eval_block(body, env, fns)
+  } else {
+    println("ERROR: no main function found")
+  }
+}

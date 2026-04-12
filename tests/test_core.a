@@ -1,0 +1,66 @@
+use std.testing
+
+fn test_arithmetic() -> void effects [io] {
+  assert_int_eq(1 + 1, 2)
+  assert_int_eq(10 - 3, 7)
+  assert_int_eq(4 * 5, 20)
+  assert_int_eq(10 / 3, 3)
+  assert_int_eq(10 % 3, 1)
+}
+
+fn test_string_basics() -> void effects [io] {
+  assert_eq("hello" + " world", "hello world")
+  assert_int_eq(len("abc"), 3)
+  assert_int_eq(len(""), 0)
+}
+
+fn test_boolean_logic() -> void effects [io] {
+  assert_true(true && true)
+  assert_false(true && false)
+  assert_true(true || false)
+  assert_false(false || false)
+  assert_true(!false)
+  assert_false(!true)
+}
+
+fn test_comparison() -> void effects [io] {
+  assert_true(1 < 2)
+  assert_false(2 < 1)
+  assert_true(2 > 1)
+  assert_true(1 <= 1)
+  assert_true(1 >= 1)
+  assert_true(1 == 1)
+  assert_false(1 == 2)
+  assert_true(1 != 2)
+}
+
+fn test_array_operations() -> void effects [io] {
+  let arr = [1, 2, 3]
+  assert_int_eq(len(arr), 3)
+  let arr2 = push(arr, 4)
+  assert_int_eq(len(arr2), 4)
+  assert_true(contains([1, 2, 3], 2))
+  assert_false(contains([1, 2, 3], 5))
+}
+
+fn test_string_interpolation() -> void effects [io] {
+  let name = "world"
+  assert_eq("hello {name}", "hello world")
+  let n = 42
+  assert_eq("value is {n}", "value is 42")
+}
+
+fn test_type_conversions() -> void effects [io] {
+  assert_eq(to_str(42), "42")
+  assert_eq(to_str(true), "true")
+  assert_int_eq(int("123"), 123)
+}
+
+fn test_conditionals() -> void effects [io] {
+  let x = "no"
+  if true { x = "yes" }
+  assert_eq(x, "yes")
+  let y = "yes"
+  if false { y = "no" }
+  assert_eq(y, "yes")
+}

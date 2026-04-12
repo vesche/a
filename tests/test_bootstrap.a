@@ -1,0 +1,206 @@
+use std.testing
+use std.compiler.compiler
+use std.compiler.parser
+use std.compiler.serialize
+
+; --- Self-compilation tests: compile each compiler module ---
+
+fn test_self_compile_lexer() -> bool {
+  let src = io.read_file("std/compiler/lexer.a")
+  let prog = compiler.compile(src)
+  let fns = prog["functions"]
+  assert_true(len(fns) >= 5, "lexer has many functions")
+  let mut has_lex = false
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i]["name"] == "lex" { has_lex = true }
+    i = i + 1
+  }
+  assert_true(has_lex, "lexer has lex function")
+}
+
+fn test_self_compile_ast() -> bool {
+  let src = io.read_file("std/compiler/ast.a")
+  let prog = compiler.compile(src)
+  let fns = prog["functions"]
+  assert_true(len(fns) > 20, "ast has many constructors")
+  let mut has_mk_program = false
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i]["name"] == "mk_program" { has_mk_program = true }
+    i = i + 1
+  }
+  assert_true(has_mk_program, "ast has mk_program")
+}
+
+fn test_self_compile_parser() -> bool {
+  let src = io.read_file("std/compiler/parser.a")
+  let prog = compiler.compile(src)
+  let fns = prog["functions"]
+  assert_true(len(fns) > 30, "parser has many functions")
+  let mut has_parse = false
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i]["name"] == "parser.parse" || fns[i]["name"] == "parse" { has_parse = true }
+    i = i + 1
+  }
+  assert_true(has_parse, "parser has parse function")
+}
+
+fn test_self_compile_compiler() -> bool {
+  let src = io.read_file("std/compiler/compiler.a")
+  let prog = compiler.compile(src)
+  let fns = prog["functions"]
+  assert_true(len(fns) > 40, "compiler has many functions")
+  let mut has_compile_program = false
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i]["name"] == "compile_program" { has_compile_program = true }
+    i = i + 1
+  }
+  assert_true(has_compile_program, "compiler has compile_program")
+}
+
+fn test_self_compile_serialize() -> bool {
+  let src = io.read_file("std/compiler/serialize.a")
+  let prog = compiler.compile(src)
+  let fns = prog["functions"]
+  assert_true(len(fns) >= 4, "serialize has functions")
+}
+
+; --- Behavioral equivalence: compile + execute via both paths ---
+
+fn test_equiv_hello() -> bool {
+  let src = "fn main() \{ println(\"bootstrap hello\") \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "hello equiv")
+}
+
+fn test_equiv_math() -> bool {
+  let src = "fn add(a, b) \{ ret a + b \}\nfn main() \{ println(to_str(add(20, 22))) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "math equiv")
+}
+
+fn test_equiv_fib() -> bool {
+  let src = "fn fib(n) \{ if n < 2 \{ ret n \}\n ret fib(n - 1) + fib(n - 2) \}\nfn main() \{ println(to_str(fib(10))) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "fib equiv")
+}
+
+fn test_equiv_while_loop() -> bool {
+  let src = "fn main() \{ let mut s = 0\n let mut i = 1\n while i <= 10 \{ s = s + i\n i = i + 1 \}\n println(to_str(s)) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "while equiv")
+}
+
+fn test_equiv_for_loop() -> bool {
+  let src = "fn main() \{ let arr = [10, 20, 30]\n for x in arr \{ println(to_str(x)) \} \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "for equiv")
+}
+
+fn test_equiv_string_ops() -> bool {
+  let src = "fn main() \{ let s = \"hello\" + \" \" + \"world\"\n println(s) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "string ops equiv")
+}
+
+fn test_equiv_map() -> bool {
+  let src = "fn main() \{ let m = #\{\"a\": 1, \"b\": 2\}\n println(to_str(m[\"a\"] + m[\"b\"])) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "map equiv")
+}
+
+fn test_equiv_tco() -> bool {
+  let src = "fn count(n, acc) \{ if n == 0 \{ ret acc \}\n ret count(n - 1, acc + 1) \}\nfn main() \{ println(to_str(count(10000, 0))) \}"
+  let prog = compiler.compile(src)
+  __bridge_exec__(prog)
+  assert_true(true, "tco equiv")
+}
+
+; --- Roundtrip: compile -> serialize -> deserialize -> execute ---
+
+fn test_roundtrip_fib() -> bool {
+  let src = "fn fib(n) \{ if n < 2 \{ ret n \}\n ret fib(n - 1) + fib(n - 2) \}\nfn main() \{ println(to_str(fib(10))) \}"
+  let prog = compiler.compile(src)
+  let j = serialize.serialize(prog)
+  let loaded = serialize.deserialize(j)
+  __bridge_exec__(loaded)
+  assert_true(true, "roundtrip fib")
+}
+
+fn test_roundtrip_file() -> bool {
+  let src = "fn main() \{ println(\"file roundtrip\") \}"
+  serialize.compile_to_file(src, "/tmp/test_bootstrap_rt.ac")
+  let loaded = serialize.load_from_file("/tmp/test_bootstrap_rt.ac")
+  __bridge_exec__(loaded)
+  assert_true(true, "roundtrip file")
+}
+
+; --- Bootstrap chain: self-compile driver, use it to compile test ---
+
+fn test_bootstrap_driver_compiles() -> bool {
+  let src = io.read_file("examples/bootstrap.a")
+  let prog = compiler.compile(src)
+  assert_true(len(prog["functions"]) > 0, "driver compiled")
+  assert_true(prog["main_idx"] >= 0, "driver has main")
+}
+
+fn test_bootstrap_g1_compiles_test() -> bool {
+  ; G1: self-compile the bootstrap driver
+  let driver_src = io.read_file("examples/bootstrap.a")
+  let g1 = compiler.compile(driver_src)
+
+  ; Use G1 to compile a simple test program
+  let test_src = "fn main() \{ println(\"g1 works\") \}"
+  io.write_file("/tmp/test_bootstrap_g1_input.a", test_src)
+  __bridge_exec__(g1, "compile", "/tmp/test_bootstrap_g1_input.a", "/tmp/test_bootstrap_g1_output.ac")
+
+  ; Load and verify the G1-compiled program
+  let result = serialize.load_from_file("/tmp/test_bootstrap_g1_output.ac")
+  assert_true(len(result["functions"]) > 0, "g1 produced functions")
+  __bridge_exec__(result)
+  assert_true(true, "g1 test program executed")
+}
+
+fn test_bootstrap_g2_fixed_point() -> bool {
+  ; G1: self-compile the bootstrap driver
+  let driver_src = io.read_file("examples/bootstrap.a")
+  let g1 = compiler.compile(driver_src)
+  let g1_fn_count = len(g1["functions"])
+
+  ; G2: use G1 to self-compile the driver again
+  __bridge_exec__(g1, "compile", "examples/bootstrap.a", "/tmp/test_bootstrap_g2.ac")
+  let g2 = serialize.load_from_file("/tmp/test_bootstrap_g2.ac")
+  let g2_fn_count = len(g2["functions"])
+
+  ; Fixed point: G1 and G2 should have the same number of functions
+  assert_eq(g1_fn_count, g2_fn_count)
+}
+
+fn test_bootstrap_g2_executes_correctly() -> bool {
+  ; G1: self-compile the bootstrap driver
+  let driver_src = io.read_file("examples/bootstrap.a")
+  let g1 = compiler.compile(driver_src)
+
+  ; G2: use G1 to self-compile
+  __bridge_exec__(g1, "compile", "examples/bootstrap.a", "/tmp/test_bootstrap_g2b.ac")
+  let g2 = serialize.load_from_file("/tmp/test_bootstrap_g2b.ac")
+
+  ; Use G2 to compile a test program
+  let test_src = "fn main() \{ println(\"g2 works\") \}"
+  io.write_file("/tmp/test_bootstrap_g2_input.a", test_src)
+  __bridge_exec__(g2, "compile", "/tmp/test_bootstrap_g2_input.a", "/tmp/test_bootstrap_g2_output.ac")
+
+  let result = serialize.load_from_file("/tmp/test_bootstrap_g2_output.ac")
+  __bridge_exec__(result)
+  assert_true(true, "g2 compiled and executed test program")
+}

@@ -1,0 +1,20 @@
+[package]
+name = "a-lang"
+version = "0.39.0"
+edition = "2021"
+description = "A programming language by AI, for AI"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = ["language", "programming-language", "compiler", "interpreter", "ai"]
+categories = ["compilers", "command-line-utilities"]
+
+[[bin]]
+name = "a"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+ureq = "2"
+regex = "1"

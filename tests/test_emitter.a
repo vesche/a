@@ -1,0 +1,283 @@
+use std.testing
+use std.compiler.lexer
+use std.compiler.parser
+use std.compiler.ast
+use std.compiler.emitter
+use std.compiler.compiler
+use std.compiler.serialize
+
+; Helper: parse source string to AST
+fn parse_src(src) {
+  ret parser.parse(src)
+}
+
+; Helper: emit AST to source string
+fn emit_ast(ast) {
+  ret emitter.emit(ast)
+}
+
+; Helper: compile and execute source, return output
+fn compile_and_run(src) {
+  ret eval(src)
+}
+
+; --- Roundtrip: parse -> emit -> compile and verify the emitted code works ---
+
+fn test_roundtrip_hello() {
+  let src = io.read_file("examples/hello.a")
+  let ast = parse_src(src)
+  let emitted = emit_ast(ast)
+  let result = compile_and_run(emitted)
+  assert_eq(to_str(result), "void")
+}
+
+fn test_roundtrip_math() {
+  let src = io.read_file("examples/math.a")
+  let ast = parse_src(src)
+  let emitted = emit_ast(ast)
+  let result = compile_and_run(emitted)
+  assert_eq(to_str(result), "void")
+}
+
+; --- Construct ASTs programmatically and emit ---
+
+fn test_emit_simple_fn() {
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_int(42))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let prog = ast.mk_program([f])
+  let src = emit_ast(prog)
+  assert_true(str.contains(src, "fn main()"), "should contain fn main()")
+  assert_true(str.contains(src, "ret 42"), "should contain ret 42")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "42")
+}
+
+fn test_emit_fn_with_params() {
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_binop("+", ast.mk_ident("a"), ast.mk_ident("b")))
+  ])
+  let f = ast.mk_fn_decl("add", [
+    ast.mk_param("a", ast.mk_ty_infer()),
+    ast.mk_param("b", ast.mk_ty_infer())
+  ], ast.mk_ty_infer(), [], false, false, body)
+  let main_body = ast.mk_block([
+    ast.mk_return(ast.mk_call(ast.mk_ident("add"), [ast.mk_int(10), ast.mk_int(32)]))
+  ])
+  let main_fn = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, main_body)
+  let prog = ast.mk_program([f, main_fn])
+  let src = emit_ast(prog)
+  assert_true(str.contains(src, "fn add(a, b)"), "should contain fn add(a, b)")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "42")
+}
+
+fn test_emit_let_and_assign() {
+  let body = ast.mk_block([
+    ast.mk_let(false, "x", ast.mk_ty_infer(), ast.mk_int(10)),
+    ast.mk_return(ast.mk_ident("x"))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "let x = 10"), "should contain let x = 10")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "10")
+}
+
+fn test_emit_if_else() {
+  let then_blk = ast.mk_block([ast.mk_return(ast.mk_int(1))])
+  let else_blk = ast.mk_block([ast.mk_return(ast.mk_int(2))])
+  let if_stmt = ast.mk_if_stmt(
+    ast.mk_binop(">", ast.mk_int(5), ast.mk_int(3)),
+    then_blk,
+    ast.mk_else_block(else_blk)
+  )
+  let body = ast.mk_block([if_stmt])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "if"), "should contain if")
+  assert_true(str.contains(src, "else"), "should contain else")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "1")
+}
+
+fn test_emit_while_loop() {
+  let body = ast.mk_block([
+    ast.mk_let(false, "i", ast.mk_ty_infer(), ast.mk_int(0)),
+    ast.mk_while_stmt(
+      ast.mk_binop("<", ast.mk_ident("i"), ast.mk_int(5)),
+      ast.mk_block([
+        ast.mk_assign(ast.mk_ident("i"), ast.mk_binop("+", ast.mk_ident("i"), ast.mk_int(1)))
+      ])
+    ),
+    ast.mk_return(ast.mk_ident("i"))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "while"), "should contain while")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "5")
+}
+
+fn test_emit_for_loop() {
+  let body = ast.mk_block([
+    ast.mk_let(false, "sum", ast.mk_ty_infer(), ast.mk_int(0)),
+    ast.mk_for_stmt("x", ast.mk_ty_infer(),
+      ast.mk_array([ast.mk_int(1), ast.mk_int(2), ast.mk_int(3)]),
+      ast.mk_block([
+        ast.mk_assign(ast.mk_ident("sum"), ast.mk_binop("+", ast.mk_ident("sum"), ast.mk_ident("x")))
+      ])
+    ),
+    ast.mk_return(ast.mk_ident("sum"))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "for x in"), "should contain for x in")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "6")
+}
+
+fn test_emit_array() {
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_array([ast.mk_int(1), ast.mk_int(2), ast.mk_int(3)]))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "[1, 2, 3]"), "should contain [1, 2, 3]")
+}
+
+fn test_emit_map_literal() {
+  let entry = ast.mk_map_entry(ast.mk_string("a"), ast.mk_int(1))
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_map_literal([entry]))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  let hash_brace = "#" + from_code(123)
+  assert_true(str.contains(src, hash_brace), "should contain hash-brace map")
+}
+
+fn test_emit_string_literal() {
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_string("hello world"))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "hello world"), "should contain hello world")
+}
+
+fn test_emit_call_expr() {
+  let body = ast.mk_block([
+    ast.mk_expr_stmt(ast.mk_call(ast.mk_ident("println"), [ast.mk_int(42)]))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "println(42)"), "should contain println(42)")
+}
+
+fn test_emit_field_access() {
+  let expr = ast.mk_field_access(ast.mk_ident("obj"), "name")
+  let body = ast.mk_block([ast.mk_return(expr)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "obj.name"), "should contain obj.name")
+}
+
+fn test_emit_index_expr() {
+  let expr = ast.mk_index(ast.mk_ident("arr"), ast.mk_int(0))
+  let body = ast.mk_block([ast.mk_return(expr)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "arr[0]"), "should contain arr[0]")
+}
+
+fn test_emit_pipe() {
+  let expr = ast.mk_pipe(ast.mk_int(5), ast.mk_ident("to_str"))
+  let body = ast.mk_block([ast.mk_return(expr)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "|>"), "should contain |>")
+}
+
+fn test_emit_lambda() {
+  let lam = ast.mk_lambda(
+    [ast.mk_param("x", ast.mk_ty_infer())],
+    ast.mk_binop("*", ast.mk_ident("x"), ast.mk_int(2))
+  )
+  let body = ast.mk_block([ast.mk_return(lam)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "fn(x) =>"), "should contain fn(x) =>")
+}
+
+fn test_emit_use_decl() {
+  let u = ast.mk_use_decl(["std", "math"])
+  let prog = ast.mk_program([u])
+  let src = emit_ast(prog)
+  assert_true(str.contains(src, "use std.math"), "should contain use std.math")
+}
+
+fn test_emit_break_continue() {
+  let body = ast.mk_block([
+    ast.mk_while_stmt(
+      ast.mk_bool_lit(true),
+      ast.mk_block([ast.mk_break()])
+    ),
+    ast.mk_return(ast.mk_int(1))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "break"), "should contain break")
+  let result = compile_and_run(src)
+  assert_eq(to_str(result), "1")
+}
+
+fn test_emit_match() {
+  let arms = [
+    ast.mk_match_arm(ast.mk_pat_literal(1), false, ast.mk_string("one")),
+    ast.mk_match_arm(ast.mk_pat_wildcard(), false, ast.mk_string("other"))
+  ]
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_match_expr(ast.mk_int(1), arms))
+  ])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "match"), "should contain match")
+}
+
+fn test_emit_unary() {
+  let expr = ast.mk_unary("-", ast.mk_int(5))
+  let body = ast.mk_block([ast.mk_return(expr)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "-5"), "should contain -5")
+}
+
+fn test_emit_typed_param() {
+  let body = ast.mk_block([ast.mk_return(ast.mk_ident("x"))])
+  let f = ast.mk_fn_decl("id", [
+    ast.mk_param("x", ast.mk_ty_prim("i64"))
+  ], ast.mk_ty_prim("i64"), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "x: i64"), "should contain x: i64")
+  assert_true(str.contains(src, "-> i64"), "should contain -> i64")
+}
+
+fn test_emit_spread() {
+  let expr = ast.mk_array([ast.mk_spread(ast.mk_ident("xs")), ast.mk_int(4)])
+  let body = ast.mk_block([ast.mk_return(expr)])
+  let f = ast.mk_fn_decl("main", [], ast.mk_ty_infer(), [], false, false, body)
+  let src = emit_ast(ast.mk_program([f]))
+  assert_true(str.contains(src, "...xs"), "should contain ...xs")
+}
+
+; --- Roundtrip: parse real file -> emit -> eval the emitted code ---
+
+fn test_roundtrip_fibonacci() {
+  let src = io.read_file("examples/fibonacci.a")
+  let ast = parse_src(src)
+  let emitted = emit_ast(ast)
+  let result = compile_and_run(emitted)
+  assert_eq(to_str(result), "void")
+}

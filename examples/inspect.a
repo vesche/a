@@ -1,0 +1,449 @@
+use std.lexer
+use std.strings
+use std.cli
+
+ty DirEntry = {name: str, is_dir: bool}
+
+fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+  let entries: [DirEntry] = fs.ls(dir)
+  let mut out = []
+  for e in entries {
+    let path = str.concat(str.concat(dir, "/"), e.name)
+    if e.is_dir {
+      if str.starts_with(e.name, ".") == false {
+        for f in collect_files(path, ext) {
+          out = push(out, f)
+        }
+      }
+    } else {
+      if str.ends_with(e.name, ext) {
+        out = push(out, path)
+      }
+    }
+  }
+  ret out
+}
+
+fn find_body_start(toks: [str], fn_start: i64) -> i64 effects [pure] {
+  let n = tcount(toks)
+  let i = fn_start
+  while i < n {
+    let k = tk(toks, i)
+    if k == "KwPre" || k == "KwPost" || k == "KwWhere" {
+      let depth = 0
+      i = i + 1
+      while i < n {
+        if tk(toks, i) == "LBrace" {
+          depth = depth + 1
+        }
+        if tk(toks, i) == "RBrace" {
+          depth = depth - 1
+          if depth == 0 {
+            i = i + 1
+            break
+          }
+        }
+        i = i + 1
+      }
+      continue
+    }
+    if k == "LBrace" {
+      ret i
+    }
+    i = i + 1
+  }
+  ret n
+}
+
+fn find_fn_end(toks: [str], start: i64) -> i64 effects [pure] {
+  let n = tcount(toks)
+  let body = find_body_start(toks, start)
+  if body >= n { ret n }
+  let depth = 0
+  let i = body
+  while i < n {
+    let k = tk(toks, i)
+    if k == "LBrace" {
+      depth = depth + 1
+    }
+    if k == "RBrace" {
+      depth = depth - 1
+      if depth == 0 { ret i }
+    }
+    i = i + 1
+  }
+  ret n
+}
+
+fn extract_signature(toks: [str], start: i64) -> str effects [pure] {
+  let n = tcount(toks)
+  let parts: [str] = []
+  let i = start
+  while i < n {
+    let k = tk(toks, i)
+    if k == "LBrace" { break }
+    if k == "KwFn" {
+      i = i + 1
+      continue
+    }
+    if k == "KwEffects" || k == "KwPre" || k == "KwPost" || k == "KwWhere" {
+      break
+    }
+    if k != "Newline" {
+      parts = push(parts, tv(toks, i))
+    }
+    i = i + 1
+  }
+  ret str.join(parts, " ")
+}
+
+fn extract_functions(toks: [str]) -> [[str]] effects [pure] {
+  let n = tcount(toks)
+  let fns: [[str]] = []
+  let i = 0
+  while i < n {
+    if tk(toks, i) == "KwFn" {
+      let name_idx = i + 1
+      if name_idx < n {
+        let name = tv(toks, name_idx)
+        let sig = extract_signature(toks, i)
+        let fn_end = find_fn_end(toks, i)
+        fns = push(fns, [name, sig, to_str(i), to_str(fn_end)])
+        i = fn_end + 1
+        continue
+      }
+    }
+    i = i + 1
+  }
+  ret fns
+}
+
+fn extract_calls(toks: [str], start: i64, end_pos: i64) -> [str] effects [pure] {
+  let calls: [str] = []
+  let n = end_pos
+  let i = start
+  while i < n {
+    if tk(toks, i) == "LBrace" {
+      i = i + 1
+      break
+    }
+    i = i + 1
+  }
+  while i < n - 1 {
+    let k = tk(toks, i)
+    let next_k = tk(toks, i + 1)
+    if k == "Ident" && next_k == "LParen" {
+      let name = tv(toks, i)
+      if !contains(calls, name) {
+        calls = push(calls, name)
+      }
+    }
+    if k == "Ident" && next_k == "Dot" {
+      if i + 3 < n {
+        if tk(toks, i + 2) == "Ident" && tk(toks, i + 3) == "LParen" {
+          let full = str.concat(str.concat(tv(toks, i), "."), tv(toks, i + 2))
+          if !contains(calls, full) {
+            calls = push(calls, full)
+          }
+          i = i + 3
+          continue
+        }
+      }
+    }
+    i = i + 1
+  }
+  ret calls
+}
+
+fn count_complexity(toks: [str], start: i64, end_pos: i64) -> [i64] effects [pure] {
+  let branches = 0
+  let loops = 0
+  let returns = 0
+  let i = start
+  while i < end_pos {
+    let k = tk(toks, i)
+    if k == "KwIf" || k == "KwMatch" { branches = branches + 1 }
+    if k == "KwFor" || k == "KwWhile" { loops = loops + 1 }
+    if k == "KwRet" { returns = returns + 1 }
+    i = i + 1
+  }
+  ret [branches, loops, returns]
+}
+
+fn extract_imports(toks: [str]) -> [str] effects [pure] {
+  let n = tcount(toks)
+  let imports: [str] = []
+  let i = 0
+  while i < n {
+    if tk(toks, i) == "KwUse" {
+      let parts: [str] = []
+      i = i + 1
+      while i < n {
+        let k = tk(toks, i)
+        if k == "Newline" || k == "EOF" { break }
+        if k == "Ident" { parts = push(parts, tv(toks, i)) }
+        i = i + 1
+      }
+      if len(parts) > 0 {
+        imports = push(imports, str.join(parts, "."))
+      }
+      continue
+    }
+    i = i + 1
+  }
+  ret imports
+}
+
+fn is_builtin_or_std(name: str) -> bool effects [pure] {
+  if str.contains(name, ".") { ret true }
+  let builtins = ["println", "print", "eprintln", "to_str", "len", "push",
+    "sort", "reverse_arr", "contains", "slice", "type_of", "int", "float",
+    "sqrt", "abs", "is_ok", "is_err", "unwrap", "unwrap_or", "expect",
+    "args", "exit", "is_alpha", "is_digit", "is_alnum", "char_code",
+    "from_code", "Ok", "Err"]
+  ret contains(builtins, name)
+}
+
+fn analyze_file(path: str, json_mode: bool) -> [i64] effects [io] {
+  let src = io.read_file(path)
+  let toks = lexer.lex(src)
+  let fns = extract_functions(toks)
+  let imports = extract_imports(toks)
+  let line_count = len(str.lines(src))
+
+  let all_fn_names: [str] = []
+  for f in fns { all_fn_names = push(all_fn_names, f[0]) }
+
+  let all_calls: [[str]] = []
+  let all_metrics: [[i64]] = []
+  for f in fns {
+    let start = int(f[2])
+    let end_pos = int(f[3])
+    let calls = extract_calls(toks, start, end_pos)
+    all_calls = push(all_calls, calls)
+    let metrics = count_complexity(toks, start, end_pos)
+    all_metrics = push(all_metrics, metrics)
+  }
+
+  let called_fns: [str] = []
+  for calls in all_calls {
+    for c in calls {
+      if !contains(called_fns, c) {
+        called_fns = push(called_fns, c)
+      }
+    }
+  }
+
+  let dead: [str] = []
+  for name in all_fn_names {
+    if name != "main" && !contains(called_fns, name) {
+      dead = push(dead, name)
+    }
+  }
+
+  if json_mode {
+    print_json(path, fns, all_calls, all_metrics, imports, dead, line_count)
+  } else {
+    print_report(path, fns, all_calls, all_metrics, imports, dead, line_count)
+  }
+
+  ret [line_count, len(fns), len(dead), len(imports)]
+}
+
+fn print_report(path: str, fns: [[str]], all_calls: [[str]], all_metrics: [[i64]], imports: [str], dead: [str], line_count: i64) -> void effects [io] {
+  let short = str.replace(path, "./", "")
+  println(cli.bold(cli.cyan(short)) + cli.dim(" ({line_count} lines)"))
+
+  if len(imports) > 0 {
+    let imp_str = str.join(imports, ", ")
+    println("  " + cli.dim("imports: ") + imp_str)
+  }
+
+  println("")
+  let i = 0
+  for f in fns {
+    let name = f[0]
+    let sig = f[1]
+    let calls = all_calls[i]
+    let metrics = all_metrics[i]
+    let branches = metrics[0]
+    let loops = metrics[1]
+
+    let complexity_tag = ""
+    let total = branches + loops
+    if total == 0 {
+      complexity_tag = cli.green("simple")
+    } else {
+      if total <= 3 {
+        complexity_tag = cli.yellow("moderate")
+      } else {
+        complexity_tag = cli.red("complex")
+      }
+    }
+
+    let dead_tag = ""
+    if contains(dead, name) {
+      dead_tag = " " + cli.bold(cli.red("UNUSED"))
+    }
+
+    println("  " + cli.bold(name) + cli.dim(" " + sig) + dead_tag)
+
+    let detail_parts: [str] = []
+    if branches > 0 {
+      detail_parts = push(detail_parts, "{branches} branches")
+    }
+    if loops > 0 {
+      detail_parts = push(detail_parts, "{loops} loops")
+    }
+    if len(detail_parts) > 0 {
+      let detail = str.join(detail_parts, ", ")
+      println("    " + complexity_tag + cli.dim(" ({detail})"))
+    }
+
+    if len(calls) > 0 {
+      let interesting: [str] = []
+      for c in calls {
+        if !is_builtin_or_std(c) {
+          interesting = push(interesting, c)
+        }
+      }
+      if len(interesting) > 0 {
+        let call_str = str.join(interesting, ", ")
+        println("    " + cli.dim("calls: ") + call_str)
+      }
+    }
+    i = i + 1
+  }
+  println("")
+}
+
+fn quote(s: str) -> str effects [pure] {
+  let qt = "\""
+  ret str.concat(str.concat(qt, s), qt)
+}
+
+fn json_arr(items: [str]) -> str effects [pure] {
+  let sep = ", "
+  ret str.concat("[", str.concat(str.join(items, sep), "]"))
+}
+
+fn print_json(path: str, fns: [[str]], all_calls: [[str]], all_metrics: [[i64]], imports: [str], dead: [str], line_count: i64) -> void effects [io] {
+  let short = str.replace(path, "./", "")
+  let k_file = quote("file")
+  let k_lines = quote("lines")
+  let k_imports = quote("imports")
+  let k_functions = quote("functions")
+  let k_name = quote("name")
+  let k_branches = quote("branches")
+  let k_loops = quote("loops")
+  let k_returns = quote("returns")
+  let k_calls = quote("calls")
+  let k_dead = quote("dead")
+  let k_dead_code = quote("dead_code")
+  let v_file = quote(short)
+
+  println("\{")
+  println("  {k_file}: {v_file},")
+  println("  {k_lines}: {line_count},")
+
+  let imp_q: [str] = []
+  for imp in imports {
+    imp_q = push(imp_q, quote(imp))
+  }
+  println("  {k_imports}: {json_arr(imp_q)},")
+
+  println("  {k_functions}: [")
+  let i = 0
+  for f in fns {
+    let name = f[0]
+    let calls = all_calls[i]
+    let metrics = all_metrics[i]
+    let comma = ","
+    if i == len(fns) - 1 {
+      comma = ""
+    }
+
+    let calls_q: [str] = []
+    for c in calls {
+      calls_q = push(calls_q, quote(c))
+    }
+    let is_dead = contains(dead, name) && name != "main"
+    let v_name = quote(name)
+    println("    \{")
+    println("      {k_name}: {v_name},")
+    println("      {k_branches}: {metrics[0]},")
+    println("      {k_loops}: {metrics[1]},")
+    println("      {k_returns}: {metrics[2]},")
+    println("      {k_calls}: {json_arr(calls_q)},")
+    println("      {k_dead}: {to_str(is_dead)}")
+    println("    \}{comma}")
+    i = i + 1
+  }
+  println("  ],")
+
+  let dead_q: [str] = []
+  for d in dead {
+    dead_q = push(dead_q, quote(d))
+  }
+  println("  {k_dead_code}: {json_arr(dead_q)}")
+  println("\}")
+}
+
+fn main() -> void effects [io] {
+  let a = args()
+  if len(a) < 1 {
+    println(cli.bold("inspect.a") + " -- code intelligence for 'a' source files")
+    println("")
+    println("usage: a run examples/inspect.a [options] <path>")
+    println("")
+    println("  path       file or directory to analyze")
+    println("  --json     output as JSON (default: colored terminal)")
+    println("  --all      show all calls including builtins")
+    exit(1)
+  }
+
+  let mut json_mode = false
+  let mut target = ""
+
+  for arg in a {
+    if arg == "--json" {
+      json_mode = true
+    } else {
+      target = arg
+    }
+  }
+
+  if target == "" {
+    target = "."
+  }
+
+  let mut files: [str] = []
+  if str.ends_with(target, ".a") {
+    files = [target]
+  } else {
+    files = sort(collect_files(target, ".a"))
+  }
+
+  let mut total_lines = 0
+  let mut total_fns = 0
+  let mut total_dead = 0
+  let mut total_imports = 0
+
+  for f in files {
+    let stats = analyze_file(f, json_mode)
+    total_lines = total_lines + stats[0]
+    total_fns = total_fns + stats[1]
+    total_dead = total_dead + stats[2]
+    total_imports = total_imports + stats[3]
+  }
+
+  if !json_mode {
+    if len(files) > 1 {
+      println(cli.bold("summary"))
+      println("  {len(files)} files, {total_lines} lines, {total_fns} functions")
+      if total_dead > 0 {
+        println("  " + cli.red("{total_dead} unused functions"))
+      }
+    }
+  }
+}

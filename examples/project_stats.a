@@ -1,0 +1,199 @@
+use std.math
+use std.strings
+
+; project_stats.a -- analyze an "a" codebase
+; usage: a run examples/project_stats.a
+; scans the current project for .a files and produces a report
+
+ty DirEntry = {name: str, is_dir: bool}
+
+fn ends_with_a(name: str) -> bool {
+  ret str.ends_with(name, ".a")
+}
+
+fn collect_a_files(dir: str) -> [str] effects [io] {
+  let entries: [DirEntry] = fs.ls(dir)
+  let mut files: [str] = []
+  for e: DirEntry in entries {
+    let path: str = str.concat(str.concat(dir, "/"), e.name)
+    if e.is_dir {
+      let sub: [str] = collect_a_files(path)
+      for f: str in sub {
+        files = push(files, f)
+      }
+    } else {
+      if ends_with_a(e.name) {
+        files = push(files, path)
+      }
+    }
+  }
+  ret files
+}
+
+fn count_lines(src: str) -> i64 {
+  ret len(str.lines(src))
+}
+
+fn count_functions(src: str) -> i64 {
+  let lines: [str] = str.lines(src)
+  let mut count: i64 = 0
+  for line: str in lines {
+    let trimmed: str = str.trim(line)
+    if str.starts_with(trimmed, "fn ") {
+      count = count + 1
+    }
+  }
+  ret count
+}
+
+fn count_types(src: str) -> i64 {
+  let lines: [str] = str.lines(src)
+  let mut count: i64 = 0
+  for line: str in lines {
+    let trimmed: str = str.trim(line)
+    if str.starts_with(trimmed, "ty ") {
+      count = count + 1
+    }
+  }
+  ret count
+}
+
+fn count_imports(src: str) -> i64 {
+  let lines: [str] = str.lines(src)
+  let mut count: i64 = 0
+  for line: str in lines {
+    let trimmed: str = str.trim(line)
+    if str.starts_with(trimmed, "use ") {
+      count = count + 1
+    }
+  }
+  ret count
+}
+
+fn count_comments(src: str) -> i64 {
+  let lines: [str] = str.lines(src)
+  let mut count: i64 = 0
+  for line: str in lines {
+    let trimmed: str = str.trim(line)
+    if str.starts_with(trimmed, ";") {
+      count = count + 1
+    }
+  }
+  ret count
+}
+
+fn count_blank(src: str) -> i64 {
+  let lines: [str] = str.lines(src)
+  let mut count: i64 = 0
+  for line: str in lines {
+    if str.trim(line) == "" {
+      count = count + 1
+    }
+  }
+  ret count
+}
+
+fn bar(n: i64, total: i64) -> str {
+  let width: i64 = 40
+  let mut filled: i64 = 0
+  if total > 0 {
+    filled = (n * width) / total
+  }
+  let mut out: str = ""
+  let mut i: i64 = 0
+  while i < width {
+    if i < filled {
+      out = str.concat(out, "#")
+    } else {
+      out = str.concat(out, ".")
+    }
+    i = i + 1
+  }
+  ret out
+}
+
+fn main() -> void effects [io] {
+  let cwd: str = fs.cwd()
+  println("=== a project stats ===")
+  println("")
+  println("scanning: {cwd}")
+  println("")
+
+  let files: [str] = collect_a_files(".")
+
+  let mut total_lines: i64 = 0
+  let mut total_fns: i64 = 0
+  let mut total_types: i64 = 0
+  let mut total_imports: i64 = 0
+  let mut total_comments: i64 = 0
+  let mut total_blank: i64 = 0
+  let mut total_code: i64 = 0
+  let mut file_count: i64 = 0
+
+  let mut results: [str] = []
+
+  for path: str in sort(files) {
+    let result: Result<str, str> = try {
+      io.read_file(path)?
+    }
+    if is_ok(result) {
+      let src: str = unwrap(result)
+      let lines: i64 = count_lines(src)
+      let fns: i64 = count_functions(src)
+      let types: i64 = count_types(src)
+      let imports: i64 = count_imports(src)
+      let comments: i64 = count_comments(src)
+      let blank: i64 = count_blank(src)
+      let code: i64 = lines - comments - blank
+
+      total_lines = total_lines + lines
+      total_fns = total_fns + fns
+      total_types = total_types + types
+      total_imports = total_imports + imports
+      total_comments = total_comments + comments
+      total_blank = total_blank + blank
+      total_code = total_code + code
+      file_count = file_count + 1
+
+      let short: str = str.replace(path, "./", "")
+      let sp: str = " "
+      let s_short: str = strings.pad_right(short, 35, sp)
+      let s_lines: str = strings.pad_left(to_str(lines), 5, sp)
+      let s_fns: str = strings.pad_left(to_str(fns), 3, sp)
+      let s_types: str = strings.pad_left(to_str(types), 3, sp)
+      results = push(results, "{s_short} {s_lines} lines  {s_fns} fn  {s_types} ty")
+    }
+  }
+
+  println("  files          {file_count}")
+  println("  total lines    {total_lines}")
+  println("  code lines     {total_code}")
+  println("  comments       {total_comments}")
+  println("  blank lines    {total_blank}")
+  println("  functions      {total_fns}")
+  println("  types          {total_types}")
+  println("  imports        {total_imports}")
+  println("")
+
+  if total_lines > 0 {
+    let code_pct: i64 = (total_code * 100) / total_lines
+    let comment_pct: i64 = (total_comments * 100) / total_lines
+    let blank_pct: i64 = (total_blank * 100) / total_lines
+    let b_code: str = bar(total_code, total_lines)
+    let b_comment: str = bar(total_comments, total_lines)
+    let b_blank: str = bar(total_blank, total_lines)
+    println("  composition:")
+    println("    code     {b_code} {code_pct}%")
+    println("    comments {b_comment} {comment_pct}%")
+    println("    blank    {b_blank} {blank_pct}%")
+    println("")
+  }
+
+  println("--- per file ---")
+  println("")
+  for r: str in results {
+    println("  {r}")
+  }
+  println("")
+  println("=== done ===")
+}

@@ -1,0 +1,145 @@
+use std.strings
+use std.cli
+
+; todo_scan.a -- find TODO, FIXME, HACK, NOTE annotations in a codebase
+; usage: a run examples/todo_scan.a [directory] [extension]
+
+ty DirEntry = {name: str, is_dir: bool}
+
+fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+  let entries: [DirEntry] = fs.ls(dir)
+  let mut out = []
+  for e in entries {
+    let path = str.concat(str.concat(dir, "/"), e.name)
+    if e.is_dir {
+      if str.starts_with(e.name, ".") == false {
+        for f in collect_files(path, ext) {
+          out = push(out, f)
+        }
+      }
+    } else {
+      if str.ends_with(e.name, ext) {
+        out = push(out, path)
+      }
+    }
+  }
+  ret out
+}
+
+fn tag_color(tag: str) -> str {
+  if tag == "FIXME" {
+    ret cli.bold(cli.red("FIXME"))
+  }
+  if tag == "HACK" {
+    ret cli.bold(cli.magenta("HACK"))
+  }
+  if tag == "TODO" {
+    ret cli.bold(cli.yellow("TODO"))
+  }
+  if tag == "NOTE" {
+    ret cli.bold(cli.blue("NOTE"))
+  }
+  ret cli.bold(tag)
+}
+
+fn find_tag(line: str) -> str {
+  if str.find(line, "FIXME") >= 0 { ret "FIXME" }
+  if str.find(line, "HACK") >= 0 { ret "HACK" }
+  if str.find(line, "TODO") >= 0 { ret "TODO" }
+  if str.find(line, "NOTE") >= 0 { ret "NOTE" }
+  ret ""
+}
+
+fn scan_file(path: str) -> [str] effects [io] {
+  let result = try { io.read_file(path)? }
+  let mut hits = []
+  if is_ok(result) == false {
+    ret hits
+  }
+  let src = unwrap(result)
+  let lines = str.lines(src)
+  let mut line_num = 1
+  for line in lines {
+    let tag = find_tag(line)
+    if tag != "" {
+      let short = str.replace(path, "./", "")
+      let sp = " "
+      let num_str = strings.pad_left(to_str(line_num), 4, sp)
+      let trimmed = str.trim(line)
+      ; strip leading comment marker
+      let text = trimmed
+      if str.starts_with(trimmed, ";") {
+        text = str.trim(str.slice(trimmed, 1, len(str.chars(trimmed))))
+      }
+      let sep = cli.dim(":")
+      hits = push(hits, "{cli.green(short)}{sep}{cli.yellow(num_str)}  {tag_color(tag)} {cli.dim(text)}")
+    }
+    line_num = line_num + 1
+  }
+  ret hits
+}
+
+fn main() -> void effects [io] {
+  let a = args()
+  let mut dir = "."
+  let mut ext = ".a"
+  if len(a) >= 1 {
+    dir = a[0]
+  }
+  if len(a) >= 2 {
+    ext = a[1]
+  }
+
+  println(cli.bold("=== annotation scan ==="))
+  println("")
+
+  let files = sort(collect_files(dir, ext))
+  let mut total = 0
+  let mut todos = 0
+  let mut fixmes = 0
+  let mut hacks = 0
+  let mut notes = 0
+
+  for f in files {
+    let hits = scan_file(f)
+    for h in hits {
+      println("  {h}")
+      total = total + 1
+    }
+  }
+
+  ; count by category (scan again for counts -- simple approach)
+  for f in files {
+    let result = try { io.read_file(f)? }
+    if is_ok(result) {
+      let src = unwrap(result)
+      todos = todos + str.count(src, "TODO")
+      fixmes = fixmes + str.count(src, "FIXME")
+      hacks = hacks + str.count(src, "HACK")
+      notes = notes + str.count(src, "NOTE")
+    }
+  }
+
+  println("")
+  println(cli.bold("summary:"))
+  let f_tag = tag_color("FIXME")
+  let h_tag = tag_color("HACK")
+  let t_tag = tag_color("TODO")
+  let n_tag = tag_color("NOTE")
+  let d_total = cli.dim("total")
+  if fixmes > 0 {
+    println("  {f_tag}  {fixmes}")
+  }
+  if hacks > 0 {
+    println("  {h_tag}   {hacks}")
+  }
+  if todos > 0 {
+    println("  {t_tag}   {todos}")
+  }
+  if notes > 0 {
+    println("  {n_tag}   {notes}")
+  }
+  println("  {d_total}   {total}")
+  println("")
+  println(cli.dim("scanned {len(files)} files"))
+}

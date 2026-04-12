@@ -1,0 +1,33 @@
+use std.compiler.compiler
+use std.compiler.parser
+
+fn serialize(prog) {
+  let wrapped = #{"version": 1, "functions": prog["functions"], "main_idx": prog["main_idx"]}
+  ret json.stringify(wrapped)
+}
+
+fn serialize_pretty(prog) {
+  let wrapped = #{"version": 1, "functions": prog["functions"], "main_idx": prog["main_idx"]}
+  ret json.pretty(wrapped)
+}
+
+fn deserialize(s) {
+  ret json.parse(s)
+}
+
+fn compile_to_file(src, path) {
+  let prog = compiler.compile(src)
+  let j = serialize(prog)
+  io.write_file(path, j)
+  ret prog
+}
+
+fn load_from_file(path) {
+  let j = io.read_file(path)
+  ret deserialize(j)
+}
+
+fn compile_file_to_file(src_path, out_path) {
+  let src = io.read_file(src_path)
+  ret compile_to_file(src, out_path)
+}

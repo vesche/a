@@ -1,0 +1,220 @@
+use std.compiler.lexer
+
+fn test_basic_tokens() -> bool {
+  let toks = lexer.lex("let x = 42")
+  if lexer.tk(toks, 0) != "KwLet" { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "x" { ret false }
+  if lexer.tk(toks, 2) != "Eq" { ret false }
+  if lexer.tk(toks, 3) != "Int" { ret false }
+  if lexer.tv(toks, 3) != "42" { ret false }
+  if lexer.tk(toks, 4) != "Eof" { ret false }
+  ret true
+}
+
+fn test_underscore() -> bool {
+  let toks = lexer.lex("_ _foo")
+  if lexer.tk(toks, 0) != "Underscore" { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "_foo" { ret false }
+  ret true
+}
+
+fn test_dotdotdot() -> bool {
+  let toks = lexer.lex("...rest")
+  if lexer.tk(toks, 0) != "DotDotDot" { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "rest" { ret false }
+  ret true
+}
+
+fn test_dot_vs_dotdotdot() -> bool {
+  let toks = lexer.lex("a.b ...c")
+  if lexer.tk(toks, 0) != "Ident" { ret false }
+  if lexer.tk(toks, 1) != "Dot" { ret false }
+  if lexer.tk(toks, 2) != "Ident" { ret false }
+  if lexer.tk(toks, 3) != "DotDotDot" { ret false }
+  if lexer.tk(toks, 4) != "Ident" { ret false }
+  ret true
+}
+
+fn test_string_simple() -> bool {
+  let src = "\"hello\""
+  let toks = lexer.lex(src)
+  if lexer.tk(toks, 0) != "Str" { ret false }
+  if lexer.tv(toks, 0) != "hello" { ret false }
+  ret true
+}
+
+fn test_string_escapes() -> bool {
+  let src = "\"a\\nb\""
+  let toks = lexer.lex(src)
+  if lexer.tk(toks, 0) != "Str" { ret false }
+  let val = lexer.tv(toks, 0)
+  if len(str.chars(val)) != 3 { ret false }
+  ret true
+}
+
+fn test_interp_simple() -> bool {
+  let src = "\"hello \{name\}\""
+  let toks = lexer.lex(src)
+  if lexer.tk(toks, 0) != "InterpStart" { ret false }
+  if lexer.tv(toks, 0) != "hello " { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "name" { ret false }
+  if lexer.tk(toks, 2) != "InterpEnd" { ret false }
+  if lexer.tv(toks, 2) != "" { ret false }
+  ret true
+}
+
+fn test_interp_multi() -> bool {
+  let src = "\"\{a\} and \{b\}\""
+  let toks = lexer.lex(src)
+  if lexer.tk(toks, 0) != "InterpStart" { ret false }
+  if lexer.tv(toks, 0) != "" { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "a" { ret false }
+  if lexer.tk(toks, 2) != "InterpMid" { ret false }
+  if lexer.tv(toks, 2) != " and " { ret false }
+  if lexer.tk(toks, 3) != "Ident" { ret false }
+  if lexer.tv(toks, 3) != "b" { ret false }
+  if lexer.tk(toks, 4) != "InterpEnd" { ret false }
+  if lexer.tv(toks, 4) != "" { ret false }
+  ret true
+}
+
+fn test_operators() -> bool {
+  let toks = lexer.lex("-> => == != <= >= && || |>")
+  if lexer.tk(toks, 0) != "Arrow" { ret false }
+  if lexer.tk(toks, 1) != "FatArrow" { ret false }
+  if lexer.tk(toks, 2) != "EqEq" { ret false }
+  if lexer.tk(toks, 3) != "NotEq" { ret false }
+  if lexer.tk(toks, 4) != "LtEq" { ret false }
+  if lexer.tk(toks, 5) != "GtEq" { ret false }
+  if lexer.tk(toks, 6) != "AmpAmp" { ret false }
+  if lexer.tk(toks, 7) != "PipePipe" { ret false }
+  if lexer.tk(toks, 8) != "PipeArrow" { ret false }
+  ret true
+}
+
+fn test_keywords() -> bool {
+  let toks = lexer.lex("fn let mut if else match for in while break continue ret use try pub")
+  if lexer.tk(toks, 0) != "KwFn" { ret false }
+  if lexer.tk(toks, 1) != "KwLet" { ret false }
+  if lexer.tk(toks, 2) != "KwMut" { ret false }
+  if lexer.tk(toks, 3) != "KwIf" { ret false }
+  if lexer.tk(toks, 4) != "KwElse" { ret false }
+  if lexer.tk(toks, 5) != "KwMatch" { ret false }
+  if lexer.tk(toks, 6) != "KwFor" { ret false }
+  if lexer.tk(toks, 7) != "KwIn" { ret false }
+  if lexer.tk(toks, 8) != "KwWhile" { ret false }
+  if lexer.tk(toks, 9) != "KwBreak" { ret false }
+  if lexer.tk(toks, 10) != "KwContinue" { ret false }
+  if lexer.tk(toks, 11) != "KwRet" { ret false }
+  if lexer.tk(toks, 12) != "KwUse" { ret false }
+  if lexer.tk(toks, 13) != "KwTry" { ret false }
+  if lexer.tk(toks, 14) != "KwPub" { ret false }
+  ret true
+}
+
+fn test_types() -> bool {
+  let toks = lexer.lex("i64 f64 bool str void")
+  if lexer.tk(toks, 0) != "TyI64" { ret false }
+  if lexer.tk(toks, 1) != "TyF64" { ret false }
+  if lexer.tk(toks, 2) != "TyBool" { ret false }
+  if lexer.tk(toks, 3) != "TyStr" { ret false }
+  if lexer.tk(toks, 4) != "TyVoid" { ret false }
+  ret true
+}
+
+fn test_hash_map_literal() -> bool {
+  let toks = lexer.lex("#\{\"a\": 1\}")
+  if lexer.tk(toks, 0) != "Hash" { ret false }
+  if lexer.tk(toks, 1) != "LBrace" { ret false }
+  if lexer.tk(toks, 2) != "Str" { ret false }
+  if lexer.tk(toks, 3) != "Colon" { ret false }
+  if lexer.tk(toks, 4) != "Int" { ret false }
+  if lexer.tk(toks, 5) != "RBrace" { ret false }
+  ret true
+}
+
+fn test_float() -> bool {
+  let toks = lexer.lex("3.14")
+  if lexer.tk(toks, 0) != "Float" { ret false }
+  if lexer.tv(toks, 0) != "3.14" { ret false }
+  ret true
+}
+
+fn test_comments_skipped() -> bool {
+  let toks = lexer.lex("; this is a comment\nlet x = 1")
+  if lexer.tk(toks, 0) != "Newline" { ret false }
+  if lexer.tk(toks, 1) != "KwLet" { ret false }
+  ret true
+}
+
+fn test_tcount() -> bool {
+  let toks = lexer.lex("a b c")
+  if lexer.tcount(toks) != 4 { ret false }
+  ret true
+}
+
+fn test_skip_nl() -> bool {
+  let toks = lexer.lex("\n\na")
+  let i = lexer.skip_nl(toks, 0)
+  if i != 2 { ret false }
+  if lexer.tk(toks, i) != "Ident" { ret false }
+  ret true
+}
+
+fn test_ident_with_underscores() -> bool {
+  let toks = lexer.lex("my_var foo_bar_baz")
+  if lexer.tk(toks, 0) != "Ident" { ret false }
+  if lexer.tv(toks, 0) != "my_var" { ret false }
+  if lexer.tk(toks, 1) != "Ident" { ret false }
+  if lexer.tv(toks, 1) != "foo_bar_baz" { ret false }
+  ret true
+}
+
+fn main() -> void
+  effects [io]
+{
+  let mut pass = 0
+  let mut fail = 0
+
+  if test_basic_tokens() { pass = pass + 1 } else { println("FAIL: test_basic_tokens")
+    fail = fail + 1 }
+  if test_underscore() { pass = pass + 1 } else { println("FAIL: test_underscore")
+    fail = fail + 1 }
+  if test_dotdotdot() { pass = pass + 1 } else { println("FAIL: test_dotdotdot")
+    fail = fail + 1 }
+  if test_dot_vs_dotdotdot() { pass = pass + 1 } else { println("FAIL: test_dot_vs_dotdotdot")
+    fail = fail + 1 }
+  if test_string_simple() { pass = pass + 1 } else { println("FAIL: test_string_simple")
+    fail = fail + 1 }
+  if test_string_escapes() { pass = pass + 1 } else { println("FAIL: test_string_escapes")
+    fail = fail + 1 }
+  if test_interp_simple() { pass = pass + 1 } else { println("FAIL: test_interp_simple")
+    fail = fail + 1 }
+  if test_interp_multi() { pass = pass + 1 } else { println("FAIL: test_interp_multi")
+    fail = fail + 1 }
+  if test_operators() { pass = pass + 1 } else { println("FAIL: test_operators")
+    fail = fail + 1 }
+  if test_keywords() { pass = pass + 1 } else { println("FAIL: test_keywords")
+    fail = fail + 1 }
+  if test_types() { pass = pass + 1 } else { println("FAIL: test_types")
+    fail = fail + 1 }
+  if test_hash_map_literal() { pass = pass + 1 } else { println("FAIL: test_hash_map_literal")
+    fail = fail + 1 }
+  if test_float() { pass = pass + 1 } else { println("FAIL: test_float")
+    fail = fail + 1 }
+  if test_comments_skipped() { pass = pass + 1 } else { println("FAIL: test_comments_skipped")
+    fail = fail + 1 }
+  if test_tcount() { pass = pass + 1 } else { println("FAIL: test_tcount")
+    fail = fail + 1 }
+  if test_skip_nl() { pass = pass + 1 } else { println("FAIL: test_skip_nl")
+    fail = fail + 1 }
+  if test_ident_with_underscores() { pass = pass + 1 } else { println("FAIL: test_ident_with_underscores")
+    fail = fail + 1 }
+
+  println("{pass}/{pass + fail} lexer tests passed")
+}

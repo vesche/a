@@ -1,0 +1,686 @@
+use std.lexer
+
+; boot.a -- minimal self-interpreter for bootstrap proof
+; small enough that eval.a can interpret it in reasonable time
+;
+; supports: let, assign, if/else, while, for, ret, break, continue,
+;   int/str/bool/array literals, binops, unops, calls, index,
+;   string interpolation, println, to_str, len, push, int
+
+fn p_ok(n: [str], p: i64) -> [str] { ret [n, p] }
+fn p_n(r: [str]) -> [str] { ret r[0] }
+fn p_p(r: [str]) -> i64 { ret r[1] }
+
+fn p_expr(t: [str], p: i64) -> [str] { ret p_or(t, p) }
+
+fn p_or(t: [str], p: i64) -> [str] {
+  let mut r = p_and(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "PipePipe" {
+    pos = skip_nl(t, pos + 1)
+    r = p_and(t, pos)
+    pos = p_p(r)
+    left = ["bi", "||", left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_and(t: [str], p: i64) -> [str] {
+  let mut r = p_eq(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "AmpAmp" {
+    pos = skip_nl(t, pos + 1)
+    r = p_eq(t, pos)
+    pos = p_p(r)
+    left = ["bi", "&&", left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_eq(t: [str], p: i64) -> [str] {
+  let mut r = p_cmp(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "EqEq" || tk(t, pos) == "NotEq" {
+    let op = tv(t, pos)
+    pos = skip_nl(t, pos + 1)
+    r = p_cmp(t, pos)
+    pos = p_p(r)
+    left = ["bi", op, left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_cmp(t: [str], p: i64) -> [str] {
+  let mut r = p_add(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "Lt" || tk(t, pos) == "Gt" || tk(t, pos) == "LtEq" || tk(t, pos) == "GtEq" {
+    let op = tv(t, pos)
+    pos = skip_nl(t, pos + 1)
+    r = p_add(t, pos)
+    pos = p_p(r)
+    left = ["bi", op, left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_add(t: [str], p: i64) -> [str] {
+  let mut r = p_mul(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "Plus" || tk(t, pos) == "Minus" {
+    let op = tv(t, pos)
+    pos = skip_nl(t, pos + 1)
+    r = p_mul(t, pos)
+    pos = p_p(r)
+    left = ["bi", op, left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_mul(t: [str], p: i64) -> [str] {
+  let mut r = p_un(t, p)
+  let mut pos = p_p(r)
+  let mut left = p_n(r)
+  while tk(t, pos) == "Star" || tk(t, pos) == "Slash" || tk(t, pos) == "Percent" {
+    let op = tv(t, pos)
+    pos = skip_nl(t, pos + 1)
+    r = p_un(t, pos)
+    pos = p_p(r)
+    left = ["bi", op, left, p_n(r)]
+  }
+  ret p_ok(left, pos)
+}
+
+fn p_un(t: [str], p: i64) -> [str] {
+  if tk(t, p) == "Minus" {
+    let r = p_un(t, p + 1)
+    ret p_ok(["un", "-", p_n(r)], p_p(r))
+  }
+  if tk(t, p) == "Bang" {
+    let r = p_un(t, p + 1)
+    ret p_ok(["un", "!", p_n(r)], p_p(r))
+  }
+  ret p_post(t, p)
+}
+
+fn p_post(t: [str], p: i64) -> [str] {
+  let mut r = p_prim(t, p)
+  let mut pos = p_p(r)
+  let mut e = p_n(r)
+  let mut go = true
+  while go {
+    let k = tk(t, pos)
+    if k == "LParen" {
+      pos = skip_nl(t, pos + 1)
+      let mut ca = []
+      let mut first = true
+      while tk(t, pos) != "RParen" {
+        if first { first = false } else { pos = skip_nl(t, pos + 1) }
+        r = p_expr(t, pos)
+        pos = p_p(r)
+        ca = push(ca, p_n(r))
+      }
+      pos = pos + 1
+      if e[0] == "id" {
+        e = ["call", e[1], ca]
+      } else {
+        e = ["call", e, ca]
+      }
+    } else {
+    if k == "LBracket" {
+      pos = skip_nl(t, pos + 1)
+      r = p_expr(t, pos)
+      pos = p_p(r)
+      pos = pos + 1
+      e = ["idx", e, p_n(r)]
+    } else {
+    if k == "Dot" {
+      pos = pos + 1
+      let fn_name = tv(t, pos)
+      pos = pos + 1
+      if tk(t, pos) == "LParen" {
+        pos = skip_nl(t, pos + 1)
+        let mut ma = []
+        let mut first = true
+        while tk(t, pos) != "RParen" {
+          if first { first = false } else { pos = skip_nl(t, pos + 1) }
+          r = p_expr(t, pos)
+          pos = p_p(r)
+          ma = push(ma, p_n(r))
+        }
+        pos = pos + 1
+        if e[0] == "id" {
+          e = ["mc", e[1], fn_name, ma]
+        } else {
+          e = ["mc", e, fn_name, ma]
+        }
+      } else {
+        e = ["fld", e, fn_name]
+      }
+    } else {
+      go = false
+    }}}
+  }
+  ret p_ok(e, pos)
+}
+
+fn p_prim(t: [str], p: i64) -> [str] {
+  let k = tk(t, p)
+  let v = tv(t, p)
+  if k == "Int" { ret p_ok(["int", v], p + 1) }
+  if k == "Str" {
+    let raw = str.slice(v, 1, len(str.chars(v)) - 1)
+    ret p_ok(["str", raw], p + 1)
+  }
+  if k == "KwTrue" { ret p_ok(["bool", "true"], p + 1) }
+  if k == "KwFalse" { ret p_ok(["bool", "false"], p + 1) }
+  if k == "Ident" { ret p_ok(["id", v], p + 1) }
+  if k == "LParen" {
+    let r = p_expr(t, skip_nl(t, p + 1))
+    ret p_ok(p_n(r), skip_nl(t, p_p(r)) + 1)
+  }
+  if k == "LBracket" {
+    let mut pos = skip_nl(t, p + 1)
+    let mut items = []
+    let mut first = true
+    while tk(t, pos) != "RBracket" {
+      if first { first = false } else { pos = skip_nl(t, pos + 1) }
+      let r = p_expr(t, pos)
+      pos = p_p(r)
+      items = push(items, p_n(r))
+      pos = skip_nl(t, pos)
+    }
+    ret p_ok(["arr", items], pos + 1)
+  }
+  ret p_ok(["id", v], p + 1)
+}
+
+fn p_block(t: [str], p: i64) -> [str] {
+  let mut pos = skip_nl(t, p)
+  let mut ss = []
+  while tk(t, pos) != "RBrace" {
+    pos = skip_nl(t, pos)
+    if tk(t, pos) == "RBrace" { break }
+    let r = p_stmt(t, pos)
+    pos = p_p(r)
+    ss = push(ss, p_n(r))
+    pos = skip_nl(t, pos)
+  }
+  ret p_ok(ss, pos)
+}
+
+fn p_stmt(t: [str], p: i64) -> [str] {
+  let k = tk(t, p)
+  if k == "KwLet" {
+    let mut pos = p + 1
+    if tk(t, pos) == "KwMut" { pos = pos + 1 }
+    let name = tv(t, pos)
+    pos = pos + 1
+    if tk(t, pos) == "Colon" {
+      pos = pos + 1
+      while tk(t, pos) != "Eq" { pos = pos + 1 }
+    }
+    if tk(t, pos) == "Eq" { pos = pos + 1 }
+    pos = skip_nl(t, pos)
+    let vr = p_expr(t, pos)
+    ret p_ok(["let", name, p_n(vr)], skip_nl(t, p_p(vr)))
+  }
+  if k == "KwRet" {
+    let r = p_expr(t, p + 1)
+    ret p_ok(["ret", p_n(r)], skip_nl(t, p_p(r)))
+  }
+  if k == "KwIf" {
+    let cr = p_expr(t, p + 1)
+    let mut pos = skip_nl(t, p_p(cr))
+    pos = pos + 1
+    let tr = p_block(t, pos)
+    pos = p_p(tr) + 1
+    pos = skip_nl(t, pos)
+    if tk(t, pos) == "KwElse" {
+      pos = skip_nl(t, pos + 1)
+      pos = pos + 1
+      let er = p_block(t, pos)
+      pos = p_p(er) + 1
+      ret p_ok(["if", p_n(cr), p_n(tr), p_n(er)], pos)
+    }
+    ret p_ok(["if", p_n(cr), p_n(tr), []], pos)
+  }
+  if k == "KwWhile" {
+    let cr = p_expr(t, p + 1)
+    let mut pos = skip_nl(t, p_p(cr))
+    pos = pos + 1
+    let br = p_block(t, pos)
+    pos = p_p(br) + 1
+    ret p_ok(["wh", p_n(cr), p_n(br)], pos)
+  }
+  if k == "KwFor" {
+    let vname = tv(t, p + 1)
+    let mut pos = p + 2
+    if tk(t, pos) == "Colon" {
+      pos = pos + 1
+      while tk(t, pos) != "KwIn" { pos = pos + 1 }
+    }
+    if tk(t, pos) == "KwIn" { pos = pos + 1 }
+    let ir = p_expr(t, pos)
+    pos = skip_nl(t, p_p(ir))
+    pos = pos + 1
+    let br = p_block(t, pos)
+    pos = p_p(br) + 1
+    ret p_ok(["for", vname, p_n(ir), p_n(br)], pos)
+  }
+  if k == "KwBreak" { ret p_ok(["brk"], skip_nl(t, p + 1)) }
+  if k == "KwContinue" { ret p_ok(["cnt"], skip_nl(t, p + 1)) }
+  let r = p_expr(t, p)
+  let mut pos = p_p(r)
+  if tk(t, pos) == "Eq" {
+    pos = skip_nl(t, pos + 1)
+    let vr = p_expr(t, pos)
+    let tgt = p_n(r)
+    if tgt[0] == "idx" {
+      ret p_ok(["ia", tgt[1], tgt[2], p_n(vr)], skip_nl(t, p_p(vr)))
+    }
+    ret p_ok(["asgn", tgt[1], p_n(vr)], skip_nl(t, p_p(vr)))
+  }
+  ret p_ok(["ex", p_n(r)], skip_nl(t, pos))
+}
+
+fn p_fn(t: [str], p: i64) -> [str] {
+  let mut pos = p + 1
+  let name = tv(t, pos)
+  pos = pos + 2
+  let mut params = []
+  while tk(t, pos) != "RParen" {
+    if len(params) > 0 { pos = pos + 1 }
+    let pn = tv(t, pos)
+    pos = pos + 1
+    if tk(t, pos) == "Colon" {
+      pos = pos + 1
+      while tk(t, pos) != "Comma" && tk(t, pos) != "RParen" { pos = pos + 1 }
+    }
+    params = push(params, pn)
+  }
+  pos = pos + 1
+  if tk(t, pos) == "Arrow" {
+    pos = pos + 1
+    while tk(t, pos) != "LBrace" && tk(t, pos) != "KwEffects" && tk(t, pos) != "Newline" { pos = pos + 1 }
+  }
+  pos = skip_nl(t, pos)
+  if tk(t, pos) == "KwEffects" {
+    while tk(t, pos) != "RBracket" { pos = pos + 1 }
+    pos = skip_nl(t, pos + 1)
+  }
+  while tk(t, pos) == "KwPre" || tk(t, pos) == "KwPost" {
+    pos = pos + 1
+    pos = skip_nl(t, pos)
+    if tk(t, pos) == "LBrace" {
+      pos = pos + 1
+      let mut d = 1
+      while d > 0 {
+        if tk(t, pos) == "LBrace" { d = d + 1 }
+        if tk(t, pos) == "RBrace" { d = d - 1 }
+        if d > 0 { pos = pos + 1 }
+      }
+      pos = skip_nl(t, pos + 1)
+    }
+  }
+  pos = pos + 1
+  let br = p_block(t, pos)
+  pos = p_p(br) + 1
+  ret p_ok(["fn", name, params, p_n(br)], pos)
+}
+
+fn p_prog(t: [str], p: i64) -> [str] {
+  let mut pos = skip_nl(t, p)
+  let mut ds = []
+  while tk(t, pos) != "Eof" {
+    pos = skip_nl(t, pos)
+    if tk(t, pos) == "Eof" { break }
+    let k = tk(t, pos)
+    if k == "KwFn" {
+      let r = p_fn(t, pos)
+      pos = p_p(r)
+      ds = push(ds, p_n(r))
+    } else {
+      while tk(t, pos) != "Newline" && tk(t, pos) != "Eof" { pos = pos + 1 }
+    }
+    pos = skip_nl(t, pos)
+  }
+  ret p_ok(["prog", ds], pos)
+}
+
+; --- evaluator ---
+
+fn eg(env: [str], name: str) -> [str] {
+  let mut i = len(env) - 2
+  while i >= 0 {
+    if env[i] == name { ret env[i + 1] }
+    i = i - 2
+  }
+  ret "__undef__"
+}
+
+fn es(env: [str], name: str, val: [str]) -> [str] {
+  ret push(push(env, name), val)
+}
+
+fn eu(env: [str], name: str, val: [str]) -> [str] {
+  let mut i = len(env) - 2
+  while i >= 0 {
+    if env[i] == name {
+      let mut ne = []
+      let mut j = 0
+      while j < len(env) {
+        if j == i {
+          ne = push(ne, name)
+          ne = push(ne, val)
+          j = j + 2
+        } else {
+          ne = push(ne, env[j])
+          j = j + 1
+        }
+      }
+      ret ne
+    }
+    i = i - 2
+  }
+  ret push(push(env, name), val)
+}
+
+fn fg(fns: [str], name: str) -> [str] {
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i] == name { ret fns[i + 1] }
+    i = i + 2
+  }
+  ret []
+}
+
+fn vs(v: [str]) -> str {
+  if type_of(v) == "int" { ret to_str(v) }
+  if type_of(v) == "str" { ret v }
+  if type_of(v) == "bool" { ret to_str(v) }
+  if type_of(v) == "array" {
+    let mut parts = []
+    for item in v { parts = push(parts, vs(item)) }
+    ret str.concat("[", str.concat(str.join(parts, ", "), "]"))
+  }
+  ret to_str(v)
+}
+
+fn truthy(v: [str]) -> bool {
+  if type_of(v) == "bool" { ret v }
+  if type_of(v) == "int" { ret v != 0 }
+  if type_of(v) == "str" { ret v != "" }
+  ret true
+}
+
+fn ev(node: [str], env: [str], fns: [str]) -> [str] {
+  let k = node[0]
+  if k == "int" { ret int(node[1]) }
+  if k == "str" { ret node[1] }
+  if k == "bool" {
+    if node[1] == "true" { ret true }
+    ret false
+  }
+  if k == "id" { ret eg(env, node[1]) }
+  if k == "arr" {
+    let mut out = []
+    for e in node[1] { out = push(out, ev(e, env, fns)) }
+    ret out
+  }
+  if k == "bi" {
+    let op = node[1]
+    let l = ev(node[2], env, fns)
+    let r = ev(node[3], env, fns)
+    if op == "+" { ret l + r }
+    if op == "-" { ret l - r }
+    if op == "*" { ret l * r }
+    if op == "/" { ret l / r }
+    if op == "%" { ret l % r }
+    if op == "==" { ret l == r }
+    if op == "!=" { ret l != r }
+    if op == "<" { ret l < r }
+    if op == ">" { ret l > r }
+    if op == "<=" { ret l <= r }
+    if op == ">=" { ret l >= r }
+    if op == "&&" { ret l && r }
+    if op == "||" { ret l || r }
+    ret 0
+  }
+  if k == "un" {
+    let val = ev(node[2], env, fns)
+    if node[1] == "-" { ret 0 - val }
+    if node[1] == "!" {
+      if val { ret false }
+      ret true
+    }
+    ret 0
+  }
+  if k == "idx" {
+    let a = ev(node[1], env, fns)
+    let i = ev(node[2], env, fns)
+    ret a[i]
+  }
+  if k == "call" {
+    let fname = node[1]
+    let ca = node[2]
+    let mut av = []
+    for a in ca { av = push(av, ev(a, env, fns)) }
+    ret ecall(fname, av, fns, env)
+  }
+  if k == "mc" {
+    let mn = node[1]
+    let fn_name = node[2]
+    let ca = node[3]
+    let mut av = []
+    for a in ca { av = push(av, ev(a, env, fns)) }
+    let full = str.concat(str.concat(vs(mn), "."), fn_name)
+    ret ecall(full, av, fns, env)
+  }
+  if k == "fld" {
+    let obj = ev(node[1], env, fns)
+    ret obj
+  }
+  ret 0
+}
+
+fn ecall(name: str, args: [str], fns: [str], env: [str]) -> [str] {
+  if name == "println" {
+    println(vs(args[0]))
+    ret 0
+  }
+  if name == "print" {
+    print(vs(args[0]))
+    ret 0
+  }
+  if name == "to_str" { ret vs(args[0]) }
+  if name == "len" { ret len(args[0]) }
+  if name == "push" { ret push(args[0], args[1]) }
+  if name == "int" { ret int(args[0]) }
+  if name == "type_of" { ret type_of(args[0]) }
+  if name == "contains" { ret contains(args[0], args[1]) }
+  if name == "sort" { ret sort(args[0]) }
+  if name == "str.concat" { ret str.concat(args[0], args[1]) }
+  if name == "str.join" { ret str.join(args[0], args[1]) }
+  if name == "str.split" { ret str.split(args[0], args[1]) }
+  if name == "str.trim" { ret str.trim(args[0]) }
+  if name == "str.chars" { ret str.chars(args[0]) }
+  if name == "str.slice" { ret str.slice(args[0], args[1], args[2]) }
+  if name == "str.contains" { ret str.contains(args[0], args[1]) }
+  if name == "str.find" { ret str.find(args[0], args[1]) }
+  if name == "str.replace" { ret str.replace(args[0], args[1], args[2]) }
+  if name == "io.read_file" { ret io.read_file(args[0]) }
+  if name == "args" {
+    let ga = eg(env, "__args__")
+    if type_of(ga) == "array" { ret ga }
+    ret args()
+  }
+  if name == "slice" { ret slice(args[0], args[1], args[2]) }
+  if name == "exit" {
+    exit(args[0])
+    ret 0
+  }
+  if name == "lex" || name == "lexer.lex" { ret lex(args[0]) }
+  if name == "tk" || name == "lexer.tk" { ret tk(args[0], args[1]) }
+  if name == "tv" || name == "lexer.tv" { ret tv(args[0], args[1]) }
+  if name == "tcount" || name == "lexer.tcount" { ret tcount(args[0]) }
+  if name == "skip_nl" || name == "lexer.skip_nl" { ret skip_nl(args[0], args[1]) }
+
+  let fnode = fg(fns, name)
+  if len(fnode) > 0 {
+    let params = fnode[2]
+    let body = fnode[3]
+    let mut fe = []
+    let mut i = 0
+    while i < len(params) {
+      fe = es(fe, params[i], args[i])
+      i = i + 1
+    }
+    let result = eblk_env(body, fe, fns)
+    if type_of(result) == "array" {
+      if len(result) == 2 {
+        if result[0] == "__ret__" { ret result[1] }
+      }
+    }
+    ret result
+  }
+  println("ERROR: undefined: {name}")
+  ret 0
+}
+
+fn estmt(s: [str], env: [str], fns: [str]) -> [str] {
+  let k = s[0]
+  if k == "let" {
+    let val = ev(s[2], env, fns)
+    ret ["__e__", es(env, s[1], val)]
+  }
+  if k == "asgn" {
+    let val = ev(s[2], env, fns)
+    ret ["__e__", eu(env, s[1], val)]
+  }
+  if k == "ia" {
+    let an = s[1]
+    let idx = ev(s[2], env, fns)
+    let val = ev(s[3], env, fns)
+    let arr_name = an[1]
+    let arr = eg(env, arr_name)
+    let mut na = []
+    let mut j = 0
+    while j < len(arr) {
+      if j == idx { na = push(na, val) } else { na = push(na, arr[j]) }
+      j = j + 1
+    }
+    ret ["__e__", eu(env, arr_name, na)]
+  }
+  if k == "ret" {
+    let val = ev(s[1], env, fns)
+    ret ["__ret__", val]
+  }
+  if k == "ex" {
+    ev(s[1], env, fns)
+    ret ["__e__", env]
+  }
+  if k == "if" {
+    let cond = ev(s[1], env, fns)
+    if truthy(cond) {
+      ret eblk_env(s[2], env, fns)
+    } else {
+      if len(s) > 3 {
+        if len(s[3]) > 0 { ret eblk_env(s[3], env, fns) }
+      }
+    }
+    ret ["__e__", env]
+  }
+  if k == "wh" {
+    let mut ce = env
+    let mut done = false
+    while done == false {
+      let cv = ev(s[1], ce, fns)
+      if truthy(cv) == false { done = true } else {
+        let r = eblk_env(s[2], ce, fns)
+        if type_of(r) == "array" {
+          if len(r) == 2 {
+            if r[0] == "__ret__" { ret r }
+            if r[0] == "__e__" { ce = r[1] }
+          }
+        }
+        if type_of(r) == "str" {
+          if r == "__brk__" { done = true }
+        }
+      }
+    }
+    ret ["__e__", ce]
+  }
+  if k == "for" {
+    let iter = ev(s[2], env, fns)
+    let mut ce = env
+    for item in iter {
+      ce = es(ce, s[1], item)
+      let r = eblk_env(s[3], ce, fns)
+      if type_of(r) == "array" {
+        if len(r) == 2 {
+          if r[0] == "__ret__" { ret r }
+          if r[0] == "__e__" { ce = r[1] }
+        }
+      }
+      if type_of(r) == "str" {
+        if r == "__brk__" { break }
+      }
+    }
+    ret ["__e__", ce]
+  }
+  if k == "brk" { ret "__brk__" }
+  if k == "cnt" { ret "__cnt__" }
+  ret ["__e__", env]
+}
+
+fn eblk_env(stmts: [str], env: [str], fns: [str]) -> [str] {
+  let mut ce = env
+  for s in stmts {
+    let result = estmt(s, ce, fns)
+    if type_of(result) == "array" {
+      if len(result) == 2 {
+        if result[0] == "__ret__" { ret result }
+        if result[0] == "__e__" { ce = result[1] }
+      }
+    }
+    if type_of(result) == "str" {
+      if result == "__brk__" { ret result }
+      if result == "__cnt__" { ret result }
+    }
+  }
+  ret ["__e__", ce]
+}
+
+fn main() -> void effects [io] {
+  let a = args()
+  if len(a) < 1 {
+    println("usage: a run examples/boot.a -- <file.a>")
+    exit(1)
+  }
+  let file = a[0]
+  let remaining = slice(a, 1, len(a))
+  let src = io.read_file(file)
+  let toks = lex(src)
+  let r = p_prog(toks, 0)
+  let prog = p_n(r)
+  let ds = prog[1]
+  let mut fns = []
+  for d in ds {
+    if d[0] == "fn" {
+      fns = push(fns, d[1])
+      fns = push(fns, d)
+    }
+  }
+  let mf = fg(fns, "main")
+  if len(mf) > 0 {
+    let init_env = es([], "__args__", remaining)
+    eblk_env(mf[3], init_env, fns)
+  } else {
+    println("no main found")
+  }
+}

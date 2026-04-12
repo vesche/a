@@ -1,0 +1,110 @@
+use std.testing
+use std.re
+
+fn test_match_full_literal() -> void effects [io] {
+  assert_true(re.match_full("hello", "hello"))
+  assert_false(re.match_full("hello", "world"))
+  assert_false(re.match_full("hello", "hello!"))
+}
+
+fn test_match_full_dot() -> void effects [io] {
+  assert_true(re.match_full("h.llo", "hello"))
+  assert_true(re.match_full("...", "abc"))
+  assert_false(re.match_full("..", "abc"))
+}
+
+fn test_match_full_star() -> void effects [io] {
+  assert_true(re.match_full("a*", ""))
+  assert_true(re.match_full("a*", "aaa"))
+  assert_true(re.match_full("ab*c", "ac"))
+  assert_true(re.match_full("ab*c", "abbc"))
+}
+
+fn test_match_full_plus() -> void effects [io] {
+  assert_false(re.match_full("a+", ""))
+  assert_true(re.match_full("a+", "a"))
+  assert_true(re.match_full("a+", "aaa"))
+}
+
+fn test_match_full_question() -> void effects [io] {
+  assert_true(re.match_full("colou?r", "color"))
+  assert_true(re.match_full("colou?r", "colour"))
+  assert_false(re.match_full("colou?r", "colouur"))
+}
+
+fn test_test_partial() -> void effects [io] {
+  assert_true(re.test("hello", "say hello world"))
+  assert_false(re.test("xyz", "abc"))
+  assert_true(re.test("\\d+", "abc 42 def"))
+}
+
+fn test_search_basic() -> void effects [io] {
+  let m = re.search("\\d+", "abc 42 def")
+  assert_int_eq(len(m), 3)
+  assert_int_eq(int(m[0]), 4)
+  assert_int_eq(int(m[1]), 6)
+  assert_eq(m[2], "42")
+}
+
+fn test_search_no_match() -> void effects [io] {
+  let m = re.search("\\d+", "no digits here")
+  assert_int_eq(len(m), 0)
+}
+
+fn test_find_all() -> void effects [io] {
+  let matches = re.find_all("\\d+", "a1 b22 c333")
+  assert_int_eq(len(matches), 3)
+  assert_eq(matches[0][2], "1")
+  assert_eq(matches[1][2], "22")
+  assert_eq(matches[2][2], "333")
+}
+
+fn test_replace() -> void effects [io] {
+  assert_eq(re.replace("\\d+", "a1 b2 c3", "NUM"), "aNUM bNUM cNUM")
+}
+
+fn test_replace_first() -> void effects [io] {
+  assert_eq(re.replace_first("\\d+", "a1 b2 c3", "NUM"), "aNUM b2 c3")
+}
+
+fn test_split() -> void effects [io] {
+  let parts = re.split(",\\s*", "a, b,c,  d")
+  assert_int_eq(len(parts), 4)
+  assert_eq(parts[0], "a")
+  assert_eq(parts[1], "b")
+  assert_eq(parts[2], "c")
+  assert_eq(parts[3], "d")
+}
+
+fn test_char_class() -> void effects [io] {
+  assert_true(re.match_full("[abc]+", "abcba"))
+  assert_false(re.match_full("[abc]+", "abcd"))
+  assert_true(re.match_full("[a-z]+", "hello"))
+  assert_false(re.match_full("[a-z]+", "Hello"))
+}
+
+fn test_negated_class() -> void effects [io] {
+  assert_true(re.match_full("[^0-9]+", "hello"))
+  assert_false(re.match_full("[^0-9]+", "hello1"))
+}
+
+fn test_shorthand_classes() -> void effects [io] {
+  assert_true(re.match_full("\\d+", "123"))
+  assert_false(re.match_full("\\d+", "abc"))
+  assert_true(re.match_full("\\w+", "hello_42"))
+  assert_false(re.match_full("\\w+", "hello world"))
+  assert_true(re.match_full("\\s+", "  \t"))
+}
+
+fn test_alternation() -> void effects [io] {
+  assert_true(re.test("cat|dog", "I have a cat"))
+  assert_true(re.test("cat|dog", "I have a dog"))
+  assert_false(re.test("cat|dog", "I have a fish"))
+}
+
+fn test_anchors() -> void effects [io] {
+  assert_true(re.test("^hello", "hello world"))
+  assert_false(re.test("^hello", "say hello"))
+  assert_true(re.test("world$", "hello world"))
+  assert_false(re.test("world$", "world hello"))
+}

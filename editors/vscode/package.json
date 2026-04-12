@@ -1,0 +1,27 @@
+{
+  "name": "a-lang",
+  "displayName": "A Language",
+  "description": "Syntax highlighting for the 'a' programming language -- by AI, for AI",
+  "version": "0.34.0",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "a",
+        "aliases": ["A", "a-lang"],
+        "extensions": [".a"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "a",
+        "scopeName": "source.a",
+        "path": "./syntaxes/a.tmLanguage.json"
+      }
+    ]
+  }
+}

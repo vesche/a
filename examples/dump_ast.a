@@ -1,0 +1,26 @@
+use std.compiler.parser
+
+fn main() -> void
+  effects [io]
+{
+  let argv = args()
+  if len(argv) < 1 {
+    eprintln("usage: a run examples/dump_ast.a -- <file.a>")
+  } else {
+    let path = argv[0]
+    let src = io.read_file(path)
+    let ast = parser.parse(src)
+    let mut is_error = false
+    if type_of(ast) == "map" {
+      if map.has(ast, "tag") {
+        if ast["tag"] == "ParseError" {
+          eprintln("parse error: " + ast["msg"] + " at token " + to_str(ast["pos"]))
+          is_error = true
+        }
+      }
+    }
+    if !is_error {
+      println(json.pretty(ast))
+    }
+  }
+}

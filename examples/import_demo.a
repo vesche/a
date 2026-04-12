@@ -1,0 +1,56 @@
+use std.math
+use std.strings
+use std.testing
+
+fn main() -> void effects [io] {
+  println("=== Import System Demo ===")
+  println("")
+
+  ; math module
+  println("math.max(10, 20) = {to_str(math.max(10, 20))}")
+  println("math.min(10, 20) = {to_str(math.min(10, 20))}")
+  println("math.clamp(50, 0, 100) = {to_str(math.clamp(50, 0, 100))}")
+  println("math.pow(2, 10) = {to_str(math.pow(2, 10))}")
+  println("math.sum([1, 2, 3, 4, 5]) = {to_str(math.sum([1, 2, 3, 4, 5]))}")
+
+  let r: [i64] = math.range(0, 5)
+  println("math.range(0, 5) = {to_str(r)}")
+
+  println("")
+
+  ; strings module
+  println("strings.repeat(\"ab\", 3) = {strings.repeat("ab", 3)}")
+  println("strings.pad_left(\"42\", 6, \"0\") = {strings.pad_left("42", 6, "0")}")
+  println("strings.reverse(\"hello\") = {strings.reverse("hello")}")
+  println("strings.count(\"banana\", \"a\") = {to_str(strings.count("banana", "a"))}")
+  println("strings.center(\"hi\", 10, \"-\") = {strings.center("hi", 10, "-")}")
+
+  println("")
+
+  ; testing module
+  println("Running tests:")
+  let mut passed: i64 = 0
+  let mut total: i64 = 0
+
+  println("test math.max:")
+  total = total + 1
+  if testing.assert_int_eq(math.max(3, 7), 7) { passed = passed + 1 }
+
+  println("test math.pow:")
+  total = total + 1
+  if testing.assert_int_eq(math.pow(3, 3), 27) { passed = passed + 1 }
+
+  println("test strings.reverse:")
+  total = total + 1
+  if testing.assert_eq(strings.reverse("abc"), "cba") { passed = passed + 1 }
+
+  println("test strings.pad_left:")
+  total = total + 1
+  if testing.assert_eq(strings.pad_left("x", 4, "."), "...x") { passed = passed + 1 }
+
+  println("test strings.is_empty:")
+  total = total + 1
+  if testing.assert_true(strings.is_empty("")) { passed = passed + 1 }
+
+  testing.report("import_demo", passed, total)
+}

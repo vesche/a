@@ -1,0 +1,21 @@
+# Rust build artifacts
+/target/
+
+# Precompiled bytecode cache (regenerated at runtime)
+*.ac
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.iml
+
+# Environment
+.env
+.env.*

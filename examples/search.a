@@ -1,0 +1,105 @@
+use std.strings
+use std.cli
+use std.re
+
+ty DirEntry = {name: str, is_dir: bool}
+
+fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+  let entries: [DirEntry] = fs.ls(dir)
+  let mut out = []
+  for e in entries {
+    let path = str.concat(str.concat(dir, "/"), e.name)
+    if e.is_dir {
+      if str.starts_with(e.name, ".") == false {
+        for f in collect_files(path, ext) {
+          out = push(out, f)
+        }
+      }
+    } else {
+      if str.ends_with(e.name, ext) {
+        out = push(out, path)
+      }
+    }
+  }
+  ret out
+}
+
+fn highlight_match(line: str, pattern: str) -> str {
+  let m = re.search(pattern, line)
+  if len(m) == 0 {
+    ret line
+  }
+  let start = int(m[0])
+  let end_pos = int(m[1])
+  let before = str.slice(line, 0, start)
+  let matched = str.slice(line, start, end_pos)
+  let after = str.slice(line, end_pos, len(str.chars(line)))
+  ret str.concat(before, str.concat(cli.bold(cli.red(matched)), after))
+}
+
+fn search_file(path: str, pattern: str) -> i64 effects [io] {
+  let result = try { io.read_file(path)? }
+  if is_ok(result) == false {
+    ret 0
+  }
+  let src = unwrap(result)
+  let lines = str.lines(src)
+  let mut matches = 0
+  let mut line_num = 1
+  for line in lines {
+    if re.test(pattern, line) {
+      let short = str.replace(path, "./", "")
+      let sp = " "
+      let num_str = strings.pad_left(to_str(line_num), 4, sp)
+      let colored_line = highlight_match(str.trim(line), pattern)
+      let sep = cli.dim(":")
+      println("{cli.green(short)}{sep}{cli.yellow(num_str)}  {colored_line}")
+      matches = matches + 1
+    }
+    line_num = line_num + 1
+  }
+  ret matches
+}
+
+fn main() -> void effects [io] {
+  let a = args()
+  if len(a) < 1 {
+    println(cli.bold("search.a") + " -- regex search in files")
+    println("")
+    println("usage: a run examples/search.a <pattern> [dir] [ext]")
+    println("")
+    println("  pattern   regex pattern (supports . * + ? [] \\\\d \\\\w \\\\s |)")
+    println("  dir       directory to search (default: .)")
+    println("  ext       file extension filter (default: .a)")
+    exit(1)
+  }
+
+  let pattern = a[0]
+  let mut dir = "."
+  let mut ext = ".a"
+  if len(a) >= 2 {
+    dir = a[1]
+  }
+  if len(a) >= 3 {
+    ext = a[2]
+  }
+
+  let files = sort(collect_files(dir, ext))
+  let mut total_matches = 0
+  let mut files_with_matches = 0
+
+  for f in files {
+    let n = search_file(f, pattern)
+    total_matches = total_matches + n
+    if n > 0 {
+      files_with_matches = files_with_matches + 1
+    }
+  }
+
+  println("")
+  if total_matches > 0 {
+    println(cli.bold("{total_matches} matches") + " in {files_with_matches} files (searched {len(files)} files)")
+  } else {
+    println(cli.dim("no matches found") + " (searched {len(files)} files)")
+  }
+}

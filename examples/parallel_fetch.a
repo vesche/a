@@ -1,0 +1,54 @@
+; parallel_fetch.a -- Demonstrates concurrent HTTP fetching
+;
+; Usage: a run examples/parallel_fetch.a
+;
+; Fetches multiple URLs in parallel using spawn/await, then shows
+; the same thing using parallel_map for comparison.
+
+fn fetch_status(url) {
+  let resp = http.get(url)
+  ret #{"url": url, "status": resp["status"], "length": len(resp["body"])}
+}
+
+fn main() {
+  let urls = [
+    "https://httpbin.org/get",
+    "https://httpbin.org/ip",
+    "https://httpbin.org/user-agent",
+    "https://httpbin.org/headers"
+  ]
+
+  ; --- Method 1: spawn + await_all ---
+  println("=== spawn + await_all ===")
+  let handles = []
+  for url in urls {
+    handles = push(handles, spawn(fn() => fetch_status(url)))
+  }
+  let results = await_all(handles)
+  for r in results {
+    if is_ok(r) {
+      let info = unwrap(r)
+      println(info["url"] + " => " + to_str(info["status"]) + " (" + to_str(info["length"]) + " bytes)")
+    } else {
+      println("Error: " + to_str(r))
+    }
+  }
+
+  ; --- Method 2: parallel_map ---
+  println("")
+  println("=== parallel_map ===")
+  let infos = parallel_map(urls, fn(url) => fetch_status(url))
+  for info in infos {
+    println(info["url"] + " => " + to_str(info["status"]) + " (" + to_str(info["length"]) + " bytes)")
+  }
+
+  ; --- Method 3: timeout ---
+  println("")
+  println("=== timeout ===")
+  let r = timeout(3000, fn() => http.get("https://httpbin.org/delay/1"))
+  if is_ok(r) {
+    println("Completed within timeout: status " + to_str(unwrap(r)["status"]))
+  } else {
+    println("Timed out!")
+  }
+}

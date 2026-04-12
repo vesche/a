@@ -1,0 +1,46 @@
+; gen_tests.a -- Auto-generate test skeletons from any .a source file.
+; Usage: a run examples/gen_tests.a -- <file.a>
+;
+; Reads the source file, extracts function signatures, and emits a
+; test skeleton with one test_* function per non-main, non-test function.
+
+use std.meta
+use std.compiler.ast
+use std.compiler.emitter
+
+fn main() {
+  let argv = args()
+  if len(argv) < 1 {
+    println("Usage: a run examples/gen_tests.a -- <file.a>")
+    exit(1)
+  }
+  let path = argv[0]
+  let prog = meta.parse_file(path)
+  let sigs = meta.fn_signatures(prog)
+
+  ; Build test items: use declaration + one test fn per non-main, non-test function
+  let items = [ast.mk_use_decl(["std", "testing"])]
+
+  for sig in sigs {
+    let name = sig["name"]
+    if name == "main" { continue }
+    if str.starts_with(name, "test_") { continue }
+
+    ; Build a comment-like placeholder as a println statement
+    let param_str = str.join(sig["params"], ", ")
+    let desc = name + "(" + param_str + ")"
+
+    ; Generate test function with a TODO placeholder
+    let body_stmts = [
+      ast.mk_expr_stmt(
+        meta.gen_call("println", [ast.mk_string("TODO: test " + desc)])
+      )
+    ]
+    let test_fn = meta.gen_test(name, body_stmts)
+    items = push(items, test_fn)
+  }
+
+  let test_prog = ast.mk_program(items)
+  let output = meta.emit(test_prog)
+  println(output)
+}

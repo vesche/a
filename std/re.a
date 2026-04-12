@@ -1,0 +1,433 @@
+use std.strings
+
+fn is_meta(c: str) -> bool effects [pure] {
+  ret c == "." || c == "*" || c == "+" || c == "?" ||
+      c == "(" || c == ")" || c == "[" || c == "]" ||
+      c == "^" || c == "$" || c == "|" || c == "\\"
+}
+
+fn class_match(class_chars: [str], negated: bool, c: str) -> bool effects [pure] {
+  let matched = false
+  let i = 0
+  while i < len(class_chars) {
+    if i + 2 < len(class_chars) {
+      if class_chars[i + 1] == "-" {
+        let lo = char_code(class_chars[i])
+        let hi = char_code(class_chars[i + 2])
+        let cv = char_code(c)
+        if cv >= lo && cv <= hi { matched = true }
+        i = i + 3
+        continue
+      }
+    }
+    if class_chars[i] == c { matched = true }
+    i = i + 1
+  }
+  if negated { ret !matched }
+  ret matched
+}
+
+fn shorthand_match(code: str, c: str) -> bool effects [pure] {
+  if code == "d" { ret is_digit(c) }
+  if code == "D" { ret !is_digit(c) }
+  if code == "w" { ret is_alnum(c) || c == "_" }
+  if code == "W" { ret !(is_alnum(c) || c == "_") }
+  if code == "s" { ret c == " " || c == "\t" || c == "\n" || c == "\r" }
+  if code == "S" { ret !(c == " " || c == "\t" || c == "\n" || c == "\r") }
+  ret c == code
+}
+
+fn parse_pattern(pat: str) -> [[str]] effects [pure] {
+  let chars = str.chars(pat)
+  let n = len(chars)
+  let nodes: [[str]] = []
+  let i = 0
+  while i < n {
+    let c = chars[i]
+    if c == "\\" {
+      if i + 1 < n {
+        nodes = push(nodes, ["esc", chars[i + 1]])
+        i = i + 2
+        continue
+      }
+    }
+    if c == "." {
+      nodes = push(nodes, ["any"])
+      i = i + 1
+      continue
+    }
+    if c == "^" {
+      nodes = push(nodes, ["anchor_start"])
+      i = i + 1
+      continue
+    }
+    if c == "$" {
+      nodes = push(nodes, ["anchor_end"])
+      i = i + 1
+      continue
+    }
+    if c == "[" {
+      i = i + 1
+      let negated = false
+      if i < n {
+        if chars[i] == "^" {
+          negated = true
+          i = i + 1
+        }
+      }
+      let cls: [str] = []
+      while i < n {
+        if chars[i] == "]" {
+          i = i + 1
+          break
+        }
+        cls = push(cls, chars[i])
+        i = i + 1
+      }
+      if negated {
+        nodes = push(nodes, push(push(["nclass"], str.join(cls, "")), ""))
+      } else {
+        nodes = push(nodes, push(push(["class"], str.join(cls, "")), ""))
+      }
+      continue
+    }
+    if c == "|" {
+      nodes = push(nodes, ["alt"])
+      i = i + 1
+      continue
+    }
+    if c == "(" {
+      nodes = push(nodes, ["group_start"])
+      i = i + 1
+      continue
+    }
+    if c == ")" {
+      nodes = push(nodes, ["group_end"])
+      i = i + 1
+      continue
+    }
+    if c == "*" {
+      nodes = push(nodes, ["star"])
+      i = i + 1
+      continue
+    }
+    if c == "+" {
+      nodes = push(nodes, ["plus"])
+      i = i + 1
+      continue
+    }
+    if c == "?" {
+      nodes = push(nodes, ["opt"])
+      i = i + 1
+      continue
+    }
+    nodes = push(nodes, ["lit", c])
+    i = i + 1
+  }
+  ret nodes
+}
+
+fn node_matches_char(node: [str], c: str) -> bool effects [pure] {
+  let kind = node[0]
+  if kind == "lit" { ret node[1] == c }
+  if kind == "any" { ret c != "\n" }
+  if kind == "esc" { ret shorthand_match(node[1], c) }
+  if kind == "class" {
+    let cls_str = node[1]
+    let cls_chars = str.chars(cls_str)
+    ret class_match(cls_chars, false, c)
+  }
+  if kind == "nclass" {
+    let cls_str = node[1]
+    let cls_chars = str.chars(cls_str)
+    ret class_match(cls_chars, true, c)
+  }
+  ret false
+}
+
+fn is_quantifier(nodes: [[str]], idx: i64) -> str effects [pure] {
+  if idx < len(nodes) {
+    let kind = nodes[idx][0]
+    if kind == "star" { ret "star" }
+    if kind == "plus" { ret "plus" }
+    if kind == "opt" { ret "opt" }
+  }
+  ret "none"
+}
+
+fn try_match(nodes: [[str]], ni: i64, text_chars: [str], ti: i64) -> i64 effects [pure] {
+  let tlen = len(text_chars)
+  let nlen = len(nodes)
+
+  if ni >= nlen { ret ti }
+
+  let node = nodes[ni]
+  let kind = node[0]
+
+  if kind == "anchor_start" {
+    if ti != 0 { ret -1 }
+    ret try_match(nodes, ni + 1, text_chars, ti)
+  }
+  if kind == "anchor_end" {
+    if ti != tlen { ret -1 }
+    ret try_match(nodes, ni + 1, text_chars, ti)
+  }
+  if kind == "alt" {
+    ret try_match(nodes, ni + 1, text_chars, ti)
+  }
+
+  let quant = is_quantifier(nodes, ni + 1)
+  let next_ni = ni + 1
+  if quant != "none" { next_ni = ni + 2 }
+
+  if quant == "star" {
+    let pos = ti
+    let positions: [i64] = [ti]
+    while pos < tlen {
+      if node_matches_char(node, text_chars[pos]) {
+        pos = pos + 1
+        positions = push(positions, pos)
+      } else {
+        break
+      }
+    }
+    let k = len(positions) - 1
+    while k >= 0 {
+      let r = try_match(nodes, next_ni, text_chars, positions[k])
+      if r >= 0 { ret r }
+      k = k - 1
+    }
+    ret -1
+  }
+
+  if quant == "plus" {
+    let pos = ti
+    let positions: [i64] = []
+    while pos < tlen {
+      if node_matches_char(node, text_chars[pos]) {
+        pos = pos + 1
+        positions = push(positions, pos)
+      } else {
+        break
+      }
+    }
+    if len(positions) == 0 { ret -1 }
+    let k = len(positions) - 1
+    while k >= 0 {
+      let r = try_match(nodes, next_ni, text_chars, positions[k])
+      if r >= 0 { ret r }
+      k = k - 1
+    }
+    ret -1
+  }
+
+  if quant == "opt" {
+    if ti < tlen {
+      if node_matches_char(node, text_chars[ti]) {
+        let r = try_match(nodes, next_ni, text_chars, ti + 1)
+        if r >= 0 { ret r }
+      }
+    }
+    ret try_match(nodes, next_ni, text_chars, ti)
+  }
+
+  if kind == "lit" || kind == "any" || kind == "esc" || kind == "class" || kind == "nclass" {
+    if ti >= tlen { ret -1 }
+    if node_matches_char(node, text_chars[ti]) {
+      ret try_match(nodes, ni + 1, text_chars, ti + 1)
+    }
+    ret -1
+  }
+
+  ret try_match(nodes, ni + 1, text_chars, ti)
+}
+
+fn handle_alternation(nodes: [[str]], text_chars: [str], start: i64) -> i64 effects [pure] {
+  let branches: [[[str]]] = [[]]
+  let bi = 0
+  for node in nodes {
+    if node[0] == "alt" {
+      branches = push(branches, [])
+      bi = bi + 1
+    } else {
+      branches[bi] = push(branches[bi], node)
+    }
+  }
+  if len(branches) <= 1 {
+    ret try_match(nodes, 0, text_chars, start)
+  }
+  for branch in branches {
+    let r = try_match(branch, 0, text_chars, start)
+    if r >= 0 { ret r }
+  }
+  ret -1
+}
+
+fn has_alt(nodes: [[str]]) -> bool effects [pure] {
+  for node in nodes {
+    if node[0] == "alt" { ret true }
+  }
+  ret false
+}
+
+fn match_full(pattern: str, text: str) -> bool effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let has_start = false
+  let has_end = false
+  for node in nodes {
+    if node[0] == "anchor_start" { has_start = true }
+    if node[0] == "anchor_end" { has_end = true }
+  }
+  let anchored: [[str]] = []
+  if !has_start {
+    anchored = push(anchored, ["anchor_start"])
+  }
+  for node in nodes {
+    anchored = push(anchored, node)
+  }
+  if !has_end {
+    anchored = push(anchored, ["anchor_end"])
+  }
+  if has_alt(anchored) {
+    ret handle_alternation(anchored, text_chars, 0) >= 0
+  }
+  ret try_match(anchored, 0, text_chars, 0) >= 0
+}
+
+fn search(pattern: str, text: str) -> [str] effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos >= 0 {
+      let matched = str.slice(text, i, end_pos)
+      ret [to_str(i), to_str(end_pos), matched]
+    }
+    i = i + 1
+  }
+  ret []
+}
+
+fn find_all(pattern: str, text: str) -> [[str]] effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let results: [[str]] = []
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos >= 0 {
+      if end_pos > i {
+        let matched = str.slice(text, i, end_pos)
+        results = push(results, [to_str(i), to_str(end_pos), matched])
+        i = end_pos
+        continue
+      }
+    }
+    i = i + 1
+  }
+  ret results
+}
+
+fn test(pattern: str, text: str) -> bool effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos >= 0 { ret true }
+    i = i + 1
+  }
+  ret false
+}
+
+fn replace(pattern: str, text: str, replacement: str) -> str effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let result = ""
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos > i {
+      result = str.concat(result, replacement)
+      i = end_pos
+      continue
+    }
+    result = str.concat(result, text_chars[i])
+    i = i + 1
+  }
+  ret result
+}
+
+fn replace_first(pattern: str, text: str, replacement: str) -> str effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos > i {
+      let before = str.slice(text, 0, i)
+      let after = str.slice(text, end_pos, tlen)
+      ret str.concat(str.concat(before, replacement), after)
+    }
+    i = i + 1
+  }
+  ret text
+}
+
+fn split(pattern: str, text: str) -> [str] effects [pure] {
+  let nodes = parse_pattern(pattern)
+  let text_chars = str.chars(text)
+  let tlen = len(text_chars)
+  let parts: [str] = []
+  let last = 0
+  let i = 0
+  while i < tlen {
+    let end_pos = -1
+    if has_alt(nodes) {
+      end_pos = handle_alternation(nodes, text_chars, i)
+    } else {
+      end_pos = try_match(nodes, 0, text_chars, i)
+    }
+    if end_pos > i {
+      parts = push(parts, str.slice(text, last, i))
+      last = end_pos
+      i = end_pos
+      continue
+    }
+    i = i + 1
+  }
+  parts = push(parts, str.slice(text, last, tlen))
+  ret parts
+}

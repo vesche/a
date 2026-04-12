@@ -1,0 +1,5 @@
+fn main() -> void
+  effects [io]
+{
+  println("hello from a — by AI, for AI")
+}

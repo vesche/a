@@ -1,0 +1,128 @@
+use std.compiler.compiler
+use std.compiler.parser
+
+fn format_op(op) {
+  if type_of(op) == "array" {
+    let name = op[0]
+    if len(op) == 1 { ret name }
+    if len(op) == 2 { ret name + "(" + to_str(op[1]) + ")" }
+    if len(op) == 3 { ret name + "(" + to_str(op[1]) + ", " + to_str(op[2]) + ")" }
+    ret to_str(op)
+  }
+  ret to_str(op)
+}
+
+fn dump_function(f, idx) {
+  let name = f["name"]
+  let arity = len(f["params"])
+  let chunk = f["chunk"]
+  println("--- fn " + name + " (arity=" + to_str(arity) + ", idx=" + to_str(idx) + ") ---")
+
+  let consts = chunk["constants"]
+  if len(consts) > 0 {
+    println("  constants:")
+    let mut ci = 0
+    while ci < len(consts) {
+      println("    [" + to_str(ci) + "] " + to_str(consts[ci]))
+      ci = ci + 1
+    }
+  }
+
+  let strings = chunk["strings"]
+  if len(strings) > 0 {
+    println("  strings:")
+    let mut si = 0
+    while si < len(strings) {
+      println("    [" + to_str(si) + "] \"" + strings[si] + "\"")
+      si = si + 1
+    }
+  }
+
+  let code = chunk["code"]
+  println("  code (" + to_str(len(code)) + " ops):")
+  let mut oi = 0
+  while oi < len(code) {
+    println("    " + to_str(oi) + ": " + format_op(code[oi]))
+    oi = oi + 1
+  }
+  println("")
+}
+
+fn dump_program(prog) {
+  let fns = prog["functions"]
+  let main_idx = prog["main_idx"]
+  println("=== Compiled Program ===")
+  println("functions: " + to_str(len(fns)))
+  if main_idx >= 0 {
+    println("main_idx:  " + to_str(main_idx))
+  } else {
+    println("main_idx:  (none)")
+  }
+  println("")
+
+  let mut i = 0
+  while i < len(fns) {
+    dump_function(fns[i], i)
+    i = i + 1
+  }
+}
+
+fn main() -> void
+  effects [io]
+{
+  let argv = args()
+  if len(argv) < 1 {
+    eprintln("usage: a run examples/compile_and_run.a -- <file.a> [--dump] [--exec] [--json]")
+    eprintln("")
+    eprintln("  --dump   Print human-readable bytecode listing")
+    eprintln("  --json   Print bytecode as JSON")
+    eprintln("  --exec   Compile and execute via bridge")
+    eprintln("")
+    eprintln("  Default (no flags): --dump")
+  } else {
+    let path = argv[0]
+
+    let mut do_dump = false
+    let mut do_json = false
+    let mut do_exec = false
+    let mut i = 1
+    while i < len(argv) {
+      if argv[i] == "--dump" { do_dump = true }
+      if argv[i] == "--json" { do_json = true }
+      if argv[i] == "--exec" { do_exec = true }
+      i = i + 1
+    }
+    if !do_dump && !do_json && !do_exec {
+      do_dump = true
+    }
+
+    let src = io.read_file(path)
+    let ast = parser.parse(src)
+    let mut is_error = false
+    if type_of(ast) == "map" {
+      if map.has(ast, "tag") {
+        if ast["tag"] == "ParseError" {
+          eprintln("parse error: " + ast["msg"] + " at token " + to_str(ast["pos"]))
+          is_error = true
+        }
+      }
+    }
+
+    if !is_error {
+      let prog = compiler.compile_ast(ast)
+
+      if do_dump {
+        dump_program(prog)
+      }
+
+      if do_json {
+        println(json.pretty(prog))
+      }
+
+      if do_exec {
+        println("=== Executing ===")
+        __bridge_exec__(prog)
+      }
+    }
+  }
+}

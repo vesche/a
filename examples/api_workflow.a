@@ -1,0 +1,61 @@
+mod api_workflow {
+  ty HttpResp = {status: i64, body: str, headers: #{str: str}}
+
+  fn fetch_repos(username: str) -> HttpResp effects [io] {
+    let url: str = str.concat("https://api.github.com/users/", username, "/repos?per_page=5&sort=updated")
+    let headers: #{str: str} = #{"User-Agent": "a-lang/0.4", "Accept": "application/json"}
+    ret http.get(url, headers)
+  }
+
+  fn process_repos(body: str) -> void effects [io] {
+    let repos: [#{str: str}] = json.parse(body)
+    println("found {to_str(len(repos))} repos:")
+    println("")
+
+    let names: [str] = repos
+      |> map(fn(r: #{str: str}) => map.get(r, "full_name"))
+    let stars: [str] = repos
+      |> map(fn(r: #{str: str}) => to_str(map.get(r, "stargazers_count")))
+
+    let i: i64 = 0
+    for name: str in names {
+      let s: str = stars[i]
+      println("  {name} ({s} stars)")
+      i = i + 1
+    }
+
+    fs.mkdir("_output")
+    let report: #{str: str} = #{
+      "query": "octocat",
+      "count": to_str(len(repos)),
+      "repos": str.join(names, ", ")
+    }
+    io.write_file("_output/repos.json", json.pretty(report))
+    println("")
+    println("report saved to _output/repos.json")
+
+    let verify: str = io.read_file("_output/repos.json")
+    println("")
+    println("--- saved content ---")
+    println(verify)
+
+    fs.rm("_output")
+  }
+
+  fn main() -> void effects [io] {
+    println("=== a-lang API workflow ===")
+    println("")
+
+    let resp: HttpResp = fetch_repos("octocat")
+
+    if resp.status == 200 {
+      process_repos(resp.body)
+    } else {
+      println("request failed with status {to_str(resp.status)}")
+      println(resp.body)
+    }
+
+    println("")
+    println("=== done ===")
+  }
+}

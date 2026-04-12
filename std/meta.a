@@ -1,0 +1,240 @@
+; std/meta.a
+; Metaprogramming toolkit for the "a" language.
+; High-level utilities for AST walking, searching, transformation, and code generation.
+; Built on std/compiler/parser.a, emitter.a, and ast.a.
+
+use std.compiler.parser
+use std.compiler.emitter
+use std.compiler.ast
+
+; === Parsing and Emitting (convenience wrappers) ===
+
+fn parse(source) {
+  ret parser.parse(source)
+}
+
+fn parse_file(path) {
+  let source = io.read_file(path)
+  ret parser.parse(source)
+}
+
+fn emit(prog_ast) {
+  ret emitter.emit(prog_ast)
+}
+
+fn emit_to_file(prog_ast, path) {
+  let source = emitter.emit(prog_ast)
+  io.write_file(path, source)
+  ret source
+}
+
+; === AST Walking ===
+
+fn walk(node, visitor_fn) {
+  if type_of(node) == "array" {
+    for item in node {
+      walk(item, visitor_fn)
+    }
+  }
+  if type_of(node) == "map" {
+    let tag = node["tag"]
+    if type_of(tag) != "void" {
+      visitor_fn(node)
+    }
+    for [k, v] in node {
+      walk(v, visitor_fn)
+    }
+  }
+}
+
+fn collect_inner(node, pred_fn, results) {
+  if type_of(node) == "array" {
+    for item in node {
+      results = collect_inner(item, pred_fn, results)
+    }
+    ret results
+  }
+  if type_of(node) == "map" {
+    let tag = node["tag"]
+    if type_of(tag) != "void" {
+      if pred_fn(node) {
+        results = push(results, node)
+      }
+    }
+    for [k, v] in node {
+      results = collect_inner(v, pred_fn, results)
+    }
+    ret results
+  }
+  ret results
+}
+
+fn find_all(node, pred_fn) {
+  ret collect_inner(node, pred_fn, [])
+}
+
+fn find_fns(prog_ast) {
+  ret find_all(prog_ast, fn(n) => n["tag"] == "FnDecl")
+}
+
+fn find_calls(node) {
+  ret find_all(node, fn(n) => n["tag"] == "Call")
+}
+
+; === AST Analysis ===
+
+fn fn_names(prog_ast) {
+  let names = []
+  let items = prog_ast["items"]
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      names = push(names, item["name"])
+    }
+  }
+  ret names
+}
+
+fn fn_signatures(prog_ast) {
+  let sigs = []
+  let items = prog_ast["items"]
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      let param_names = []
+      for p in item["params"] {
+        param_names = push(param_names, p["name"])
+      }
+      let has_ret = false
+      let rty = item["ret_type"]
+      if type_of(rty) == "map" {
+        if rty["tag"] != "TyInfer" {
+          if rty["tag"] != "Void" {
+            has_ret = true
+          }
+        }
+      }
+      let sig = #{"name": item["name"], "params": param_names, "param_count": len(param_names), "has_return_type": has_ret}
+      sigs = push(sigs, sig)
+    }
+  }
+  ret sigs
+}
+
+fn uses(prog_ast) {
+  let paths = []
+  let items = prog_ast["items"]
+  for item in items {
+    if item["tag"] == "UseDecl" {
+      paths = push(paths, item["path"])
+    }
+  }
+  ret paths
+}
+
+fn extract_call_name(call_node) {
+  let func = call_node["func"]
+  if type_of(func) != "map" { ret false }
+  if func["tag"] == "Ident" { ret func["name"] }
+  if func["tag"] == "FieldAccess" {
+    let inner = func["expr"]
+    if type_of(inner) == "map" {
+      if inner["tag"] == "Ident" {
+        ret inner["name"] + "." + func["field"]
+      }
+    }
+    ret func["field"]
+  }
+  ret false
+}
+
+fn call_graph(prog_ast) {
+  let graph = #{}
+  let fns = find_fns(prog_ast)
+  for f in fns {
+    let name = f["name"]
+    let calls = find_calls(f)
+    let called_names = []
+    for c in calls {
+      let cname = extract_call_name(c)
+      if cname != false {
+        if type_of(cname) != "void" {
+          called_names = push(called_names, cname)
+        }
+      }
+    }
+    graph = map.set(graph, name, called_names)
+  }
+  ret graph
+}
+
+; === AST Transformation ===
+
+fn transform(source, transform_fn) {
+  let prog_ast = parse(source)
+  let transformed = transform_fn(prog_ast)
+  ret emit(transformed)
+}
+
+fn transform_file(path, transform_fn) {
+  let source = io.read_file(path)
+  let result = transform(source, transform_fn)
+  io.write_file(path, result)
+  ret result
+}
+
+fn map_items(prog_ast, map_fn) {
+  let items = prog_ast["items"]
+  let new_items = []
+  for item in items {
+    new_items = push(new_items, map_fn(item))
+  }
+  ret ast.mk_program(new_items)
+}
+
+fn filter_items(prog_ast, pred_fn) {
+  let items = prog_ast["items"]
+  let new_items = []
+  for item in items {
+    if pred_fn(item) {
+      new_items = push(new_items, item)
+    }
+  }
+  ret ast.mk_program(new_items)
+}
+
+fn add_items(prog_ast, new_items) {
+  let items = [...prog_ast["items"], ...new_items]
+  ret ast.mk_program(items)
+}
+
+fn inject_stmt(fn_node, position, stmt_node) {
+  let body = fn_node["body"]
+  let stmts = body["stmts"]
+  let new_stmts = stmts
+  if position == "start" {
+    new_stmts = [stmt_node, ...stmts]
+  } else {
+    new_stmts = [...stmts, stmt_node]
+  }
+  let new_body = ast.mk_block(new_stmts)
+  ret ast.mk_fn_decl(fn_node["name"], fn_node["params"], fn_node["ret_type"],
+    fn_node["effects"], fn_node["pre"], fn_node["post"], new_body)
+}
+
+; === Code Generation Helpers ===
+
+fn gen_fn(name, param_names, body_stmts) {
+  let params = []
+  for pname in param_names {
+    params = push(params, ast.mk_param(pname, ast.mk_ty_infer()))
+  }
+  let body = ast.mk_block(body_stmts)
+  ret ast.mk_fn_decl(name, params, ast.mk_ty_infer(), [], false, false, body)
+}
+
+fn gen_test(name, body_stmts) {
+  ret gen_fn("test_" + name, [], body_stmts)
+}
+
+fn gen_call(fn_name, arg_exprs) {
+  ret ast.mk_call(ast.mk_ident(fn_name), arg_exprs)
+}

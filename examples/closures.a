@@ -1,0 +1,35 @@
+fn main() -> void
+  effects [io]
+{
+  let nums: [i64] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+
+  ; map: double every element
+  let doubled: [i64] = map(nums, fn(x: i64) => x * 2)
+  println(to_str(doubled))
+
+  ; filter: keep only evens
+  let evens: [i64] = filter(nums, fn(x: i64) => x % 2 == 0)
+  println(to_str(evens))
+
+  ; reduce: sum all elements
+  let total: i64 = reduce(nums, 0, fn(acc: i64, x: i64) => acc + x)
+  println(to_str(total))
+
+  ; pipeline: filter evens, double them, sum
+  let result: i64 = nums
+    |> filter(fn(x: i64) => x % 2 == 0)
+    |> map(fn(x: i64) => x * 2)
+    |> reduce(0, fn(acc: i64, x: i64) => acc + x)
+  println("pipeline result: {to_str(result)}")
+
+  ; string interpolation
+  let name: str = "a-lang"
+  let version: i64 = 2
+  println("language: {name}, version: {to_str(version)}")
+
+  ; map data structure
+  let config: #{str: i64} = #{"width": 1920, "height": 1080}
+  println("config: {to_str(config)}")
+  let w: i64 = map.get(config, "width")
+  println("width = {to_str(w)}")
+}

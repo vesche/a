@@ -1,0 +1,39 @@
+; Test assertion library for "a".
+; Assertions call fail() on mismatch, which throws a catchable RuntimeError.
+; Use with `a test <file>` to auto-discover and run test_* functions.
+
+fn assert_eq(actual: str, expected: str) -> void effects [io] {
+  if actual != expected {
+    fail("expected \"{expected}\" got \"{actual}\"")
+  }
+}
+
+fn assert_int_eq(actual: i64, expected: i64) -> void effects [io] {
+  if actual != expected {
+    fail("expected {to_str(expected)} got {to_str(actual)}")
+  }
+}
+
+fn assert_true(val: bool) -> void effects [io] {
+  if !val {
+    fail("expected true, got false")
+  }
+}
+
+fn assert_false(val: bool) -> void effects [io] {
+  if val {
+    fail("expected false, got true")
+  }
+}
+
+fn assert_contains(haystack: str, needle: str) -> void effects [io] {
+  if str.contains(haystack, needle) == false {
+    fail("expected \"{haystack}\" to contain \"{needle}\"")
+  }
+}
+
+fn assert_not_eq(actual: str, expected: str) -> void effects [io] {
+  if actual == expected {
+    fail("expected values to differ, both are \"{actual}\"")
+  }
+}

@@ -1,0 +1,135 @@
+use std.testing
+
+; --- Expression eval ---
+
+fn test_eval_int() -> bool {
+  assert_eq(eval("1 + 2"), 3)
+}
+
+fn test_eval_mul() -> bool {
+  assert_eq(eval("6 * 7"), 42)
+}
+
+fn test_eval_bool_true() -> bool {
+  assert_eq(eval("true"), true)
+}
+
+fn test_eval_bool_false() -> bool {
+  assert_eq(eval("false"), false)
+}
+
+fn test_eval_string() -> bool {
+  assert_eq(eval("\"hello\""), "hello")
+}
+
+fn test_eval_float() -> bool {
+  assert_eq(eval("3.14"), 3.14)
+}
+
+fn test_eval_array() -> bool {
+  let arr = eval("[1, 2, 3]")
+  assert_eq(len(arr), 3)
+}
+
+fn test_eval_comparison() -> bool {
+  assert_eq(eval("10 > 5"), true)
+}
+
+fn test_eval_string_concat() -> bool {
+  assert_eq(eval("\"hello\" + \" \" + \"world\""), "hello world")
+}
+
+; --- Statement eval ---
+
+fn test_eval_let_and_return() -> bool {
+  let code = "fn main() \{ let x = 5\n ret x + 1 \}"
+  assert_eq(eval(code), 6)
+}
+
+fn test_eval_if_else() -> bool {
+  let code = "fn main() \{ let x = 10\n if x > 5 \{ ret \"big\" \} else \{ ret \"small\" \} \}"
+  assert_eq(eval(code), "big")
+}
+
+fn test_eval_while() -> bool {
+  let code = "fn main() \{ let mut s = 0\n let mut i = 1\n while i <= 10 \{ s = s + i\n i = i + 1 \}\n ret s \}"
+  assert_eq(eval(code), 55)
+}
+
+; --- Function eval ---
+
+fn test_eval_function() -> bool {
+  let code = "fn double(x) \{ ret x * 2 \}\nfn main() \{ ret double(21) \}"
+  assert_eq(eval(code), 42)
+}
+
+fn test_eval_recursion() -> bool {
+  let code = "fn fib(n) \{ if n < 2 \{ ret n \}\n ret fib(n - 1) + fib(n - 2) \}\nfn main() \{ ret fib(10) \}"
+  assert_eq(eval(code), 55)
+}
+
+; --- Builtins in eval ---
+
+fn test_eval_len() -> bool {
+  assert_eq(eval("len([1, 2, 3])"), 3)
+}
+
+fn test_eval_to_str() -> bool {
+  assert_eq(eval("to_str(42)"), "42")
+}
+
+fn test_eval_type_of() -> bool {
+  assert_eq(eval("type_of(42)"), "int")
+}
+
+; --- Side effects ---
+
+fn test_eval_println() -> bool {
+  eval("fn main() \{ println(\"eval says hello\") \}")
+  assert_true(true, "println in eval works")
+}
+
+; --- Error handling ---
+
+fn test_eval_compile_error() -> bool {
+  let result = eval("fn \{\{\{")
+  assert_true(type_of(result) == "str", "compile error returns string")
+}
+
+fn test_eval_non_string() -> bool {
+  let result = eval(42)
+  assert_true(type_of(result) == "str", "non-string arg returns error")
+}
+
+; --- Nested eval ---
+
+fn test_eval_nested() -> bool {
+  let code = "fn main() \{ ret eval(\"1 + 2\") \}"
+  assert_eq(eval(code), 3)
+}
+
+; --- Args passing ---
+
+fn test_eval_with_args() -> bool {
+  let code = "fn main() \{ let a = args()\n ret a[0] \}"
+  assert_eq(eval(code, "hello"), "hello")
+}
+
+fn test_eval_with_multiple_args() -> bool {
+  let code = "fn main() \{ let a = args()\n ret a[0] + \" \" + a[1] \}"
+  assert_eq(eval(code, "hello", "world"), "hello world")
+}
+
+; --- Map eval ---
+
+fn test_eval_map() -> bool {
+  let code = "fn main() \{ let m = #\{\"a\": 1, \"b\": 2\}\n ret m[\"a\"] + m[\"b\"] \}"
+  assert_eq(eval(code), 3)
+}
+
+; --- Complex programs ---
+
+fn test_eval_complex_program() -> bool {
+  let code = "fn sq(x) \{ ret x * x \}\nfn main() \{ ret sq(3) + sq(4) \}"
+  assert_eq(eval(code), 25)
+}

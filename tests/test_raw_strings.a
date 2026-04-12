@@ -1,0 +1,119 @@
+use std.testing
+
+; --- Raw string basics ---
+
+fn test_raw_string_simple() -> bool {
+  let s = r"hello world"
+  assert_eq(s, "hello world")
+}
+
+fn test_raw_string_no_escape() -> bool {
+  let s = r"no \n escape here"
+  assert_eq(s, "no \\n escape here")
+}
+
+fn test_raw_string_braces() -> bool {
+  let s = r"braces { and } are literal"
+  assert_eq(s, "braces \{ and \} are literal")
+}
+
+fn test_raw_string_backslashes() -> bool {
+  let s = r"path\to\file"
+  assert_eq(s, "path\\to\\file")
+}
+
+fn test_raw_string_empty() -> bool {
+  let s = r""
+  assert_eq(s, "")
+}
+
+; --- Raw string with hash delimiters ---
+
+fn test_raw_hash_quotes() -> bool {
+  let s = r#"she said "hi""#
+  assert_eq(s, "she said \"hi\"")
+}
+
+fn test_raw_hash_braces() -> bool {
+  let s = r#"fn main() { ret 42 }"#
+  assert_eq(len(s), 20)
+}
+
+fn test_raw_hash_backslash_and_brace() -> bool {
+  let s = r#"mixed \n { } "quotes""#
+  assert_eq(str.contains(s, "\\n"), true)
+}
+
+; --- Heredoc basics ---
+
+fn test_heredoc_simple() -> bool {
+  let s = ```
+hello world
+```
+  assert_eq(s, "hello world")
+}
+
+fn test_heredoc_multiline() -> bool {
+  let s = ```
+line one
+line two
+line three
+```
+  assert_eq(str.contains(s, "line one"), true)
+  assert_eq(str.contains(s, "line three"), true)
+}
+
+fn test_heredoc_braces() -> bool {
+  let s = ```
+fn main() {
+  println("hello")
+}
+```
+  assert_eq(str.contains(s, "fn main()"), true)
+  assert_eq(str.contains(s, "println"), true)
+}
+
+fn test_heredoc_quotes() -> bool {
+  let s = ```
+she said "hello" and 'goodbye'
+```
+  assert_eq(str.contains(s, "\"hello\""), true)
+}
+
+fn test_heredoc_backslashes() -> bool {
+  let s = ```
+path\to\file
+```
+  assert_eq(str.contains(s, "\\"), true)
+}
+
+; --- Eval integration ---
+
+fn test_raw_string_eval() -> bool {
+  let code = r#"fn main() { ret 1 + 2 }"#
+  assert_eq(eval(code), 3)
+}
+
+fn test_heredoc_eval() -> bool {
+  let code = ```
+fn double(x) { ret x * 2 }
+fn main() { ret double(21) }
+```
+  assert_eq(eval(code), 42)
+}
+
+fn test_heredoc_eval_fib() -> bool {
+  let code = ```
+fn fib(n) {
+  if n < 2 { ret n }
+  ret fib(n - 1) + fib(n - 2)
+}
+fn main() { ret fib(10) }
+```
+  assert_eq(eval(code), 55)
+}
+
+fn test_raw_string_eval_nested() -> bool {
+  let code = r#"fn main() { ret eval("1 + 2") }"#
+  assert_eq(eval(code), 3)
+}

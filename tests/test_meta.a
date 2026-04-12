@@ -1,0 +1,231 @@
+use std.testing
+use std.meta
+use std.compiler.ast
+use std.compiler.emitter
+
+; === Walk tests ===
+
+fn test_walk_visits_all_tags() {
+  let prog = meta.parse_file("examples/hello.a")
+  let count = 0
+  let tags = []
+  ; walk visits every tagged node; we count them with a simple loop + find_all
+  let all_nodes = meta.find_all(prog, fn(n) => type_of(n["tag"]) != "void")
+  assert_true(len(all_nodes) > 5, "should find many nodes in hello.a")
+}
+
+fn test_walk_visits_nested() {
+  let body = ast.mk_block([
+    ast.mk_return(ast.mk_binop("+", ast.mk_int(1), ast.mk_int(2)))
+  ])
+  let f = meta.gen_fn("foo", [], [ast.mk_return(ast.mk_binop("+", ast.mk_int(1), ast.mk_int(2)))])
+  let prog = ast.mk_program([f])
+  let nodes = meta.find_all(prog, fn(n) => n["tag"] == "Int")
+  assert_eq(len(nodes), 2)
+}
+
+; === Find tests ===
+
+fn test_find_all_by_tag() {
+  let prog = meta.parse_file("examples/math.a")
+  let idents = meta.find_all(prog, fn(n) => n["tag"] == "Ident")
+  assert_true(len(idents) > 5, "math.a should have many identifiers")
+}
+
+fn test_find_fns() {
+  let prog = meta.parse_file("examples/math.a")
+  let fns = meta.find_fns(prog)
+  assert_eq(len(fns), 4)
+  assert_eq(fns[0]["name"], "square")
+  assert_eq(fns[3]["name"], "main")
+}
+
+fn test_find_calls() {
+  let prog = meta.parse_file("examples/hello.a")
+  let calls = meta.find_calls(prog)
+  assert_true(len(calls) >= 1, "hello.a should have at least one call")
+}
+
+fn test_find_fns_empty() {
+  let prog = ast.mk_program([])
+  let fns = meta.find_fns(prog)
+  assert_eq(len(fns), 0)
+}
+
+; === Analysis tests ===
+
+fn test_fn_names() {
+  let prog = meta.parse_file("examples/math.a")
+  let names = meta.fn_names(prog)
+  assert_eq(len(names), 4)
+  assert_eq(names[0], "square")
+  assert_eq(names[1], "add")
+  assert_eq(names[2], "distance")
+  assert_eq(names[3], "main")
+}
+
+fn test_fn_signatures() {
+  let prog = meta.parse_file("examples/math.a")
+  let sigs = meta.fn_signatures(prog)
+  assert_eq(len(sigs), 4)
+  let sq = sigs[0]
+  assert_eq(sq["name"], "square")
+  assert_eq(sq["param_count"], 1)
+  assert_eq(sq["params"][0], "x")
+  assert_eq(sq["has_return_type"], true)
+  let main_sig = sigs[3]
+  assert_eq(main_sig["param_count"], 0)
+}
+
+fn test_uses() {
+  let prog = meta.parse_file("tests/test_meta.a")
+  let use_paths = meta.uses(prog)
+  assert_true(len(use_paths) >= 2, "test_meta.a should have at least 2 use declarations")
+  assert_eq(use_paths[0][0], "std")
+}
+
+fn test_call_graph() {
+  let prog = meta.parse_file("examples/math.a")
+  let cg = meta.call_graph(prog)
+  let main_calls = map.get(cg, "main")
+  assert_true(len(main_calls) > 0, "main should call other functions")
+  assert_true(contains(main_calls, "square"), "main should call square")
+}
+
+; === Transform tests ===
+
+fn test_transform_filter() {
+  let f1 = meta.gen_fn("helper", [], [ast.mk_return(ast.mk_int(1))])
+  let f2 = meta.gen_fn("main", [], [ast.mk_return(ast.mk_int(42))])
+  let prog = ast.mk_program([f1, f2])
+  let src = meta.emit(prog)
+  let filtered = meta.transform(src, fn(p) => meta.filter_items(p, fn(item) => item["name"] != "helper"))
+  let names = meta.fn_names(meta.parse(filtered))
+  assert_eq(len(names), 1)
+  assert_eq(names[0], "main")
+}
+
+fn test_map_items() {
+  let f = meta.gen_fn("foo", [], [ast.mk_return(ast.mk_int(1))])
+  let prog = ast.mk_program([f])
+  let mapped = meta.map_items(prog, fn(item) => item)
+  assert_eq(len(meta.fn_names(mapped)), 1)
+}
+
+fn test_add_items() {
+  let f = meta.gen_fn("main", [], [ast.mk_return(ast.mk_int(1))])
+  let prog = ast.mk_program([f])
+  let new_fn = meta.gen_fn("helper", [], [ast.mk_return(ast.mk_int(2))])
+  let expanded = meta.add_items(prog, [new_fn])
+  let names = meta.fn_names(expanded)
+  assert_eq(len(names), 2)
+  assert_eq(names[0], "main")
+  assert_eq(names[1], "helper")
+}
+
+fn test_inject_stmt_start() {
+  let f = meta.gen_fn("foo", ["x"], [ast.mk_return(ast.mk_ident("x"))])
+  let log_stmt = ast.mk_expr_stmt(meta.gen_call("println", [ast.mk_string("enter")]))
+  let injected = meta.inject_stmt(f, "start", log_stmt)
+  let src = meta.emit(ast.mk_program([injected]))
+  assert_true(str.contains(src, "println"), "should contain println")
+  let body_stmts = injected["body"]["stmts"]
+  assert_eq(len(body_stmts), 2)
+  assert_eq(body_stmts[0]["tag"], "ExprStmt")
+}
+
+fn test_inject_stmt_end() {
+  let f = meta.gen_fn("foo", [], [ast.mk_expr_stmt(ast.mk_int(1))])
+  let extra = ast.mk_return(ast.mk_int(42))
+  let injected = meta.inject_stmt(f, "end", extra)
+  let body_stmts = injected["body"]["stmts"]
+  assert_eq(len(body_stmts), 2)
+  assert_eq(body_stmts[1]["tag"], "Return")
+}
+
+; === Code generation tests ===
+
+fn test_gen_fn_simple() {
+  let f = meta.gen_fn("add", ["a", "b"], [
+    ast.mk_return(ast.mk_binop("+", ast.mk_ident("a"), ast.mk_ident("b")))
+  ])
+  assert_eq(f["tag"], "FnDecl")
+  assert_eq(f["name"], "add")
+  assert_eq(len(f["params"]), 2)
+}
+
+fn test_gen_fn_emits_valid_code() {
+  let f = meta.gen_fn("main", [], [ast.mk_return(ast.mk_int(42))])
+  let src = meta.emit(ast.mk_program([f]))
+  let result = eval(src)
+  assert_eq(to_str(result), "42")
+}
+
+fn test_gen_test() {
+  let t = meta.gen_test("add", [
+    ast.mk_expr_stmt(meta.gen_call("assert_eq", [ast.mk_int(1), ast.mk_int(1)]))
+  ])
+  assert_eq(t["name"], "test_add")
+  assert_eq(t["tag"], "FnDecl")
+}
+
+fn test_gen_call() {
+  let c = meta.gen_call("println", [ast.mk_int(42)])
+  assert_eq(c["tag"], "Call")
+  assert_eq(c["func"]["name"], "println")
+  assert_eq(len(c["args"]), 1)
+}
+
+fn test_gen_call_emits_valid_code() {
+  let body = [ast.mk_expr_stmt(meta.gen_call("println", [ast.mk_int(99)]))]
+  let f = meta.gen_fn("main", [], body)
+  let src = meta.emit(ast.mk_program([f]))
+  assert_true(str.contains(src, "println(99)"), "should contain println(99)")
+}
+
+; === Roundtrip tests ===
+
+fn test_roundtrip_parse_emit_eval() {
+  let prog = meta.parse_file("examples/fibonacci.a")
+  let src = meta.emit(prog)
+  let result = eval(src)
+  assert_eq(to_str(result), "void")
+}
+
+fn test_roundtrip_generate_and_execute() {
+  let double = meta.gen_fn("double", ["x"], [
+    ast.mk_return(ast.mk_binop("*", ast.mk_ident("x"), ast.mk_int(2)))
+  ])
+  let main_fn = meta.gen_fn("main", [], [
+    ast.mk_return(meta.gen_call("double", [ast.mk_int(21)]))
+  ])
+  let src = meta.emit(ast.mk_program([double, main_fn]))
+  let result = eval(src)
+  assert_eq(to_str(result), "42")
+}
+
+fn test_roundtrip_inject_and_execute() {
+  let greet = meta.gen_fn("greet", ["name"], [
+    ast.mk_return(ast.mk_ident("name"))
+  ])
+  let log_stmt = ast.mk_let(false, "logged", ast.mk_ty_infer(), ast.mk_bool_lit(true))
+  let injected = meta.inject_stmt(greet, "start", log_stmt)
+  let main_fn = meta.gen_fn("main", [], [
+    ast.mk_return(meta.gen_call("greet", [ast.mk_string("world")]))
+  ])
+  let src = meta.emit(ast.mk_program([injected, main_fn]))
+  let result = eval(src)
+  assert_eq(to_str(result), "world")
+}
+
+fn test_roundtrip_add_items_and_execute() {
+  let main_fn = meta.gen_fn("main", [], [
+    ast.mk_return(meta.gen_call("helper", []))
+  ])
+  let prog = ast.mk_program([main_fn])
+  let helper = meta.gen_fn("helper", [], [ast.mk_return(ast.mk_int(99))])
+  let expanded = meta.add_items(prog, [helper])
+  let src = meta.emit(expanded)
+  let result = eval(src)
+  assert_eq(to_str(result), "99")
+}

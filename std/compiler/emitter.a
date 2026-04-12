@@ -1,0 +1,568 @@
+; std/compiler/emitter.a
+; AST-to-source pretty printer for the "a" language.
+; Converts tagged-map ASTs (from std/compiler/ast.a) into formatted source code.
+; This closes the metaprogramming loop: source -> parse -> transform -> emit -> source.
+
+fn emit(ast) {
+  let items = ast["items"]
+  let parts = []
+  for item in items {
+    parts = push(parts, emit_top_level(item, 0))
+  }
+  ret str.join(parts, "\n")
+}
+
+fn is_present(val) {
+  if val == false { ret false }
+  if type_of(val) == "void" { ret false }
+  if type_of(val) == "map" {
+    if val["tag"] == "Void" { ret false }
+  }
+  ret true
+}
+
+fn mk_indent(level) {
+  let pad = ""
+  let i = 0
+  while i < level {
+    pad = pad + "  "
+    i = i + 1
+  }
+  ret pad
+}
+
+fn emit_top_level(node, level) {
+  let tag = node["tag"]
+  if tag == "FnDecl" { ret emit_fn_decl(node, level) }
+  if tag == "TypeDecl" { ret emit_type_decl(node, level) }
+  if tag == "ModDecl" { ret emit_mod_decl(node, level) }
+  if tag == "UseDecl" { ret emit_use_decl(node, level) }
+  ret ""
+}
+
+; --- Use declaration ---
+
+fn emit_use_decl(node, level) {
+  let path = node["path"]
+  ret mk_indent(level) + "use " + str.join(path, ".") + "\n"
+}
+
+; --- Module declaration ---
+
+fn emit_mod_decl(node, level) {
+  let pad = mk_indent(level)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let out = pad + "mod " + node["name"] + " " + lb + "\n"
+  for item in node["items"] {
+    out = out + emit_top_level(item, level + 1) + "\n"
+  }
+  out = out + pad + rb + "\n"
+  ret out
+}
+
+; --- Type declaration ---
+
+fn emit_type_decl(node, level) {
+  let pad = mk_indent(level)
+  let out = pad + "ty " + node["name"]
+  let params = node["params"]
+  if len(params) > 0 {
+    out = out + "<" + str.join(params, ", ") + ">"
+  }
+  out = out + " = " + emit_type_body(node["body"]) + "\n"
+  ret out
+}
+
+fn emit_type_body(node) {
+  let tag = node["tag"]
+  if tag == "TypeRecord" {
+    let parts = []
+    for f in node["fields"] {
+      parts = push(parts, f["name"] + ": " + emit_type(f["type"]))
+    }
+    ret "\{ " + str.join(parts, ", ") + " \}"
+  }
+  if tag == "TypeSum" {
+    let parts = []
+    for v in node["variants"] {
+      let s = v["name"]
+      if len(v["fields"]) > 0 {
+        let field_parts = []
+        for f in v["fields"] {
+          field_parts = push(field_parts, emit_type(f))
+        }
+        s = s + "(" + str.join(field_parts, ", ") + ")"
+      }
+      parts = push(parts, s)
+    }
+    ret str.join(parts, " | ")
+  }
+  if tag == "TypeAlias" {
+    let out = emit_type(node["type"])
+    let w = node["where"]
+    if is_present(w) {
+      let lb = from_code(123)
+      let rb = from_code(125)
+      out = out + " where " + lb + " " + emit_expr(w) + " " + rb
+    }
+    ret out
+  }
+  ret ""
+}
+
+; --- Type expressions ---
+
+fn emit_type(node) {
+  if type_of(node) == "void" { ret "_" }
+  if node == false { ret "_" }
+  let tag = node["tag"]
+  if tag == "TyInfer" { ret "_" }
+  if tag == "TyPrim" { ret node["name"] }
+  if tag == "TyNamed" {
+    let args = node["args"]
+    if len(args) == 0 { ret node["name"] }
+    let parts = []
+    for a in args {
+      parts = push(parts, emit_type(a))
+    }
+    ret node["name"] + "<" + str.join(parts, ", ") + ">"
+  }
+  if tag == "TyArray" {
+    ret "[" + emit_type(node["elem"]) + "]"
+  }
+  if tag == "TyTuple" {
+    let parts = []
+    for e in node["elems"] {
+      parts = push(parts, emit_type(e))
+    }
+    ret "(" + str.join(parts, ", ") + ")"
+  }
+  if tag == "TyRecord" {
+    let parts = []
+    for f in node["fields"] {
+      parts = push(parts, f["name"] + ": " + emit_type(f["type"]))
+    }
+    ret "\{ " + str.join(parts, ", ") + " \}"
+  }
+  if tag == "TyFn" {
+    let param_parts = []
+    for p in node["params"] {
+      param_parts = push(param_parts, emit_type(p))
+    }
+    ret "fn(" + str.join(param_parts, ", ") + ") -> " + emit_type(node["ret"])
+  }
+  if tag == "TyMap" {
+    ret "#\{" + emit_type(node["key"]) + ": " + emit_type(node["val"]) + "\}"
+  }
+  ret "_"
+}
+
+; --- Function declaration ---
+
+fn emit_fn_decl(node, level) {
+  let pad = mk_indent(level)
+  let out = pad + "fn " + node["name"] + "("
+  let params = node["params"]
+  let param_parts = []
+  for p in params {
+    param_parts = push(param_parts, emit_param(p))
+  }
+  out = out + str.join(param_parts, ", ") + ")"
+  let ret_type = node["ret_type"]
+  if is_present(ret_type) {
+    if ret_type["tag"] != "TyInfer" {
+      out = out + " -> " + emit_type(ret_type)
+    }
+  }
+  let effs = node["effects"]
+  if is_present(effs) {
+    if len(effs) > 0 {
+      out = out + "\n" + mk_indent(level + 1) + "effects [" + str.join(effs, ", ") + "]"
+    }
+  }
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let precond = node["pre"]
+  if is_present(precond) {
+    out = out + "\n" + mk_indent(level + 1) + "pre " + lb + " " + emit_expr(precond) + " " + rb
+  }
+  let postcond = node["post"]
+  if is_present(postcond) {
+    out = out + "\n" + mk_indent(level + 1) + "post " + lb + " " + emit_expr(postcond) + " " + rb
+  }
+  out = out + "\n" + emit_block(node["body"], level) + "\n"
+  ret out
+}
+
+fn emit_param(p) {
+  let pty = p["type"]
+  if type_of(pty) == "void" { ret p["name"] }
+  if pty == false { ret p["name"] }
+  if pty["tag"] == "TyInfer" { ret p["name"] }
+  ret p["name"] + ": " + emit_type(pty)
+}
+
+; --- Block ---
+
+fn emit_block(node, level) {
+  let pad = mk_indent(level)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let out = pad + lb + "\n"
+  for s in node["stmts"] {
+    out = out + emit_stmt(s, level + 1)
+  }
+  out = out + pad + rb
+  ret out
+}
+
+; --- Statements ---
+
+fn emit_stmt(node, level) {
+  let tag = node["tag"]
+  if tag == "Let" { ret emit_let(node, level) }
+  if tag == "Assign" { ret emit_assign(node, level) }
+  if tag == "Return" { ret emit_return(node, level) }
+  if tag == "ExprStmt" { ret emit_expr_stmt(node, level) }
+  if tag == "If" { ret emit_if_stmt(node, level) }
+  if tag == "Match" { ret emit_match_stmt(node, level) }
+  if tag == "For" { ret emit_for_stmt(node, level) }
+  if tag == "While" { ret emit_while_stmt(node, level) }
+  if tag == "LetDestructure" { ret emit_let_destructure(node, level) }
+  if tag == "ForDestructure" { ret emit_for_destructure(node, level) }
+  if tag == "Break" { ret mk_indent(level) + "break\n" }
+  if tag == "Continue" { ret mk_indent(level) + "continue\n" }
+  ret ""
+}
+
+fn emit_let(node, level) {
+  let pad = mk_indent(level)
+  let out = pad + "let "
+  if node["mutable"] == true {
+    out = out + "mut "
+  }
+  let lty = node["type"]
+  let has_type = false
+  if is_present(lty) {
+    if lty["tag"] != "TyInfer" {
+      has_type = true
+    }
+  }
+  if has_type {
+    out = out + node["name"] + ": " + emit_type(lty) + " = "
+  } else {
+    out = out + node["name"] + " = "
+  }
+  out = out + emit_expr(node["value"]) + "\n"
+  ret out
+}
+
+fn emit_assign(node, level) {
+  let pad = mk_indent(level)
+  ret pad + emit_expr(node["target"]) + " = " + emit_expr(node["value"]) + "\n"
+}
+
+fn emit_return(node, level) {
+  ret mk_indent(level) + "ret " + emit_expr(node["expr"]) + "\n"
+}
+
+fn emit_expr_stmt(node, level) {
+  ret mk_indent(level) + emit_expr(node["expr"]) + "\n"
+}
+
+fn emit_if_stmt(node, level) {
+  let pad = mk_indent(level)
+  let out = pad + "if " + emit_expr(node["cond"]) + " \n"
+  out = out + emit_block(node["then"], level)
+  let els = node["else"]
+  if is_present(els) {
+    let els_tag = els["tag"]
+    if els_tag == "ElseBlock" {
+      out = out + " else \n"
+      out = out + emit_block(els["block"], level)
+      out = out + "\n"
+      ret out
+    }
+    if els_tag == "ElseIf" {
+      out = out + " else "
+      ret out + emit_if_stmt(els["stmt"], level)
+    }
+  }
+  out = out + "\n"
+  ret out
+}
+
+fn emit_match_stmt(node, level) {
+  let pad = mk_indent(level)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let out = pad + "match " + emit_expr(node["expr"]) + " " + lb + "\n"
+  for arm in node["arms"] {
+    out = out + emit_match_arm(arm, level + 1)
+  }
+  out = out + pad + rb + "\n"
+  ret out
+}
+
+fn emit_match_arm(arm, level) {
+  let pad = mk_indent(level)
+  let out = pad + emit_pattern(arm["pattern"])
+  let guard = arm["guard"]
+  if is_present(guard) {
+    out = out + " if " + emit_expr(guard)
+  }
+  out = out + " => "
+  let body = arm["body"]
+  if body["tag"] == "Block" {
+    out = out + "\n" + emit_block(body, level) + "\n"
+  } else {
+    out = out + emit_expr(body) + "\n"
+  }
+  ret out
+}
+
+fn emit_for_stmt(node, level) {
+  let pad = mk_indent(level)
+  let fty = node["type"]
+  let has_type = false
+  if is_present(fty) {
+    if fty["tag"] != "TyInfer" {
+      has_type = true
+    }
+  }
+  let out = pad
+  if has_type {
+    out = out + "for " + node["var"] + ": " + emit_type(fty) + " in "
+  } else {
+    out = out + "for " + node["var"] + " in "
+  }
+  out = out + emit_expr(node["iter"]) + "\n"
+  out = out + emit_block(node["body"], level) + "\n"
+  ret out
+}
+
+fn emit_while_stmt(node, level) {
+  let pad = mk_indent(level)
+  let out = pad + "while " + emit_expr(node["cond"]) + "\n"
+  out = out + emit_block(node["body"], level) + "\n"
+  ret out
+}
+
+fn emit_let_destructure(node, level) {
+  let pad = mk_indent(level)
+  let parts = []
+  for b in node["bindings"] {
+    if b == false {
+      parts = push(parts, "_")
+    } else {
+      if type_of(b) == "void" {
+        parts = push(parts, "_")
+      } else {
+        parts = push(parts, b)
+      }
+    }
+  }
+  let rest = node["rest"]
+  if is_present(rest) {
+    parts = push(parts, "..." + rest)
+  }
+  ret pad + "let [" + str.join(parts, ", ") + "] = " + emit_expr(node["value"]) + "\n"
+}
+
+fn emit_for_destructure(node, level) {
+  let pad = mk_indent(level)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let parts = []
+  for b in node["bindings"] {
+    parts = push(parts, b)
+  }
+  let out = pad + "for [" + str.join(parts, ", ") + "] in " + emit_expr(node["iter"]) + " " + lb + "\n"
+  for s in node["body"]["stmts"] {
+    out = out + emit_stmt(s, level + 1)
+  }
+  out = out + pad + rb + "\n"
+  ret out
+}
+
+; --- Expressions ---
+
+fn emit_expr(node) {
+  if type_of(node) == "void" { ret "void" }
+  if node == false { ret "false" }
+  let tag = node["tag"]
+  if tag == "Int" { ret to_str(node["value"]) }
+  if tag == "Float" { ret to_str(node["value"]) }
+  if tag == "String" { ret "\"" + escape_str(node["value"]) + "\"" }
+  if tag == "Bool" {
+    if node["value"] { ret "true" }
+    ret "false"
+  }
+  if tag == "Void" { ret "void" }
+  if tag == "Ident" { ret node["name"] }
+  if tag == "BinOp" {
+    ret "(" + emit_expr(node["left"]) + " " + node["op"] + " " + emit_expr(node["right"]) + ")"
+  }
+  if tag == "UnaryOp" {
+    ret node["op"] + emit_expr(node["expr"])
+  }
+  if tag == "Call" {
+    let arg_parts = []
+    for a in node["args"] {
+      arg_parts = push(arg_parts, emit_expr(a))
+    }
+    ret emit_expr(node["func"]) + "(" + str.join(arg_parts, ", ") + ")"
+  }
+  if tag == "FieldAccess" {
+    ret emit_expr(node["expr"]) + "." + node["field"]
+  }
+  if tag == "Index" {
+    ret emit_expr(node["expr"]) + "[" + emit_expr(node["index"]) + "]"
+  }
+  if tag == "Try" {
+    ret emit_expr(node["expr"]) + "?"
+  }
+  if tag == "TryBlock" {
+    ret "try " + emit_block(node["block"], 0)
+  }
+  if tag == "Array" {
+    let parts = []
+    for e in node["elems"] {
+      parts = push(parts, emit_expr(e))
+    }
+    ret "[" + str.join(parts, ", ") + "]"
+  }
+  if tag == "Record" {
+    let parts = []
+    for f in node["fields"] {
+      parts = push(parts, f["name"] + ": " + emit_expr(f["value"]))
+    }
+    ret "\{ " + str.join(parts, ", ") + " \}"
+  }
+  if tag == "Lambda" {
+    let param_parts = []
+    for p in node["params"] {
+      param_parts = push(param_parts, emit_param(p))
+    }
+    ret "fn(" + str.join(param_parts, ", ") + ") => " + emit_expr(node["body"])
+  }
+  if tag == "Pipe" {
+    ret emit_expr(node["left"]) + " |> " + emit_expr(node["right"])
+  }
+  if tag == "Interpolation" {
+    let lbrace = from_code(123)
+    let rbrace = from_code(125)
+    let dq = from_code(34)
+    let out = dq
+    for part in node["parts"] {
+      if part["tag"] == "InterpLit" {
+        out = out + escape_str(part["value"])
+      }
+      if part["tag"] == "InterpExpr" {
+        out = out + lbrace + emit_expr(part["expr"]) + rbrace
+      }
+    }
+    ret out + dq
+  }
+  if tag == "MapLiteral" {
+    let parts = []
+    for entry in node["entries"] {
+      parts = push(parts, emit_expr(entry["key"]) + ": " + emit_expr(entry["value"]))
+    }
+    ret "#\{" + str.join(parts, ", ") + "\}"
+  }
+  if tag == "Spread" {
+    ret "..." + emit_expr(node["expr"])
+  }
+  if tag == "IfExpr" {
+    ret "if " + emit_expr(node["cond"]) + " " + emit_block(node["then"], 0) + " else " + emit_block(node["else"], 0)
+  }
+  if tag == "MatchExpr" {
+    let lb = from_code(123)
+    let rb = from_code(125)
+    let out = "match " + emit_expr(node["expr"]) + " " + lb + "\n"
+    for arm in node["arms"] {
+      out = out + emit_match_arm(arm, 1)
+    }
+    ret out + rb
+  }
+  if tag == "BlockExpr" {
+    ret emit_block(node["block"], 0)
+  }
+  ret ""
+}
+
+; --- Patterns ---
+
+fn emit_pattern(node) {
+  if type_of(node) == "void" { ret "_" }
+  let tag = node["tag"]
+  if tag == "PatWildcard" { ret "_" }
+  if tag == "PatIdent" { ret node["name"] }
+  if tag == "PatLiteral" {
+    ret emit_pat_literal(node["value"])
+  }
+  if tag == "PatConstructor" {
+    let args = node["args"]
+    if len(args) == 0 { ret node["name"] }
+    let parts = []
+    for a in args {
+      parts = push(parts, emit_pattern(a))
+    }
+    ret node["name"] + "(" + str.join(parts, ", ") + ")"
+  }
+  if tag == "PatArray" {
+    let parts = []
+    for elem in node["elems"] {
+      if elem["tag"] == "PatRest" {
+        parts = push(parts, "..." + elem["name"])
+      } else {
+        if elem["tag"] == "PatElem" {
+          parts = push(parts, emit_pattern(elem["pattern"]))
+        } else {
+          parts = push(parts, emit_pattern(elem))
+        }
+      }
+    }
+    ret "[" + str.join(parts, ", ") + "]"
+  }
+  if tag == "PatMap" {
+    let dq = from_code(34)
+    let parts = []
+    for entry in node["entries"] {
+      parts = push(parts, dq + entry["key"] + dq + ": " + emit_pattern(entry["pattern"]))
+    }
+    ret "#\{" + str.join(parts, ", ") + "\}"
+  }
+  ret "_"
+}
+
+fn emit_pat_literal(lit) {
+  if type_of(lit) == "int" { ret to_str(lit) }
+  if type_of(lit) == "float" { ret to_str(lit) }
+  if type_of(lit) == "bool" {
+    if lit { ret "true" }
+    ret "false"
+  }
+  if type_of(lit) == "str" { ret "\"" + escape_str(lit) + "\"" }
+  let tag = lit["tag"]
+  if tag == "Int" { ret to_str(lit["value"]) }
+  if tag == "Float" { ret to_str(lit["value"]) }
+  if tag == "String" { ret "\"" + escape_str(lit["value"]) + "\"" }
+  if tag == "Bool" {
+    if lit["value"] { ret "true" }
+    ret "false"
+  }
+  ret to_str(lit)
+}
+
+; --- String escaping ---
+
+fn escape_str(s) {
+  let out = str.replace(s, "\\", "\\\\")
+  out = str.replace(out, "\"", "\\\"")
+  out = str.replace(out, "\n", "\\n")
+  out = str.replace(out, "\t", "\\t")
+  ret out
+}

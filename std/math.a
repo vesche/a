@@ -1,0 +1,53 @@
+fn max(a: i64, b: i64) -> i64 {
+  if a > b { ret a }
+  ret b
+}
+
+fn min(a: i64, b: i64) -> i64 {
+  if a < b { ret a }
+  ret b
+}
+
+fn clamp(val: i64, lo: i64, hi: i64) -> i64 {
+  if val < lo { ret lo }
+  if val > hi { ret hi }
+  ret val
+}
+
+fn fmax(a: f64, b: f64) -> f64 {
+  if a > b { ret a }
+  ret b
+}
+
+fn fmin(a: f64, b: f64) -> f64 {
+  if a < b { ret a }
+  ret b
+}
+
+fn pow(base: i64, exp: i64) -> i64 {
+  let mut result: i64 = 1
+  let mut i: i64 = 0
+  while i < exp {
+    result = result * base
+    i = i + 1
+  }
+  ret result
+}
+
+fn sum(arr: [i64]) -> i64 {
+  let mut total: i64 = 0
+  for x: i64 in arr {
+    total = total + x
+  }
+  ret total
+}
+
+fn range(start: i64, end: i64) -> [i64] {
+  let mut result: [i64] = []
+  let mut i: i64 = start
+  while i < end {
+    result = push(result, i)
+    i = i + 1
+  }
+  ret result
+}

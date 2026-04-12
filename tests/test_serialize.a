@@ -1,0 +1,191 @@
+use std.testing
+use std.compiler.compiler
+use std.compiler.serialize
+
+; --- Helper: compile, serialize, deserialize roundtrip ---
+
+fn roundtrip(src) {
+  let prog = compiler.compile(src)
+  let j = serialize.serialize(prog)
+  let loaded = serialize.deserialize(j)
+  ret loaded
+}
+
+; --- Structure preservation tests ---
+
+fn test_roundtrip_preserves_function_count() -> bool {
+  let prog = compiler.compile("fn f() \{ ret 1 \}\nfn g() \{ ret 2 \}")
+  let j = serialize.serialize(prog)
+  let loaded = serialize.deserialize(j)
+  assert_eq(len(loaded["functions"]), len(prog["functions"]))
+}
+
+fn test_roundtrip_preserves_main_idx() -> bool {
+  let prog = compiler.compile("fn main() \{ println(\"hi\") \}")
+  let j = serialize.serialize(prog)
+  let loaded = serialize.deserialize(j)
+  assert_eq(loaded["main_idx"], prog["main_idx"])
+}
+
+fn test_roundtrip_preserves_function_names() -> bool {
+  let prog = compiler.compile("fn foo() \{ ret 1 \}\nfn bar() \{ ret 2 \}")
+  let loaded = roundtrip("fn foo() \{ ret 1 \}\nfn bar() \{ ret 2 \}")
+  assert_eq(loaded["functions"][0]["name"], "foo")
+  assert_eq(loaded["functions"][1]["name"], "bar")
+}
+
+fn test_roundtrip_preserves_params() -> bool {
+  let loaded = roundtrip("fn add(a, b) \{ ret a + b \}")
+  let params = loaded["functions"][0]["params"]
+  assert_eq(len(params), 2)
+  assert_eq(params[0], "a")
+  assert_eq(params[1], "b")
+}
+
+fn test_roundtrip_preserves_locals() -> bool {
+  let loaded = roundtrip("fn f(x) \{ let y = x + 1\n ret y \}")
+  let locals = loaded["functions"][0]["locals"]
+  assert_true(len(locals) >= 2, "at least 2 locals")
+  assert_eq(locals[0], "x")
+  assert_eq(locals[1], "y")
+}
+
+fn test_roundtrip_preserves_constants() -> bool {
+  let loaded = roundtrip("fn f() \{ ret 42 \}")
+  let consts = loaded["functions"][0]["chunk"]["constants"]
+  assert_true(len(consts) >= 1, "has constants")
+  let has_42 = false
+  let mut i = 0
+  while i < len(consts) {
+    if consts[i] == 42 { has_42 = true }
+    i = i + 1
+  }
+  assert_true(has_42, "42 in constants")
+}
+
+fn test_roundtrip_preserves_strings() -> bool {
+  let loaded = roundtrip("fn f() \{ println(\"hello\") \}")
+  let strings = loaded["functions"][0]["chunk"]["strings"]
+  assert_true(len(strings) >= 1, "has strings")
+  assert_eq(strings[0], "println")
+}
+
+fn test_roundtrip_preserves_opcodes() -> bool {
+  let loaded = roundtrip("fn f() \{ ret 42 \}")
+  let code = loaded["functions"][0]["chunk"]["code"]
+  assert_true(len(code) >= 2, "has opcodes")
+  assert_eq(code[0][0], "Const")
+  assert_eq(code[1][0], "Return")
+}
+
+fn test_roundtrip_preserves_lines() -> bool {
+  let loaded = roundtrip("fn f() \{ ret 42 \}")
+  let lines = loaded["functions"][0]["chunk"]["lines"]
+  assert_eq(len(lines), len(loaded["functions"][0]["chunk"]["code"]))
+}
+
+fn test_version_field() -> bool {
+  let prog = compiler.compile("fn f() \{ ret 1 \}")
+  let j = serialize.serialize(prog)
+  let loaded = serialize.deserialize(j)
+  assert_eq(loaded["version"], 1)
+}
+
+; --- Execution roundtrip tests ---
+
+fn test_exec_hello() -> bool {
+  let loaded = roundtrip("fn main() \{ println(\"roundtrip hello\") \}")
+  __bridge_exec__(loaded)
+  assert_true(true, "exec hello ran")
+}
+
+fn test_exec_math() -> bool {
+  let loaded = roundtrip("fn main() \{ let x = 3 + 4\n println(to_str(x)) \}")
+  __bridge_exec__(loaded)
+  assert_true(true, "exec math ran")
+}
+
+fn test_exec_function_call() -> bool {
+  let loaded = roundtrip("fn double(n) \{ ret n * 2 \}\nfn main() \{ println(to_str(double(21))) \}")
+  __bridge_exec__(loaded)
+  assert_true(true, "exec function call ran")
+}
+
+fn test_exec_if_else() -> bool {
+  let loaded = roundtrip("fn main() \{ let x = 10\n if x > 5 \{ println(\"big\") \} else \{ println(\"small\") \} \}")
+  __bridge_exec__(loaded)
+  assert_true(true, "exec if/else ran")
+}
+
+fn test_exec_while_loop() -> bool {
+  let loaded = roundtrip("fn main() \{ let mut i = 0\n while i < 3 \{ println(to_str(i))\n i = i + 1 \} \}")
+  __bridge_exec__(loaded)
+  assert_true(true, "exec while ran")
+}
+
+fn test_exec_recursion() -> bool {
+  let src = "fn fib(n) \{ if n < 2 \{ ret n \}\n ret fib(n - 1) + fib(n - 2) \}\nfn main() \{ println(to_str(fib(10))) \}"
+  let loaded = roundtrip(src)
+  __bridge_exec__(loaded)
+  assert_true(true, "exec recursion ran")
+}
+
+; --- File I/O roundtrip tests ---
+
+fn test_file_roundtrip() -> bool {
+  let src = "fn main() \{ println(\"file roundtrip\") \}"
+  let prog = compiler.compile(src)
+  serialize.compile_to_file(src, "/tmp/test_serialize_rt.ac")
+  let loaded = serialize.load_from_file("/tmp/test_serialize_rt.ac")
+  assert_eq(len(loaded["functions"]), len(prog["functions"]))
+  assert_eq(loaded["main_idx"], prog["main_idx"])
+  __bridge_exec__(loaded)
+  assert_true(true, "file roundtrip ran")
+}
+
+fn test_pretty_serialize() -> bool {
+  let prog = compiler.compile("fn main() \{ println(\"pretty\") \}")
+  let j = serialize.serialize_pretty(prog)
+  assert_true(len(j) > 0, "pretty json not empty")
+  let loaded = serialize.deserialize(j)
+  assert_eq(len(loaded["functions"]), 1)
+  assert_eq(loaded["main_idx"], 0)
+}
+
+fn test_no_main() -> bool {
+  let loaded = roundtrip("fn helper() \{ ret 42 \}")
+  assert_true(loaded["main_idx"] < 0, "no main_idx")
+}
+
+fn test_string_constant_roundtrip() -> bool {
+  let loaded = roundtrip("fn f() \{ ret \"hello world\" \}")
+  let consts = loaded["functions"][0]["chunk"]["constants"]
+  let has_str = false
+  let mut i = 0
+  while i < len(consts) {
+    if consts[i] == "hello world" { has_str = true }
+    i = i + 1
+  }
+  assert_true(has_str, "string constant preserved")
+}
+
+fn test_bool_constant_roundtrip() -> bool {
+  let loaded = roundtrip("fn f() \{ ret true \}")
+  let consts = loaded["functions"][0]["chunk"]["constants"]
+  let has_true = false
+  let mut i = 0
+  while i < len(consts) {
+    if consts[i] == true { has_true = true }
+    i = i + 1
+  }
+  assert_true(has_true, "bool constant preserved")
+}
+
+fn test_multi_function_roundtrip() -> bool {
+  let src = "fn a() \{ ret 1 \}\nfn b() \{ ret 2 \}\nfn c() \{ ret 3 \}\nfn main() \{ println(to_str(a() + b() + c())) \}"
+  let loaded = roundtrip(src)
+  assert_eq(len(loaded["functions"]), 4)
+  assert_true(loaded["main_idx"] >= 0, "has main")
+  __bridge_exec__(loaded)
+  assert_true(true, "multi-fn exec ran")
+}

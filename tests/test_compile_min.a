@@ -1,0 +1,9 @@
+use std.compiler.compiler
+
+fn main() -> void
+  effects [io]
+{
+  println("compiler module loaded")
+  let prog = compiler.compile("fn f() \{ ret 1 \}")
+  println("compile returned: " + type_of(prog))
+}

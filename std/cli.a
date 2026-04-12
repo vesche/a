@@ -1,0 +1,59 @@
+; std/cli.a -- terminal colors and CLI formatting utilities
+;
+; usage: use std.cli
+;
+; all color functions wrap a string in ANSI escape codes
+; they nest safely: bold(red("error")) works as expected
+
+fn esc_code() -> str {
+  ret from_code(27)
+}
+
+fn wrap(s: str, code: str) -> str {
+  let e = esc_code()
+  ret "{e}[{code}m{s}{e}[0m"
+}
+
+; --- colors ---
+
+fn red(s: str) -> str {
+  ret wrap(s, "31")
+}
+
+fn green(s: str) -> str {
+  ret wrap(s, "32")
+}
+
+fn yellow(s: str) -> str {
+  ret wrap(s, "33")
+}
+
+fn blue(s: str) -> str {
+  ret wrap(s, "34")
+}
+
+fn magenta(s: str) -> str {
+  ret wrap(s, "35")
+}
+
+fn cyan(s: str) -> str {
+  ret wrap(s, "36")
+}
+
+fn gray(s: str) -> str {
+  ret wrap(s, "90")
+}
+
+; --- styles ---
+
+fn bold(s: str) -> str {
+  ret wrap(s, "1")
+}
+
+fn dim(s: str) -> str {
+  ret wrap(s, "2")
+}
+
+fn underline(s: str) -> str {
+  ret wrap(s, "4")
+}

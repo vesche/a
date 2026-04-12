@@ -1,0 +1,86 @@
+use std.compiler.compiler
+use std.compiler.parser
+use std.compiler.serialize
+
+fn main() -> void
+  effects [io]
+{
+  let argv = args()
+  if len(argv) < 1 {
+    eprintln("usage: a run examples/precompile.a -- <file.a> [output.ac] [--exec] [--pretty]")
+    eprintln("")
+    eprintln("Compiles a .a file using the self-hosted compiler and writes a .ac file.")
+    eprintln("")
+    eprintln("  --exec    Execute the compiled program via bridge after writing")
+    eprintln("  --pretty  Write pretty-printed JSON (larger but readable)")
+    exit(1)
+  } else {
+    let src_path = argv[0]
+
+    let mut out_path = ""
+    let mut do_exec = false
+    let mut do_pretty = false
+    let mut i = 1
+    while i < len(argv) {
+      if argv[i] == "--exec" {
+        do_exec = true
+      } else {
+        if argv[i] == "--pretty" {
+          do_pretty = true
+        } else {
+          if out_path == "" {
+            out_path = argv[i]
+          }
+        }
+      }
+      i = i + 1
+    }
+
+    if out_path == "" {
+      if str.ends_with(src_path, ".a") {
+        out_path = str.slice(src_path, 0, len(src_path) - 2) + ".ac"
+      } else {
+        out_path = src_path + ".ac"
+      }
+    }
+
+    let src = io.read_file(src_path)
+    let ast = parser.parse(src)
+
+    let mut is_error = false
+    if type_of(ast) == "map" {
+      if map.has(ast, "tag") {
+        if ast["tag"] == "ParseError" {
+          eprintln("parse error: " + ast["msg"] + " at token " + to_str(ast["pos"]))
+          is_error = true
+        }
+      }
+    }
+
+    if !is_error {
+      let prog = compiler.compile_ast(ast)
+      let fn_count = len(prog["functions"])
+
+      let j = ""
+      if do_pretty {
+        j = serialize.serialize_pretty(prog)
+      } else {
+        j = serialize.serialize(prog)
+      }
+      io.write_file(out_path, j)
+
+      let main_str = ""
+      if prog["main_idx"] >= 0 {
+        main_str = ", main at idx " + to_str(prog["main_idx"])
+      } else {
+        main_str = ", no main"
+      }
+      eprintln("compiled " + src_path + " -> " + out_path + " (" + to_str(fn_count) + " functions" + main_str + ")")
+
+      if do_exec {
+        eprintln("--- executing ---")
+        __bridge_exec__(prog)
+      }
+    }
+  }
+}

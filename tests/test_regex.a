@@ -1,0 +1,108 @@
+use std.testing
+
+; --- regex.is_match ---
+
+fn test_is_match_digits() -> bool {
+  assert_eq(regex.is_match(r"\d+", "abc123def"), true)
+}
+
+fn test_is_match_no_match() -> bool {
+  assert_eq(regex.is_match(r"\d+", "no digits"), false)
+}
+
+fn test_is_match_email() -> bool {
+  assert_eq(regex.is_match(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+", "test@example.com"), true)
+}
+
+; --- regex.find ---
+
+fn test_find_first() -> bool {
+  let m = regex.find(r"\d+", "abc123def456")
+  assert_eq(m["match"], "123")
+  assert_eq(m["start"], 3)
+  assert_eq(m["end"], 6)
+}
+
+fn test_find_none() -> bool {
+  let m = regex.find(r"\d+", "no digits here")
+  assert_eq(m, false)
+}
+
+; --- regex.find_all ---
+
+fn test_find_all_numbers() -> bool {
+  let matches = regex.find_all(r"\d+", "a1b22c333")
+  assert_eq(len(matches), 3)
+  assert_eq(matches[0], "1")
+  assert_eq(matches[1], "22")
+  assert_eq(matches[2], "333")
+}
+
+fn test_find_all_words() -> bool {
+  let matches = regex.find_all(r"[a-z]+", "Hello World 123 foo")
+  assert_eq(len(matches), 3)
+  assert_eq(matches[0], "ello")
+  assert_eq(matches[1], "orld")
+  assert_eq(matches[2], "foo")
+}
+
+; --- regex.replace ---
+
+fn test_replace_first() -> bool {
+  let s = regex.replace(r"\d+", "abc123def456", "NUM")
+  assert_eq(s, "abcNUMdef456")
+}
+
+; --- regex.replace_all ---
+
+fn test_replace_all() -> bool {
+  let s = regex.replace_all(r"\d+", "abc123def456", "N")
+  assert_eq(s, "abcNdefN")
+}
+
+fn test_replace_all_whitespace() -> bool {
+  let s = regex.replace_all(r"\s+", "hello   world  foo", " ")
+  assert_eq(s, "hello world foo")
+}
+
+; --- regex.split ---
+
+fn test_split_digits() -> bool {
+  let parts = regex.split(r"\d+", "a1b22c333d")
+  assert_eq(len(parts), 4)
+  assert_eq(parts[0], "a")
+  assert_eq(parts[1], "b")
+  assert_eq(parts[2], "c")
+  assert_eq(parts[3], "d")
+}
+
+fn test_split_comma_space() -> bool {
+  let parts = regex.split(r",\s*", "one, two,three,  four")
+  assert_eq(len(parts), 4)
+  assert_eq(parts[0], "one")
+  assert_eq(parts[3], "four")
+}
+
+; --- regex.captures ---
+
+fn test_captures_groups() -> bool {
+  let caps = regex.captures(r"(\d{4})-(\d{2})-(\d{2})", "date: 2024-03-15")
+  assert_eq(caps[0], "2024-03-15")
+  assert_eq(caps[1], "2024")
+  assert_eq(caps[2], "03")
+  assert_eq(caps[3], "15")
+}
+
+fn test_captures_no_match() -> bool {
+  let caps = regex.captures(r"(\d+)-(\d+)", "no match")
+  assert_eq(caps, false)
+}
+
+; --- Error handling ---
+
+fn test_invalid_regex() -> bool {
+  let mut caught = false
+  ; invalid regex should cause a runtime error
+  ; we can't easily test this without try, so just verify valid patterns work
+  assert_eq(regex.is_match(r".*", "anything"), true)
+}

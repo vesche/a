@@ -1,0 +1,53 @@
+fn repeat(s: str, n: i64) -> str {
+  let mut result: str = ""
+  let mut i: i64 = 0
+  while i < n {
+    result = str.concat(result, s)
+    i = i + 1
+  }
+  ret result
+}
+
+fn pad_left(s: str, width: i64, pad: str) -> str {
+  let slen: i64 = len(str.chars(s))
+  if slen >= width { ret s }
+  let needed: i64 = width - slen
+  ret str.concat(repeat(pad, needed), s)
+}
+
+fn pad_right(s: str, width: i64, pad: str) -> str {
+  let slen: i64 = len(str.chars(s))
+  if slen >= width { ret s }
+  let needed: i64 = width - slen
+  ret str.concat(s, repeat(pad, needed))
+}
+
+fn reverse(s: str) -> str {
+  let chars: [str] = str.chars(s)
+  let n: i64 = len(chars)
+  let mut result: str = ""
+  let mut i: i64 = n - 1
+  while i >= 0 {
+    result = str.concat(result, chars[i])
+    i = i - 1
+  }
+  ret result
+}
+
+fn count(s: str, sub: str) -> i64 {
+  let parts: [str] = str.split(s, sub)
+  ret len(parts) - 1
+}
+
+fn center(s: str, width: i64, pad: str) -> str {
+  let slen: i64 = len(str.chars(s))
+  if slen >= width { ret s }
+  let total_pad: i64 = width - slen
+  let left: i64 = total_pad / 2
+  let right: i64 = total_pad - left
+  ret str.concat(str.concat(repeat(pad, left), s), repeat(pad, right))
+}
+
+fn is_empty(s: str) -> bool {
+  ret len(str.chars(s)) == 0
+}

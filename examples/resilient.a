@@ -1,0 +1,91 @@
+mod resilient {
+  ty HttpResp = {status: i64, body: str, headers: #{str: str}}
+  ty ApiResult = {name: str, data: str}
+
+  fn safe_fetch(url: str) -> str effects [io] {
+    let result: str = try {
+      let resp: HttpResp = http.get(url)
+      if resp.status != 200 {
+        Err(str.concat("HTTP ", to_str(resp.status)))?
+      }
+      resp.body
+    }
+    ret result
+  }
+
+  fn safe_read(path: str) -> str effects [io] {
+    ret try {
+      io.read_file(path)?
+    }
+  }
+
+  fn safe_parse(raw: str) -> str {
+    ret try {
+      json.parse(raw)?
+    }
+  }
+
+  fn try_multiple_sources() -> str effects [io] {
+    let urls: [str] = ["https://httpbin.org/status/404", "https://httpbin.org/status/500", "https://httpbin.org/get"]
+
+    let found: str = ""
+    for url: str in urls {
+      let result: str = safe_fetch(url)
+      if is_ok(result) {
+        found = url
+      }
+    }
+    ret found
+  }
+
+  fn main() -> void effects [io] {
+    println("=== resilient error handling ===")
+    println("")
+
+    println("--- try/? catches errors ---")
+    let r1: str = try { Err("deliberate failure")? }
+    match r1 {
+      Ok(v) => {
+        println("unexpected ok")
+      }
+      Err(e) => {
+        println("caught: {e}")
+      }
+    }
+
+    println("")
+    println("--- safe file read ---")
+    let config: str = safe_read("_nonexistent_config.json")
+    let cfg_val: str = unwrap_or(config, "default_config")
+    println("config: {cfg_val}")
+
+    println("")
+    println("--- safe JSON parse ---")
+    let good: str = safe_parse("[1, 2, 3]")
+    println("good parse: {to_str(is_ok(good))}")
+    let bad: str = safe_parse("not json at all")
+    println("bad parse: {to_str(is_err(bad))}")
+
+    println("")
+    println("--- chained operations ---")
+    let pipeline: str = try {
+      let raw: str = "[10, 20, 30]"
+      let data: [i64] = json.parse(raw)?
+      let total: i64 = reduce(data, 0, fn(a: i64, b: i64) => a + b)
+      to_str(total)
+    }
+    println("pipeline result: {to_str(unwrap(pipeline))}")
+
+    println("")
+    println("--- try multiple sources ---")
+    let source: str = try_multiple_sources()
+    if source == "" {
+      println("all sources failed")
+    } else {
+      println("found working source: {source}")
+    }
+
+    println("")
+    println("=== done ===")
+  }
+}

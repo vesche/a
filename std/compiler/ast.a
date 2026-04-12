@@ -1,0 +1,308 @@
+; Self-hosted AST node constructors.
+; Every node is a tagged map: #{"tag": "NodeType", ...fields}
+; This mirrors src/ast.rs exactly.
+
+; --- Program & Top-level ---
+
+fn mk_program(items) {
+  ret #{"tag": "Program", "items": items}
+}
+
+fn mk_fn_decl(name, params, ret_type, effs, precond, postcond, body) {
+  ret #{"tag": "FnDecl", "name": name, "params": params, "ret_type": ret_type,
+        "effects": effs, "pre": precond, "post": postcond, "body": body}
+}
+
+fn mk_type_decl(name, type_params, body) {
+  ret #{"tag": "TypeDecl", "name": name, "params": type_params, "body": body}
+}
+
+fn mk_mod_decl(name, items) {
+  ret #{"tag": "ModDecl", "name": name, "items": items}
+}
+
+fn mk_use_decl(path) {
+  ret #{"tag": "UseDecl", "path": path}
+}
+
+; --- Type body variants ---
+
+fn mk_type_record(fields) {
+  ret #{"tag": "TypeRecord", "fields": fields}
+}
+
+fn mk_type_sum(variants) {
+  ret #{"tag": "TypeSum", "variants": variants}
+}
+
+fn mk_type_alias(typ, where_expr) {
+  ret #{"tag": "TypeAlias", "type": typ, "where": where_expr}
+}
+
+fn mk_variant(name, fields) {
+  ret #{"tag": "Variant", "name": name, "fields": fields}
+}
+
+fn mk_field(name, typ) {
+  ret #{"tag": "Field", "name": name, "type": typ}
+}
+
+; --- Type expressions ---
+
+fn mk_ty_named(name, args) {
+  ret #{"tag": "TyNamed", "name": name, "args": args}
+}
+
+fn mk_ty_array(elem) {
+  ret #{"tag": "TyArray", "elem": elem}
+}
+
+fn mk_ty_tuple(elems) {
+  ret #{"tag": "TyTuple", "elems": elems}
+}
+
+fn mk_ty_record(fields) {
+  ret #{"tag": "TyRecord", "fields": fields}
+}
+
+fn mk_ty_fn(params, ret_ty) {
+  ret #{"tag": "TyFn", "params": params, "ret": ret_ty}
+}
+
+fn mk_ty_map(key, val) {
+  ret #{"tag": "TyMap", "key": key, "val": val}
+}
+
+fn mk_ty_prim(name) {
+  ret #{"tag": "TyPrim", "name": name}
+}
+
+fn mk_ty_infer() {
+  ret #{"tag": "TyInfer"}
+}
+
+; --- Params ---
+
+fn mk_param(name, typ) {
+  ret #{"tag": "Param", "name": name, "type": typ}
+}
+
+; --- Block ---
+
+fn mk_block(stmts) {
+  ret #{"tag": "Block", "stmts": stmts}
+}
+
+; --- Statements ---
+
+fn mk_let(mutable, name, typ, value) {
+  ret #{"tag": "Let", "mutable": mutable, "name": name, "type": typ, "value": value}
+}
+
+fn mk_assign(target, value) {
+  ret #{"tag": "Assign", "target": target, "value": value}
+}
+
+fn mk_return(expr) {
+  ret #{"tag": "Return", "expr": expr}
+}
+
+fn mk_expr_stmt(expr) {
+  ret #{"tag": "ExprStmt", "expr": expr}
+}
+
+fn mk_if_stmt(cond, then_block, else_branch) {
+  ret #{"tag": "If", "cond": cond, "then": then_block, "else": else_branch}
+}
+
+fn mk_match_stmt(expr, arms) {
+  ret #{"tag": "Match", "expr": expr, "arms": arms}
+}
+
+fn mk_for_stmt(var, typ, iter, body) {
+  ret #{"tag": "For", "var": var, "type": typ, "iter": iter, "body": body}
+}
+
+fn mk_while_stmt(cond, body) {
+  ret #{"tag": "While", "cond": cond, "body": body}
+}
+
+fn mk_let_destructure(bindings, rest, value) {
+  ret #{"tag": "LetDestructure", "bindings": bindings, "rest": rest, "value": value}
+}
+
+fn mk_for_destructure(bindings, iter, body) {
+  ret #{"tag": "ForDestructure", "bindings": bindings, "iter": iter, "body": body}
+}
+
+fn mk_break() {
+  ret #{"tag": "Break"}
+}
+
+fn mk_continue() {
+  ret #{"tag": "Continue"}
+}
+
+; --- Else branch ---
+
+fn mk_else_block(block) {
+  ret #{"tag": "ElseBlock", "block": block}
+}
+
+fn mk_else_if(if_stmt) {
+  ret #{"tag": "ElseIf", "stmt": if_stmt}
+}
+
+; --- Match arm ---
+
+fn mk_match_arm(pattern, guard, body) {
+  ret #{"tag": "MatchArm", "pattern": pattern, "guard": guard, "body": body}
+}
+
+; --- Patterns ---
+
+fn mk_pat_ident(name) {
+  ret #{"tag": "PatIdent", "name": name}
+}
+
+fn mk_pat_constructor(name, args) {
+  ret #{"tag": "PatConstructor", "name": name, "args": args}
+}
+
+fn mk_pat_literal(lit) {
+  ret #{"tag": "PatLiteral", "value": lit}
+}
+
+fn mk_pat_wildcard() {
+  ret #{"tag": "PatWildcard"}
+}
+
+fn mk_pat_array(elems) {
+  ret #{"tag": "PatArray", "elems": elems}
+}
+
+fn mk_pat_array_elem(pat) {
+  ret #{"tag": "PatElem", "pattern": pat}
+}
+
+fn mk_pat_rest(name) {
+  ret #{"tag": "PatRest", "name": name}
+}
+
+fn mk_pat_map(entries) {
+  ret #{"tag": "PatMap", "entries": entries}
+}
+
+fn mk_pat_map_entry(key, pat) {
+  ret #{"tag": "PatMapEntry", "key": key, "pattern": pat}
+}
+
+; --- Expressions ---
+
+fn mk_int(val) {
+  ret #{"tag": "Int", "value": val}
+}
+
+fn mk_float(val) {
+  ret #{"tag": "Float", "value": val}
+}
+
+fn mk_string(val) {
+  ret #{"tag": "String", "value": val}
+}
+
+fn mk_bool_lit(val) {
+  ret #{"tag": "Bool", "value": val}
+}
+
+fn mk_ident(name) {
+  ret #{"tag": "Ident", "name": name}
+}
+
+fn mk_binop(op, left, right) {
+  ret #{"tag": "BinOp", "op": op, "left": left, "right": right}
+}
+
+fn mk_unary(op, expr) {
+  ret #{"tag": "UnaryOp", "op": op, "expr": expr}
+}
+
+fn mk_call(func, args) {
+  ret #{"tag": "Call", "func": func, "args": args}
+}
+
+fn mk_field_access(expr, field) {
+  ret #{"tag": "FieldAccess", "expr": expr, "field": field}
+}
+
+fn mk_index(expr, index) {
+  ret #{"tag": "Index", "expr": expr, "index": index}
+}
+
+fn mk_try(expr) {
+  ret #{"tag": "Try", "expr": expr}
+}
+
+fn mk_try_block(block) {
+  ret #{"tag": "TryBlock", "block": block}
+}
+
+fn mk_if_expr(cond, then_block, else_block) {
+  ret #{"tag": "IfExpr", "cond": cond, "then": then_block, "else": else_block}
+}
+
+fn mk_match_expr(expr, arms) {
+  ret #{"tag": "MatchExpr", "expr": expr, "arms": arms}
+}
+
+fn mk_block_expr(block) {
+  ret #{"tag": "BlockExpr", "block": block}
+}
+
+fn mk_array(elems) {
+  ret #{"tag": "Array", "elems": elems}
+}
+
+fn mk_record(fields) {
+  ret #{"tag": "Record", "fields": fields}
+}
+
+fn mk_record_field(name, value) {
+  ret #{"tag": "RecordField", "name": name, "value": value}
+}
+
+fn mk_lambda(params, body) {
+  ret #{"tag": "Lambda", "params": params, "body": body}
+}
+
+fn mk_pipe(left, right) {
+  ret #{"tag": "Pipe", "left": left, "right": right}
+}
+
+fn mk_interpolation(parts) {
+  ret #{"tag": "Interpolation", "parts": parts}
+}
+
+fn mk_interp_lit(text) {
+  ret #{"tag": "InterpLit", "value": text}
+}
+
+fn mk_interp_expr(expr) {
+  ret #{"tag": "InterpExpr", "expr": expr}
+}
+
+fn mk_map_literal(entries) {
+  ret #{"tag": "MapLiteral", "entries": entries}
+}
+
+fn mk_map_entry(key, value) {
+  ret #{"tag": "MapEntry", "key": key, "value": value}
+}
+
+fn mk_spread(expr) {
+  ret #{"tag": "Spread", "expr": expr}
+}
+
+fn mk_void_lit() {
+  ret #{"tag": "Void"}
+}

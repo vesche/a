@@ -1,0 +1,30 @@
+fn square(x: i64) -> i64
+  effects [pure]
+{
+  ret x * x
+}
+
+fn add(a: i64, b: i64) -> i64
+  effects [pure]
+{
+  ret a + b
+}
+
+fn distance(x1: f64, y1: f64, x2: f64, y2: f64) -> f64
+  effects [pure]
+  post { ret >= 0.0 }
+{
+  let dx: f64 = x2 - x1
+  let dy: f64 = y2 - y1
+  ret sqrt(dx * dx + dy * dy)
+}
+
+fn main() -> void
+  effects [io]
+{
+  let a: i64 = square(5)
+  let b: i64 = add(a, 10)
+  println(to_str(b))
+  let d: f64 = distance(0.0, 0.0, 3.0, 4.0)
+  println(to_str(d))
+}

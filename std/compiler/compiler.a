@@ -1,0 +1,2682 @@
+; Self-hosted bytecode compiler for the "a" language.
+; Mirrors src/compiler.rs: tagged-map AST -> bytecode opcodes.
+;
+; State model:
+;   s = per-function state (locals, loops, code, constants, strings, lines)
+;   g = global state (pending_fns, lambda_counter)
+;
+; Opcodes are arrays: ["OpName"] or ["OpName", a] or ["OpName", a, b]
+
+use std.compiler.lexer
+use std.compiler.parser
+
+; --- Void value helper ---
+
+fn void_val() {
+  ret #{}["_"]
+}
+
+; --- State constructors ---
+
+fn new_state() {
+  ret #{"locals": [], "loops": [], "code": [], "consts": [], "strs": [], "lines": [], "line": 0}
+}
+
+fn new_global() {
+  ret #{"pending_fns": [], "lambda_counter": 0}
+}
+
+; --- Chunk helpers ---
+
+fn emit(s, op) {
+  let idx = len(s["code"])
+  s["code"] = push(s["code"], op)
+  s["lines"] = push(s["lines"], s["line"])
+  ret [s, idx]
+}
+
+fn add_const(s, val) {
+  let idx = len(s["consts"])
+  s["consts"] = push(s["consts"], val)
+  ret [s, idx]
+}
+
+fn intern_str(s, sval) {
+  let arr = s["strs"]
+  let mut i = 0
+  while i < len(arr) {
+    if arr[i] == sval { ret [s, i] }
+    i = i + 1
+  }
+  let idx = len(arr)
+  s["strs"] = push(arr, sval)
+  ret [s, idx]
+}
+
+fn patch_jump(s, idx) {
+  let target = len(s["code"])
+  let mut code = s["code"]
+  let op = code[idx]
+  let opname = op[0]
+  if opname == "Jump" { code[idx] = ["Jump", target] }
+  if opname == "JumpIfFalse" { code[idx] = ["JumpIfFalse", target] }
+  if opname == "JumpIfFalseKeep" { code[idx] = ["JumpIfFalseKeep", target] }
+  if opname == "TryStart" { code[idx] = ["TryStart", target] }
+  if opname == "MatchVariant" { code[idx] = ["MatchVariant", op[1], target] }
+  if opname == "MatchLiteral" { code[idx] = ["MatchLiteral", op[1], target] }
+  s["code"] = code
+  ret s
+}
+
+fn resolve_local(s, name) {
+  let locals = s["locals"]
+  let mut i = len(locals) - 1
+  while i >= 0 {
+    if locals[i] == name { ret i }
+    i = i - 1
+  }
+  ret 0 - 1
+}
+
+fn push_local(s, name) {
+  s["locals"] = push(s["locals"], name)
+  ret s
+}
+
+fn push_loop(s) {
+  s["loops"] = push(s["loops"], #{"break_patches": [], "continue_patches": []})
+  ret s
+}
+
+fn pop_loop(s) {
+  let loops = s["loops"]
+  let n = len(loops)
+  let ctx = loops[n - 1]
+  s["loops"] = slice(loops, 0, n - 1)
+  ret [s, ctx]
+}
+
+fn patch_breaks(s, loop_ctx) {
+  let bps = loop_ctx["break_patches"]
+  let mut i = 0
+  while i < len(bps) {
+    s = patch_jump(s, bps[i])
+    i = i + 1
+  }
+  ret s
+}
+
+fn patch_continues(s, loop_ctx, target) {
+  let cps = loop_ctx["continue_patches"]
+  let mut code = s["code"]
+  let mut i = 0
+  while i < len(cps) {
+    code[cps[i]] = ["Jump", target]
+    i = i + 1
+  }
+  s["code"] = code
+  ret s
+}
+
+fn push_break_patch(s, bp) {
+  let loops = s["loops"]
+  let n = len(loops)
+  if n > 0 {
+    let last = loops[n - 1]
+    last["break_patches"] = push(last["break_patches"], bp)
+    loops[n - 1] = last
+    s["loops"] = loops
+  }
+  ret s
+}
+
+fn push_continue_patch(s, cp) {
+  let loops = s["loops"]
+  let n = len(loops)
+  if n > 0 {
+    let last = loops[n - 1]
+    last["continue_patches"] = push(last["continue_patches"], cp)
+    loops[n - 1] = last
+    s["loops"] = loops
+  }
+  ret s
+}
+
+; --- Tail call optimization ---
+
+fn optimize_tail_calls(s) {
+  let code = s["code"]
+  let n = len(code)
+  if n < 2 { ret s }
+  let mut i = 0
+  while i < n - 1 {
+    if code[i + 1][0] == "Return" {
+      let op = code[i]
+      if op[0] == "Call" {
+        code[i] = ["TailCall", op[1], op[2]]
+        code[i + 1] = ["Pop"]
+      }
+      if op[0] == "CallClosure" {
+        code[i] = ["TailCallClosure", op[1]]
+        code[i + 1] = ["Pop"]
+      }
+    }
+    i = i + 1
+  }
+  s["code"] = code
+  ret s
+}
+
+; --- compile_fn ---
+
+fn compile_fn(g, fn_node) {
+  let mut s = new_state()
+  let params = fn_node["params"]
+  let mut i = 0
+  while i < len(params) {
+    s = push_local(s, params[i]["name"])
+    i = i + 1
+  }
+
+  let r = compile_block(s, g, fn_node["body"])
+  s = r[0]
+  g = r[1]
+
+  let r = add_const(s, void_val())
+  s = r[0]
+  let vi = r[1]
+  let r = emit(s, ["Const", vi])
+  s = r[0]
+  let r = emit(s, ["Return"])
+  s = r[0]
+  s = optimize_tail_calls(s)
+
+  let mut param_names = []
+  let mut i = 0
+  while i < len(params) {
+    param_names = push(param_names, params[i]["name"])
+    i = i + 1
+  }
+
+  let compiled = #{
+    "name": fn_node["name"],
+    "params": param_names,
+    "locals": s["locals"],
+    "chunk": #{"code": s["code"], "constants": s["consts"], "strings": s["strs"], "lines": s["lines"]}
+  }
+  ret [compiled, g]
+}
+
+; --- compile_block ---
+
+fn compile_block(s, g, block) {
+  let stmts = block["stmts"]
+  let mut i = 0
+  while i < len(stmts) {
+    let r = compile_stmt(s, g, stmts[i])
+    s = r[0]
+    g = r[1]
+    i = i + 1
+  }
+  ret [s, g]
+}
+
+fn compile_block_as_expr(s, g, block) {
+  let stmts = block["stmts"]
+  if len(stmts) == 0 {
+    let r = add_const(s, void_val())
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+  let last = len(stmts) - 1
+  let mut i = 0
+  while i < len(stmts) {
+    if i == last {
+      let tag = stmts[i]["tag"]
+      if tag == "ExprStmt" {
+        ret compile_expr(s, g, stmts[i]["expr"])
+      }
+      if tag == "Return" {
+        ret compile_expr(s, g, stmts[i]["expr"])
+      }
+    }
+    let r = compile_stmt(s, g, stmts[i])
+    s = r[0]
+    g = r[1]
+    i = i + 1
+  }
+  let r = add_const(s, void_val())
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- compile_stmt ---
+
+fn compile_stmt(s, g, stmt) {
+  let tag = stmt["tag"]
+
+  if tag == "Let" {
+    let r = compile_expr(s, g, stmt["value"])
+    s = r[0]
+    g = r[1]
+    let idx = len(s["locals"])
+    s = push_local(s, stmt["name"])
+    let r = emit(s, ["SetLocal", idx])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Assign" {
+    ret compile_assign(s, g, stmt["target"], stmt["value"])
+  }
+
+  if tag == "Return" {
+    let r = compile_expr(s, g, stmt["expr"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["Return"])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "ExprStmt" {
+    let r = compile_expr(s, g, stmt["expr"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["Pop"])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "If" {
+    ret compile_if_stmt(s, g, stmt)
+  }
+
+  if tag == "While" {
+    ret compile_while(s, g, stmt)
+  }
+
+  if tag == "For" {
+    ret compile_for(s, g, stmt)
+  }
+
+  if tag == "ForDestructure" {
+    ret compile_for_destructure(s, g, stmt)
+  }
+
+  if tag == "LetDestructure" {
+    ret compile_let_destructure(s, g, stmt)
+  }
+
+  if tag == "Break" {
+    let r = emit(s, ["Jump", 0])
+    s = r[0]
+    s = push_break_patch(s, r[1])
+    ret [s, g]
+  }
+
+  if tag == "Continue" {
+    let r = emit(s, ["Jump", 0])
+    s = r[0]
+    s = push_continue_patch(s, r[1])
+    ret [s, g]
+  }
+
+  if tag == "Match" {
+    ret compile_match_stmt(s, g, stmt["expr"], stmt["arms"])
+  }
+
+  ret [s, g]
+}
+
+; --- Assign ---
+
+fn compile_assign(s, g, target, value) {
+  if target["tag"] == "Ident" {
+    let r = compile_expr(s, g, value)
+    s = r[0]
+    g = r[1]
+    let li = resolve_local(s, target["name"])
+    if li >= 0 {
+      let r = emit(s, ["SetLocal", li])
+      s = r[0]
+    } else {
+      let r = intern_str(s, target["name"])
+      s = r[0]
+      let r = emit(s, ["SetGlobal", r[1]])
+      s = r[0]
+    }
+    ret [s, g]
+  }
+
+  if target["tag"] == "Index" {
+    let r = compile_expr(s, g, target["expr"])
+    s = r[0]
+    g = r[1]
+    let r = compile_expr(s, g, target["index"])
+    s = r[0]
+    g = r[1]
+    let r = compile_expr(s, g, value)
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["IndexSet"])
+    s = r[0]
+    if target["expr"]["tag"] == "Ident" {
+      let li = resolve_local(s, target["expr"]["name"])
+      if li >= 0 {
+        let r = emit(s, ["SetLocal", li])
+        s = r[0]
+      }
+    }
+    ret [s, g]
+  }
+
+  let r = compile_expr(s, g, value)
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["Pop"])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- If statement ---
+
+fn compile_if_stmt(s, g, stmt) {
+  let r = compile_expr(s, g, stmt["cond"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  let jump_else = r[1]
+  let r = compile_block(s, g, stmt["then"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["Jump", 0])
+  s = r[0]
+  let jump_end = r[1]
+  s = patch_jump(s, jump_else)
+
+  let else_branch = stmt["else"]
+  if type_of(else_branch) == "map" {
+    if map.has(else_branch, "tag") {
+      if else_branch["tag"] == "ElseBlock" {
+        let r = compile_block(s, g, else_branch["block"])
+        s = r[0]
+        g = r[1]
+      }
+      if else_branch["tag"] == "ElseIf" {
+        let r = compile_stmt(s, g, else_branch["stmt"])
+        s = r[0]
+        g = r[1]
+      }
+    }
+  }
+  s = patch_jump(s, jump_end)
+  ret [s, g]
+}
+
+; --- While ---
+
+fn compile_while(s, g, stmt) {
+  let loop_start = len(s["code"])
+  s = push_loop(s)
+  let r = compile_expr(s, g, stmt["cond"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  let exit_jump = r[1]
+  let r = compile_block(s, g, stmt["body"])
+  s = r[0]
+  g = r[1]
+  let continue_target = len(s["code"])
+  let r = emit(s, ["Loop", loop_start])
+  s = r[0]
+  s = patch_jump(s, exit_jump)
+  let r = pop_loop(s)
+  s = r[0]
+  let loop_ctx = r[1]
+  s = patch_breaks(s, loop_ctx)
+  s = patch_continues(s, loop_ctx, continue_target)
+  ret [s, g]
+}
+
+; --- For ---
+
+fn compile_for(s, g, stmt) {
+  let r = compile_expr(s, g, stmt["iter"])
+  s = r[0]
+  g = r[1]
+  let arr_local = len(s["locals"])
+  s = push_local(s, "__iter__")
+  let r = emit(s, ["SetLocal", arr_local])
+  s = r[0]
+
+  let r = add_const(s, 0)
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let idx_local = len(s["locals"])
+  s = push_local(s, "__idx__")
+  let r = emit(s, ["SetLocal", idx_local])
+  s = r[0]
+
+  let var_local = len(s["locals"])
+  s = push_local(s, stmt["var"])
+
+  let loop_start = len(s["code"])
+  s = push_loop(s)
+
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["GetLocal", arr_local])
+  s = r[0]
+  let r = intern_str(s, "len")
+  s = r[0]
+  let len_si = r[1]
+  let r = emit(s, ["Call", len_si, 1])
+  s = r[0]
+  let r = emit(s, ["Lt"])
+  s = r[0]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  let exit_jump = r[1]
+
+  let r = emit(s, ["GetLocal", arr_local])
+  s = r[0]
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["Index"])
+  s = r[0]
+  let r = emit(s, ["SetLocal", var_local])
+  s = r[0]
+
+  let r = compile_block(s, g, stmt["body"])
+  s = r[0]
+  g = r[1]
+
+  let continue_target = len(s["code"])
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = add_const(s, 1)
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let r = emit(s, ["Add"])
+  s = r[0]
+  let r = emit(s, ["SetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["Loop", loop_start])
+  s = r[0]
+  s = patch_jump(s, exit_jump)
+
+  let r = pop_loop(s)
+  s = r[0]
+  let loop_ctx = r[1]
+  s = patch_breaks(s, loop_ctx)
+  s = patch_continues(s, loop_ctx, continue_target)
+  ret [s, g]
+}
+
+; --- ForDestructure ---
+
+fn compile_for_destructure(s, g, stmt) {
+  let r = compile_expr(s, g, stmt["iter"])
+  s = r[0]
+  g = r[1]
+  let arr_local = len(s["locals"])
+  s = push_local(s, "__iter__")
+  let r = emit(s, ["SetLocal", arr_local])
+  s = r[0]
+
+  let r = add_const(s, 0)
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let idx_local = len(s["locals"])
+  s = push_local(s, "__idx__")
+  let r = emit(s, ["SetLocal", idx_local])
+  s = r[0]
+
+  let elem_local = len(s["locals"])
+  s = push_local(s, "__elem__")
+
+  let bindings = stmt["bindings"]
+  let mut bind_locals = []
+  let mut i = 0
+  while i < len(bindings) {
+    let bl = len(s["locals"])
+    s = push_local(s, bindings[i])
+    bind_locals = push(bind_locals, bl)
+    i = i + 1
+  }
+
+  let loop_start = len(s["code"])
+  s = push_loop(s)
+
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["GetLocal", arr_local])
+  s = r[0]
+  let r = intern_str(s, "len")
+  s = r[0]
+  let len_si = r[1]
+  let r = emit(s, ["Call", len_si, 1])
+  s = r[0]
+  let r = emit(s, ["Lt"])
+  s = r[0]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  let exit_jump = r[1]
+
+  let r = emit(s, ["GetLocal", arr_local])
+  s = r[0]
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["Index"])
+  s = r[0]
+  let r = emit(s, ["SetLocal", elem_local])
+  s = r[0]
+
+  let mut i = 0
+  while i < len(bind_locals) {
+    let r = emit(s, ["GetLocal", elem_local])
+    s = r[0]
+    let r = add_const(s, i)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let r = emit(s, ["SetLocal", bind_locals[i]])
+    s = r[0]
+    i = i + 1
+  }
+
+  let r = compile_block(s, g, stmt["body"])
+  s = r[0]
+  g = r[1]
+
+  let continue_target = len(s["code"])
+  let r = emit(s, ["GetLocal", idx_local])
+  s = r[0]
+  let r = add_const(s, 1)
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let r = emit(s, ["Add"])
+  s = r[0]
+  let r = emit(s, ["SetLocal", idx_local])
+  s = r[0]
+  let r = emit(s, ["Loop", loop_start])
+  s = r[0]
+  s = patch_jump(s, exit_jump)
+
+  let r = pop_loop(s)
+  s = r[0]
+  let loop_ctx = r[1]
+  s = patch_breaks(s, loop_ctx)
+  s = patch_continues(s, loop_ctx, continue_target)
+  ret [s, g]
+}
+
+; --- LetDestructure ---
+
+fn compile_let_destructure(s, g, stmt) {
+  let r = compile_expr(s, g, stmt["value"])
+  s = r[0]
+  g = r[1]
+  let arr_tmp = len(s["locals"])
+  s = push_local(s, "__destructure__")
+  let r = emit(s, ["SetLocal", arr_tmp])
+  s = r[0]
+
+  let bindings = stmt["bindings"]
+  let mut i = 0
+  while i < len(bindings) {
+    if bindings[i] != "" {
+      let r = emit(s, ["GetLocal", arr_tmp])
+      s = r[0]
+      let r = add_const(s, i)
+      s = r[0]
+      let r = emit(s, ["Const", r[1]])
+      s = r[0]
+      let r = emit(s, ["Index"])
+      s = r[0]
+      let local = len(s["locals"])
+      s = push_local(s, bindings[i])
+      let r = emit(s, ["SetLocal", local])
+      s = r[0]
+    }
+    i = i + 1
+  }
+
+  let rest_name = stmt["rest"]
+  if rest_name != "" {
+    let r = emit(s, ["GetLocal", arr_tmp])
+    s = r[0]
+    let r = add_const(s, len(bindings))
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = intern_str(s, "drop")
+    s = r[0]
+    let drop_si = r[1]
+    let r = emit(s, ["Call", drop_si, 2])
+    s = r[0]
+    let local = len(s["locals"])
+    s = push_local(s, rest_name)
+    let r = emit(s, ["SetLocal", local])
+    s = r[0]
+  }
+  ret [s, g]
+}
+
+; === EXPRESSION COMPILATION ===
+
+fn compile_expr(s, g, expr) {
+  let tag = expr["tag"]
+
+  if tag == "Int" {
+    let r = add_const(s, expr["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Float" {
+    let r = add_const(s, expr["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "String" {
+    let r = add_const(s, expr["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Bool" {
+    let r = add_const(s, expr["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Void" {
+    let r = add_const(s, void_val())
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Ident" {
+    let li = resolve_local(s, expr["name"])
+    if li >= 0 {
+      let r = emit(s, ["GetLocal", li])
+      s = r[0]
+    } else {
+      let r = intern_str(s, expr["name"])
+      s = r[0]
+      let r = emit(s, ["GetGlobal", r[1]])
+      s = r[0]
+    }
+    ret [s, g]
+  }
+
+  if tag == "BinOp" {
+    ret compile_binop(s, g, expr)
+  }
+
+  if tag == "UnaryOp" {
+    let r = compile_expr(s, g, expr["expr"])
+    s = r[0]
+    g = r[1]
+    let op = expr["op"]
+    if op == "-" {
+      let r = emit(s, ["Neg"])
+      s = r[0]
+    }
+    if op == "!" {
+      let r = emit(s, ["Not"])
+      s = r[0]
+    }
+    ret [s, g]
+  }
+
+  if tag == "Call" {
+    ret compile_call(s, g, expr)
+  }
+
+  if tag == "FieldAccess" {
+    let r = compile_expr(s, g, expr["expr"])
+    s = r[0]
+    g = r[1]
+    let r = intern_str(s, expr["field"])
+    s = r[0]
+    let fi = r[1]
+    let r = emit(s, ["Field", fi])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Index" {
+    let r = compile_expr(s, g, expr["expr"])
+    s = r[0]
+    g = r[1]
+    let r = compile_expr(s, g, expr["index"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Array" {
+    ret compile_array(s, g, expr)
+  }
+
+  if tag == "Spread" {
+    let r = add_const(s, void_val())
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Interpolation" {
+    ret compile_interpolation(s, g, expr)
+  }
+
+  if tag == "Record" {
+    ret compile_record(s, g, expr)
+  }
+
+  if tag == "MapLiteral" {
+    ret compile_map_literal(s, g, expr)
+  }
+
+  if tag == "TryBlock" {
+    ret compile_try_block(s, g, expr)
+  }
+
+  if tag == "Try" {
+    let r = compile_expr(s, g, expr["expr"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["Unwrap"])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if tag == "Pipe" {
+    ret compile_pipe(s, g, expr)
+  }
+
+  if tag == "Lambda" {
+    ret compile_lambda(s, g, expr)
+  }
+
+  if tag == "IfExpr" {
+    ret compile_if_expr(s, g, expr)
+  }
+
+  if tag == "MatchExpr" {
+    ret compile_match_expr(s, g, expr["expr"], expr["arms"])
+  }
+
+  if tag == "BlockExpr" {
+    ret compile_block_as_expr(s, g, expr["block"])
+  }
+
+  ret [s, g]
+}
+
+; --- BinOp ---
+
+fn compile_binop(s, g, expr) {
+  let op = expr["op"]
+
+  if op == "&&" {
+    let r = compile_expr(s, g, expr["left"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["JumpIfFalseKeep", 0])
+    s = r[0]
+    let short = r[1]
+    let r = emit(s, ["Pop"])
+    s = r[0]
+    let r = compile_expr(s, g, expr["right"])
+    s = r[0]
+    g = r[1]
+    s = patch_jump(s, short)
+    ret [s, g]
+  }
+
+  if op == "||" {
+    let r = compile_expr(s, g, expr["left"])
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["JumpIfFalseKeep", 0])
+    s = r[0]
+    let jump_true = r[1]
+    let r = emit(s, ["Jump", 0])
+    s = r[0]
+    let skip = r[1]
+    s = patch_jump(s, jump_true)
+    let r = emit(s, ["Pop"])
+    s = r[0]
+    let r = compile_expr(s, g, expr["right"])
+    s = r[0]
+    g = r[1]
+    s = patch_jump(s, skip)
+    ret [s, g]
+  }
+
+  let r = compile_expr(s, g, expr["left"])
+  s = r[0]
+  g = r[1]
+  let r = compile_expr(s, g, expr["right"])
+  s = r[0]
+  g = r[1]
+
+  let mut opcode = "Add"
+  if op == "+" { opcode = "Add" }
+  if op == "-" { opcode = "Sub" }
+  if op == "*" { opcode = "Mul" }
+  if op == "/" { opcode = "Div" }
+  if op == "%" { opcode = "Mod" }
+  if op == "==" { opcode = "Eq" }
+  if op == "!=" { opcode = "NotEq" }
+  if op == "<" { opcode = "Lt" }
+  if op == ">" { opcode = "Gt" }
+  if op == "<=" { opcode = "LtEq" }
+  if op == ">=" { opcode = "GtEq" }
+
+  let r = emit(s, [opcode])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- Call ---
+
+fn compile_call(s, g, expr) {
+  let func = expr["func"]
+  let call_args = expr["args"]
+
+  if func["tag"] == "FieldAccess" {
+    if func["expr"]["tag"] == "Ident" {
+      let module = func["expr"]["name"]
+      let field = func["field"]
+      let mut i = 0
+      while i < len(call_args) {
+        let r = compile_expr(s, g, call_args[i])
+        s = r[0]
+        g = r[1]
+        i = i + 1
+      }
+      let r = intern_str(s, module)
+      s = r[0]
+      let mi = r[1]
+      let r = intern_str(s, field)
+      s = r[0]
+      let fi = r[1]
+      let r = emit(s, ["CallMethod", mi, fi, len(call_args)])
+      s = r[0]
+      ret [s, g]
+    }
+  }
+
+  if func["tag"] == "Ident" {
+    let fname = func["name"]
+    if resolve_local(s, fname) >= 0 {
+      let mut i = 0
+      while i < len(call_args) {
+        let r = compile_expr(s, g, call_args[i])
+        s = r[0]
+        g = r[1]
+        i = i + 1
+      }
+      let r = compile_expr(s, g, func)
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["CallClosure", len(call_args)])
+      s = r[0]
+      ret [s, g]
+    }
+    let mut i = 0
+    while i < len(call_args) {
+      let r = compile_expr(s, g, call_args[i])
+      s = r[0]
+      g = r[1]
+      i = i + 1
+    }
+    let r = intern_str(s, fname)
+    s = r[0]
+    let si = r[1]
+    let r = emit(s, ["Call", si, len(call_args)])
+    s = r[0]
+    ret [s, g]
+  }
+
+  let mut i = 0
+  while i < len(call_args) {
+    let r = compile_expr(s, g, call_args[i])
+    s = r[0]
+    g = r[1]
+    i = i + 1
+  }
+  let r = compile_expr(s, g, func)
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["CallClosure", len(call_args)])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- Array ---
+
+fn compile_array(s, g, expr) {
+  let elems = expr["elems"]
+  let mut has_spread = false
+  let mut i = 0
+  while i < len(elems) {
+    if elems[i]["tag"] == "Spread" { has_spread = true }
+    i = i + 1
+  }
+
+  if !has_spread {
+    let mut i = 0
+    while i < len(elems) {
+      let r = compile_expr(s, g, elems[i])
+      s = r[0]
+      g = r[1]
+      i = i + 1
+    }
+    let r = emit(s, ["Array", len(elems)])
+    s = r[0]
+    ret [s, g]
+  }
+
+  let r = emit(s, ["Array", 0])
+  s = r[0]
+  let r = intern_str(s, "push")
+  s = r[0]
+  let push_si = r[1]
+  let r = intern_str(s, "concat_arr")
+  s = r[0]
+  let concat_si = r[1]
+  let mut i = 0
+  while i < len(elems) {
+    if elems[i]["tag"] == "Spread" {
+      let r = compile_expr(s, g, elems[i]["expr"])
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["Call", concat_si, 2])
+      s = r[0]
+    } else {
+      let r = compile_expr(s, g, elems[i])
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["Call", push_si, 2])
+      s = r[0]
+    }
+    i = i + 1
+  }
+  ret [s, g]
+}
+
+; --- Interpolation ---
+
+fn compile_interpolation(s, g, expr) {
+  let parts = expr["parts"]
+  let r = intern_str(s, "to_str")
+  s = r[0]
+  let to_str_si = r[1]
+  let mut i = 0
+  while i < len(parts) {
+    let part = parts[i]
+    if part["tag"] == "InterpLit" {
+      let r = add_const(s, part["value"])
+      s = r[0]
+      let r = emit(s, ["Const", r[1]])
+      s = r[0]
+    } else {
+      let r = compile_expr(s, g, part["expr"])
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["Call", to_str_si, 1])
+      s = r[0]
+    }
+    i = i + 1
+  }
+  let r = emit(s, ["Concat", len(parts)])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- Record ---
+
+fn compile_record(s, g, expr) {
+  let fields = expr["fields"]
+  let mut i = 0
+  while i < len(fields) {
+    let f = fields[i]
+    let r = add_const(s, f["name"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = compile_expr(s, g, f["value"])
+    s = r[0]
+    g = r[1]
+    i = i + 1
+  }
+  let r = emit(s, ["Record", len(fields)])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- MapLiteral ---
+
+fn compile_map_literal(s, g, expr) {
+  let entries = expr["entries"]
+  let mut i = 0
+  while i < len(entries) {
+    let e = entries[i]
+    let r = compile_expr(s, g, e["key"])
+    s = r[0]
+    g = r[1]
+    let r = compile_expr(s, g, e["value"])
+    s = r[0]
+    g = r[1]
+    i = i + 1
+  }
+  let r = emit(s, ["MapNew", len(entries)])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- TryBlock ---
+
+fn compile_try_block(s, g, expr) {
+  let r = emit(s, ["TryStart", 0])
+  s = r[0]
+  let try_start = r[1]
+  let r = compile_block(s, g, expr["block"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["TryEnd"])
+  s = r[0]
+  let r = emit(s, ["MakeOk"])
+  s = r[0]
+  let r = emit(s, ["Jump", 0])
+  s = r[0]
+  let skip_err = r[1]
+  s = patch_jump(s, try_start)
+  let r = emit(s, ["MakeErr"])
+  s = r[0]
+  s = patch_jump(s, skip_err)
+  ret [s, g]
+}
+
+; --- Pipe ---
+
+fn compile_pipe(s, g, expr) {
+  let r = compile_expr(s, g, expr["left"])
+  s = r[0]
+  g = r[1]
+  let right = expr["right"]
+
+  if right["tag"] == "Call" {
+    let rhs_args = right["args"]
+    let mut i = 0
+    while i < len(rhs_args) {
+      let r = compile_expr(s, g, rhs_args[i])
+      s = r[0]
+      g = r[1]
+      i = i + 1
+    }
+    let func = right["func"]
+    if func["tag"] == "Ident" {
+      if resolve_local(s, func["name"]) >= 0 {
+        let r = compile_expr(s, g, func)
+        s = r[0]
+        g = r[1]
+        let r = emit(s, ["CallClosure", len(rhs_args) + 1])
+        s = r[0]
+        ret [s, g]
+      }
+      let r = intern_str(s, func["name"])
+      s = r[0]
+      let r = emit(s, ["Call", r[1], len(rhs_args) + 1])
+      s = r[0]
+      ret [s, g]
+    }
+    if func["tag"] == "FieldAccess" {
+      if func["expr"]["tag"] == "Ident" {
+        let r = intern_str(s, func["expr"]["name"])
+        s = r[0]
+        let mi = r[1]
+        let r = intern_str(s, func["field"])
+        s = r[0]
+        let fi = r[1]
+        let r = emit(s, ["CallMethod", mi, fi, len(rhs_args) + 1])
+        s = r[0]
+        ret [s, g]
+      }
+    }
+    let r = compile_expr(s, g, func)
+    s = r[0]
+    g = r[1]
+    let r = emit(s, ["CallClosure", len(rhs_args) + 1])
+    s = r[0]
+    ret [s, g]
+  }
+
+  if right["tag"] == "Ident" {
+    if resolve_local(s, right["name"]) >= 0 {
+      let r = compile_expr(s, g, right)
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["CallClosure", 1])
+      s = r[0]
+      ret [s, g]
+    }
+    let r = intern_str(s, right["name"])
+    s = r[0]
+    let r = emit(s, ["Call", r[1], 1])
+    s = r[0]
+    ret [s, g]
+  }
+
+  let r = compile_expr(s, g, right)
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["CallClosure", 1])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- Lambda ---
+
+fn compile_lambda(s, g, expr) {
+  let lam_params = expr["params"]
+  let body_expr = expr["body"]
+  let captures = collect_free_vars(s, body_expr, lam_params)
+
+  g["lambda_counter"] = g["lambda_counter"] + 1
+  let lam_name = "__lambda_" + to_str(g["lambda_counter"])
+
+  let mut all_params = []
+  let mut i = 0
+  while i < len(captures) {
+    all_params = push(all_params, #{"tag": "Param", "name": captures[i], "type": #{"tag": "TyInfer"}})
+    i = i + 1
+  }
+  let mut i = 0
+  while i < len(lam_params) {
+    all_params = push(all_params, lam_params[i])
+    i = i + 1
+  }
+
+  let fn_decl = #{
+    "tag": "FnDecl",
+    "name": lam_name,
+    "params": all_params,
+    "ret_type": #{"tag": "TyInfer"},
+    "effects": [],
+    "pre": #{"tag": "Void"},
+    "post": #{"tag": "Void"},
+    "body": #{"tag": "Block", "stmts": [#{"tag": "Return", "expr": body_expr}]}
+  }
+  g["pending_fns"] = push(g["pending_fns"], fn_decl)
+
+  let mut i = 0
+  while i < len(captures) {
+    let li = resolve_local(s, captures[i])
+    if li >= 0 {
+      let r = emit(s, ["GetLocal", li])
+      s = r[0]
+    } else {
+      let r = add_const(s, void_val())
+      s = r[0]
+      let r = emit(s, ["Const", r[1]])
+      s = r[0]
+    }
+    i = i + 1
+  }
+
+  let r = add_const(s, lam_name)
+  s = r[0]
+  let name_idx = r[1]
+  let r = emit(s, ["MakeClosure", name_idx, len(captures)])
+  s = r[0]
+  ret [s, g]
+}
+
+; --- If expression ---
+
+fn compile_if_expr(s, g, expr) {
+  let r = compile_expr(s, g, expr["cond"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  let jump_else = r[1]
+  let r = compile_block_as_expr(s, g, expr["then"])
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["Jump", 0])
+  s = r[0]
+  let jump_end = r[1]
+  s = patch_jump(s, jump_else)
+  let r = compile_block_as_expr(s, g, expr["else"])
+  s = r[0]
+  g = r[1]
+  s = patch_jump(s, jump_end)
+  ret [s, g]
+}
+
+; === MATCH COMPILATION ===
+
+fn compile_match_guard(s, g, guard) {
+  if type_of(guard) == "map" {
+    if guard["tag"] != "Void" {
+      let r = compile_expr(s, g, guard)
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["JumpIfFalse", 0])
+      s = r[0]
+      ret [s, g, r[1]]
+    }
+  }
+  ret [s, g, 0 - 1]
+}
+
+fn compile_match_body(s, g, body) {
+  if body["tag"] == "Block" {
+    ret compile_block(s, g, body)
+  }
+  let r = compile_expr(s, g, body)
+  s = r[0]
+  g = r[1]
+  let r = emit(s, ["Pop"])
+  s = r[0]
+  ret [s, g]
+}
+
+fn compile_match_body_expr(s, g, body) {
+  if body["tag"] == "Block" {
+    ret compile_block_as_expr(s, g, body)
+  }
+  ret compile_expr(s, g, body)
+}
+
+fn compile_match_stmt(s, g, expr, arms) {
+  let r = compile_expr(s, g, expr)
+  s = r[0]
+  g = r[1]
+  let mut end_jumps = []
+
+  let mut ai = 0
+  let mut done = false
+  while ai < len(arms) && !done {
+    let arm = arms[ai]
+    let pat = arm["pattern"]
+    let guard = arm["guard"]
+    let body = arm["body"]
+    let ptag = pat["tag"]
+
+    let r = emit(s, ["Dup"])
+    s = r[0]
+
+    if (ptag == "PatWildcard" || ptag == "PatIdent") && guard["tag"] != "Void" {
+      if ptag == "PatIdent" {
+        let idx = len(s["locals"])
+        s = push_local(s, pat["name"])
+        let r = emit(s, ["SetLocal", idx])
+        s = r[0]
+      } else {
+        let r = emit(s, ["Pop"])
+        s = r[0]
+      }
+      let r = compile_match_guard(s, g, guard)
+      s = r[0]
+      g = r[1]
+      let guard_skip = r[2]
+      let r = emit(s, ["Pop"])
+      s = r[0]
+      let r = compile_match_body(s, g, body)
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["Jump", 0])
+      s = r[0]
+      end_jumps = push(end_jumps, r[1])
+      if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+    } else {
+      if ptag == "PatWildcard" || ptag == "PatIdent" {
+        if ptag == "PatIdent" {
+          let idx = len(s["locals"])
+          s = push_local(s, pat["name"])
+          let r = emit(s, ["SetLocal", idx])
+          s = r[0]
+        } else {
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        let r = emit(s, ["Pop"])
+        s = r[0]
+        let r = compile_match_body(s, g, body)
+        s = r[0]
+        g = r[1]
+        let r = emit(s, ["Jump", 0])
+        s = r[0]
+        end_jumps = push(end_jumps, r[1])
+        done = true
+      } else {
+        if ptag == "PatLiteral" {
+          let r = compile_pat_literal_val(s, pat["value"])
+          s = r[0]
+          let cidx = r[1]
+          let r = emit(s, ["MatchLiteral", cidx, 0])
+          s = r[0]
+          let skip = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          s = patch_jump(s, skip)
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatConstructor" {
+          let r = intern_str(s, pat["name"])
+          s = r[0]
+          let tag_si = r[1]
+          let r = emit(s, ["MatchVariant", tag_si, 0])
+          s = r[0]
+          let skip = r[1]
+          let sub_pats = pat["args"]
+          let mut pi = 0
+          while pi < len(sub_pats) {
+            if sub_pats[pi]["tag"] == "PatIdent" {
+              let r = emit(s, ["Dup"])
+              s = r[0]
+              let r = add_const(s, pi)
+              s = r[0]
+              let r = emit(s, ["Const", r[1]])
+              s = r[0]
+              let r = intern_str(s, "__variant_field__")
+              s = r[0]
+              let vf_si = r[1]
+              let r = emit(s, ["Call", vf_si, 2])
+              s = r[0]
+              let local_idx = len(s["locals"])
+              s = push_local(s, sub_pats[pi]["name"])
+              let r = emit(s, ["SetLocal", local_idx])
+              s = r[0]
+            }
+            pi = pi + 1
+          }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          s = patch_jump(s, skip)
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatArray" {
+          let r = compile_array_pattern(s, pat["elems"])
+          s = r[0]
+          let fail_jumps = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          let mut fi = 0
+          while fi < len(fail_jumps) {
+            s = patch_jump(s, fail_jumps[fi])
+            fi = fi + 1
+          }
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatMap" {
+          let r = compile_map_pattern(s, pat["entries"])
+          s = r[0]
+          let fail_jumps = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          let mut fi = 0
+          while fi < len(fail_jumps) {
+            s = patch_jump(s, fail_jumps[fi])
+            fi = fi + 1
+          }
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+      }
+    }
+    ai = ai + 1
+  }
+
+  let r = emit(s, ["Pop"])
+  s = r[0]
+  let mut i = 0
+  while i < len(end_jumps) {
+    s = patch_jump(s, end_jumps[i])
+    i = i + 1
+  }
+  ret [s, g]
+}
+
+; --- Match expression ---
+
+fn compile_match_expr(s, g, expr, arms) {
+  let r = compile_expr(s, g, expr)
+  s = r[0]
+  g = r[1]
+  let mut end_jumps = []
+
+  let mut ai = 0
+  let mut done = false
+  while ai < len(arms) && !done {
+    let arm = arms[ai]
+    let pat = arm["pattern"]
+    let guard = arm["guard"]
+    let body = arm["body"]
+    let ptag = pat["tag"]
+
+    let r = emit(s, ["Dup"])
+    s = r[0]
+
+    if (ptag == "PatWildcard" || ptag == "PatIdent") && guard["tag"] != "Void" {
+      if ptag == "PatIdent" {
+        let idx = len(s["locals"])
+        s = push_local(s, pat["name"])
+        let r = emit(s, ["SetLocal", idx])
+        s = r[0]
+      } else {
+        let r = emit(s, ["Pop"])
+        s = r[0]
+      }
+      let r = compile_match_guard(s, g, guard)
+      s = r[0]
+      g = r[1]
+      let guard_skip = r[2]
+      let r = emit(s, ["Pop"])
+      s = r[0]
+      let r = compile_match_body_expr(s, g, body)
+      s = r[0]
+      g = r[1]
+      let r = emit(s, ["Jump", 0])
+      s = r[0]
+      end_jumps = push(end_jumps, r[1])
+      if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+    } else {
+      if ptag == "PatWildcard" || ptag == "PatIdent" {
+        if ptag == "PatIdent" {
+          let idx = len(s["locals"])
+          s = push_local(s, pat["name"])
+          let r = emit(s, ["SetLocal", idx])
+          s = r[0]
+        } else {
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        let r = emit(s, ["Pop"])
+        s = r[0]
+        let r = compile_match_body_expr(s, g, body)
+        s = r[0]
+        g = r[1]
+        let r = emit(s, ["Jump", 0])
+        s = r[0]
+        end_jumps = push(end_jumps, r[1])
+        done = true
+      } else {
+        if ptag == "PatLiteral" {
+          let r = compile_pat_literal_val(s, pat["value"])
+          s = r[0]
+          let cidx = r[1]
+          let r = emit(s, ["MatchLiteral", cidx, 0])
+          s = r[0]
+          let skip = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body_expr(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          s = patch_jump(s, skip)
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatConstructor" {
+          let r = intern_str(s, pat["name"])
+          s = r[0]
+          let tag_si = r[1]
+          let r = emit(s, ["MatchVariant", tag_si, 0])
+          s = r[0]
+          let skip = r[1]
+          let sub_pats = pat["args"]
+          let mut pi = 0
+          while pi < len(sub_pats) {
+            if sub_pats[pi]["tag"] == "PatIdent" {
+              let r = emit(s, ["Dup"])
+              s = r[0]
+              let r = add_const(s, pi)
+              s = r[0]
+              let r = emit(s, ["Const", r[1]])
+              s = r[0]
+              let r = intern_str(s, "__variant_field__")
+              s = r[0]
+              let r = emit(s, ["Call", r[1], 2])
+              s = r[0]
+              let local_idx = len(s["locals"])
+              s = push_local(s, sub_pats[pi]["name"])
+              let r = emit(s, ["SetLocal", local_idx])
+              s = r[0]
+            }
+            pi = pi + 1
+          }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body_expr(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          s = patch_jump(s, skip)
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatArray" {
+          let r = compile_array_pattern(s, pat["elems"])
+          s = r[0]
+          let fail_jumps = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body_expr(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          let mut fi = 0
+          while fi < len(fail_jumps) {
+            s = patch_jump(s, fail_jumps[fi])
+            fi = fi + 1
+          }
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+        if ptag == "PatMap" {
+          let r = compile_map_pattern(s, pat["entries"])
+          s = r[0]
+          let fail_jumps = r[1]
+          let r = compile_match_guard(s, g, guard)
+          s = r[0]
+          g = r[1]
+          let guard_skip = r[2]
+          let r = emit(s, ["Pop"])
+          s = r[0]
+          let r = compile_match_body_expr(s, g, body)
+          s = r[0]
+          g = r[1]
+          let r = emit(s, ["Jump", 0])
+          s = r[0]
+          end_jumps = push(end_jumps, r[1])
+          let mut fi = 0
+          while fi < len(fail_jumps) {
+            s = patch_jump(s, fail_jumps[fi])
+            fi = fi + 1
+          }
+          if guard_skip >= 0 { s = patch_jump(s, guard_skip) }
+          let r = emit(s, ["Pop"])
+          s = r[0]
+        }
+      }
+    }
+    ai = ai + 1
+  }
+
+  let r = add_const(s, void_val())
+  s = r[0]
+  let vi = r[1]
+  let r = emit(s, ["Pop"])
+  s = r[0]
+  let r = emit(s, ["Const", vi])
+  s = r[0]
+  let mut i = 0
+  while i < len(end_jumps) {
+    s = patch_jump(s, end_jumps[i])
+    i = i + 1
+  }
+  ret [s, g]
+}
+
+; --- Pattern helpers ---
+
+fn compile_pat_literal_val(s, lit) {
+  let ltag = lit["tag"]
+  if ltag == "Int" { ret add_const(s, lit["value"]) }
+  if ltag == "Float" { ret add_const(s, lit["value"]) }
+  if ltag == "String" { ret add_const(s, lit["value"]) }
+  if ltag == "Bool" { ret add_const(s, lit["value"]) }
+  ret add_const(s, void_val())
+}
+
+fn compile_array_pattern(s, elems) {
+  let mut fail_jumps = []
+  let mut has_rest = false
+  let mut fixed_count = 0
+  let mut i = 0
+  while i < len(elems) {
+    if elems[i]["tag"] == "PatRest" {
+      has_rest = true
+    } else {
+      fixed_count = fixed_count + 1
+    }
+    i = i + 1
+  }
+
+  let r = intern_str(s, "type_of")
+  s = r[0]
+  let typeof_si = r[1]
+  let r = emit(s, ["Dup"])
+  s = r[0]
+  let r = emit(s, ["Call", typeof_si, 1])
+  s = r[0]
+  let r = add_const(s, "array")
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let r = emit(s, ["Eq"])
+  s = r[0]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  fail_jumps = push(fail_jumps, r[1])
+
+  let r = intern_str(s, "len")
+  s = r[0]
+  let len_si = r[1]
+  let r = emit(s, ["Dup"])
+  s = r[0]
+  let r = emit(s, ["Call", len_si, 1])
+  s = r[0]
+  let r = add_const(s, fixed_count)
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  if has_rest {
+    let r = emit(s, ["GtEq"])
+    s = r[0]
+  } else {
+    let r = emit(s, ["Eq"])
+    s = r[0]
+  }
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  fail_jumps = push(fail_jumps, r[1])
+
+  let mut idx = 0
+  let mut i = 0
+  while i < len(elems) {
+    let elem = elems[i]
+    if elem["tag"] == "PatRest" {
+      let r = intern_str(s, "drop")
+      s = r[0]
+      let drop_si = r[1]
+      let r = emit(s, ["Dup"])
+      s = r[0]
+      let r = add_const(s, idx)
+      s = r[0]
+      let r = emit(s, ["Const", r[1]])
+      s = r[0]
+      let r = emit(s, ["Call", drop_si, 2])
+      s = r[0]
+      let local_idx = len(s["locals"])
+      s = push_local(s, elem["name"])
+      let r = emit(s, ["SetLocal", local_idx])
+      s = r[0]
+    } else {
+      let sub = elem["pattern"]
+      let r = compile_elem_pattern(s, sub, idx, fail_jumps)
+      s = r[0]
+      fail_jumps = r[1]
+      idx = idx + 1
+    }
+    i = i + 1
+  }
+  ret [s, fail_jumps]
+}
+
+fn compile_elem_pattern(s, pat, idx, fail_jumps) {
+  let ptag = pat["tag"]
+  if ptag == "PatWildcard" { ret [s, fail_jumps] }
+
+  if ptag == "PatIdent" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, idx)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let local_idx = len(s["locals"])
+    s = push_local(s, pat["name"])
+    let r = emit(s, ["SetLocal", local_idx])
+    s = r[0]
+    ret [s, fail_jumps]
+  }
+
+  if ptag == "PatLiteral" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, idx)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let r = compile_pat_literal_val(s, pat["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Eq"])
+    s = r[0]
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+    ret [s, fail_jumps]
+  }
+
+  if ptag == "PatArray" || ptag == "PatMap" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, idx)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let tmp = len(s["locals"])
+    s = push_local(s, "__pat_tmp__")
+    let r = emit(s, ["SetLocal", tmp])
+    s = r[0]
+    let r = compile_nested_structural(s, pat, tmp, fail_jumps)
+    s = r[0]
+    fail_jumps = r[1]
+    ret [s, fail_jumps]
+  }
+  ret [s, fail_jumps]
+}
+
+fn compile_map_pattern(s, entries) {
+  let mut fail_jumps = []
+
+  let r = intern_str(s, "type_of")
+  s = r[0]
+  let typeof_si = r[1]
+  let r = emit(s, ["Dup"])
+  s = r[0]
+  let r = emit(s, ["Call", typeof_si, 1])
+  s = r[0]
+  let r = add_const(s, "map")
+  s = r[0]
+  let r = emit(s, ["Const", r[1]])
+  s = r[0]
+  let r = emit(s, ["Eq"])
+  s = r[0]
+  let r = emit(s, ["JumpIfFalse", 0])
+  s = r[0]
+  fail_jumps = push(fail_jumps, r[1])
+
+  let r = intern_str(s, "map.has")
+  s = r[0]
+  let has_si = r[1]
+
+  let mut i = 0
+  while i < len(entries) {
+    let entry = entries[i]
+    let key = entry["key"]
+    let sub_pat = entry["pattern"]
+
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, key)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Call", has_si, 2])
+    s = r[0]
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+
+    let r = compile_map_value_pattern(s, key, sub_pat, fail_jumps)
+    s = r[0]
+    fail_jumps = r[1]
+    i = i + 1
+  }
+  ret [s, fail_jumps]
+}
+
+fn compile_map_value_pattern(s, key, pat, fail_jumps) {
+  let ptag = pat["tag"]
+  if ptag == "PatWildcard" { ret [s, fail_jumps] }
+
+  if ptag == "PatIdent" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, key)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let local_idx = len(s["locals"])
+    s = push_local(s, pat["name"])
+    let r = emit(s, ["SetLocal", local_idx])
+    s = r[0]
+    ret [s, fail_jumps]
+  }
+
+  if ptag == "PatLiteral" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, key)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let r = compile_pat_literal_val(s, pat["value"])
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Eq"])
+    s = r[0]
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+    ret [s, fail_jumps]
+  }
+
+  if ptag == "PatArray" || ptag == "PatMap" {
+    let r = emit(s, ["Dup"])
+    s = r[0]
+    let r = add_const(s, key)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Index"])
+    s = r[0]
+    let tmp = len(s["locals"])
+    s = push_local(s, "__pat_tmp__")
+    let r = emit(s, ["SetLocal", tmp])
+    s = r[0]
+    let r = compile_nested_structural(s, pat, tmp, fail_jumps)
+    s = r[0]
+    fail_jumps = r[1]
+    ret [s, fail_jumps]
+  }
+  ret [s, fail_jumps]
+}
+
+fn compile_nested_structural(s, pat, tmp_slot, fail_jumps) {
+  if pat["tag"] == "PatArray" {
+    let elems = pat["elems"]
+    let mut has_rest = false
+    let mut fixed_count = 0
+    let mut i = 0
+    while i < len(elems) {
+      if elems[i]["tag"] == "PatRest" { has_rest = true }
+      else { fixed_count = fixed_count + 1 }
+      i = i + 1
+    }
+
+    let r = intern_str(s, "type_of")
+    s = r[0]
+    let typeof_si = r[1]
+    let r = emit(s, ["GetLocal", tmp_slot])
+    s = r[0]
+    let r = emit(s, ["Call", typeof_si, 1])
+    s = r[0]
+    let r = add_const(s, "array")
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Eq"])
+    s = r[0]
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+
+    let r = intern_str(s, "len")
+    s = r[0]
+    let len_si = r[1]
+    let r = emit(s, ["GetLocal", tmp_slot])
+    s = r[0]
+    let r = emit(s, ["Call", len_si, 1])
+    s = r[0]
+    let r = add_const(s, fixed_count)
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    if has_rest {
+      let r = emit(s, ["GtEq"])
+      s = r[0]
+    } else {
+      let r = emit(s, ["Eq"])
+      s = r[0]
+    }
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+
+    let mut idx = 0
+    let mut i = 0
+    while i < len(elems) {
+      let elem = elems[i]
+      if elem["tag"] == "PatRest" {
+        let r = intern_str(s, "drop")
+        s = r[0]
+        let drop_si = r[1]
+        let r = emit(s, ["GetLocal", tmp_slot])
+        s = r[0]
+        let r = add_const(s, idx)
+        s = r[0]
+        let r = emit(s, ["Const", r[1]])
+        s = r[0]
+        let r = emit(s, ["Call", drop_si, 2])
+        s = r[0]
+        let local_idx = len(s["locals"])
+        s = push_local(s, elem["name"])
+        let r = emit(s, ["SetLocal", local_idx])
+        s = r[0]
+      } else {
+        let sub = elem["pattern"]
+        let stag = sub["tag"]
+        if stag == "PatWildcard" {
+          ; skip
+        }
+        if stag == "PatIdent" {
+          let r = emit(s, ["GetLocal", tmp_slot])
+          s = r[0]
+          let r = add_const(s, idx)
+          s = r[0]
+          let r = emit(s, ["Const", r[1]])
+          s = r[0]
+          let r = emit(s, ["Index"])
+          s = r[0]
+          let local_idx = len(s["locals"])
+          s = push_local(s, sub["name"])
+          let r = emit(s, ["SetLocal", local_idx])
+          s = r[0]
+        }
+        if stag == "PatLiteral" {
+          let r = emit(s, ["GetLocal", tmp_slot])
+          s = r[0]
+          let r = add_const(s, idx)
+          s = r[0]
+          let r = emit(s, ["Const", r[1]])
+          s = r[0]
+          let r = emit(s, ["Index"])
+          s = r[0]
+          let r = compile_pat_literal_val(s, sub["value"])
+          s = r[0]
+          let r = emit(s, ["Const", r[1]])
+          s = r[0]
+          let r = emit(s, ["Eq"])
+          s = r[0]
+          let r = emit(s, ["JumpIfFalse", 0])
+          s = r[0]
+          fail_jumps = push(fail_jumps, r[1])
+        }
+        if stag == "PatArray" || stag == "PatMap" {
+          let r = emit(s, ["GetLocal", tmp_slot])
+          s = r[0]
+          let r = add_const(s, idx)
+          s = r[0]
+          let r = emit(s, ["Const", r[1]])
+          s = r[0]
+          let r = emit(s, ["Index"])
+          s = r[0]
+          let inner_tmp = len(s["locals"])
+          s = push_local(s, "__pat_tmp__")
+          let r = emit(s, ["SetLocal", inner_tmp])
+          s = r[0]
+          let r = compile_nested_structural(s, sub, inner_tmp, fail_jumps)
+          s = r[0]
+          fail_jumps = r[1]
+        }
+        idx = idx + 1
+      }
+      i = i + 1
+    }
+    ret [s, fail_jumps]
+  }
+
+  if pat["tag"] == "PatMap" {
+    let map_entries = pat["entries"]
+    let r = intern_str(s, "type_of")
+    s = r[0]
+    let typeof_si = r[1]
+    let r = emit(s, ["GetLocal", tmp_slot])
+    s = r[0]
+    let r = emit(s, ["Call", typeof_si, 1])
+    s = r[0]
+    let r = add_const(s, "map")
+    s = r[0]
+    let r = emit(s, ["Const", r[1]])
+    s = r[0]
+    let r = emit(s, ["Eq"])
+    s = r[0]
+    let r = emit(s, ["JumpIfFalse", 0])
+    s = r[0]
+    fail_jumps = push(fail_jumps, r[1])
+
+    let r = intern_str(s, "map.has")
+    s = r[0]
+    let has_si = r[1]
+
+    let mut i = 0
+    while i < len(map_entries) {
+      let entry = map_entries[i]
+      let key = entry["key"]
+      let sub_pat = entry["pattern"]
+
+      let r = emit(s, ["GetLocal", tmp_slot])
+      s = r[0]
+      let r = add_const(s, key)
+      s = r[0]
+      let r = emit(s, ["Const", r[1]])
+      s = r[0]
+      let r = emit(s, ["Call", has_si, 2])
+      s = r[0]
+      let r = emit(s, ["JumpIfFalse", 0])
+      s = r[0]
+      fail_jumps = push(fail_jumps, r[1])
+
+      let stag = sub_pat["tag"]
+      if stag == "PatWildcard" {
+        ; skip
+      }
+      if stag == "PatIdent" {
+        let r = emit(s, ["GetLocal", tmp_slot])
+        s = r[0]
+        let r = add_const(s, key)
+        s = r[0]
+        let r = emit(s, ["Const", r[1]])
+        s = r[0]
+        let r = emit(s, ["Index"])
+        s = r[0]
+        let local_idx = len(s["locals"])
+        s = push_local(s, sub_pat["name"])
+        let r = emit(s, ["SetLocal", local_idx])
+        s = r[0]
+      }
+      if stag == "PatLiteral" {
+        let r = emit(s, ["GetLocal", tmp_slot])
+        s = r[0]
+        let r = add_const(s, key)
+        s = r[0]
+        let r = emit(s, ["Const", r[1]])
+        s = r[0]
+        let r = emit(s, ["Index"])
+        s = r[0]
+        let r = compile_pat_literal_val(s, sub_pat["value"])
+        s = r[0]
+        let r = emit(s, ["Const", r[1]])
+        s = r[0]
+        let r = emit(s, ["Eq"])
+        s = r[0]
+        let r = emit(s, ["JumpIfFalse", 0])
+        s = r[0]
+        fail_jumps = push(fail_jumps, r[1])
+      }
+      if stag == "PatArray" || stag == "PatMap" {
+        let r = emit(s, ["GetLocal", tmp_slot])
+        s = r[0]
+        let r = add_const(s, key)
+        s = r[0]
+        let r = emit(s, ["Const", r[1]])
+        s = r[0]
+        let r = emit(s, ["Index"])
+        s = r[0]
+        let inner_tmp = len(s["locals"])
+        s = push_local(s, "__pat_tmp__")
+        let r = emit(s, ["SetLocal", inner_tmp])
+        s = r[0]
+        let r = compile_nested_structural(s, sub_pat, inner_tmp, fail_jumps)
+        s = r[0]
+        fail_jumps = r[1]
+      }
+      i = i + 1
+    }
+    ret [s, fail_jumps]
+  }
+
+  ret [s, fail_jumps]
+}
+
+; === CLOSURE CAPTURE ANALYSIS ===
+
+fn collect_free_vars(s, body_expr, lam_params) {
+  let mut used = []
+  let mut defined = #{}
+  let mut i = 0
+  while i < len(lam_params) {
+    defined[lam_params[i]["name"]] = true
+    i = i + 1
+  }
+  used = walk_expr_free(body_expr, used, defined)
+  let mut captures = []
+  let mut seen = #{}
+  let mut i = 0
+  while i < len(used) {
+    let name = used[i]
+    if !map.has(seen, name) {
+      if resolve_local(s, name) >= 0 {
+        seen[name] = true
+        captures = push(captures, name)
+      }
+    }
+    i = i + 1
+  }
+  ret captures
+}
+
+fn walk_expr_free(expr, used, defined) {
+  let tag = expr["tag"]
+
+  if tag == "Ident" {
+    if !map.has(defined, expr["name"]) {
+      used = push(used, expr["name"])
+    }
+    ret used
+  }
+
+  if tag == "Int" || tag == "Float" || tag == "String" || tag == "Bool" || tag == "Void" {
+    ret used
+  }
+
+  if tag == "BinOp" {
+    used = walk_expr_free(expr["left"], used, defined)
+    used = walk_expr_free(expr["right"], used, defined)
+    ret used
+  }
+
+  if tag == "UnaryOp" {
+    ret walk_expr_free(expr["expr"], used, defined)
+  }
+
+  if tag == "Call" {
+    used = walk_expr_free(expr["func"], used, defined)
+    let call_args = expr["args"]
+    let mut i = 0
+    while i < len(call_args) {
+      used = walk_expr_free(call_args[i], used, defined)
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "FieldAccess" {
+    ret walk_expr_free(expr["expr"], used, defined)
+  }
+
+  if tag == "Index" {
+    used = walk_expr_free(expr["expr"], used, defined)
+    used = walk_expr_free(expr["index"], used, defined)
+    ret used
+  }
+
+  if tag == "Array" {
+    let elems = expr["elems"]
+    let mut i = 0
+    while i < len(elems) {
+      used = walk_expr_free(elems[i], used, defined)
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "Record" {
+    let fields = expr["fields"]
+    let mut i = 0
+    while i < len(fields) {
+      used = walk_expr_free(fields[i]["value"], used, defined)
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "MapLiteral" {
+    let entries = expr["entries"]
+    let mut i = 0
+    while i < len(entries) {
+      used = walk_expr_free(entries[i]["key"], used, defined)
+      used = walk_expr_free(entries[i]["value"], used, defined)
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "IfExpr" {
+    used = walk_expr_free(expr["cond"], used, defined)
+    used = walk_block_free(expr["then"], used, defined)
+    used = walk_block_free(expr["else"], used, defined)
+    ret used
+  }
+
+  if tag == "MatchExpr" {
+    used = walk_expr_free(expr["expr"], used, defined)
+    let match_arms = expr["arms"]
+    let mut i = 0
+    while i < len(match_arms) {
+      let arm = match_arms[i]
+      let mut arm_def = map.merge(defined, #{})
+      arm_def = collect_pattern_bindings(arm["pattern"], arm_def)
+      if arm["guard"]["tag"] != "Void" {
+        used = walk_expr_free(arm["guard"], used, arm_def)
+      }
+      let body = arm["body"]
+      if body["tag"] == "Block" {
+        used = walk_block_free(body, used, arm_def)
+      } else {
+        used = walk_expr_free(body, used, arm_def)
+      }
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "BlockExpr" {
+    ret walk_block_free(expr["block"], used, defined)
+  }
+
+  if tag == "Lambda" {
+    let mut inner_def = map.merge(defined, #{})
+    let lp = expr["params"]
+    let mut i = 0
+    while i < len(lp) {
+      inner_def[lp[i]["name"]] = true
+      i = i + 1
+    }
+    used = walk_expr_free(expr["body"], used, inner_def)
+    ret used
+  }
+
+  if tag == "Pipe" {
+    used = walk_expr_free(expr["left"], used, defined)
+    used = walk_expr_free(expr["right"], used, defined)
+    ret used
+  }
+
+  if tag == "Interpolation" {
+    let parts = expr["parts"]
+    let mut i = 0
+    while i < len(parts) {
+      if parts[i]["tag"] == "InterpExpr" {
+        used = walk_expr_free(parts[i]["expr"], used, defined)
+      }
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "Try" {
+    ret walk_expr_free(expr["expr"], used, defined)
+  }
+  if tag == "TryBlock" {
+    ret walk_block_free(expr["block"], used, defined)
+  }
+  if tag == "Spread" {
+    ret walk_expr_free(expr["expr"], used, defined)
+  }
+
+  ret used
+}
+
+fn walk_block_free(block, used, defined) {
+  let stmts = block["stmts"]
+  let mut i = 0
+  while i < len(stmts) {
+    used = walk_stmt_free(stmts[i], used, defined)
+    i = i + 1
+  }
+  ret used
+}
+
+fn walk_stmt_free(stmt, used, defined) {
+  let tag = stmt["tag"]
+
+  if tag == "Let" {
+    used = walk_expr_free(stmt["value"], used, defined)
+    defined[stmt["name"]] = true
+    ret used
+  }
+
+  if tag == "Assign" {
+    used = walk_expr_free(stmt["target"], used, defined)
+    used = walk_expr_free(stmt["value"], used, defined)
+    ret used
+  }
+
+  if tag == "Return" || tag == "ExprStmt" {
+    let inner = stmt["expr"]
+    if type_of(inner) == "void" { ret used }
+    ret walk_expr_free(inner, used, defined)
+  }
+
+  if tag == "If" {
+    used = walk_expr_free(stmt["cond"], used, defined)
+    used = walk_block_free(stmt["then"], used, defined)
+    let else_branch = stmt["else"]
+    if type_of(else_branch) == "map" {
+      if map.has(else_branch, "tag") {
+        if else_branch["tag"] == "ElseBlock" {
+          used = walk_block_free(else_branch["block"], used, defined)
+        }
+        if else_branch["tag"] == "ElseIf" {
+          used = walk_stmt_free(else_branch["stmt"], used, defined)
+        }
+      }
+    }
+    ret used
+  }
+
+  if tag == "Match" {
+    used = walk_expr_free(stmt["expr"], used, defined)
+    let match_arms = stmt["arms"]
+    let mut i = 0
+    while i < len(match_arms) {
+      let arm = match_arms[i]
+      let mut arm_def = map.merge(defined, #{})
+      arm_def = collect_pattern_bindings(arm["pattern"], arm_def)
+      if arm["guard"]["tag"] != "Void" {
+        used = walk_expr_free(arm["guard"], used, arm_def)
+      }
+      let body = arm["body"]
+      if body["tag"] == "Block" {
+        used = walk_block_free(body, used, arm_def)
+      } else {
+        used = walk_expr_free(body, used, arm_def)
+      }
+      i = i + 1
+    }
+    ret used
+  }
+
+  if tag == "For" {
+    used = walk_expr_free(stmt["iter"], used, defined)
+    let mut inner_def = map.merge(defined, #{})
+    inner_def[stmt["var"]] = true
+    used = walk_block_free(stmt["body"], used, inner_def)
+    ret used
+  }
+
+  if tag == "While" {
+    used = walk_expr_free(stmt["cond"], used, defined)
+    used = walk_block_free(stmt["body"], used, defined)
+    ret used
+  }
+
+  if tag == "LetDestructure" {
+    used = walk_expr_free(stmt["value"], used, defined)
+    let bindings = stmt["bindings"]
+    let mut i = 0
+    while i < len(bindings) {
+      if bindings[i] != "" { defined[bindings[i]] = true }
+      i = i + 1
+    }
+    if stmt["rest"] != "" { defined[stmt["rest"]] = true }
+    ret used
+  }
+
+  if tag == "ForDestructure" {
+    used = walk_expr_free(stmt["iter"], used, defined)
+    let mut inner_def = map.merge(defined, #{})
+    let bindings = stmt["bindings"]
+    let mut i = 0
+    while i < len(bindings) {
+      inner_def[bindings[i]] = true
+      i = i + 1
+    }
+    used = walk_block_free(stmt["body"], used, inner_def)
+    ret used
+  }
+
+  ret used
+}
+
+fn collect_pattern_bindings(pat, defined) {
+  let ptag = pat["tag"]
+  if ptag == "PatIdent" {
+    defined[pat["name"]] = true
+    ret defined
+  }
+  if ptag == "PatConstructor" {
+    let subs = pat["args"]
+    let mut i = 0
+    while i < len(subs) {
+      defined = collect_pattern_bindings(subs[i], defined)
+      i = i + 1
+    }
+    ret defined
+  }
+  if ptag == "PatArray" {
+    let elems = pat["elems"]
+    let mut i = 0
+    while i < len(elems) {
+      let elem = elems[i]
+      if elem["tag"] == "PatRest" {
+        defined[elem["name"]] = true
+      } else {
+        defined = collect_pattern_bindings(elem["pattern"], defined)
+      }
+      i = i + 1
+    }
+    ret defined
+  }
+  if ptag == "PatMap" {
+    let entries = pat["entries"]
+    let mut i = 0
+    while i < len(entries) {
+      defined = collect_pattern_bindings(entries[i]["pattern"], defined)
+      i = i + 1
+    }
+    ret defined
+  }
+  ret defined
+}
+
+; === PROGRAM COMPILATION ===
+
+fn collect_top_level(item, namespace, fns) {
+  let tag = item["tag"]
+
+  if tag == "FnDecl" {
+    if namespace != "" {
+      let mut namespaced = map.merge(item, #{})
+      namespaced["name"] = namespace + "." + item["name"]
+      fns = push(fns, namespaced)
+    }
+    fns = push(fns, item)
+    ret fns
+  }
+
+  if tag == "ModDecl" {
+    let mut ns = item["name"]
+    if namespace != "" { ns = namespace + "." + item["name"] }
+    let sub_items = item["items"]
+    let mut i = 0
+    while i < len(sub_items) {
+      fns = collect_top_level(sub_items[i], ns, fns)
+      i = i + 1
+    }
+    ret fns
+  }
+
+  if tag == "UseDecl" {
+    ; module loading handled externally
+    ret fns
+  }
+
+  ret fns
+}
+
+fn load_module_fns(path_arr, fns, loaded) {
+  if len(path_arr) == 0 { ret [fns, loaded] }
+  let namespace = path_arr[len(path_arr) - 1]
+  let rel = str.join(path_arr, "/") + ".a"
+
+  if map.has(loaded, rel) { ret [fns, loaded] }
+  loaded[rel] = true
+
+  let src = io.read_file(rel)
+  if type_of(src) != "str" { ret [fns, loaded] }
+
+  let ast = parser.parse(src)
+  if type_of(ast) != "map" { ret [fns, loaded] }
+  if ast["tag"] == "ParseError" { ret [fns, loaded] }
+
+  let items = ast["items"]
+  let mut i = 0
+  while i < len(items) {
+    let item = items[i]
+    if item["tag"] == "FnDecl" {
+      let mut namespaced = map.merge(item, #{})
+      namespaced["name"] = namespace + "." + item["name"]
+      fns = push(fns, namespaced)
+      fns = push(fns, item)
+    }
+    if item["tag"] == "UseDecl" {
+      let r = load_module_fns(item["path"], fns, loaded)
+      fns = r[0]
+      loaded = r[1]
+    }
+    i = i + 1
+  }
+  ret [fns, loaded]
+}
+
+fn compile_program(ast) {
+  let mut all_fns = []
+  let mut loaded = #{}
+
+  let items = ast["items"]
+  let mut i = 0
+  while i < len(items) {
+    let item = items[i]
+    if item["tag"] == "UseDecl" {
+      let r = load_module_fns(item["path"], all_fns, loaded)
+      all_fns = r[0]
+      loaded = r[1]
+    } else {
+      all_fns = collect_top_level(item, "", all_fns)
+    }
+    i = i + 1
+  }
+
+  let mut functions = []
+  let mut main_idx = 0 - 1
+  let mut g = new_global()
+
+  let mut fi = 0
+  while fi < len(all_fns) {
+    let r = compile_fn(g, all_fns[fi])
+    let compiled = r[0]
+    g = r[1]
+
+    while len(g["pending_fns"]) > 0 {
+      let extra = g["pending_fns"]
+      g["pending_fns"] = []
+      let mut ei = 0
+      while ei < len(extra) {
+        all_fns = push(all_fns, extra[ei])
+        ei = ei + 1
+      }
+    }
+
+    if all_fns[fi]["name"] == "main" {
+      main_idx = len(functions)
+    }
+    functions = push(functions, compiled)
+    fi = fi + 1
+  }
+
+  ret #{"functions": functions, "main_idx": main_idx}
+}
+
+; --- Public API ---
+
+fn compile(src) {
+  let ast = parser.parse(src)
+  ret compile_program(ast)
+}
+
+fn compile_ast(ast) {
+  ret compile_program(ast)
+}

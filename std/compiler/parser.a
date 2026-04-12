@@ -1,0 +1,1526 @@
+; Self-hosted recursive-descent parser for the "a" language.
+; Produces tagged-map AST nodes (see std/compiler/ast.a).
+; Every parse function takes (toks, pos) and returns [result, new_pos].
+; On error, result is #{"tag": "ParseError", "msg": "..."}.
+
+use std.compiler.lexer
+use std.compiler.ast
+
+; --- Token helpers (local shorthand) ---
+
+fn tk(toks, i) { ret toks[i * 2] }
+fn tv(toks, i) { ret toks[i * 2 + 1] }
+
+fn err(msg, pos) {
+  ret [#{"tag": "ParseError", "msg": msg, "pos": pos}, pos]
+}
+
+fn is_err(r) {
+  if type_of(r[0]) == "map" {
+    ret map.has(r[0], "tag") && r[0]["tag"] == "ParseError"
+  }
+  ret false
+}
+
+fn skip_nl(toks, pos) {
+  while tk(toks, pos) == "Newline" {
+    pos = pos + 1
+  }
+  ret pos
+}
+
+fn expect(toks, pos, kind) {
+  if tk(toks, pos) == kind {
+    ret [tv(toks, pos), pos + 1]
+  }
+  ret err("expected " + kind + ", found " + tk(toks, pos), pos)
+}
+
+fn expect_ident(toks, pos) {
+  if tk(toks, pos) == "Ident" {
+    ret [tv(toks, pos), pos + 1]
+  }
+  ret err("expected identifier, found " + tk(toks, pos), pos)
+}
+
+fn expect_nl_or_eof(toks, pos) {
+  if tk(toks, pos) == "Eof" { ret [true, pos] }
+  if tk(toks, pos) == "RBrace" { ret [true, pos] }
+  if tk(toks, pos) == "Newline" {
+    pos = skip_nl(toks, pos)
+    ret [true, pos]
+  }
+  ret err("expected newline, found " + tk(toks, pos), pos)
+}
+
+; --- Entry point ---
+
+fn parse(src) {
+  let toks = lexer.lex(src)
+  let r = parse_program(toks, 0)
+  ret r[0]
+}
+
+; --- Program ---
+
+fn parse_program(toks, pos) {
+  let mut items = []
+  pos = skip_nl(toks, pos)
+  while tk(toks, pos) != "Eof" {
+    let r = parse_top_level(toks, pos)
+    if is_err(r) { ret r }
+    items = push(items, r[0])
+    pos = skip_nl(toks, r[1])
+  }
+  ret [ast.mk_program(items), pos]
+}
+
+; --- Top-level declarations ---
+
+fn parse_top_level(toks, pos) {
+  let k = tk(toks, pos)
+  if k == "KwFn" { ret parse_fn_decl(toks, pos) }
+  if k == "KwTy" { ret parse_type_decl(toks, pos) }
+  if k == "KwMod" { ret parse_mod_decl(toks, pos) }
+  if k == "KwUse" { ret parse_use_decl(toks, pos) }
+  ret err("expected fn, ty, mod, or use; found " + k, pos)
+}
+
+fn parse_fn_decl(toks, pos) {
+  let r = expect(toks, pos, "KwFn")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+
+  let r = expect(toks, pos, "LParen")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let mut params = []
+  if tk(toks, pos) != "RParen" {
+    let r = parse_param_list(toks, pos)
+    if is_err(r) { ret r }
+    params = r[0]
+    pos = r[1]
+  }
+
+  let r = expect(toks, pos, "RParen")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  ; return type is optional: default to TyInfer
+  let mut ret_type = ast.mk_ty_infer()
+  if tk(toks, pos) == "Arrow" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret_type = r[0]
+    pos = r[1]
+  }
+
+  pos = skip_nl(toks, pos)
+
+  let mut effs = []
+  if tk(toks, pos) == "KwEffects" {
+    let r = parse_effects(toks, pos)
+    if is_err(r) { ret r }
+    effs = r[0]
+    pos = r[1]
+  }
+  pos = skip_nl(toks, pos)
+
+  let mut precond = ast.mk_void_lit()
+  if tk(toks, pos) == "KwPre" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    precond = r[0]
+    pos = skip_nl(toks, r[1])
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+  }
+
+  let mut postcond = ast.mk_void_lit()
+  if tk(toks, pos) == "KwPost" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    postcond = r[0]
+    pos = skip_nl(toks, r[1])
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+  }
+
+  let r = parse_block(toks, pos)
+  if is_err(r) { ret r }
+  let body = r[0]
+  pos = r[1]
+
+  ret [ast.mk_fn_decl(name, params, ret_type, effs, precond, postcond, body), pos]
+}
+
+fn parse_param_list(toks, pos) {
+  let mut params = []
+  let r = parse_param(toks, pos)
+  if is_err(r) { ret r }
+  params = push(params, r[0])
+  pos = r[1]
+  while tk(toks, pos) == "Comma" {
+    pos = pos + 1
+    let r = parse_param(toks, pos)
+    if is_err(r) { ret r }
+    params = push(params, r[0])
+    pos = r[1]
+  }
+  ret [params, pos]
+}
+
+fn parse_param(toks, pos) {
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+  let mut typ = ast.mk_ty_infer()
+  if tk(toks, pos) == "Colon" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    typ = r[0]
+    pos = r[1]
+  }
+  ret [ast.mk_param(name, typ), pos]
+}
+
+fn parse_effects(toks, pos) {
+  let r = expect(toks, pos, "KwEffects")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect(toks, pos, "LBracket")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let mut effs = []
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  effs = push(effs, r[0])
+  pos = r[1]
+  while tk(toks, pos) == "Comma" {
+    pos = pos + 1
+    let r = expect_ident(toks, pos)
+    if is_err(r) { ret r }
+    effs = push(effs, r[0])
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "RBracket")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [effs, pos]
+}
+
+fn parse_mod_decl(toks, pos) {
+  let r = expect(toks, pos, "KwMod")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = expect(toks, pos, "LBrace")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut items = []
+  while tk(toks, pos) != "RBrace" {
+    let r = parse_top_level(toks, pos)
+    if is_err(r) { ret r }
+    items = push(items, r[0])
+    pos = skip_nl(toks, r[1])
+  }
+  let r = expect(toks, pos, "RBrace")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [ast.mk_mod_decl(name, items), pos]
+}
+
+fn parse_use_decl(toks, pos) {
+  let r = expect(toks, pos, "KwUse")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let mut path = [r[0]]
+  pos = r[1]
+  while tk(toks, pos) == "Dot" {
+    pos = pos + 1
+    let r = expect_ident(toks, pos)
+    if is_err(r) { ret r }
+    path = push(path, r[0])
+    pos = r[1]
+  }
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [ast.mk_use_decl(path), pos]
+}
+
+; --- Type declarations ---
+
+fn parse_type_decl(toks, pos) {
+  let r = expect(toks, pos, "KwTy")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+  let mut type_params = []
+  if tk(toks, pos) == "Lt" {
+    let r = parse_type_params(toks, pos)
+    if is_err(r) { ret r }
+    type_params = r[0]
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "Eq")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let r = parse_type_body(toks, pos)
+  if is_err(r) { ret r }
+  let body = r[0]
+  pos = r[1]
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [ast.mk_type_decl(name, type_params, body), pos]
+}
+
+fn parse_type_params(toks, pos) {
+  let r = expect(toks, pos, "Lt")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let mut params = []
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  params = push(params, r[0])
+  pos = r[1]
+  while tk(toks, pos) == "Comma" {
+    pos = pos + 1
+    let r = expect_ident(toks, pos)
+    if is_err(r) { ret r }
+    params = push(params, r[0])
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "Gt")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [params, pos]
+}
+
+fn looks_like_sum(toks, pos) {
+  if tk(toks, pos) != "Ident" { ret false }
+  let next = pos + 1
+  if tk(toks, next) == "LParen" { ret true }
+  if tk(toks, next) == "Pipe" { ret true }
+  if tk(toks, next) == "Newline" {
+    let mut j = next
+    while tk(toks, j) == "Newline" { j = j + 1 }
+    if tk(toks, j) == "Pipe" { ret true }
+  }
+  ret false
+}
+
+fn parse_type_body(toks, pos) {
+  if tk(toks, pos) == "LBrace" {
+    let r = parse_record_fields(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_type_record(r[0]), r[1]]
+  }
+  if looks_like_sum(toks, pos) {
+    let mut variants = []
+    let r = parse_variant(toks, pos)
+    if is_err(r) { ret r }
+    variants = push(variants, r[0])
+    pos = r[1]
+    while tk(toks, pos) == "Pipe" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_variant(toks, pos)
+      if is_err(r) { ret r }
+      variants = push(variants, r[0])
+      pos = r[1]
+    }
+    ret [ast.mk_type_sum(variants), pos]
+  }
+  let r = parse_type_expr(toks, pos)
+  if is_err(r) { ret r }
+  let alias_ty = r[0]
+  pos = r[1]
+  let mut where_expr = ast.mk_void_lit()
+  if tk(toks, pos) == "KwWhere" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    where_expr = r[0]
+    pos = skip_nl(toks, r[1])
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    pos = r[1]
+  }
+  ret [ast.mk_type_alias(alias_ty, where_expr), pos]
+}
+
+fn parse_variant(toks, pos) {
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+  let mut fields = []
+  if tk(toks, pos) == "LParen" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    fields = push(fields, r[0])
+    pos = r[1]
+    while tk(toks, pos) == "Comma" {
+      pos = pos + 1
+      let r = parse_type_expr(toks, pos)
+      if is_err(r) { ret r }
+      fields = push(fields, r[0])
+      pos = r[1]
+    }
+    let r = expect(toks, pos, "RParen")
+    if is_err(r) { ret r }
+    pos = r[1]
+  }
+  ret [ast.mk_variant(name, fields), pos]
+}
+
+fn parse_record_fields(toks, pos) {
+  let r = expect(toks, pos, "LBrace")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut fields = []
+  if tk(toks, pos) != "RBrace" {
+    let r = parse_field(toks, pos)
+    if is_err(r) { ret r }
+    fields = push(fields, r[0])
+    pos = r[1]
+    while tk(toks, pos) == "Comma" {
+      pos = skip_nl(toks, pos + 1)
+      if tk(toks, pos) == "RBrace" { break }
+      let r = parse_field(toks, pos)
+      if is_err(r) { ret r }
+      fields = push(fields, r[0])
+      pos = r[1]
+    }
+  }
+  pos = skip_nl(toks, pos)
+  let r = expect(toks, pos, "RBrace")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [fields, pos]
+}
+
+fn parse_field(toks, pos) {
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+  let r = expect(toks, pos, "Colon")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_type_expr(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_field(name, r[0]), r[1]]
+}
+
+; --- Type expressions ---
+
+fn parse_type_expr(toks, pos) {
+  let k = tk(toks, pos)
+
+  if k == "TyI8" { ret [ast.mk_ty_prim("i8"), pos + 1] }
+  if k == "TyI16" { ret [ast.mk_ty_prim("i16"), pos + 1] }
+  if k == "TyI32" { ret [ast.mk_ty_prim("i32"), pos + 1] }
+  if k == "TyI64" { ret [ast.mk_ty_prim("i64"), pos + 1] }
+  if k == "TyU8" { ret [ast.mk_ty_prim("u8"), pos + 1] }
+  if k == "TyU16" { ret [ast.mk_ty_prim("u16"), pos + 1] }
+  if k == "TyU32" { ret [ast.mk_ty_prim("u32"), pos + 1] }
+  if k == "TyU64" { ret [ast.mk_ty_prim("u64"), pos + 1] }
+  if k == "TyF32" { ret [ast.mk_ty_prim("f32"), pos + 1] }
+  if k == "TyF64" { ret [ast.mk_ty_prim("f64"), pos + 1] }
+  if k == "TyBool" { ret [ast.mk_ty_prim("bool"), pos + 1] }
+  if k == "TyStr" { ret [ast.mk_ty_prim("str"), pos + 1] }
+  if k == "TyBytes" { ret [ast.mk_ty_prim("bytes"), pos + 1] }
+  if k == "TyVoid" { ret [ast.mk_ty_prim("void"), pos + 1] }
+
+  if k == "LBracket" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    let inner = r[0]
+    pos = r[1]
+    let r = expect(toks, pos, "RBracket")
+    if is_err(r) { ret r }
+    ret [ast.mk_ty_array(inner), r[1]]
+  }
+
+  if k == "LParen" {
+    pos = pos + 1
+    let mut types = []
+    if tk(toks, pos) != "RParen" {
+      let r = parse_type_expr(toks, pos)
+      if is_err(r) { ret r }
+      types = push(types, r[0])
+      pos = r[1]
+      while tk(toks, pos) == "Comma" {
+        pos = pos + 1
+        let r = parse_type_expr(toks, pos)
+        if is_err(r) { ret r }
+        types = push(types, r[0])
+        pos = r[1]
+      }
+    }
+    let r = expect(toks, pos, "RParen")
+    if is_err(r) { ret r }
+    pos = r[1]
+    ret [ast.mk_ty_tuple(types), pos]
+  }
+
+  if k == "KwFn" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LParen")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let mut params = []
+    if tk(toks, pos) != "RParen" {
+      let r = parse_type_expr(toks, pos)
+      if is_err(r) { ret r }
+      params = push(params, r[0])
+      pos = r[1]
+      while tk(toks, pos) == "Comma" {
+        pos = pos + 1
+        let r = parse_type_expr(toks, pos)
+        if is_err(r) { ret r }
+        params = push(params, r[0])
+        pos = r[1]
+      }
+    }
+    let r = expect(toks, pos, "RParen")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let r = expect(toks, pos, "Arrow")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_ty_fn(params, r[0]), r[1]]
+  }
+
+  if k == "Hash" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    let key_ty = r[0]
+    pos = r[1]
+    let r = expect(toks, pos, "Colon")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    let val_ty = r[0]
+    pos = r[1]
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    ret [ast.mk_ty_map(key_ty, val_ty), r[1]]
+  }
+
+  if k == "Ident" {
+    let name = tv(toks, pos)
+    pos = pos + 1
+    let mut type_args = []
+    if tk(toks, pos) == "Lt" {
+      pos = pos + 1
+      let r = parse_type_expr(toks, pos)
+      if is_err(r) { ret r }
+      type_args = push(type_args, r[0])
+      pos = r[1]
+      while tk(toks, pos) == "Comma" {
+        pos = pos + 1
+        let r = parse_type_expr(toks, pos)
+        if is_err(r) { ret r }
+        type_args = push(type_args, r[0])
+        pos = r[1]
+      }
+      let r = expect(toks, pos, "Gt")
+      if is_err(r) { ret r }
+      pos = r[1]
+    }
+    ret [ast.mk_ty_named(name, type_args), pos]
+  }
+
+  ret err("expected type, found " + k, pos)
+}
+
+; --- Block ---
+
+fn parse_block(toks, pos) {
+  let r = expect(toks, pos, "LBrace")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut stmts = []
+  while tk(toks, pos) != "RBrace" {
+    if tk(toks, pos) == "Eof" {
+      ret err("unexpected end of file in block", pos)
+    }
+    let r = parse_stmt(toks, pos)
+    if is_err(r) { ret r }
+    stmts = push(stmts, r[0])
+    pos = skip_nl(toks, r[1])
+  }
+  let r = expect(toks, pos, "RBrace")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [ast.mk_block(stmts), pos]
+}
+
+; --- Statements ---
+
+fn parse_stmt(toks, pos) {
+  let k = tk(toks, pos)
+
+  if k == "KwLet" { ret parse_let_stmt(toks, pos) }
+  if k == "KwRet" { ret parse_ret_stmt(toks, pos) }
+  if k == "KwIf" { ret parse_if_stmt(toks, pos) }
+  if k == "KwMatch" { ret parse_match_stmt(toks, pos) }
+  if k == "KwFor" { ret parse_for_stmt(toks, pos) }
+  if k == "KwWhile" { ret parse_while_stmt(toks, pos) }
+  if k == "KwBreak" {
+    pos = pos + 1
+    let r = expect_nl_or_eof(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_break(), r[1]]
+  }
+  if k == "KwContinue" {
+    pos = pos + 1
+    let r = expect_nl_or_eof(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_continue(), r[1]]
+  }
+
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let expr = r[0]
+  pos = r[1]
+
+  if tk(toks, pos) == "Eq" {
+    pos = skip_nl(toks, pos + 1)
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    let value = r[0]
+    pos = r[1]
+    let r = expect_nl_or_eof(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_assign(expr, value), r[1]]
+  }
+
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_expr_stmt(expr), r[1]]
+}
+
+fn parse_let_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwLet")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let mut mutable = false
+  if tk(toks, pos) == "KwMut" {
+    mutable = true
+    pos = pos + 1
+  }
+
+  if tk(toks, pos) == "LBracket" {
+    ret parse_let_destructure(toks, pos)
+  }
+
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+  let mut typ = ast.mk_ty_infer()
+  if tk(toks, pos) == "Colon" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    typ = r[0]
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "Eq")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let value = r[0]
+  pos = r[1]
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_let(mutable, name, typ, value), r[1]]
+}
+
+fn parse_let_destructure(toks, pos) {
+  let r = expect(toks, pos, "LBracket")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut bindings = []
+  let mut rest = ""
+  let mut has_rest = false
+  while tk(toks, pos) != "RBracket" {
+    if tk(toks, pos) == "DotDotDot" {
+      pos = pos + 1
+      has_rest = true
+      if tk(toks, pos) != "RBracket" {
+        if tk(toks, pos) != "Comma" {
+          let r = expect_ident(toks, pos)
+          if is_err(r) { ret r }
+          rest = r[0]
+          pos = r[1]
+        }
+      }
+      if tk(toks, pos) == "Comma" { pos = skip_nl(toks, pos + 1) }
+      break
+    }
+    if tk(toks, pos) == "Underscore" {
+      pos = pos + 1
+      bindings = push(bindings, "_")
+    } else {
+      let r = expect_ident(toks, pos)
+      if is_err(r) { ret r }
+      bindings = push(bindings, r[0])
+      pos = r[1]
+    }
+    if tk(toks, pos) == "Comma" {
+      pos = skip_nl(toks, pos + 1)
+    } else { break }
+  }
+  pos = skip_nl(toks, pos)
+  let r = expect(toks, pos, "RBracket")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect(toks, pos, "Eq")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let value = r[0]
+  pos = r[1]
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  let mut rest_val = ""
+  if has_rest { rest_val = rest }
+  ret [ast.mk_let_destructure(bindings, rest_val, value), r[1]]
+}
+
+fn parse_ret_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwRet")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let expr = r[0]
+  pos = r[1]
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_return(expr), r[1]]
+}
+
+fn parse_if_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwIf")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let cond = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = parse_block(toks, pos)
+  if is_err(r) { ret r }
+  let then_block = r[0]
+  pos = skip_nl(toks, r[1])
+  let mut else_branch = ast.mk_void_lit()
+  if tk(toks, pos) == "KwElse" {
+    pos = skip_nl(toks, pos + 1)
+    if tk(toks, pos) == "KwIf" {
+      let r = parse_if_stmt(toks, pos)
+      if is_err(r) { ret r }
+      else_branch = ast.mk_else_if(r[0])
+      pos = r[1]
+    } else {
+      let r = parse_block(toks, pos)
+      if is_err(r) { ret r }
+      else_branch = ast.mk_else_block(r[0])
+      pos = r[1]
+    }
+  }
+  ret [ast.mk_if_stmt(cond, then_block, else_branch), pos]
+}
+
+fn parse_match_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwMatch")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let expr = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = expect(toks, pos, "LBrace")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut arms = []
+  while tk(toks, pos) != "RBrace" {
+    let r = parse_match_arm(toks, pos)
+    if is_err(r) { ret r }
+    arms = push(arms, r[0])
+    pos = skip_nl(toks, r[1])
+  }
+  let r = expect(toks, pos, "RBrace")
+  if is_err(r) { ret r }
+  pos = r[1]
+  ret [ast.mk_match_stmt(expr, arms), pos]
+}
+
+fn parse_match_arm(toks, pos) {
+  let r = parse_pattern(toks, pos)
+  if is_err(r) { ret r }
+  let pattern = r[0]
+  pos = r[1]
+  let mut guard = ast.mk_void_lit()
+  if tk(toks, pos) == "KwIf" {
+    pos = pos + 1
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    guard = r[0]
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "FatArrow")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut body = ast.mk_void_lit()
+  if tk(toks, pos) == "LBrace" {
+    let r = parse_block(toks, pos)
+    if is_err(r) { ret r }
+    body = r[0]
+    pos = r[1]
+  } else {
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    body = r[0]
+    pos = r[1]
+  }
+  pos = skip_nl(toks, pos)
+  ret [ast.mk_match_arm(pattern, guard, body), pos]
+}
+
+fn parse_for_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwFor")
+  if is_err(r) { ret r }
+  pos = r[1]
+  if tk(toks, pos) == "LBracket" {
+    ret parse_for_destructure(toks, pos)
+  }
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let var = r[0]
+  pos = r[1]
+  let mut typ = ast.mk_ty_infer()
+  if tk(toks, pos) == "Colon" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    typ = r[0]
+    pos = r[1]
+  }
+  let r = expect(toks, pos, "KwIn")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let iter = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = parse_block(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_for_stmt(var, typ, iter, r[0]), r[1]]
+}
+
+fn parse_for_destructure(toks, pos) {
+  let r = expect(toks, pos, "LBracket")
+  if is_err(r) { ret r }
+  pos = skip_nl(toks, r[1])
+  let mut bindings = []
+  while tk(toks, pos) != "RBracket" {
+    let r = expect_ident(toks, pos)
+    if is_err(r) { ret r }
+    bindings = push(bindings, r[0])
+    pos = r[1]
+    if tk(toks, pos) == "Comma" {
+      pos = skip_nl(toks, pos + 1)
+    } else { break }
+  }
+  pos = skip_nl(toks, pos)
+  let r = expect(toks, pos, "RBracket")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = expect(toks, pos, "KwIn")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let iter = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = parse_block(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_for_destructure(bindings, iter, r[0]), r[1]]
+}
+
+fn parse_while_stmt(toks, pos) {
+  let r = expect(toks, pos, "KwWhile")
+  if is_err(r) { ret r }
+  pos = r[1]
+  let r = parse_expr(toks, pos)
+  if is_err(r) { ret r }
+  let cond = r[0]
+  pos = skip_nl(toks, r[1])
+  let r = parse_block(toks, pos)
+  if is_err(r) { ret r }
+  ret [ast.mk_while_stmt(cond, r[0]), r[1]]
+}
+
+; --- Pattern parsing ---
+
+fn parse_pattern(toks, pos) {
+  let k = tk(toks, pos)
+
+  if k == "Underscore" {
+    ret [ast.mk_pat_wildcard(), pos + 1]
+  }
+  if k == "Int" {
+    ret [ast.mk_pat_literal(ast.mk_int(int(tv(toks, pos)))), pos + 1]
+  }
+  if k == "Float" {
+    ret [ast.mk_pat_literal(ast.mk_float(float(tv(toks, pos)))), pos + 1]
+  }
+  if k == "Str" {
+    ret [ast.mk_pat_literal(ast.mk_string(tv(toks, pos))), pos + 1]
+  }
+  if k == "KwTrue" {
+    ret [ast.mk_pat_literal(ast.mk_bool_lit(true)), pos + 1]
+  }
+  if k == "KwFalse" {
+    ret [ast.mk_pat_literal(ast.mk_bool_lit(false)), pos + 1]
+  }
+
+  if k == "LBracket" {
+    pos = pos + 1
+    let mut elems = []
+    while tk(toks, pos) != "RBracket" {
+      if tk(toks, pos) == "DotDotDot" {
+        pos = pos + 1
+        let r = expect_ident(toks, pos)
+        if is_err(r) { ret r }
+        elems = push(elems, ast.mk_pat_rest(r[0]))
+        pos = r[1]
+        break
+      }
+      let r = parse_pattern(toks, pos)
+      if is_err(r) { ret r }
+      elems = push(elems, ast.mk_pat_array_elem(r[0]))
+      pos = r[1]
+      if tk(toks, pos) == "Comma" {
+        pos = pos + 1
+      } else { break }
+    }
+    let r = expect(toks, pos, "RBracket")
+    if is_err(r) { ret r }
+    ret [ast.mk_pat_array(elems), r[1]]
+  }
+
+  if k == "Hash" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let mut entries = []
+    while tk(toks, pos) != "RBrace" {
+      let mut key = ""
+      if tk(toks, pos) == "Str" {
+        key = tv(toks, pos)
+        pos = pos + 1
+      } else {
+        if tk(toks, pos) == "Ident" {
+          key = tv(toks, pos)
+          pos = pos + 1
+        } else {
+          ret err("expected string key in map pattern", pos)
+        }
+      }
+      let r = expect(toks, pos, "Colon")
+      if is_err(r) { ret r }
+      pos = r[1]
+      let r = parse_pattern(toks, pos)
+      if is_err(r) { ret r }
+      entries = push(entries, ast.mk_pat_map_entry(key, r[0]))
+      pos = r[1]
+      if tk(toks, pos) == "Comma" {
+        pos = pos + 1
+      } else { break }
+    }
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    ret [ast.mk_pat_map(entries), r[1]]
+  }
+
+  if k == "Ident" {
+    let name = tv(toks, pos)
+    pos = pos + 1
+    if tk(toks, pos) == "LParen" {
+      pos = pos + 1
+      let mut pats = []
+      if tk(toks, pos) != "RParen" {
+        let r = parse_pattern(toks, pos)
+        if is_err(r) { ret r }
+        pats = push(pats, r[0])
+        pos = r[1]
+        while tk(toks, pos) == "Comma" {
+          pos = pos + 1
+          let r = parse_pattern(toks, pos)
+          if is_err(r) { ret r }
+          pats = push(pats, r[0])
+          pos = r[1]
+        }
+      }
+      let r = expect(toks, pos, "RParen")
+      if is_err(r) { ret r }
+      ret [ast.mk_pat_constructor(name, pats), r[1]]
+    }
+    ret [ast.mk_pat_ident(name), pos]
+  }
+
+  if k == "Minus" {
+    pos = pos + 1
+    if tk(toks, pos) == "Int" {
+      ret [ast.mk_pat_literal(ast.mk_int(0 - int(tv(toks, pos)))), pos + 1]
+    }
+    if tk(toks, pos) == "Float" {
+      ret [ast.mk_pat_literal(ast.mk_float(0.0 - float(tv(toks, pos)))), pos + 1]
+    }
+    ret err("expected number after -", pos)
+  }
+
+  ret err("expected pattern, found " + k, pos)
+}
+
+; --- Expression parsing (precedence climbing) ---
+
+fn parse_expr(toks, pos) {
+  ret parse_pipe_expr(toks, pos)
+}
+
+fn parse_pipe_expr(toks, pos) {
+  let r = parse_or_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    if tk(toks, pos) == "PipeArrow" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_or_expr(toks, pos)
+      if is_err(r) { ret r }
+      left = ast.mk_pipe(left, r[0])
+      pos = r[1]
+    } else {
+      if tk(toks, pos) == "Newline" {
+        let saved = pos
+        pos = skip_nl(toks, pos)
+        if tk(toks, pos) == "PipeArrow" {
+          pos = skip_nl(toks, pos + 1)
+          let r = parse_or_expr(toks, pos)
+          if is_err(r) { ret r }
+          left = ast.mk_pipe(left, r[0])
+          pos = r[1]
+        } else {
+          pos = saved
+          cont = false
+        }
+      } else {
+        cont = false
+      }
+    }
+  }
+  ret [left, pos]
+}
+
+fn parse_or_expr(toks, pos) {
+  let r = parse_and_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  while tk(toks, pos) == "PipePipe" {
+    pos = skip_nl(toks, pos + 1)
+    let r = parse_and_expr(toks, pos)
+    if is_err(r) { ret r }
+    left = ast.mk_binop("||", left, r[0])
+    pos = r[1]
+  }
+  ret [left, pos]
+}
+
+fn parse_and_expr(toks, pos) {
+  let r = parse_eq_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  while tk(toks, pos) == "AmpAmp" {
+    pos = skip_nl(toks, pos + 1)
+    let r = parse_eq_expr(toks, pos)
+    if is_err(r) { ret r }
+    left = ast.mk_binop("&&", left, r[0])
+    pos = r[1]
+  }
+  ret [left, pos]
+}
+
+fn parse_eq_expr(toks, pos) {
+  let r = parse_cmp_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    let k = tk(toks, pos)
+    if k == "EqEq" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_cmp_expr(toks, pos)
+      if is_err(r) { ret r }
+      left = ast.mk_binop("==", left, r[0])
+      pos = r[1]
+    } else {
+      if k == "NotEq" {
+        pos = skip_nl(toks, pos + 1)
+        let r = parse_cmp_expr(toks, pos)
+        if is_err(r) { ret r }
+        left = ast.mk_binop("!=", left, r[0])
+        pos = r[1]
+      } else { cont = false }
+    }
+  }
+  ret [left, pos]
+}
+
+fn parse_cmp_expr(toks, pos) {
+  let r = parse_add_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    let k = tk(toks, pos)
+    if k == "Lt" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_add_expr(toks, pos)
+      if is_err(r) { ret r }
+      left = ast.mk_binop("<", left, r[0])
+      pos = r[1]
+    } else {
+      if k == "Gt" {
+        pos = skip_nl(toks, pos + 1)
+        let r = parse_add_expr(toks, pos)
+        if is_err(r) { ret r }
+        left = ast.mk_binop(">", left, r[0])
+        pos = r[1]
+      } else {
+        if k == "LtEq" {
+          pos = skip_nl(toks, pos + 1)
+          let r = parse_add_expr(toks, pos)
+          if is_err(r) { ret r }
+          left = ast.mk_binop("<=", left, r[0])
+          pos = r[1]
+        } else {
+          if k == "GtEq" {
+            pos = skip_nl(toks, pos + 1)
+            let r = parse_add_expr(toks, pos)
+            if is_err(r) { ret r }
+            left = ast.mk_binop(">=", left, r[0])
+            pos = r[1]
+          } else { cont = false }
+        }
+      }
+    }
+  }
+  ret [left, pos]
+}
+
+fn parse_add_expr(toks, pos) {
+  let r = parse_mul_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    let k = tk(toks, pos)
+    if k == "Plus" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_mul_expr(toks, pos)
+      if is_err(r) { ret r }
+      left = ast.mk_binop("+", left, r[0])
+      pos = r[1]
+    } else {
+      if k == "Minus" {
+        pos = skip_nl(toks, pos + 1)
+        let r = parse_mul_expr(toks, pos)
+        if is_err(r) { ret r }
+        left = ast.mk_binop("-", left, r[0])
+        pos = r[1]
+      } else { cont = false }
+    }
+  }
+  ret [left, pos]
+}
+
+fn parse_mul_expr(toks, pos) {
+  let r = parse_unary_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut left = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    let k = tk(toks, pos)
+    if k == "Star" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_unary_expr(toks, pos)
+      if is_err(r) { ret r }
+      left = ast.mk_binop("*", left, r[0])
+      pos = r[1]
+    } else {
+      if k == "Slash" {
+        pos = skip_nl(toks, pos + 1)
+        let r = parse_unary_expr(toks, pos)
+        if is_err(r) { ret r }
+        left = ast.mk_binop("/", left, r[0])
+        pos = r[1]
+      } else {
+        if k == "Percent" {
+          pos = skip_nl(toks, pos + 1)
+          let r = parse_unary_expr(toks, pos)
+          if is_err(r) { ret r }
+          left = ast.mk_binop("%", left, r[0])
+          pos = r[1]
+        } else { cont = false }
+      }
+    }
+  }
+  ret [left, pos]
+}
+
+fn parse_unary_expr(toks, pos) {
+  let k = tk(toks, pos)
+  if k == "Minus" {
+    pos = pos + 1
+    let r = parse_unary_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_unary("-", r[0]), r[1]]
+  }
+  if k == "Bang" {
+    pos = pos + 1
+    let r = parse_unary_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_unary("!", r[0]), r[1]]
+  }
+  if k == "KwTry" {
+    pos = pos + 1
+    if tk(toks, pos) == "LBrace" {
+      let r = parse_block(toks, pos)
+      if is_err(r) { ret r }
+      ret [ast.mk_try_block(r[0]), r[1]]
+    }
+    let r = parse_unary_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_try(r[0]), r[1]]
+  }
+  ret parse_postfix_expr(toks, pos)
+}
+
+fn parse_postfix_expr(toks, pos) {
+  let r = parse_primary_expr(toks, pos)
+  if is_err(r) { ret r }
+  let mut expr = r[0]
+  pos = r[1]
+  let mut cont = true
+  while cont {
+    let k = tk(toks, pos)
+    if k == "LParen" {
+      pos = skip_nl(toks, pos + 1)
+      let mut args = []
+      if tk(toks, pos) != "RParen" {
+        let r = parse_expr(toks, pos)
+        if is_err(r) { ret r }
+        args = push(args, r[0])
+        pos = r[1]
+        while tk(toks, pos) == "Comma" {
+          pos = skip_nl(toks, pos + 1)
+          let r = parse_expr(toks, pos)
+          if is_err(r) { ret r }
+          args = push(args, r[0])
+          pos = r[1]
+        }
+      }
+      pos = skip_nl(toks, pos)
+      let r = expect(toks, pos, "RParen")
+      if is_err(r) { ret r }
+      pos = r[1]
+      expr = ast.mk_call(expr, args)
+    } else {
+      if k == "Dot" {
+        pos = pos + 1
+        let r = expect_ident(toks, pos)
+        if is_err(r) { ret r }
+        expr = ast.mk_field_access(expr, r[0])
+        pos = r[1]
+      } else {
+        if k == "LBracket" {
+          pos = pos + 1
+          let r = parse_expr(toks, pos)
+          if is_err(r) { ret r }
+          let idx = r[0]
+          pos = r[1]
+          let r = expect(toks, pos, "RBracket")
+          if is_err(r) { ret r }
+          pos = r[1]
+          expr = ast.mk_index(expr, idx)
+        } else {
+          if k == "Question" {
+            pos = pos + 1
+            expr = ast.mk_try(expr)
+          } else {
+            cont = false
+          }
+        }
+      }
+    }
+  }
+  ret [expr, pos]
+}
+
+; --- Primary expressions ---
+
+fn parse_primary_expr(toks, pos) {
+  let k = tk(toks, pos)
+
+  if k == "Int" {
+    ret [ast.mk_int(int(tv(toks, pos))), pos + 1]
+  }
+  if k == "Float" {
+    ret [ast.mk_float(float(tv(toks, pos))), pos + 1]
+  }
+  if k == "Str" {
+    ret [ast.mk_string(tv(toks, pos)), pos + 1]
+  }
+  if k == "KwTrue" {
+    ret [ast.mk_bool_lit(true), pos + 1]
+  }
+  if k == "KwFalse" {
+    ret [ast.mk_bool_lit(false), pos + 1]
+  }
+
+  if k == "Ident" {
+    let name = tv(toks, pos)
+    ret [ast.mk_ident(name), pos + 1]
+  }
+
+  ; "ret" can be used as an identifier in some contexts (e.g., post conditions)
+  if k == "KwRet" {
+    ret [ast.mk_ident("ret"), pos + 1]
+  }
+
+  ; "str" can be used as a namespace identifier (e.g., str.slice)
+  if k == "TyStr" {
+    if tk(toks, pos + 1) == "Dot" {
+      ret [ast.mk_ident("str"), pos + 1]
+    }
+  }
+
+  ; lambda: fn(params) => expr  or  fn(params) { block }
+  if k == "KwFn" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LParen")
+    if is_err(r) { ret r }
+    pos = r[1]
+    let mut params = []
+    if tk(toks, pos) != "RParen" {
+      let r = parse_param_list(toks, pos)
+      if is_err(r) { ret r }
+      params = r[0]
+      pos = r[1]
+    }
+    let r = expect(toks, pos, "RParen")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let mut body = ast.mk_void_lit()
+    if tk(toks, pos) == "FatArrow" {
+      pos = skip_nl(toks, pos + 1)
+      let r = parse_expr(toks, pos)
+      if is_err(r) { ret r }
+      body = r[0]
+      pos = r[1]
+    } else {
+      let r = parse_block(toks, pos)
+      if is_err(r) { ret r }
+      body = ast.mk_block_expr(r[0])
+      pos = r[1]
+    }
+    ret [ast.mk_lambda(params, body), pos]
+  }
+
+  ; string interpolation
+  if k == "InterpStart" {
+    ret parse_interp_string(toks, pos)
+  }
+
+  ; map literal: #{...}
+  if k == "Hash" {
+    pos = pos + 1
+    let r = expect(toks, pos, "LBrace")
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let mut entries = []
+    if tk(toks, pos) != "RBrace" {
+      let r = parse_expr(toks, pos)
+      if is_err(r) { ret r }
+      let key = r[0]
+      pos = r[1]
+      let r = expect(toks, pos, "Colon")
+      if is_err(r) { ret r }
+      pos = skip_nl(toks, r[1])
+      let r = parse_expr(toks, pos)
+      if is_err(r) { ret r }
+      entries = push(entries, ast.mk_map_entry(key, r[0]))
+      pos = r[1]
+      while tk(toks, pos) == "Comma" {
+        pos = skip_nl(toks, pos + 1)
+        if tk(toks, pos) == "RBrace" { break }
+        let r = parse_expr(toks, pos)
+        if is_err(r) { ret r }
+        let key = r[0]
+        pos = r[1]
+        let r = expect(toks, pos, "Colon")
+        if is_err(r) { ret r }
+        pos = skip_nl(toks, r[1])
+        let r = parse_expr(toks, pos)
+        if is_err(r) { ret r }
+        entries = push(entries, ast.mk_map_entry(key, r[0]))
+        pos = r[1]
+      }
+    }
+    pos = skip_nl(toks, pos)
+    let r = expect(toks, pos, "RBrace")
+    if is_err(r) { ret r }
+    ret [ast.mk_map_literal(entries), r[1]]
+  }
+
+  ; parenthesized expression
+  if k == "LParen" {
+    pos = skip_nl(toks, pos + 1)
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    pos = skip_nl(toks, r[1])
+    let r2 = expect(toks, pos, "RParen")
+    if is_err(r2) { ret r2 }
+    ret [r[0], r2[1]]
+  }
+
+  ; array literal
+  if k == "LBracket" {
+    pos = skip_nl(toks, pos + 1)
+    let mut elems = []
+    if tk(toks, pos) != "RBracket" {
+      let r = parse_array_element(toks, pos)
+      if is_err(r) { ret r }
+      elems = push(elems, r[0])
+      pos = r[1]
+      while tk(toks, pos) == "Comma" {
+        pos = skip_nl(toks, pos + 1)
+        if tk(toks, pos) == "RBracket" { break }
+        let r = parse_array_element(toks, pos)
+        if is_err(r) { ret r }
+        elems = push(elems, r[0])
+        pos = r[1]
+      }
+    }
+    pos = skip_nl(toks, pos)
+    let r = expect(toks, pos, "RBracket")
+    if is_err(r) { ret r }
+    ret [ast.mk_array(elems), r[1]]
+  }
+
+  ret err("expected expression, found " + k, pos)
+}
+
+fn parse_array_element(toks, pos) {
+  if tk(toks, pos) == "DotDotDot" {
+    pos = pos + 1
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret [ast.mk_spread(r[0]), r[1]]
+  }
+  ret parse_expr(toks, pos)
+}
+
+fn parse_interp_string(toks, pos) {
+  let mut parts = []
+  let text = tv(toks, pos)
+  if len(str.chars(text)) > 0 {
+    parts = push(parts, ast.mk_interp_lit(text))
+  }
+  pos = pos + 1
+
+  let mut cont = true
+  while cont {
+    let r = parse_expr(toks, pos)
+    if is_err(r) { ret r }
+    parts = push(parts, ast.mk_interp_expr(r[0]))
+    pos = r[1]
+
+    let k = tk(toks, pos)
+    if k == "InterpMid" {
+      let text = tv(toks, pos)
+      if len(str.chars(text)) > 0 {
+        parts = push(parts, ast.mk_interp_lit(text))
+      }
+      pos = pos + 1
+    } else {
+      if k == "InterpEnd" {
+        let text = tv(toks, pos)
+        if len(str.chars(text)) > 0 {
+          parts = push(parts, ast.mk_interp_lit(text))
+        }
+        pos = pos + 1
+        cont = false
+      } else {
+        ret err("expected interpolation continuation, found " + k, pos)
+      }
+    }
+  }
+  ret [ast.mk_interpolation(parts), pos]
+}

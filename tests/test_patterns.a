@@ -1,0 +1,193 @@
+; Pattern Matching Overhaul -- native tests
+
+fn test_array_pattern_empty() -> bool {
+  let a = []
+  match a {
+    [] => { ret true }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_fixed() -> bool {
+  let a = [10, 20, 30]
+  match a {
+    [x, y, z] => { ret x + y + z == 60 }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_single() -> bool {
+  let a = [42]
+  match a {
+    [x] => { ret x == 42 }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_rest() -> bool {
+  let a = [1, 2, 3, 4, 5]
+  match a {
+    [h, ...t] => { ret h == 1 && len(t) == 4 }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_rest_empty_tail() -> bool {
+  let a = [99]
+  match a {
+    [h, ...t] => { ret h == 99 && len(t) == 0 }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_mismatch_type() -> bool {
+  let a = "not_array"
+  match a {
+    [x] => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_array_pattern_mismatch_len() -> bool {
+  let a = [1, 2, 3]
+  match a {
+    [x, y] => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_array_pattern_literal_elem() -> bool {
+  let a = [1, 42]
+  match a {
+    [1, x] => { ret x == 42 }
+    _ => { ret false }
+  }
+}
+
+fn test_array_pattern_multiple_arms() -> bool {
+  let a = [1, 2]
+  match a {
+    [] => { ret false }
+    [x] => { ret false }
+    [x, y] => { ret x + y == 3 }
+    _ => { ret false }
+  }
+}
+
+fn test_map_pattern_single() -> bool {
+  let m = #{"name": "alice"}
+  match m {
+    #{"name": n} => { ret n == "alice" }
+    _ => { ret false }
+  }
+}
+
+fn test_map_pattern_multi() -> bool {
+  let m = #{"x": 3, "y": 4}
+  match m {
+    #{"x": a, "y": b} => { ret a + b == 7 }
+    _ => { ret false }
+  }
+}
+
+fn test_map_pattern_literal_match() -> bool {
+  let m = #{"status": 200}
+  match m {
+    #{"status": 200} => { ret true }
+    #{"status": 404} => { ret false }
+    _ => { ret false }
+  }
+}
+
+fn test_map_pattern_literal_mismatch() -> bool {
+  let m = #{"status": 500}
+  match m {
+    #{"status": 200} => { ret false }
+    #{"status": 404} => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_map_pattern_missing_key() -> bool {
+  let m = #{"a": 1}
+  match m {
+    #{"b": v} => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_map_pattern_not_map() -> bool {
+  let x = 42
+  match x {
+    #{"a": v} => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_guard_positive() -> bool {
+  let n = 10
+  match n {
+    x if x > 0 => { ret true }
+    x if x < 0 => { ret false }
+    _ => { ret false }
+  }
+}
+
+fn test_guard_negative() -> bool {
+  let n = -5
+  match n {
+    x if x > 0 => { ret false }
+    x if x < 0 => { ret true }
+    _ => { ret false }
+  }
+}
+
+fn test_guard_zero_fallthrough() -> bool {
+  let n = 0
+  match n {
+    x if x > 0 => { ret false }
+    x if x < 0 => { ret false }
+    _ => { ret true }
+  }
+}
+
+fn test_guard_with_array() -> bool {
+  let a = [3, 7]
+  match a {
+    [x, y] if x > y => { ret false }
+    [x, y] if y > x => { ret y == 7 }
+    _ => { ret false }
+  }
+}
+
+fn test_nested_map_array() -> bool {
+  let e = #{"pos": [10, 20]}
+  match e {
+    #{"pos": [x, y]} => { ret x + y == 30 }
+    _ => { ret false }
+  }
+}
+
+fn test_nested_map_literal_with_binding() -> bool {
+  let resp = #{"status": 200, "data": 42}
+  match resp {
+    #{"status": 200, "data": d} => { ret d == 42 }
+    _ => { ret false }
+  }
+}
+
+fn test_match_literal_fallthrough() -> bool {
+  let mut r = ""
+  let x = 3
+  match x {
+    1 => { r = "one" }
+    2 => { r = "two" }
+    3 => { r = "three" }
+    _ => { r = "other" }
+  }
+  ret r == "three"
+}
+
+fn main() -> i64 {
+  ret 0
+}

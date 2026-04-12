@@ -1,0 +1,133 @@
+use std.testing
+
+fn test_let_destructure_basic() -> void {
+  let [a, b, c] = [10, 20, 30]
+  assert_int_eq(a, 10)
+  assert_int_eq(b, 20)
+  assert_int_eq(c, 30)
+}
+
+fn test_let_destructure_rest() -> void {
+  let [first, ...rest] = [1, 2, 3, 4, 5]
+  assert_int_eq(first, 1)
+  assert_int_eq(len(rest), 4)
+  assert_int_eq(rest[0], 2)
+  assert_int_eq(rest[3], 5)
+}
+
+fn test_let_destructure_wildcard() -> void {
+  let [_, second, _] = [100, 200, 300]
+  assert_int_eq(second, 200)
+}
+
+fn test_let_destructure_single() -> void {
+  let [only] = [42]
+  assert_int_eq(only, 42)
+}
+
+fn test_let_destructure_rest_empty() -> void {
+  let [a, b, ...rest] = [1, 2]
+  assert_int_eq(a, 1)
+  assert_int_eq(b, 2)
+  assert_int_eq(len(rest), 0)
+}
+
+fn test_let_destructure_from_split() -> void {
+  let [name, age] = str.split("alice,30", ",")
+  assert_eq(name, "alice")
+  assert_eq(age, "30")
+}
+
+fn test_let_destructure_from_function() -> void {
+  let [a, b, c] = take([10, 20, 30, 40, 50], 3)
+  assert_int_eq(a, 10)
+  assert_int_eq(b, 20)
+  assert_int_eq(c, 30)
+}
+
+fn test_for_destructure_enumerate() -> void {
+  let items = ["a", "b", "c"]
+  let mut indices = []
+  let mut values = []
+  for [i, v] in enumerate(items) {
+    indices = push(indices, i)
+    values = push(values, v)
+  }
+  assert_eq(to_str(indices), "[0, 1, 2]")
+  assert_eq(to_str(values), "[a, b, c]")
+}
+
+fn test_for_destructure_zip() -> void {
+  let names = ["alice", "bob"]
+  let ages = [30, 25]
+  let mut results = []
+  for [name, age] in zip(names, ages) {
+    results = push(results, "{name}:{to_str(age)}")
+  }
+  assert_eq(to_str(results), "[alice:30, bob:25]")
+}
+
+fn test_for_destructure_chunk() -> void {
+  let pairs = chunk([1, 2, 3, 4, 5, 6], 2)
+  let mut sums = []
+  for [a, b] in pairs {
+    sums = push(sums, a + b)
+  }
+  assert_eq(to_str(sums), "[3, 7, 11]")
+}
+
+fn test_spread_concat() -> void {
+  let a = [1, 2, 3]
+  let b = [4, 5, 6]
+  let c = [...a, ...b]
+  assert_int_eq(len(c), 6)
+  assert_int_eq(c[0], 1)
+  assert_int_eq(c[5], 6)
+}
+
+fn test_spread_prepend() -> void {
+  let arr = [2, 3, 4]
+  let result = [1, ...arr]
+  assert_eq(to_str(result), "[1, 2, 3, 4]")
+}
+
+fn test_spread_append() -> void {
+  let arr = [1, 2, 3]
+  let result = [...arr, 4]
+  assert_eq(to_str(result), "[1, 2, 3, 4]")
+}
+
+fn test_spread_mixed() -> void {
+  let a = [2, 3]
+  let b = [5, 6]
+  let result = [1, ...a, 4, ...b, 7]
+  assert_eq(to_str(result), "[1, 2, 3, 4, 5, 6, 7]")
+}
+
+fn test_spread_empty() -> void {
+  let empty = []
+  let result = [...empty, 1, 2, ...empty]
+  assert_eq(to_str(result), "[1, 2]")
+}
+
+fn test_spread_single_source() -> void {
+  let src = [10, 20, 30]
+  let copy = [...src]
+  assert_eq(to_str(copy), "[10, 20, 30]")
+}
+
+fn test_destructure_with_pipeline() -> void {
+  let data = [3, 1, 4, 1, 5]
+  let [smallest, ...others] = sort(data)
+  assert_int_eq(smallest, 1)
+  assert_int_eq(len(others), 4)
+}
+
+fn test_for_destructure_with_map() -> void {
+  let pairs = enumerate(["x", "y", "z"])
+  let mut sum = 0
+  for [i, v] in pairs {
+    sum = sum + i
+  }
+  assert_int_eq(sum, 3)
+}

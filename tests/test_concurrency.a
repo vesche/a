@@ -1,0 +1,185 @@
+use std.testing
+
+; === spawn + await ===
+
+fn test_spawn_await_basic() {
+  let h = spawn(fn() => 1 + 2)
+  let r = await(h)
+  assert_eq(unwrap(r), 3)
+}
+
+fn test_spawn_returns_task_handle() {
+  let h = spawn(fn() => 42)
+  assert_eq(type_of(h), "task")
+  let discard = await(h)
+}
+
+fn test_spawn_closure_captures() {
+  let x = 10
+  let y = 5
+  let h = spawn(fn() => x * y)
+  assert_eq(unwrap(await(h)), 50)
+}
+
+fn test_spawn_calls_other_functions() {
+  let h = spawn(fn() => helper_add(3, 7))
+  assert_eq(unwrap(await(h)), 10)
+}
+
+fn helper_add(a, b) {
+  ret a + b
+}
+
+fn test_await_error_propagation() {
+  let h = spawn(fn() => fail("boom"))
+  let r = await(h)
+  assert_true(is_err(r), "should be Err")
+}
+
+fn test_await_double_returns_err() {
+  let h = spawn(fn() => 99)
+  let r1 = await(h)
+  let r2 = await(h)
+  assert_eq(unwrap(r1), 99)
+  assert_true(is_err(r2), "double await should be Err")
+}
+
+fn test_spawn_multiple_sequential() {
+  let h1 = spawn(fn() => 10)
+  let h2 = spawn(fn() => 20)
+  let h3 = spawn(fn() => 30)
+  assert_eq(unwrap(await(h1)), 10)
+  assert_eq(unwrap(await(h2)), 20)
+  assert_eq(unwrap(await(h3)), 30)
+}
+
+fn test_spawn_string_operations() {
+  let prefix = "hello"
+  let h = spawn(fn() => prefix + " world")
+  assert_eq(unwrap(await(h)), "hello world")
+}
+
+; === await_all ===
+
+fn test_await_all_basic() {
+  let handles = [
+    spawn(fn() => 1),
+    spawn(fn() => 2),
+    spawn(fn() => 3)
+  ]
+  let results = await_all(handles)
+  assert_eq(len(results), 3)
+  assert_eq(unwrap(results[0]), 1)
+  assert_eq(unwrap(results[1]), 2)
+  assert_eq(unwrap(results[2]), 3)
+}
+
+fn test_await_all_preserves_order() {
+  let handles = [
+    spawn(fn() => "a"),
+    spawn(fn() => "b"),
+    spawn(fn() => "c")
+  ]
+  let results = await_all(handles)
+  assert_eq(unwrap(results[0]), "a")
+  assert_eq(unwrap(results[1]), "b")
+  assert_eq(unwrap(results[2]), "c")
+}
+
+fn test_await_all_with_errors() {
+  let handles = [
+    spawn(fn() => 42),
+    spawn(fn() => fail("oops")),
+    spawn(fn() => 99)
+  ]
+  let results = await_all(handles)
+  assert_eq(len(results), 3)
+  assert_true(is_ok(results[0]), "first should be Ok")
+  assert_true(is_err(results[1]), "second should be Err")
+  assert_true(is_ok(results[2]), "third should be Ok")
+}
+
+fn test_await_all_empty() {
+  let results = await_all([])
+  assert_eq(len(results), 0)
+}
+
+; === parallel_map ===
+
+fn test_parallel_map_basic() {
+  let results = parallel_map([1, 2, 3, 4], fn(x) => x * 2)
+  assert_eq(len(results), 4)
+  assert_eq(results[0], 2)
+  assert_eq(results[1], 4)
+  assert_eq(results[2], 6)
+  assert_eq(results[3], 8)
+}
+
+fn test_parallel_map_preserves_order() {
+  let results = parallel_map([10, 20, 30], fn(x) => x + 1)
+  assert_eq(results[0], 11)
+  assert_eq(results[1], 21)
+  assert_eq(results[2], 31)
+}
+
+fn test_parallel_map_with_closures() {
+  let factor = 3
+  let results = parallel_map([1, 2, 3], fn(x) => x * factor)
+  assert_eq(results[0], 3)
+  assert_eq(results[1], 6)
+  assert_eq(results[2], 9)
+}
+
+fn test_parallel_map_strings() {
+  let results = parallel_map(["a", "b", "c"], fn(s) => s + "!")
+  assert_eq(results[0], "a!")
+  assert_eq(results[1], "b!")
+  assert_eq(results[2], "c!")
+}
+
+fn test_parallel_map_empty() {
+  let results = parallel_map([], fn(x) => x)
+  assert_eq(len(results), 0)
+}
+
+fn test_parallel_map_single() {
+  let results = parallel_map([42], fn(x) => x * 2)
+  assert_eq(len(results), 1)
+  assert_eq(results[0], 84)
+}
+
+; === parallel_each ===
+
+fn test_parallel_each_runs() {
+  let result = parallel_each([1, 2, 3], fn(x) => x * 2)
+  assert_eq(type_of(result), "void")
+}
+
+; === timeout ===
+
+fn test_timeout_completes() {
+  let r = timeout(5000, fn() => 42)
+  assert_true(is_ok(r), "should complete within timeout")
+  assert_eq(unwrap(r), 42)
+}
+
+fn test_timeout_with_computation() {
+  let r = timeout(5000, fn() => 10 + 20 + 30)
+  assert_eq(unwrap(r), 60)
+}
+
+; === independence ===
+
+fn test_spawned_tasks_independent() {
+  let shared = [1, 2, 3]
+  let h = spawn(fn() => len(shared))
+  let result = unwrap(await(h))
+  assert_eq(result, 3)
+  assert_eq(len(shared), 3)
+}
+
+fn test_concurrent_eval() {
+  let h = spawn(fn() => eval("1 + 2"))
+  let r = await(h)
+  assert_eq(unwrap(r), 3)
+}

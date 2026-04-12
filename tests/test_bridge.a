@@ -1,0 +1,108 @@
+use std.compiler.compiler
+
+fn assert_true(val, test_name) {
+  if !val {
+    println("FAIL: " + test_name)
+    ret false
+  }
+  println("PASS: " + test_name)
+  ret true
+}
+
+fn test_bridge_convert() -> bool {
+  let prog = compiler.compile("fn main() \{ println(\"hello\") \}")
+  let result = __bridge_convert__(prog)
+  if !assert_true(result["ok"] == true, "bridge convert ok") { ret false }
+  if !assert_true(result["functions"] >= 1, "has functions") { ret false }
+  if !assert_true(result["has_main"] == true, "has main") { ret false }
+  ret true
+}
+
+fn test_bridge_exec_hello() -> bool {
+  let prog = compiler.compile("fn main() \{ println(\"bridge says hello\") \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec hello ran")
+}
+
+fn test_bridge_exec_math() -> bool {
+  let prog = compiler.compile("fn main() \{ let x = 2 + 3\n println(to_str(x)) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec math ran")
+}
+
+fn test_bridge_exec_function_call() -> bool {
+  let prog = compiler.compile("fn double(x) \{ ret x * 2 \}\nfn main() \{ println(to_str(double(21))) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec function call ran")
+}
+
+fn test_bridge_exec_if() -> bool {
+  let prog = compiler.compile("fn main() \{ let x = 5\n if x > 3 \{ println(\"big\") \} else \{ println(\"small\") \} \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec if ran")
+}
+
+fn test_bridge_exec_while() -> bool {
+  let prog = compiler.compile("fn main() \{ let mut i = 0\n while i < 3 \{ println(to_str(i))\n i = i + 1 \} \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec while ran")
+}
+
+fn test_bridge_exec_for() -> bool {
+  let prog = compiler.compile("fn main() \{ for x in [10, 20, 30] \{ println(to_str(x)) \} \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec for ran")
+}
+
+fn test_bridge_exec_array() -> bool {
+  let prog = compiler.compile("fn main() \{ let a = [1, 2, 3]\n println(to_str(len(a))) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec array ran")
+}
+
+fn test_bridge_exec_map() -> bool {
+  let prog = compiler.compile("fn main() \{ let m = #\{\"key\": 42\}\n println(to_str(m[\"key\"])) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec map ran")
+}
+
+fn test_bridge_exec_recursion() -> bool {
+  let prog = compiler.compile("fn fib(n) \{ if n <= 1 \{ ret n \}\n ret fib(n - 1) + fib(n - 2) \}\nfn main() \{ println(to_str(fib(10))) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec recursion ran")
+}
+
+fn test_bridge_exec_string_interp() -> bool {
+  let prog = compiler.compile("fn main() \{ let name = \"world\"\n println(\"hello \{name\}\") \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec string interp ran")
+}
+
+fn test_bridge_exec_tco() -> bool {
+  let prog = compiler.compile("fn countdown(n) \{ if n <= 0 \{ ret \"done\" \}\n ret countdown(n - 1) \}\nfn main() \{ println(countdown(1000)) \}")
+  __bridge_exec__(prog)
+  assert_true(true, "bridge exec tco ran")
+}
+
+fn main() -> void
+  effects [io]
+{
+  println("=== Bridge Tests ===")
+  let mut pass = 0
+  let mut fail = 0
+
+  if test_bridge_convert() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_hello() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_math() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_function_call() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_if() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_while() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_for() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_array() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_map() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_recursion() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_string_interp() { pass = pass + 1 } else { fail = fail + 1 }
+  if test_bridge_exec_tco() { pass = pass + 1 } else { fail = fail + 1 }
+
+  println(to_str(pass) + "/" + to_str(pass + fail) + " bridge tests passed")
+}

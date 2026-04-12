@@ -1,0 +1,27 @@
+ty Point = { x: f64, y: f64 }
+
+ty Color = Red | Green | Blue
+
+fn describe_color(c: str) -> str
+  effects [pure]
+{
+  if c == "red" {
+    ret "warm"
+  } else if c == "blue" {
+    ret "cool"
+  } else {
+    ret "neutral"
+  }
+}
+
+fn main() -> void
+  effects [io]
+{
+  let desc: str = describe_color("red")
+  println(desc)
+  let nums: [i64] = [1, 2, 3, 4, 5]
+  let total: i64 = 0
+  for n: i64 in nums {
+    println(to_str(n))
+  }
+}

@@ -1,0 +1,63 @@
+use std.testing
+
+fn countdown(n: i64) -> i64 {
+  if n == 0 { ret 0 }
+  ret countdown(n - 1)
+}
+
+fn sum_acc(n: i64, acc: i64) -> i64 {
+  if n == 0 { ret acc }
+  ret sum_acc(n - 1, acc + n)
+}
+
+fn is_even(n: i64) -> bool {
+  if n == 0 { ret true }
+  ret is_odd(n - 1)
+}
+
+fn is_odd(n: i64) -> bool {
+  if n == 0 { ret false }
+  ret is_even(n - 1)
+}
+
+fn fib_tail(n: i64, a: i64, b: i64) -> i64 {
+  if n == 0 { ret a }
+  ret fib_tail(n - 1, b, a + b)
+}
+
+fn test_deep_countdown() -> void {
+  assert_int_eq(countdown(100000), 0)
+}
+
+fn test_tail_accumulator() -> void {
+  assert_int_eq(sum_acc(100000, 0), 5000050000)
+}
+
+fn test_mutual_recursion_even() -> void {
+  assert_true(is_even(100000))
+  assert_false(is_even(99999))
+}
+
+fn test_mutual_recursion_odd() -> void {
+  assert_true(is_odd(99999))
+  assert_false(is_odd(100000))
+}
+
+fn test_tail_fibonacci() -> void {
+  assert_int_eq(fib_tail(0, 0, 1), 0)
+  assert_int_eq(fib_tail(1, 0, 1), 1)
+  assert_int_eq(fib_tail(10, 0, 1), 55)
+  assert_int_eq(fib_tail(20, 0, 1), 6765)
+}
+
+fn test_tail_preserves_value() -> void {
+  assert_int_eq(countdown(0), 0)
+  assert_int_eq(countdown(1), 0)
+  assert_int_eq(sum_acc(5, 0), 15)
+}
+
+fn test_tail_with_capture() -> void {
+  let offset = 1000
+  let result = map([1, 2, 3], fn(x: i64) => x + offset)
+  assert_eq(to_str(result), "[1001, 1002, 1003]")
+}

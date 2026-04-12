@@ -1,0 +1,18 @@
+use std.compiler.compiler
+
+fn main() -> void
+  effects [io]
+{
+  let prog = compiler.compile("fn main() \{ println(\"inner hello\") \}")
+  println("prog type: " + type_of(prog))
+  println("main_idx: " + to_str(prog["main_idx"]))
+  println("fn count: " + to_str(len(prog["functions"])))
+
+  let result = __bridge_convert__(prog)
+  println("result type: " + type_of(result))
+  println("result: " + to_str(result))
+
+  println("--- exec ---")
+  __bridge_exec__(prog)
+  println("--- done ---")
+}

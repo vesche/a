@@ -1,0 +1,90 @@
+use std.compiler.serialize
+
+fn compare_functions(fns_a, fns_b, label_a, label_b) {
+  let mut diffs = 0
+
+  if len(fns_a) != len(fns_b) {
+    println("DIFF: function count " + label_a + "=" + to_str(len(fns_a)) + " vs " + label_b + "=" + to_str(len(fns_b)))
+    diffs = diffs + 1
+  }
+
+  let limit = len(fns_a)
+  if len(fns_b) < limit { limit = len(fns_b) }
+
+  let mut i = 0
+  while i < limit {
+    let fa = fns_a[i]
+    let fb = fns_b[i]
+
+    if fa["name"] != fb["name"] {
+      println("DIFF [" + to_str(i) + "]: name " + label_a + "=\"" + fa["name"] + "\" vs " + label_b + "=\"" + fb["name"] + "\"")
+      diffs = diffs + 1
+    }
+
+    let ca = fa["chunk"]
+    let cb = fb["chunk"]
+
+    if len(ca["code"]) != len(cb["code"]) {
+      println("DIFF [" + to_str(i) + "] " + fa["name"] + ": opcode count " + label_a + "=" + to_str(len(ca["code"])) + " vs " + label_b + "=" + to_str(len(cb["code"])))
+      diffs = diffs + 1
+    }
+
+    if len(ca["constants"]) != len(cb["constants"]) {
+      println("DIFF [" + to_str(i) + "] " + fa["name"] + ": constant count " + label_a + "=" + to_str(len(ca["constants"])) + " vs " + label_b + "=" + to_str(len(cb["constants"])))
+      diffs = diffs + 1
+    }
+
+    if len(ca["strings"]) != len(cb["strings"]) {
+      println("DIFF [" + to_str(i) + "] " + fa["name"] + ": string count " + label_a + "=" + to_str(len(ca["strings"])) + " vs " + label_b + "=" + to_str(len(cb["strings"])))
+      diffs = diffs + 1
+    }
+    i = i + 1
+  }
+
+  ret diffs
+}
+
+fn main() -> void
+  effects [io]
+{
+  let argv = args()
+  if len(argv) < 2 {
+    eprintln("usage: a run examples/compare_bc.a -- <file1.ac> <file2.ac> [--exec]")
+    eprintln("")
+    eprintln("Compares two .ac bytecode files and reports differences.")
+    eprintln("  --exec  Also execute both and show output")
+    exit(1)
+  }
+
+  let path_a = argv[0]
+  let path_b = argv[1]
+  let mut do_exec = false
+  if len(argv) > 2 {
+    if argv[2] == "--exec" { do_exec = true }
+  }
+
+  let prog_a = serialize.load_from_file(path_a)
+  let prog_b = serialize.load_from_file(path_b)
+
+  println("=== Bytecode Comparison ===")
+  println(path_a + ": " + to_str(len(prog_a["functions"])) + " functions, main_idx=" + to_str(prog_a["main_idx"]))
+  println(path_b + ": " + to_str(len(prog_b["functions"])) + " functions, main_idx=" + to_str(prog_b["main_idx"]))
+  println("")
+
+  let diffs = compare_functions(prog_a["functions"], prog_b["functions"], "A", "B")
+
+  if diffs == 0 {
+    println("MATCH: bytecode structure is identical (" + to_str(len(prog_a["functions"])) + " functions)")
+  } else {
+    println(to_str(diffs) + " structural differences found")
+  }
+
+  if do_exec {
+    println("")
+    println("=== Executing A ===")
+    __bridge_exec__(prog_a)
+    println("")
+    println("=== Executing B ===")
+    __bridge_exec__(prog_b)
+  }
+}

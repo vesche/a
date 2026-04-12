@@ -1,0 +1,56 @@
+mod automation {
+  ty CmdResult = {stdout: str, stderr: str, code: i64}
+
+  fn run_cmd(cmd: str) -> CmdResult effects [io] {
+    ret exec(cmd)
+  }
+
+  fn main() -> void effects [io] {
+    println("=== a-lang system automation ===")
+
+    let host: CmdResult = run_cmd("hostname")
+    println("host: {str.trim(host.stdout)}")
+
+    let uname: CmdResult = run_cmd("uname -s")
+    let os: str = str.trim(uname.stdout)
+    println("os: {os}")
+
+    let who: CmdResult = run_cmd("whoami")
+    println("user: {str.trim(who.stdout)}")
+
+    let home: str = env.get("HOME")
+    println("home: {home}")
+
+    println("")
+    println("--- disk usage (top 5) ---")
+    let df: CmdResult = run_cmd("df -h | head -6")
+    let lines: [str] = str.lines(df.stdout)
+    each(lines, fn(line: str) => println(line))
+
+    println("")
+    println("--- environment snapshot ---")
+    let snapshot: #{str: str} = #{
+      "host": str.trim(host.stdout),
+      "os": os,
+      "user": str.trim(who.stdout),
+      "home": home
+    }
+    let json_out: str = json.pretty(snapshot)
+    println(json_out)
+
+    println("")
+    println("--- git status (if available) ---")
+    let git: CmdResult = run_cmd("git rev-parse --short HEAD 2>/dev/null || echo none")
+    let sha: str = str.trim(git.stdout)
+    if sha == "none" {
+      println("not a git repo")
+    } else {
+      println("HEAD: {sha}")
+      let branch: CmdResult = run_cmd("git branch --show-current")
+      println("branch: {str.trim(branch.stdout)}")
+    }
+
+    println("")
+    println("=== done ===")
+  }
+}

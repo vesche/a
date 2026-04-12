@@ -1,0 +1,359 @@
+; Standard "a" language lexer module.
+; Tokenizes "a" source into a flat array: [kind0, text0, kind1, text1, ...]
+
+fn is_ws(c: str) -> bool {
+  ret c == " " || c == "\t" || c == "\r"
+}
+
+fn is_id_start(c: str) -> bool {
+  ret is_alpha(c) || c == "_"
+}
+
+fn is_id_char(c: str) -> bool {
+  ret is_alnum(c)
+}
+
+fn keyword_or_ident(word: str) -> str {
+  if word == "fn" { ret "KwFn" }
+  if word == "ty" { ret "KwTy" }
+  if word == "mod" { ret "KwMod" }
+  if word == "let" { ret "KwLet" }
+  if word == "mut" { ret "KwMut" }
+  if word == "if" { ret "KwIf" }
+  if word == "else" { ret "KwElse" }
+  if word == "match" { ret "KwMatch" }
+  if word == "for" { ret "KwFor" }
+  if word == "in" { ret "KwIn" }
+  if word == "while" { ret "KwWhile" }
+  if word == "break" { ret "KwBreak" }
+  if word == "continue" { ret "KwContinue" }
+  if word == "ret" { ret "KwRet" }
+  if word == "use" { ret "KwUse" }
+  if word == "try" { ret "KwTry" }
+  if word == "pub" { ret "KwPub" }
+  if word == "effects" { ret "KwEffects" }
+  if word == "pre" { ret "KwPre" }
+  if word == "post" { ret "KwPost" }
+  if word == "where" { ret "KwWhere" }
+  if word == "true" { ret "KwTrue" }
+  if word == "false" { ret "KwFalse" }
+  if word == "i8" { ret "TyI8" }
+  if word == "i16" { ret "TyI16" }
+  if word == "i32" { ret "TyI32" }
+  if word == "i64" { ret "TyI64" }
+  if word == "u8" { ret "TyU8" }
+  if word == "u16" { ret "TyU16" }
+  if word == "u32" { ret "TyU32" }
+  if word == "u64" { ret "TyU64" }
+  if word == "f32" { ret "TyF32" }
+  if word == "f64" { ret "TyF64" }
+  if word == "bool" { ret "TyBool" }
+  if word == "str" { ret "TyStr" }
+  if word == "bytes" { ret "TyBytes" }
+  if word == "void" { ret "TyVoid" }
+  ret "Ident"
+}
+
+fn lex(src: str) -> [str] {
+  let chars: [str] = str.chars(src)
+  let n: i64 = len(chars)
+  let mut pos: i64 = 0
+  let mut toks: [str] = []
+
+  while pos < n {
+    let c: str = chars[pos]
+
+    if c == "\n" {
+      toks = push(toks, "Newline")
+      toks = push(toks, "")
+      pos = pos + 1
+      continue
+    }
+
+    if is_ws(c) {
+      pos = pos + 1
+      continue
+    }
+
+    if c == ";" {
+      while pos < n {
+        if chars[pos] == "\n" { break }
+        pos = pos + 1
+      }
+      continue
+    }
+
+    if c == "/" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "/" {
+          while pos < n {
+            if chars[pos] == "\n" { break }
+            pos = pos + 1
+          }
+          continue
+        }
+      }
+    }
+
+    if is_id_start(c) {
+      let start: i64 = pos
+      while pos < n {
+        if is_id_char(chars[pos]) { pos = pos + 1 } else { break }
+      }
+      let word: str = str.slice(src, start, pos)
+      let kind: str = keyword_or_ident(word)
+      toks = push(toks, kind)
+      toks = push(toks, word)
+      continue
+    }
+
+    if is_digit(c) {
+      let start: i64 = pos
+      let mut is_float: bool = false
+      while pos < n {
+        if is_digit(chars[pos]) {
+          pos = pos + 1
+        } else {
+          if chars[pos] == "." {
+            if is_float { break }
+            is_float = true
+            pos = pos + 1
+          } else { break }
+        }
+      }
+      let text: str = str.slice(src, start, pos)
+      if is_float {
+        toks = push(toks, "Float")
+      } else {
+        toks = push(toks, "Int")
+      }
+      toks = push(toks, text)
+      continue
+    }
+
+    if c == "\"" {
+      let start: i64 = pos
+      pos = pos + 1
+      while pos < n {
+        let sc: str = chars[pos]
+        if sc == "\\" { pos = pos + 2 } else {
+          if sc == "\"" { pos = pos + 1
+            break } else { pos = pos + 1 }
+        }
+      }
+      toks = push(toks, "Str")
+      toks = push(toks, str.slice(src, start, pos))
+      continue
+    }
+
+    if c == "(" { toks = push(toks, "LParen")
+      toks = push(toks, "(")
+      pos = pos + 1
+      continue }
+    if c == ")" { toks = push(toks, "RParen")
+      toks = push(toks, ")")
+      pos = pos + 1
+      continue }
+    if c == "\{" { toks = push(toks, "LBrace")
+      toks = push(toks, "\{")
+      pos = pos + 1
+      continue }
+    if c == "\}" { toks = push(toks, "RBrace")
+      toks = push(toks, "\}")
+      pos = pos + 1
+      continue }
+    if c == "[" { toks = push(toks, "LBracket")
+      toks = push(toks, "[")
+      pos = pos + 1
+      continue }
+    if c == "]" { toks = push(toks, "RBracket")
+      toks = push(toks, "]")
+      pos = pos + 1
+      continue }
+    if c == "," { toks = push(toks, "Comma")
+      toks = push(toks, ",")
+      pos = pos + 1
+      continue }
+    if c == ":" { toks = push(toks, "Colon")
+      toks = push(toks, ":")
+      pos = pos + 1
+      continue }
+    if c == "?" { toks = push(toks, "Question")
+      toks = push(toks, "?")
+      pos = pos + 1
+      continue }
+    if c == "#" { toks = push(toks, "Hash")
+      toks = push(toks, "#")
+      pos = pos + 1
+      continue }
+    if c == "+" { toks = push(toks, "Plus")
+      toks = push(toks, "+")
+      pos = pos + 1
+      continue }
+    if c == "*" { toks = push(toks, "Star")
+      toks = push(toks, "*")
+      pos = pos + 1
+      continue }
+    if c == "%" { toks = push(toks, "Percent")
+      toks = push(toks, "%")
+      pos = pos + 1
+      continue }
+    if c == "." { toks = push(toks, "Dot")
+      toks = push(toks, ".")
+      pos = pos + 1
+      continue }
+
+    if c == "-" {
+      if pos + 1 < n {
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "Arrow")
+          toks = push(toks, "->")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Minus")
+      toks = push(toks, "-")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "=" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "EqEq")
+          toks = push(toks, "==")
+          pos = pos + 2
+          continue
+        }
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "FatArrow")
+          toks = push(toks, "=>")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Eq")
+      toks = push(toks, "=")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "!" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "NotEq")
+          toks = push(toks, "!=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Bang")
+      toks = push(toks, "!")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "<" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "LtEq")
+          toks = push(toks, "<=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Lt")
+      toks = push(toks, "<")
+      pos = pos + 1
+      continue
+    }
+
+    if c == ">" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "GtEq")
+          toks = push(toks, ">=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Gt")
+      toks = push(toks, ">")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "&" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "&" {
+          toks = push(toks, "AmpAmp")
+          toks = push(toks, "&&")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Amp")
+      toks = push(toks, "&")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "|" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "|" {
+          toks = push(toks, "PipePipe")
+          toks = push(toks, "||")
+          pos = pos + 2
+          continue
+        }
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "PipeArrow")
+          toks = push(toks, "|>")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Pipe")
+      toks = push(toks, "|")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "/" {
+      toks = push(toks, "Slash")
+      toks = push(toks, "/")
+      pos = pos + 1
+      continue
+    }
+
+    toks = push(toks, "Unknown")
+    toks = push(toks, c)
+    pos = pos + 1
+  }
+
+  toks = push(toks, "Eof")
+  toks = push(toks, "")
+  ret toks
+}
+
+; Token access helpers
+fn tk(toks: [str], i: i64) -> str {
+  ret toks[i * 2]
+}
+
+fn tv(toks: [str], i: i64) -> str {
+  ret toks[i * 2 + 1]
+}
+
+fn tcount(toks: [str]) -> i64 {
+  ret len(toks) / 2
+}
+
+fn skip_nl(toks: [str], p: i64) -> i64 {
+  let mut i: i64 = p
+  while tk(toks, i) == "Newline" {
+    i = i + 1
+  }
+  ret i
+}

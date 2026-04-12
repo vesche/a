@@ -1,0 +1,883 @@
+; Self-parser for the "a" language, written in "a".
+; Demonstrates recursive descent with operator precedence.
+; Tokens stored as flat array: [kind0, text0, kind1, text1, ...]
+
+fn is_ws(c: str) -> bool {
+  ret c == " " || c == "\t" || c == "\r"
+}
+
+fn is_id_start(c: str) -> bool {
+  ret is_alpha(c) || c == "_"
+}
+
+fn is_id_char(c: str) -> bool {
+  ret is_alnum(c)
+}
+
+fn keyword_or_ident(word: str) -> str {
+  if word == "fn" { ret "KwFn" }
+  if word == "ty" { ret "KwTy" }
+  if word == "mod" { ret "KwMod" }
+  if word == "let" { ret "KwLet" }
+  if word == "mut" { ret "KwMut" }
+  if word == "if" { ret "KwIf" }
+  if word == "else" { ret "KwElse" }
+  if word == "match" { ret "KwMatch" }
+  if word == "for" { ret "KwFor" }
+  if word == "in" { ret "KwIn" }
+  if word == "while" { ret "KwWhile" }
+  if word == "break" { ret "KwBreak" }
+  if word == "continue" { ret "KwContinue" }
+  if word == "ret" { ret "KwRet" }
+  if word == "use" { ret "KwUse" }
+  if word == "try" { ret "KwTry" }
+  if word == "pub" { ret "KwPub" }
+  if word == "effects" { ret "KwEffects" }
+  if word == "pre" { ret "KwPre" }
+  if word == "post" { ret "KwPost" }
+  if word == "where" { ret "KwWhere" }
+  if word == "true" { ret "KwTrue" }
+  if word == "false" { ret "KwFalse" }
+  if word == "i8" { ret "TyI8" }
+  if word == "i16" { ret "TyI16" }
+  if word == "i32" { ret "TyI32" }
+  if word == "i64" { ret "TyI64" }
+  if word == "u8" { ret "TyU8" }
+  if word == "u16" { ret "TyU16" }
+  if word == "u32" { ret "TyU32" }
+  if word == "u64" { ret "TyU64" }
+  if word == "f32" { ret "TyF32" }
+  if word == "f64" { ret "TyF64" }
+  if word == "bool" { ret "TyBool" }
+  if word == "str" { ret "TyStr" }
+  if word == "bytes" { ret "TyBytes" }
+  if word == "void" { ret "TyVoid" }
+  ret "Ident"
+}
+
+fn lex(src: str) -> [str] {
+  let chars: [str] = str.chars(src)
+  let n: i64 = len(chars)
+  let mut pos: i64 = 0
+  let mut toks: [str] = []
+
+  while pos < n {
+    let c: str = chars[pos]
+
+    if c == "\n" {
+      toks = push(toks, "Newline")
+      toks = push(toks, "")
+      pos = pos + 1
+      continue
+    }
+
+    if is_ws(c) {
+      pos = pos + 1
+      continue
+    }
+
+    if c == "/" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "/" {
+          while pos < n {
+            if chars[pos] == "\n" { break }
+            pos = pos + 1
+          }
+          continue
+        }
+      }
+    }
+
+    if c == ";" {
+      while pos < n {
+        if chars[pos] == "\n" { break }
+        pos = pos + 1
+      }
+      continue
+    }
+
+    if is_id_start(c) {
+      let start: i64 = pos
+      while pos < n {
+        if is_id_char(chars[pos]) { pos = pos + 1 } else { break }
+      }
+      let word: str = str.slice(src, start, pos)
+      let kind: str = keyword_or_ident(word)
+      if kind == "Ident" {
+        toks = push(toks, "Ident")
+        toks = push(toks, word)
+      } else {
+        toks = push(toks, kind)
+        toks = push(toks, word)
+      }
+      continue
+    }
+
+    if is_digit(c) {
+      let start: i64 = pos
+      let mut is_float: bool = false
+      while pos < n {
+        if is_digit(chars[pos]) {
+          pos = pos + 1
+        } else {
+          if chars[pos] == "." {
+            if is_float { break }
+            is_float = true
+            pos = pos + 1
+          } else {
+            break
+          }
+        }
+      }
+      let text: str = str.slice(src, start, pos)
+      if is_float {
+        toks = push(toks, "Float")
+        toks = push(toks, text)
+      } else {
+        toks = push(toks, "Int")
+        toks = push(toks, text)
+      }
+      continue
+    }
+
+    if c == "\"" {
+      let start: i64 = pos
+      pos = pos + 1
+      while pos < n {
+        let sc: str = chars[pos]
+        if sc == "\\" { pos = pos + 2 } else {
+          if sc == "\"" { pos = pos + 1
+            break } else { pos = pos + 1 }
+        }
+      }
+      let text: str = str.slice(src, start, pos)
+      toks = push(toks, "Str")
+      toks = push(toks, text)
+      continue
+    }
+
+    if c == "(" { toks = push(toks, "LParen")
+      toks = push(toks, "(")
+      pos = pos + 1
+      continue }
+    if c == ")" { toks = push(toks, "RParen")
+      toks = push(toks, ")")
+      pos = pos + 1
+      continue }
+    if c == "\{" { toks = push(toks, "LBrace")
+      toks = push(toks, "\{")
+      pos = pos + 1
+      continue }
+    if c == "\}" { toks = push(toks, "RBrace")
+      toks = push(toks, "\}")
+      pos = pos + 1
+      continue }
+    if c == "[" { toks = push(toks, "LBracket")
+      toks = push(toks, "[")
+      pos = pos + 1
+      continue }
+    if c == "]" { toks = push(toks, "RBracket")
+      toks = push(toks, "]")
+      pos = pos + 1
+      continue }
+    if c == "," { toks = push(toks, "Comma")
+      toks = push(toks, ",")
+      pos = pos + 1
+      continue }
+    if c == ":" { toks = push(toks, "Colon")
+      toks = push(toks, ":")
+      pos = pos + 1
+      continue }
+    if c == "?" { toks = push(toks, "Question")
+      toks = push(toks, "?")
+      pos = pos + 1
+      continue }
+    if c == "#" { toks = push(toks, "Hash")
+      toks = push(toks, "#")
+      pos = pos + 1
+      continue }
+    if c == "+" { toks = push(toks, "Plus")
+      toks = push(toks, "+")
+      pos = pos + 1
+      continue }
+    if c == "*" { toks = push(toks, "Star")
+      toks = push(toks, "*")
+      pos = pos + 1
+      continue }
+    if c == "%" { toks = push(toks, "Percent")
+      toks = push(toks, "%")
+      pos = pos + 1
+      continue }
+    if c == "." { toks = push(toks, "Dot")
+      toks = push(toks, ".")
+      pos = pos + 1
+      continue }
+
+    if c == "-" {
+      if pos + 1 < n {
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "Arrow")
+          toks = push(toks, "->")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Minus")
+      toks = push(toks, "-")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "=" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "EqEq")
+          toks = push(toks, "==")
+          pos = pos + 2
+          continue
+        }
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "FatArrow")
+          toks = push(toks, "=>")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Eq")
+      toks = push(toks, "=")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "!" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "NotEq")
+          toks = push(toks, "!=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Bang")
+      toks = push(toks, "!")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "<" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "LtEq")
+          toks = push(toks, "<=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Lt")
+      toks = push(toks, "<")
+      pos = pos + 1
+      continue
+    }
+
+    if c == ">" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "=" {
+          toks = push(toks, "GtEq")
+          toks = push(toks, ">=")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Gt")
+      toks = push(toks, ">")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "&" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "&" {
+          toks = push(toks, "AmpAmp")
+          toks = push(toks, "&&")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Amp")
+      toks = push(toks, "&")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "|" {
+      if pos + 1 < n {
+        if chars[pos + 1] == "|" {
+          toks = push(toks, "PipePipe")
+          toks = push(toks, "||")
+          pos = pos + 2
+          continue
+        }
+        if chars[pos + 1] == ">" {
+          toks = push(toks, "PipeArrow")
+          toks = push(toks, "|>")
+          pos = pos + 2
+          continue
+        }
+      }
+      toks = push(toks, "Pipe")
+      toks = push(toks, "|")
+      pos = pos + 1
+      continue
+    }
+
+    if c == "/" {
+      toks = push(toks, "Slash")
+      toks = push(toks, "/")
+      pos = pos + 1
+      continue
+    }
+
+    toks = push(toks, "Unknown")
+    toks = push(toks, c)
+    pos = pos + 1
+  }
+
+  toks = push(toks, "Eof")
+  toks = push(toks, "")
+  ret toks
+}
+
+; TOKEN HELPERS
+; Tokens are flat: toks[i*2] = kind, toks[i*2+1] = text
+
+fn tk(toks: [str], i: i64) -> str {
+  ret toks[i * 2]
+}
+
+fn tv(toks: [str], i: i64) -> str {
+  ret toks[i * 2 + 1]
+}
+
+fn tcount(toks: [str]) -> i64 {
+  ret len(toks) / 2
+}
+
+; Parse result: [ast_string, new_pos_as_string]
+fn ok(ast: str, p: i64) -> [str] {
+  ret [ast, to_str(p)]
+}
+
+fn rast(r: [str]) -> str { ret r[0] }
+fn rpos(r: [str]) -> i64 { ret int(r[1]) }
+
+; Skip newline tokens
+fn skip_nl(toks: [str], p: i64) -> i64 {
+  let mut i: i64 = p
+  while tk(toks, i) == "Newline" {
+    i = i + 1
+  }
+  ret i
+}
+
+; Indent helper
+fn ind(level: i64) -> str {
+  let mut s: str = ""
+  let mut i: i64 = 0
+  while i < level {
+    s = str.concat(s, "  ")
+    i = i + 1
+  }
+  ret s
+}
+
+; TYPE PARSER
+
+fn parse_type(toks: [str], p: i64) -> [str] {
+  let k: str = tk(toks, p)
+  let v: str = tv(toks, p)
+  if str.starts_with(k, "Ty") {
+    ret ok(v, p + 1)
+  }
+  if k == "Ident" {
+    ret ok(v, p + 1)
+  }
+  if k == "LBracket" {
+    let inner: [str] = parse_type(toks, p + 1)
+    let p2: i64 = rpos(inner)
+    ret ok(str.concat(str.concat("[", rast(inner)), "]"), p2 + 1)
+  }
+  ret ok("?type", p + 1)
+}
+
+; EXPRESSION PARSER (recursive descent, precedence climbing)
+
+fn parse_expr(toks: [str], p: i64) -> [str] {
+  ret parse_or(toks, p)
+}
+
+fn parse_or(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_and(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "PipePipe" {
+    pos = skip_nl(toks, pos + 1)
+    r = parse_and(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat("(|| ", left), " "), rast(r)), ")")
+  }
+  ret ok(left, pos)
+}
+
+fn parse_and(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_eq(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "AmpAmp" {
+    pos = skip_nl(toks, pos + 1)
+    r = parse_eq(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat("(&& ", left), " "), rast(r)), ")")
+  }
+  ret ok(left, pos)
+}
+
+fn parse_eq(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_cmp(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "EqEq" || tk(toks, pos) == "NotEq" {
+    let op: str = tv(toks, pos)
+    pos = skip_nl(toks, pos + 1)
+    r = parse_cmp(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_cmp(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_add(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "Lt" || tk(toks, pos) == "LtEq" || tk(toks, pos) == "Gt" || tk(toks, pos) == "GtEq" {
+    let op: str = tv(toks, pos)
+    pos = skip_nl(toks, pos + 1)
+    r = parse_add(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_add(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_mul(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "Plus" || tk(toks, pos) == "Minus" {
+    let op: str = tv(toks, pos)
+    pos = skip_nl(toks, pos + 1)
+    r = parse_mul(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_mul(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_unary(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut left: str = rast(r)
+  while tk(toks, pos) == "Star" || tk(toks, pos) == "Slash" || tk(toks, pos) == "Percent" {
+    let op: str = tv(toks, pos)
+    pos = skip_nl(toks, pos + 1)
+    r = parse_unary(toks, pos)
+    pos = rpos(r)
+    left = str.concat(str.concat(str.concat(str.concat(str.concat("(", op), " "), left), " "), str.concat(rast(r), ")"))
+  }
+  ret ok(left, pos)
+}
+
+fn parse_unary(toks: [str], p: i64) -> [str] {
+  let k: str = tk(toks, p)
+  if k == "Minus" {
+    let r: [str] = parse_unary(toks, p + 1)
+    ret ok(str.concat("(- ", str.concat(rast(r), ")")), rpos(r))
+  }
+  if k == "Bang" {
+    let r: [str] = parse_unary(toks, p + 1)
+    ret ok(str.concat("(! ", str.concat(rast(r), ")")), rpos(r))
+  }
+  ret parse_postfix(toks, p)
+}
+
+fn parse_postfix(toks: [str], p: i64) -> [str] {
+  let mut r: [str] = parse_primary(toks, p)
+  let mut pos: i64 = rpos(r)
+  let mut expr: str = rast(r)
+  let mut cont: bool = true
+  while cont {
+    let k: str = tk(toks, pos)
+    if k == "LParen" {
+      pos = pos + 1
+      let mut args: str = ""
+      let mut first: bool = true
+      while tk(toks, pos) != "RParen" {
+        if first { first = false } else {
+          args = str.concat(args, " ")
+          pos = pos + 1
+        }
+        r = parse_expr(toks, pos)
+        pos = rpos(r)
+        args = str.concat(args, rast(r))
+      }
+      pos = pos + 1
+      expr = str.concat(str.concat(str.concat(str.concat("(call ", expr), " "), args), ")")
+    } else {
+      if k == "Dot" {
+        pos = pos + 1
+        let field: str = tv(toks, pos)
+        pos = pos + 1
+        expr = str.concat(str.concat(str.concat(expr, "."), field), "")
+      } else {
+        if k == "LBracket" {
+          pos = pos + 1
+          r = parse_expr(toks, pos)
+          pos = rpos(r)
+          pos = pos + 1
+          expr = str.concat(str.concat(str.concat(str.concat("(index ", expr), " "), rast(r)), ")")
+        } else {
+          if k == "Question" {
+            pos = pos + 1
+            expr = str.concat(str.concat("(? ", expr), ")")
+          } else {
+            cont = false
+          }
+        }
+      }
+    }
+  }
+  ret ok(expr, pos)
+}
+
+fn parse_primary(toks: [str], p: i64) -> [str] {
+  let k: str = tk(toks, p)
+  let v: str = tv(toks, p)
+  if k == "Int" { ret ok(v, p + 1) }
+  if k == "Float" { ret ok(v, p + 1) }
+  if k == "Str" { ret ok(v, p + 1) }
+  if k == "KwTrue" { ret ok("true", p + 1) }
+  if k == "KwFalse" { ret ok("false", p + 1) }
+  if k == "Ident" { ret ok(v, p + 1) }
+  if k == "TyStr" { ret ok("str", p + 1) }
+  if k == "LParen" {
+    let r: [str] = parse_expr(toks, p + 1)
+    ret ok(rast(r), rpos(r) + 1)
+  }
+  if k == "LBracket" {
+    let mut pos: i64 = p + 1
+    let mut items: str = ""
+    let mut first: bool = true
+    while tk(toks, pos) != "RBracket" {
+      if first { first = false } else {
+        items = str.concat(items, " ")
+        pos = pos + 1
+      }
+      let r: [str] = parse_expr(toks, pos)
+      pos = rpos(r)
+      items = str.concat(items, rast(r))
+    }
+    ret ok(str.concat(str.concat("[", items), "]"), pos + 1)
+  }
+  ret ok(str.concat("??", v), p + 1)
+}
+
+; STATEMENT PARSER
+
+fn parse_block(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p
+  pos = skip_nl(toks, pos)
+  let mut stmts: str = ""
+  while tk(toks, pos) != "RBrace" {
+    pos = skip_nl(toks, pos)
+    if tk(toks, pos) == "RBrace" { break }
+    let r: [str] = parse_stmt(toks, pos)
+    pos = rpos(r)
+    stmts = str.concat(stmts, str.concat(rast(r), "\n"))
+    pos = skip_nl(toks, pos)
+  }
+  ret ok(stmts, pos)
+}
+
+fn parse_stmt(toks: [str], p: i64) -> [str] {
+  let k: str = tk(toks, p)
+
+  if k == "KwLet" {
+    ret parse_let(toks, p)
+  }
+  if k == "KwRet" {
+    let r: [str] = parse_expr(toks, p + 1)
+    let pos: i64 = rpos(r)
+    ret ok(str.concat("(ret ", str.concat(rast(r), ")")), skip_nl(toks, pos))
+  }
+  if k == "KwIf" {
+    ret parse_if(toks, p)
+  }
+  if k == "KwWhile" {
+    let cond_r: [str] = parse_expr(toks, p + 1)
+    let mut pos: i64 = rpos(cond_r)
+    pos = skip_nl(toks, pos)
+    pos = pos + 1
+    let body_r: [str] = parse_block(toks, pos)
+    pos = rpos(body_r)
+    pos = pos + 1
+    ret ok(str.concat(str.concat(str.concat("(while ", rast(cond_r)), "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+  }
+  if k == "KwFor" {
+    let var: str = tv(toks, p + 1)
+    let mut pos: i64 = p + 2
+    pos = pos + 1
+    let ty_r: [str] = parse_type(toks, pos)
+    pos = rpos(ty_r)
+    pos = pos + 1
+    let iter_r: [str] = parse_expr(toks, pos)
+    pos = rpos(iter_r)
+    pos = skip_nl(toks, pos)
+    pos = pos + 1
+    let body_r: [str] = parse_block(toks, pos)
+    pos = rpos(body_r)
+    pos = pos + 1
+    ret ok(str.concat(str.concat(str.concat(str.concat(str.concat("(for ", var), " "), rast(iter_r)), "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+  }
+  if k == "KwBreak" {
+    ret ok("(break)", skip_nl(toks, p + 1))
+  }
+  if k == "KwContinue" {
+    ret ok("(continue)", skip_nl(toks, p + 1))
+  }
+
+  let r: [str] = parse_expr(toks, p)
+  let mut pos: i64 = rpos(r)
+
+  if tk(toks, pos) == "Eq" {
+    pos = skip_nl(toks, pos + 1)
+    let val_r: [str] = parse_expr(toks, pos)
+    pos = rpos(val_r)
+    ret ok(str.concat(str.concat(str.concat("(assign ", rast(r)), " "), str.concat(rast(val_r), ")")), skip_nl(toks, pos))
+  }
+
+  ret ok(str.concat("(expr ", str.concat(rast(r), ")")), skip_nl(toks, pos))
+}
+
+fn parse_let(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p + 1
+  let mut is_mut: str = ""
+  if tk(toks, pos) == "KwMut" {
+    is_mut = "mut "
+    pos = pos + 1
+  }
+  let name: str = tv(toks, pos)
+  pos = pos + 1
+  pos = pos + 1
+  let ty_r: [str] = parse_type(toks, pos)
+  pos = rpos(ty_r)
+  pos = pos + 1
+  pos = skip_nl(toks, pos)
+  let val_r: [str] = parse_expr(toks, pos)
+  pos = rpos(val_r)
+  ret ok(str.concat(str.concat(str.concat(str.concat(str.concat(str.concat("(let ", is_mut), name), " "), rast(ty_r)), " "), str.concat(rast(val_r), ")")), skip_nl(toks, pos))
+}
+
+fn parse_if(toks: [str], p: i64) -> [str] {
+  let cond_r: [str] = parse_expr(toks, p + 1)
+  let mut pos: i64 = rpos(cond_r)
+  pos = skip_nl(toks, pos)
+  pos = pos + 1
+  let then_r: [str] = parse_block(toks, pos)
+  pos = rpos(then_r)
+  pos = pos + 1
+  pos = skip_nl(toks, pos)
+  if tk(toks, pos) == "KwElse" {
+    pos = pos + 1
+    pos = skip_nl(toks, pos)
+    if tk(toks, pos) == "KwIf" {
+      let else_r: [str] = parse_if(toks, pos)
+      pos = rpos(else_r)
+      ret ok(str.concat(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.concat(str.trim(rast(then_r)), "\n")), str.concat(rast(else_r), ")")), pos)
+    }
+    pos = pos + 1
+    let else_r: [str] = parse_block(toks, pos)
+    pos = rpos(else_r)
+    pos = pos + 1
+    ret ok(str.concat(str.concat(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.trim(rast(then_r))), "\n(else\n"), str.concat(str.concat(str.trim(rast(else_r)), ")"), ")")), pos)
+  }
+  ret ok(str.concat(str.concat(str.concat("(if ", rast(cond_r)), "\n"), str.concat(str.trim(rast(then_r)), ")")), pos)
+}
+
+; TOP-LEVEL PARSER
+
+fn parse_fn_decl(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p + 1
+  let name: str = tv(toks, pos)
+  pos = pos + 1
+  pos = pos + 1
+  let mut params: str = ""
+  let mut first: bool = true
+  while tk(toks, pos) != "RParen" {
+    if first { first = false } else {
+      params = str.concat(params, " ")
+      pos = pos + 1
+    }
+    let pname: str = tv(toks, pos)
+    pos = pos + 1
+    pos = pos + 1
+    let ty_r: [str] = parse_type(toks, pos)
+    pos = rpos(ty_r)
+    params = str.concat(params, str.concat(str.concat(pname, ":"), rast(ty_r)))
+  }
+  pos = pos + 1
+
+  pos = pos + 1
+  let ret_ty_r: [str] = parse_type(toks, pos)
+  pos = rpos(ret_ty_r)
+
+  pos = skip_nl(toks, pos)
+
+  if tk(toks, pos) == "KwEffects" {
+    pos = pos + 1
+    pos = pos + 1
+    while tk(toks, pos) != "RBracket" {
+      pos = pos + 1
+    }
+    pos = pos + 1
+    pos = skip_nl(toks, pos)
+  }
+
+  ; skip post { ... } blocks
+  if tk(toks, pos) == "KwPost" {
+    pos = pos + 1
+    pos = skip_nl(toks, pos)
+    if tk(toks, pos) == "LBrace" {
+      pos = pos + 1
+      let mut depth: i64 = 1
+      while depth > 0 {
+        if tk(toks, pos) == "LBrace" { depth = depth + 1 }
+        if tk(toks, pos) == "RBrace" { depth = depth - 1 }
+        if depth > 0 { pos = pos + 1 }
+      }
+      pos = pos + 1
+      pos = skip_nl(toks, pos)
+    }
+  }
+
+  ; skip pre { ... } blocks
+  if tk(toks, pos) == "KwPre" {
+    pos = pos + 1
+    pos = skip_nl(toks, pos)
+    if tk(toks, pos) == "LBrace" {
+      pos = pos + 1
+      let mut depth: i64 = 1
+      while depth > 0 {
+        if tk(toks, pos) == "LBrace" { depth = depth + 1 }
+        if tk(toks, pos) == "RBrace" { depth = depth - 1 }
+        if depth > 0 { pos = pos + 1 }
+      }
+      pos = pos + 1
+      pos = skip_nl(toks, pos)
+    }
+  }
+
+  pos = pos + 1
+  let body_r: [str] = parse_block(toks, pos)
+  pos = rpos(body_r)
+  pos = pos + 1
+
+  let header: str = str.concat(str.concat(str.concat(str.concat("(fn ", name), "("), params), str.concat(") -> ", rast(ret_ty_r)))
+  ret ok(str.concat(str.concat(header, "\n"), str.concat(str.trim(rast(body_r)), ")")), pos)
+}
+
+fn parse_ty_decl(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = p + 1
+  let name: str = tv(toks, pos)
+  pos = pos + 1
+  pos = pos + 1
+  let mut body: str = ""
+  while tk(toks, pos) != "Newline" {
+    if tk(toks, pos) == "Eof" { break }
+    body = str.concat(body, str.concat(tv(toks, pos), " "))
+    pos = pos + 1
+  }
+  ret ok(str.concat(str.concat(str.concat("(ty ", name), " "), str.concat(str.trim(body), ")")), pos)
+}
+
+fn parse_program(toks: [str], p: i64) -> [str] {
+  let mut pos: i64 = skip_nl(toks, p)
+  let mut decls: str = ""
+  while tk(toks, pos) != "Eof" {
+    pos = skip_nl(toks, pos)
+    if tk(toks, pos) == "Eof" { break }
+    let k: str = tk(toks, pos)
+    if k == "KwFn" {
+      let r: [str] = parse_fn_decl(toks, pos)
+      pos = rpos(r)
+      decls = str.concat(decls, str.concat(rast(r), "\n\n"))
+    } else {
+      if k == "KwTy" {
+        let r: [str] = parse_ty_decl(toks, pos)
+        pos = rpos(r)
+        decls = str.concat(decls, str.concat(rast(r), "\n\n"))
+      } else {
+        pos = pos + 1
+      }
+    }
+    pos = skip_nl(toks, pos)
+  }
+  ret ok(str.trim(decls), pos)
+}
+
+; MAIN
+
+fn main() -> void effects [io] {
+  let src: str = io.read_file("examples/hello.a")
+  println("=== Lexing ===")
+  let toks: [str] = lex(src)
+  println("{to_str(tcount(toks))} tokens")
+
+  println("")
+  println("=== Parsing ===")
+  let r: [str] = parse_program(toks, 0)
+  println(rast(r))
+
+  println("")
+  println("=== Now parsing math.a ===")
+  let src2: str = io.read_file("examples/math.a")
+  let toks2: [str] = lex(src2)
+  println("{to_str(tcount(toks2))} tokens")
+  let r2: [str] = parse_program(toks2, 0)
+  println(rast(r2))
+
+  println("")
+  println("=== Now parsing closures.a ===")
+  let src3: str = io.read_file("examples/closures.a")
+  let toks3: [str] = lex(src3)
+  println("{to_str(tcount(toks3))} tokens")
+  let r3: [str] = parse_program(toks3, 0)
+  println(rast(r3))
+
+  println("")
+  println("=== Now parsing ITSELF ===")
+  let src4: str = io.read_file("examples/self_parser.a")
+  let toks4: [str] = lex(src4)
+  println("{to_str(tcount(toks4))} tokens lexed")
+  let r4: [str] = parse_program(toks4, 0)
+  let ast4: str = rast(r4)
+  let lines: [str] = str.lines(ast4)
+  println("{to_str(len(lines))} AST lines produced")
+  println("First 20 lines:")
+  let mut i: i64 = 0
+  while i < 20 {
+    if i < len(lines) {
+      println(lines[i])
+    }
+    i = i + 1
+  }
+}
