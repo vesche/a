@@ -1,0 +1,574 @@
+; std/compiler/cgen.a -- C code generation backend
+; Reads an "a" source file, parses to AST, emits C source to stdout.
+; Supports `use` module inlining for multi-file compilation.
+; Usage: a run std/compiler/cgen.a -- input.a > output.c
+
+use std.compiler.parser
+use std.compiler.ast
+
+; Builtin name -> C function name mapping
+fn _builtin_map() -> map {
+  ret #{
+    "println": "a_println", "print": "a_print", "eprintln": "a_eprintln",
+    "len": "a_len", "push": "a_array_push", "to_str": "a_to_str",
+    "type_of": "a_type_of", "int": "a_to_int", "float": "a_to_float",
+    "sort": "a_sort", "contains": "a_contains", "reverse_arr": "a_reverse_arr",
+    "concat_arr": "a_concat_arr", "args": "a_args", "slice": "a_array_slice",
+    "char_code": "a_char_code", "from_code": "a_from_code",
+    "is_alpha": "a_is_alpha", "is_digit": "a_is_digit", "is_alnum": "a_is_alnum",
+    "Ok": "a_ok", "Err": "a_err", "unwrap": "a_unwrap",
+    "is_ok": "a_is_ok", "is_err": "a_is_err",
+    "str.concat": "a_str_concat", "str.split": "a_str_split",
+    "str.contains": "a_str_contains", "str.replace": "a_str_replace",
+    "str.trim": "a_str_trim", "str.upper": "a_str_upper", "str.lower": "a_str_lower",
+    "str.join": "a_str_join", "str.chars": "a_str_chars", "str.slice": "a_str_slice",
+    "str.starts_with": "a_str_starts_with", "str.ends_with": "a_str_ends_with",
+    "map.get": "a_map_get", "map.set": "a_map_set", "map.has": "a_map_has",
+    "map.keys": "a_map_keys", "map.values": "a_map_values", "map.merge": "a_map_merge",
+    "io.read_file": "a_io_read_file", "io.write_file": "a_io_write_file",
+    "json.stringify": "a_to_str", "json.pretty": "a_to_str"
+  }
+}
+
+fn _void_builtins() -> [str] {
+  ret ["println", "print", "eprintln", "fail"]
+}
+
+fn _c_keywords() -> [str] {
+  ret ["short", "long", "int", "float", "double", "void", "char", "auto",
+       "do", "default", "register", "signed", "unsigned", "const", "static",
+       "extern", "case", "switch", "goto", "struct", "union", "enum",
+       "typedef", "sizeof", "volatile", "inline", "restrict"]
+}
+
+fn _mangle(name: str) -> str {
+  let out = str.replace(str.replace(name, ".", "_"), "-", "_")
+  if contains(_c_keywords(), out) { ret str.concat("_", out) }
+  ret out
+}
+
+fn _bslash() -> str { ret from_code(92) }
+fn _dquote() -> str { ret from_code(34) }
+fn _newline_char() -> str { ret from_code(10) }
+fn _tab_char() -> str { ret from_code(9) }
+fn _cr_char() -> str { ret from_code(13) }
+
+fn _escape_c_str(s: str) -> str {
+  let bs = _bslash()
+  let out = str.replace(s, bs, str.concat(bs, bs))
+  out = str.replace(out, _dquote(), str.concat(bs, _dquote()))
+  out = str.replace(out, _newline_char(), str.concat(bs, "n"))
+  out = str.replace(out, _cr_char(), str.concat(bs, "r"))
+  out = str.replace(out, _tab_char(), str.concat(bs, "t"))
+  ret out
+}
+
+fn _indent(depth: int) -> str {
+  let mut out = ""
+  let mut i = 0
+  while i < depth {
+    out = str.concat(out, "    ")
+    i = i + 1
+  }
+  ret out
+}
+
+; ctx = #{"prefix": "parser", "fns": ["parse", "parse_program", ...]}
+; prefix="" for the main file, "modname" for imported modules
+
+fn _prefixed_name(name, ctx) -> str {
+  let prefix = ctx["prefix"]
+  if type_of(prefix) == "str" {
+    if len(prefix) > 0 {
+      ret str.concat(prefix, str.concat("_", name))
+    }
+  }
+  ret name
+}
+
+fn _is_intra_module_call(fname, ctx) -> bool {
+  let prefix = ctx["prefix"]
+  if type_of(prefix) != "str" { ret false }
+  if len(prefix) == 0 { ret false }
+  if str.contains(fname, ".") { ret false }
+  let fns = ctx["fns"]
+  if type_of(fns) == "array" {
+    ret contains(fns, fname)
+  }
+  ret false
+}
+
+; --- Expression emission ---
+
+fn emit_expr(node, bm, ctx) -> str {
+  let tag = node["tag"]
+
+  if tag == "Int" { ret str.concat("a_int(", str.concat(to_str(node["value"]), ")")) }
+  if tag == "Float" { ret str.concat("a_float(", str.concat(to_str(node["value"]), ")")) }
+  if tag == "Bool" {
+    if node["value"] { ret "a_bool(1)" }
+    ret "a_bool(0)"
+  }
+  if tag == "Void" { ret "a_void()" }
+
+  if tag == "String" {
+    ret str.concat("a_string(\"", str.concat(_escape_c_str(node["value"]), "\")"))
+  }
+
+  if tag == "Ident" {
+    let name = node["name"]
+    if name == "true" { ret "a_bool(1)" }
+    if name == "false" { ret "a_bool(0)" }
+    ret _mangle(name)
+  }
+
+  if tag == "BinOp" {
+    let op = node["op"]
+    let l = emit_expr(node["left"], bm, ctx)
+    let r = emit_expr(node["right"], bm, ctx)
+    if op == "+" { ret str.concat("a_add(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "-" { ret str.concat("a_sub(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "*" { ret str.concat("a_mul(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "/" { ret str.concat("a_div(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "%" { ret str.concat("a_mod(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "==" { ret str.concat("a_eq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "!=" { ret str.concat("a_neq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "<" { ret str.concat("a_lt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == ">" { ret str.concat("a_gt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "<=" { ret str.concat("a_lteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == ">=" { ret str.concat("a_gteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "&&" { ret str.concat("a_and(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "||" { ret str.concat("a_or(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    ret str.concat("/* unknown op: ", str.concat(op, " */a_void()"))
+  }
+
+  if tag == "UnaryOp" {
+    let inner = emit_expr(node["expr"], bm, ctx)
+    if node["op"] == "!" { ret str.concat("a_not(", str.concat(inner, ")")) }
+    if node["op"] == "-" { ret str.concat("a_neg(", str.concat(inner, ")")) }
+    ret inner
+  }
+
+  if tag == "Call" {
+    let func = node["func"]
+    let a = node["args"]
+    let fname = _resolve_call_name(func)
+
+    if fname == "fail" {
+      if len(a) > 0 { ret str.concat("(a_fail(", str.concat(emit_expr(a[0], bm, ctx), "), a_void())")) }
+      ret "(a_fail(a_string(\"assertion failed\")), a_void())"
+    }
+    if fname == "exit" {
+      if len(a) > 0 { ret str.concat("(exit((int)", str.concat(emit_expr(a[0], bm, ctx), ".ival), a_void())")) }
+      ret "(exit(0), a_void())"
+    }
+
+    if map.has(bm, fname) {
+      let cfn = bm[fname]
+      let mut arg_parts = []
+      for arg in a { arg_parts = push(arg_parts, emit_expr(arg, bm, ctx)) }
+      ret str.concat(cfn, str.concat("(", str.concat(str.join(arg_parts, ", "), ")")))
+    }
+
+    let mut arg_parts = []
+    for arg in a { arg_parts = push(arg_parts, emit_expr(arg, bm, ctx)) }
+
+    let mut mangled = ""
+    if _is_intra_module_call(fname, ctx) {
+      mangled = str.concat("fn_", _mangle(_prefixed_name(fname, ctx)))
+    } else {
+      mangled = str.concat("fn_", _mangle(fname))
+    }
+    ret str.concat(mangled, str.concat("(", str.concat(str.join(arg_parts, ", "), ")")))
+  }
+
+  if tag == "FieldAccess" {
+    let obj = emit_expr(node["expr"], bm, ctx)
+    let field = node["field"]
+    ret str.concat("a_map_get(", str.concat(obj, str.concat(", a_string(\"", str.concat(field, "\")"))))
+  }
+
+  if tag == "Index" {
+    let obj = emit_expr(node["expr"], bm, ctx)
+    let idx = emit_expr(node["index"], bm, ctx)
+    ret str.concat("a_array_get(", str.concat(obj, str.concat(", ", str.concat(idx, ")"))))
+  }
+
+  if tag == "Array" {
+    let elems = node["elems"]
+    if len(elems) == 0 { ret "a_array_new(0)" }
+    let mut parts = []
+    for e in elems { parts = push(parts, emit_expr(e, bm, ctx)) }
+    ret str.concat("a_array_new(", str.concat(to_str(len(elems)), str.concat(", ", str.concat(str.join(parts, ", "), ")"))))
+  }
+
+  if tag == "MapLiteral" {
+    let entries = node["entries"]
+    if len(entries) == 0 { ret "a_map_new(0)" }
+    let mut parts = []
+    for e in entries {
+      let key_node = e["key"]
+      let key_str = ""
+      if key_node["tag"] == "String" { key_str = key_node["value"] }
+      let v = emit_expr(e["value"], bm, ctx)
+      parts = push(parts, str.concat("\"", str.concat(_escape_c_str(key_str), str.concat("\", ", v))))
+    }
+    ret str.concat("a_map_new(", str.concat(to_str(len(entries)), str.concat(", ", str.concat(str.join(parts, ", "), ")"))))
+  }
+
+  if tag == "Interpolation" {
+    let parts = node["parts"]
+    let mut cparts = []
+    for p in parts {
+      if p["tag"] == "InterpLit" {
+        cparts = push(cparts, str.concat("a_string(\"", str.concat(_escape_c_str(p["value"]), "\")")))
+      } else {
+        cparts = push(cparts, str.concat("a_to_str(", str.concat(emit_expr(p["expr"], bm, ctx), ")")))
+      }
+    }
+    ret str.concat("a_concat_n(", str.concat(to_str(len(cparts)), str.concat(", ", str.concat(str.join(cparts, ", "), ")"))))
+  }
+
+  if tag == "IfExpr" {
+    let cond = emit_expr(node["cond"], bm, ctx)
+    let then_e = emit_expr(node["then"], bm, ctx)
+    let else_e = emit_expr(node["else"], bm, ctx)
+    ret str.concat("(a_truthy(", str.concat(cond, str.concat(") ? ", str.concat(then_e, str.concat(" : ", str.concat(else_e, ")"))))))
+  }
+
+  if tag == "BlockExpr" {
+    let stmts = node["block"]["stmts"]
+    if len(stmts) > 0 {
+      let last = stmts[len(stmts) - 1]
+      if last["tag"] == "ExprStmt" {
+        ret emit_expr(last["expr"], bm, ctx)
+      }
+    }
+    ret "a_void()"
+  }
+
+  ret str.concat("/* unhandled expr: ", str.concat(tag, " */a_void()"))
+}
+
+fn _resolve_call_name(func) -> str {
+  if func["tag"] == "Ident" { ret func["name"] }
+  if func["tag"] == "FieldAccess" {
+    let obj = func["expr"]
+    if obj["tag"] == "Ident" {
+      ret str.concat(obj["name"], str.concat(".", func["field"]))
+    }
+  }
+  ret "__unknown__"
+}
+
+; --- Statement emission ---
+
+fn emit_stmt(node, depth: int, bm, ctx) -> str {
+  let tag = node["tag"]
+  let ind = _indent(depth)
+
+  if tag == "Let" {
+    let val = emit_expr(node["value"], bm, ctx)
+    ret str.concat(ind, str.concat(_mangle(node["name"]), str.concat(" = ", str.concat(val, ";"))))
+  }
+
+  if tag == "Assign" {
+    let target = node["target"]
+    if target["tag"] == "Ident" {
+      let val = emit_expr(node["value"], bm, ctx)
+      ret str.concat(ind, str.concat(_mangle(target["name"]), str.concat(" = ", str.concat(val, ";"))))
+    }
+    if target["tag"] == "Index" {
+      let val = emit_expr(node["value"], bm, ctx)
+      ret str.concat(ind, str.concat("/* index assign */ ", str.concat(emit_expr(target["expr"], bm, ctx), str.concat(" = ", str.concat(val, ";")))))
+    }
+    let val = emit_expr(node["value"], bm, ctx)
+    ret str.concat(ind, str.concat(emit_expr(target, bm, ctx), str.concat(" = ", str.concat(val, ";"))))
+  }
+
+  if tag == "Return" {
+    if type_of(node["expr"]) == "void" { ret str.concat(ind, "return a_void();") }
+    let val = emit_expr(node["expr"], bm, ctx)
+    ret str.concat(ind, str.concat("return ", str.concat(val, ";")))
+  }
+
+  if tag == "ExprStmt" {
+    let expr = node["expr"]
+    let code = emit_expr(expr, bm, ctx)
+    ret str.concat(ind, str.concat(code, ";"))
+  }
+
+  if tag == "If" {
+    let cond = emit_expr(node["cond"], bm, ctx)
+    let mut out = str.concat(ind, str.concat("if (a_truthy(", str.concat(cond, ")) \{")))
+    let then_stmts = node["then"]["stmts"]
+    for s in then_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+    out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+    let else_branch = node["else"]
+    if type_of(else_branch) != "void" {
+      if else_branch["tag"] == "ElseBlock" {
+        out = str.concat(out, " else \{")
+        let else_stmts = else_branch["block"]["stmts"]
+        for s in else_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+        out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+      }
+      if else_branch["tag"] == "ElseIf" {
+        out = str.concat(out, str.concat(" else ", emit_stmt(else_branch["if"], depth, bm, ctx)))
+      }
+    }
+    ret out
+  }
+
+  if tag == "While" {
+    let cond = emit_expr(node["cond"], bm, ctx)
+    let mut out = str.concat(ind, str.concat("while (a_truthy(", str.concat(cond, ")) \{")))
+    let body_stmts = node["body"]["stmts"]
+    for s in body_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+    out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+    ret out
+  }
+
+  if tag == "For" {
+    let var_name = _mangle(node["var"])
+    let iter = emit_expr(node["iter"], bm, ctx)
+    let mut out = str.concat(ind, "\{")
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(iter, ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
+    ; for-loop variable is block-scoped, declare it here
+    let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
+    let mut for_decls = [var_name]
+    for v in body_vars {
+      if !contains(for_decls, v) { for_decls = push(for_decls, v) }
+    }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(for_decls, ", "), ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(var_name, " = a_array_get(__iter_arr, a_int(__fi));"))))
+    let body_stmts = node["body"]["stmts"]
+    for s in body_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 2, bm, ctx))) }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "\}")))
+    out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+    ret out
+  }
+
+  if tag == "Break" { ret str.concat(ind, "break;") }
+  if tag == "Continue" { ret str.concat(ind, "continue;") }
+
+  ret str.concat(ind, str.concat("/* unhandled stmt: ", str.concat(tag, " */")))
+}
+
+; --- Variable collection (for pre-declaration) ---
+
+fn _collect_vars_in_stmts(stmts) -> [str] {
+  let mut vars = []
+  for s in stmts {
+    let tag = s["tag"]
+    if tag == "Let" {
+      let name = _mangle(s["name"])
+      if !contains(vars, name) { vars = push(vars, name) }
+    }
+    if tag == "If" {
+      let tv = _collect_vars_in_stmts(s["then"]["stmts"])
+      for v in tv { if !contains(vars, v) { vars = push(vars, v) } }
+      let eb = s["else"]
+      if type_of(eb) != "void" {
+        if eb["tag"] == "ElseBlock" {
+          let ev = _collect_vars_in_stmts(eb["block"]["stmts"])
+          for v in ev { if !contains(vars, v) { vars = push(vars, v) } }
+        }
+        if eb["tag"] == "ElseIf" {
+          let eiv = _collect_vars_in_stmts([eb["if"]])
+          for v in eiv { if !contains(vars, v) { vars = push(vars, v) } }
+        }
+      }
+    }
+    if tag == "While" {
+      let wv = _collect_vars_in_stmts(s["body"]["stmts"])
+      for v in wv { if !contains(vars, v) { vars = push(vars, v) } }
+    }
+    if tag == "For" {
+      let fv = _collect_vars_in_stmts(s["body"]["stmts"])
+      for v in fv { if !contains(vars, v) { vars = push(vars, v) } }
+    }
+  }
+  ret vars
+}
+
+; --- Function emission ---
+
+fn emit_fn(node, bm, ctx) -> str {
+  let name = node["name"]
+  let full_name = _prefixed_name(name, ctx)
+  let params = node["params"]
+  let body = node["body"]
+
+  let mut param_parts = []
+  for p in params {
+    param_parts = push(param_parts, str.concat("AValue ", _mangle(p["name"])))
+  }
+  let param_str = str.join(param_parts, ", ")
+  if len(params) == 0 { param_str = "void" }
+
+  let mut out = str.concat("AValue fn_", str.concat(_mangle(full_name), str.concat("(", str.concat(param_str, ") \{"))))
+
+  ; Pre-declare all local variables to avoid C redefinition errors
+  let all_vars = _collect_vars_in_stmts(body["stmts"])
+  let mut param_names = []
+  for p in params { param_names = push(param_names, _mangle(p["name"])) }
+  let mut decl_vars = []
+  for v in all_vars {
+    if !contains(param_names, v) {
+      if !contains(decl_vars, v) { decl_vars = push(decl_vars, v) }
+    }
+  }
+  if len(decl_vars) > 0 {
+    out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
+  }
+
+  let stmts = body["stmts"]
+  for s in stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, 1, bm, ctx))) }
+
+  let has_return = false
+  if len(stmts) > 0 {
+    let last = stmts[len(stmts) - 1]
+    if last["tag"] == "Return" { has_return = true }
+  }
+  if !has_return {
+    out = str.concat(out, "\n    return a_void();")
+  }
+
+  out = str.concat(out, "\n\}\n")
+  ret out
+}
+
+fn _emit_fwd_decl(name, params) -> str {
+  let mut param_parts = []
+  for p in params {
+    param_parts = push(param_parts, str.concat("AValue ", _mangle(p["name"])))
+  }
+  let param_str = str.join(param_parts, ", ")
+  if len(params) == 0 { param_str = "void" }
+  ret str.concat("AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(param_str, ");"))))
+}
+
+; --- Module loading ---
+
+fn _use_path_to_file(path_arr) -> str {
+  ret str.concat(str.join(path_arr, "/"), ".a")
+}
+
+fn _use_path_short_name(path_arr) -> str {
+  ret path_arr[len(path_arr) - 1]
+}
+
+fn _collect_fn_names(items) -> [str] {
+  let mut names = []
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      names = push(names, item["name"])
+    }
+  }
+  ret names
+}
+
+fn _load_module(path_arr, bm, loaded) -> map {
+  let use_key = str.join(path_arr, ".")
+  if contains(loaded, use_key) {
+    ret #{"fwd": [], "fns": [], "loaded": loaded}
+  }
+  loaded = push(loaded, use_key)
+
+  let file_path = _use_path_to_file(path_arr)
+  let source = io.read_file(file_path)
+  let mod_ast = parser.parse(source)
+  let items = mod_ast["items"]
+  let short = _use_path_short_name(path_arr)
+
+  let mut all_fwd = []
+  let mut all_fns = []
+
+  ; Recursively load this module's own use declarations
+  for item in items {
+    if item["tag"] == "UseDecl" {
+      let sub = _load_module(item["path"], bm, loaded)
+      loaded = sub["loaded"]
+      all_fwd = concat_arr(all_fwd, sub["fwd"])
+      all_fns = concat_arr(all_fns, sub["fns"])
+    }
+  }
+
+  ; Build context for this module
+  let fn_names = _collect_fn_names(items)
+  let ctx = #{"prefix": short, "fns": fn_names}
+
+  ; Emit functions with module prefix
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      let full_name = _prefixed_name(item["name"], ctx)
+      all_fwd = push(all_fwd, _emit_fwd_decl(full_name, item["params"]))
+      all_fns = push(all_fns, emit_fn(item, bm, ctx))
+    }
+  }
+
+  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded}
+}
+
+; --- Program emission ---
+
+fn emit_program(prog_ast, bm) -> str {
+  let items = prog_ast["items"]
+
+  let mut all_fwd = []
+  let mut all_fns = []
+  let mut loaded = []
+
+  ; Process use declarations -- load and inline modules
+  for item in items {
+    if item["tag"] == "UseDecl" {
+      let result = _load_module(item["path"], bm, loaded)
+      loaded = result["loaded"]
+      all_fwd = concat_arr(all_fwd, result["fwd"])
+      all_fns = concat_arr(all_fns, result["fns"])
+    }
+  }
+
+  ; Emit main file functions (no module prefix)
+  let main_fn_names = _collect_fn_names(items)
+  let main_ctx = #{"prefix": "", "fns": main_fn_names}
+
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      all_fwd = push(all_fwd, _emit_fwd_decl(item["name"], item["params"]))
+      all_fns = push(all_fns, emit_fn(item, bm, main_ctx))
+    }
+  }
+
+  let mut out = "#include \"runtime.h\"\n#include <stdlib.h>\n\n"
+
+  out = str.concat(out, "/* Forward declarations */\n")
+  for f in all_fwd { out = str.concat(out, str.concat(f, "\n")) }
+  out = str.concat(out, "\n")
+
+  for f in all_fns { out = str.concat(out, str.concat(f, "\n")) }
+
+  out = str.concat(out, "int main(int argc, char** argv) \{\n")
+  out = str.concat(out, "    g_argc = argc; g_argv = argv;\n")
+  out = str.concat(out, "    fn_main();\n")
+  out = str.concat(out, "    return 0;\n")
+  out = str.concat(out, "\}\n")
+
+  ret out
+}
+
+; --- Entry point ---
+
+fn main() -> void effects [io] {
+  let file_args = args()
+  if len(file_args) == 0 {
+    eprintln("usage: a run std/compiler/cgen.a -- <input.a>")
+    exit(1)
+  }
+  let source = io.read_file(file_args[0])
+  let prog_ast = parser.parse(source)
+  let bm = _builtin_map()
+  let c_code = emit_program(prog_ast, bm)
+  print(c_code)
+}

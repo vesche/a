@@ -1,0 +1,38 @@
+fn fizzbuzz(n: int) -> str {
+  if n % 15 == 0 { ret "FizzBuzz" }
+  if n % 3 == 0 { ret "Fizz" }
+  if n % 5 == 0 { ret "Buzz" }
+  ret to_str(n)
+}
+
+fn sum_array(arr) -> int {
+  let mut total = 0
+  for x in arr {
+    total = total + x
+  }
+  ret total
+}
+
+fn make_report(items) -> map {
+  let count = len(items)
+  let total = sum_array(items)
+  ret #{"count": to_str(count), "total": to_str(total)}
+}
+
+fn main() {
+  let mut results = []
+  let mut i = 1
+  while i <= 20 {
+    results = push(results, fizzbuzz(i))
+    i = i + 1
+  }
+  for r in results {
+    println(r)
+  }
+  let data = [10, 20, 30, 40, 50]
+  let report = make_report(data)
+  let c = map.get(report, "count")
+  let t = map.get(report, "total")
+  println("count: {c}")
+  println("total: {t}")
+}

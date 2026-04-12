@@ -1,0 +1,12 @@
+fn factorial(n: int) -> int {
+  if n <= 1 { ret 1 }
+  ret n * factorial(n - 1)
+}
+
+fn main() {
+  let nums = [5, 8, 10, 12]
+  for n in nums {
+    let f = factorial(n)
+    println("{n}! = {f}")
+  }
+}

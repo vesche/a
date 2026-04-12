@@ -1,0 +1,6 @@
+fn main() {
+  let m = #{"name": "alice", "age": "30"}
+  println(map.get(m, "name"))
+  let m2 = map.set(m, "age", "31")
+  println(map.get(m2, "age"))
+}

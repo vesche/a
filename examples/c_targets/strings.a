@@ -1,0 +1,7 @@
+fn main() {
+  let name = "world"
+  println("hello {name}")
+  let x = str.concat("foo", "bar")
+  println(x)
+  println(len("abc"))
+}

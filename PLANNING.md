@@ -1074,3 +1074,143 @@ Four new builtins implemented in the Rust runtime (functionality that cannot be 
 - `**examples/site_gen.a**`: Static site generator demo exercising all 6 modules
 - All 498 native "a" tests passing across 27 test suites
 
+## v0.41 -- C Code Generation ✅
+
+### Motivation
+
+The self-hosted compiler can lex, parse, and compile "a" to bytecode, but that bytecode still runs on the Rust VM. The language is not truly independent. v0.41 adds a **C code generation backend**: the self-hosted compiler's parser produces an AST; a new code generator walks that AST and emits C source code. Combined with a small C runtime library, this produces **native executables via gcc**. No Rust, no VM, no interpreter. Just machine code.
+
+This is the first step toward full bootstrap: eventually the C code generator itself will be compiled to C, and "a" will exist without any Rust dependency.
+
+### Architecture
+
+```
+program.a → parser (std.compiler.parser) → AST → cgen (new) → program.c
+program.c + runtime.c → gcc → native binary
+```
+
+### C Runtime Library (~600 lines)
+
+`c_runtime/runtime.h` + `c_runtime/runtime.c` -- a minimal C library providing:
+
+- **Tagged union value model** (`AValue`): int64, float64, bool, void, string, array, map, result
+- **Reference-counted heap types**: `AString` (flexible array member), `AArray`, `AMap`
+- **Memory management**: `a_retain()`, `a_release()` -- simple refcounting matching the Rust `Arc` model
+- **Arithmetic + comparison**: `a_add`, `a_sub`, `a_mul`, `a_div`, `a_mod`, `a_eq`, `a_lt`, etc. with int/float promotion
+- **String operations**: `a_str_concat`, `a_str_split`, `a_str_replace`, `a_str_trim`, `a_str_upper`, `a_str_lower`, `a_str_join`, `a_str_chars`, `a_str_slice`, `a_str_starts_with`, `a_str_ends_with`, `a_concat_n` (variadic, for interpolation)
+- **Array operations**: `a_array_new` (variadic), `a_array_get`, `a_array_push`, `a_array_slice`, `a_sort`, `a_contains`
+- **Map operations**: `a_map_new` (variadic), `a_map_get`, `a_map_set`, `a_map_has`, `a_map_keys`, `a_map_values`, `a_map_merge`
+- **I/O**: `a_println`, `a_print`, `a_eprintln`, `a_io_read_file`, `a_io_write_file`
+- **Result**: `a_ok`, `a_err`, `a_is_ok`, `a_is_err`, `a_unwrap`
+- **Utility**: `a_type_of`, `a_args`, `a_fail`, `a_to_int`, `a_to_float`, `a_to_str`
+
+### C Code Generator (`std/compiler/cgen.a`, ~400 lines)
+
+Written entirely in "a", uses `std.compiler.parser` and `std.compiler.ast`. Handles:
+
+- Function declarations with forward declarations
+- All expressions: literals, identifiers, binary/unary ops, calls, field access, indexing
+- All statements: let, assign, return, if/else/else-if, while, for, break, continue
+- String interpolation → `a_concat_n()` calls
+- Array literals → `a_array_new()` calls
+- Map literals → `a_map_new()` calls
+- Builtin recognition: 40+ builtins map directly to C runtime functions
+- Function name mangling for `mod.fn` → `fn_mod_fn` style
+
+### Usage
+
+```bash
+# Generate C from any "a" program
+a run std/compiler/cgen.a -- program.a > program.c
+
+# Compile to native binary
+gcc program.c c_runtime/runtime.c -o program -I c_runtime -lm -O2
+
+# Run natively
+./program
+```
+
+### Performance
+
+fib(35) benchmark: **28s on VM → 0.17s native (164x speedup)**
+
+### Test Results
+
+6 milestone programs all pass (VM output == native output):
+
+| Program | Features tested |
+|---------|----------------|
+| `fib.a` | Recursion, arithmetic, conditionals |
+| `strings.a` | String literals, interpolation, `str.concat`, `len` |
+| `arrays.a` | Array creation, for loops, mutation, interpolation |
+| `maps.a` | Map creation, `map.get`, `map.set` |
+| `multi_fn.a` | Multi-function calls, factorial, array iteration |
+| `complex.a` | FizzBuzz, helper functions, maps, arrays, while loops |
+
+### Changes
+
+- **`c_runtime/runtime.h`**: Value types, function declarations (~140 lines)
+- **`c_runtime/runtime.c`**: Full runtime implementation (~600 lines)
+- **`std/compiler/cgen.a`**: C code generator (~400 lines)
+- **`examples/c_targets/*.a`**: 6 milestone test programs
+- **`tests/test_cgen.sh`**: Automated compile + run + compare test script
+
+## v0.42 -- The Bootstrap: Self-Hosting via C  ✅
+
+*Completed: April 2026*
+
+The "a" language is now **self-hosting through native compilation**. The C code generator (`std/compiler/cgen.a`) compiles its own source -- including the full lexer, parser, and AST modules -- into 3,856 lines of C. gcc compiles that C into a native binary (`ac`) that is a standalone "a"-to-C compiler. This native compiler produces output identical to the VM-hosted version, reaching a **fixed point**: the language compiles itself and the output doesn't change.
+
+### The Bootstrap Chain
+
+```
+Step 1: VM runs cgen.a on cgen.a → gen0.c (3,856 lines of C)
+Step 2: gcc gen0.c + runtime.c → ac0 (native "a"-to-C compiler, ~213KB)
+Step 3: ac0 compiles cgen.a → gen1.c
+Step 4: diff gen0.c gen1.c → IDENTICAL (fixed point reached)
+```
+
+The native `ac` binary has no Rust dependency. It reads `.a` source, parses it with the full self-hosted parser, and emits C. It is a freestanding compiler.
+
+### What was needed
+
+**Module inlining** -- The C code generator previously only handled single-file programs. For bootstrap, it needs to resolve `use` declarations, read the referenced module files, parse them, and emit all their functions with namespace prefixes. `cgen.a` uses `parser` and `ast`; `parser.a` uses `lexer` and `ast`. The inliner recursively loads the entire dependency tree, deduplicates modules, and emits functions as `fn_<module>_<name>` (e.g. `fn_parser_parse`, `fn_lexer_lex`, `fn_ast_mk_program`).
+
+**C runtime extensions:**
+- `a_is_alpha`, `a_is_digit`, `a_is_alnum` -- character classification builtins needed by the lexer
+- `a_array_get` extended to handle map indexing (`arr["key"]` → `a_map_get` when arr is a map)
+- `\r` (carriage return) escaping in `_escape_c_str`
+
+**Variable pre-declaration** -- "a" allows `let r = ...` multiple times in the same scope (shadowing). C doesn't. The code generator now pre-scans each function body for all variable names and declares them once at the top: `AValue r, pos, name, ...;`. All `let` statements emit as assignments.
+
+**C keyword escaping** -- Variables named `short`, `long`, `int`, etc. are prefixed with `_` to avoid conflicts with C reserved words.
+
+### Performance
+
+The native `ac` compiler runs in ~125ms to compile a program (vs ~18s for the VM to run cgen.a). That's a **144x speedup** for compilation itself.
+
+### Test Results
+
+All 8 milestone programs pass through the native compiler (native `ac` → gcc → execute → compare with VM output):
+
+| Program | Status |
+|---------|--------|
+| arrays | PASS |
+| bench_fib | PASS |
+| complex | PASS |
+| fib | PASS |
+| maps | PASS |
+| multi_fn | PASS |
+| newline_test | PASS |
+| strings | PASS |
+
+Fixed-point test: gen0.c == gen1.c (3,856 lines, byte-identical)
+
+### Changes
+
+- **`std/compiler/cgen.a`**: Module inlining, variable pre-declaration, C keyword escaping, `\r` escaping, `is_alpha`/`is_digit`/`is_alnum` in builtin map (~530 lines, up from ~400)
+- **`c_runtime/runtime.c`**: `a_is_alpha`, `a_is_digit`, `a_is_alnum` builtins; `a_array_get` map indexing support
+- **`c_runtime/runtime.h`**: New function declarations
+- **`tests/test_bootstrap.sh`**: Full bootstrap validation script (gen0 → ac0 → milestones → gen1 → fixed point)
+- **`examples/c_targets/newline_test.a`**: Test case for special character escaping
+

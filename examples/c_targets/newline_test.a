@@ -1,0 +1,10 @@
+fn main() {
+  let nl = "\n"
+  let tab = "\t"
+  println("hello")
+  print("a")
+  print(nl)
+  print("b")
+  print(tab)
+  println("c")
+}

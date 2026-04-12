@@ -1049,3 +1049,72 @@ fn main() -> void effects [io] {
   })
 }
 ```
+
+---
+
+## C Code Generation (Self-Hosting)
+
+The "a" compiler is self-hosting through native compilation. The code generator (`std/compiler/cgen.a`) compiles itself and its entire dependency chain (lexer, parser, AST) to C. gcc builds a freestanding native binary -- no Rust required.
+
+### Workflow
+
+```bash
+# Generate C from any "a" program (including multi-module)
+a run std/compiler/cgen.a -- program.a > program.c
+
+# Compile to native binary
+gcc program.c c_runtime/runtime.c -o program -I c_runtime -lm -O2
+
+# Run
+./program
+```
+
+### Bootstrap (self-compilation)
+
+```bash
+# The compiler compiles itself
+a run std/compiler/cgen.a -- std/compiler/cgen.a > ac.c
+gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O2
+
+# Native compiler works identically
+./ac program.a > program.c
+
+# Fixed point: native compiler compiles itself, output matches
+./ac std/compiler/cgen.a > ac2.c
+diff ac.c ac2.c    # identical
+```
+
+### How It Works
+
+1. The self-hosted parser (`std.compiler.parser`) produces an AST from "a" source
+2. `use` declarations trigger module inlining: referenced modules are loaded, parsed, and emitted with namespace prefixes (e.g. `fn_parser_parse`, `fn_lexer_lex`)
+3. Each "a" function becomes a C function returning `AValue` (a tagged union)
+4. Variables are pre-declared at function scope to handle "a"'s rebinding semantics
+5. 45+ builtins map directly to C runtime functions
+6. The C runtime library provides the value model, reference counting, and all operations
+
+### Supported Features
+
+- Functions with parameters and recursion
+- `use` module system with recursive inlining and deduplication
+- Integer, float, boolean, void, string literals
+- String interpolation
+- Arrays (creation, indexing, iteration)
+- Maps (creation, get/set/has, bracket indexing)
+- Arithmetic and comparison operators
+- `if`/`else if`/`else`, `while`, `for ... in`
+- `break`, `continue`, `ret`
+- `let` / `let mut` bindings with arbitrary shadowing
+- Variable pre-declaration (handles C redefinition rules)
+- C keyword escaping for variable names
+
+### Not Yet Supported (Deferred)
+
+- Closures / lambdas / higher-order functions (`map`, `filter`, `reduce`)
+- Pattern matching
+- `eval`, concurrency, HTTP, filesystem
+- Tail call optimization
+
+### Performance
+
+Native executables run **~164x faster** than the bytecode VM for compute-heavy tasks (fib(35): 0.17s native vs 28s VM). The native compiler itself runs **~144x faster** than the VM-hosted code generator.
