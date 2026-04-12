@@ -8,6 +8,10 @@
 int g_argc = 0;
 char** g_argv = NULL;
 
+jmp_buf a_try_stack[A_TRY_STACK_MAX];
+AValue a_try_err;
+int a_try_depth = 0;
+
 /* --- Constructors --- */
 
 AValue a_int(int64_t v) { return (AValue){.tag = TAG_INT, .ival = v}; }
@@ -666,6 +670,20 @@ AValue a_unwrap(AValue v) {
     if (v.tag == TAG_RESULT) {
         if (v.rval.is_ok) return *v.rval.inner;
         fprintf(stderr, "unwrap on Err: ");
+        a_eprintln(*v.rval.inner);
+        exit(1);
+    }
+    return v;
+}
+
+AValue a_try_unwrap(AValue v) {
+    if (v.tag == TAG_RESULT) {
+        if (v.rval.is_ok) return *v.rval.inner;
+        if (a_try_depth > 0) {
+            a_try_err = *v.rval.inner;
+            longjmp(a_try_stack[a_try_depth - 1], 1);
+        }
+        fprintf(stderr, "uncaught error: ");
         a_eprintln(*v.rval.inner);
         exit(1);
     }

@@ -1113,10 +1113,14 @@ diff ac.c ac2.c    # identical
 - Array utilities: `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`
 - Pipe operator (`|>`)
 - Nested closures (closure-returning-closure)
+- Pattern matching (`match` with literal, constructor, array, map, wildcard, ident patterns + guards)
+- `try { ... }` blocks and `?` operator (via `setjmp`/`longjmp`)
+- `let [a, b] = expr` and `let [first, ...rest] = arr` destructuring
+- `for [k, v] in pairs` destructured iteration
+- Array spread `[...arr1, x, ...arr2]`
 
 ### Not Yet Supported (Deferred)
 
-- Pattern matching
 - `eval`, concurrency, HTTP, filesystem
 - Tail call optimization
 

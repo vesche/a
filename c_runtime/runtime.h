@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stdarg.h>
+#include <setjmp.h>
 
 typedef enum {
     TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_VOID,
@@ -182,5 +183,20 @@ AValue a_take(AValue arr, AValue n);
 AValue a_drop(AValue arr, AValue n);
 AValue a_unique(AValue arr);
 AValue a_chunk(AValue arr, AValue n);
+
+/* Try/catch error handling */
+#define A_TRY_STACK_MAX 64
+extern jmp_buf a_try_stack[A_TRY_STACK_MAX];
+extern AValue a_try_err;
+extern int a_try_depth;
+AValue a_try_unwrap(AValue v);
+
+/* Pattern matching helpers (inline for zero overhead) */
+static inline int a_is_ok_raw(AValue v) { return v.tag == TAG_RESULT && v.rval.is_ok; }
+static inline int a_is_err_raw(AValue v) { return v.tag == TAG_RESULT && !v.rval.is_ok; }
+static inline AValue a_unwrap_unsafe(AValue v) { return *v.rval.inner; }
+static inline int a_is_array_of_len(AValue v, int n) { return v.tag == TAG_ARRAY && v.aval->len == n; }
+static inline int a_is_array_min_len(AValue v, int n) { return v.tag == TAG_ARRAY && v.aval->len >= n; }
+static inline int a_is_map_with(AValue v, const char* key) { return v.tag == TAG_MAP && a_truthy(a_map_has(v, a_string(key))); }
 
 #endif

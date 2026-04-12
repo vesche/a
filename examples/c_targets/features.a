@@ -1,0 +1,74 @@
+; Test try/catch, destructuring, and spread in native compilation
+
+fn test_try_unwrap() {
+  ; ? on Ok succeeds
+  let r = try { Ok(42)? }
+  println(r)
+
+  ; ? on Err gets caught by try block
+  let r2 = try { Err("boom")? }
+  println(r2)
+
+  ; Nested try
+  let r3 = try {
+    let a = Ok(10)?
+    let b = Ok(20)?
+    println(a + b)
+    Ok("done")?
+  }
+  println(r3)
+}
+
+fn test_destructure() {
+  ; Basic array destructuring
+  let [a, b, c] = [10, 20, 30]
+  println(a)
+  println(b)
+  println(c)
+
+  ; With rest
+  let [first, ...rest] = [1, 2, 3, 4, 5]
+  println(first)
+  println(rest)
+
+  ; Skip with _
+  let [_, second, _] = ["x", "y", "z"]
+  println(second)
+}
+
+fn test_for_destructure() {
+  let pairs = [[1, "one"], [2, "two"], [3, "three"]]
+  for [num, name] in pairs {
+    println("{num}: {name}")
+  }
+
+  ; With enumerate
+  for [i, val] in enumerate(["a", "b", "c"]) {
+    println("{i} -> {val}")
+  }
+}
+
+fn test_spread() {
+  let a = [1, 2, 3]
+  let b = [4, 5]
+
+  ; Spread concat
+  let c = [...a, ...b]
+  println(c)
+
+  ; Spread with elements
+  let d = [0, ...a, 99]
+  println(d)
+
+  ; Empty spread
+  let e = [...[], 1, 2]
+  println(e)
+}
+
+fn main() {
+  test_try_unwrap()
+  test_destructure()
+  test_for_destructure()
+  test_spread()
+  println("all v0.45 tests passed")
+}

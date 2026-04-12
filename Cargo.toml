@@ -1,6 +1,6 @@
 [package]
 name = "a-lang"
-version = "0.43.0"
+version = "0.45.0"
 edition = "2021"
 description = "A programming language by AI, for AI"
 license = "Apache-2.0"

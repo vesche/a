@@ -392,8 +392,32 @@ fn emit_expr(node, bm, ctx, li) {
   if tag == "Array" {
     let elems = node["elems"]
     if len(elems) == 0 { ret _R("a_array_new(0)", li) }
-    let mut parts = []
+
+    ; Check for spread elements
+    let mut has_spread = false
+    for e in elems { if e["tag"] == "Spread" { has_spread = true } }
+
     let mut lifted = []
+    if has_spread {
+      ; Build incrementally: start empty, push or concat
+      let mut code = "a_array_new(0)"
+      for e in elems {
+        if e["tag"] == "Spread" {
+          let er = emit_expr(e["expr"], bm, ctx, li)
+          li = er[1]
+          lifted = concat_arr(lifted, er[2])
+          code = str.concat("a_concat_arr(", str.concat(code, str.concat(", ", str.concat(er[0], ")"))))
+        } else {
+          let er = emit_expr(e, bm, ctx, li)
+          li = er[1]
+          lifted = concat_arr(lifted, er[2])
+          code = str.concat("a_array_push(", str.concat(code, str.concat(", ", str.concat(er[0], ")"))))
+        }
+      }
+      ret _RL(code, li, lifted)
+    }
+
+    let mut parts = []
     for e in elems {
       let er = emit_expr(e, bm, ctx, li)
       parts = push(parts, er[0])
@@ -570,6 +594,54 @@ fn emit_expr(node, bm, ctx, li) {
     ret _RL(closure_code, next_li, all_lifted)
   }
 
+  ; --- Try: expr? or try expr ---
+  if tag == "Try" {
+    let er = emit_expr(node["expr"], bm, ctx, li)
+    ret _RL(str.concat("a_try_unwrap(", str.concat(er[0], ")")), er[1], er[2])
+  }
+
+  ; --- TryBlock: try { block } ---
+  if tag == "TryBlock" {
+    ; TryBlock is an expression that returns a Result.
+    ; We use setjmp/longjmp via the runtime try stack.
+    ; This produces a statement-expression using GCC ({...}) extension,
+    ; but for portability we use a temp variable approach.
+    ; The caller wraps this in an assignment: result = <try_block_code>;
+    ; We emit a helper: a block that sets __try_result, then use __try_result as the value.
+    ; However, since this is an expression context, we need a GCC statement-expression.
+    let block = node["block"]
+    let stmts = block["stmts"]
+    let nl = _newline_char()
+    let mut code = str.concat("(\{", nl)
+    code = str.concat(code, str.concat("        AValue __try_result;", nl))
+    ; Pre-declare variables used inside the try block
+    let try_vars = _collect_vars_in_stmts(stmts)
+    if len(try_vars) > 0 {
+      code = str.concat(code, str.concat("        AValue ", str.concat(str.join(try_vars, ", "), str.concat(";", nl))))
+    }
+    code = str.concat(code, str.concat("        a_try_depth++;", nl))
+    code = str.concat(code, str.concat("        if (setjmp(a_try_stack[a_try_depth - 1]) == 0) \{", nl))
+
+    let mut lifted = []
+    for s in stmts {
+      let sr = emit_stmt(s, 3, bm, ctx, li)
+      code = str.concat(code, str.concat(sr[0], nl))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
+
+    code = str.concat(code, str.concat("            a_try_depth--;", nl))
+    code = str.concat(code, str.concat("            __try_result = a_ok(a_void());", nl))
+    code = str.concat(code, str.concat("        \} else \{", nl))
+    code = str.concat(code, str.concat("            a_try_depth--;", nl))
+    code = str.concat(code, str.concat("            __try_result = a_err(a_try_err);", nl))
+    code = str.concat(code, str.concat("        \}", nl))
+    code = str.concat(code, str.concat("        __try_result;", nl))
+    code = str.concat(code, "    \})")
+
+    ret _RL(code, li, lifted)
+  }
+
   ret _R(str.concat("/* unhandled expr: ", str.concat(tag, " */a_void()")), li)
 }
 
@@ -584,6 +656,241 @@ fn _resolve_call_name(func) -> str {
   ret "__unknown__"
 }
 
+; --- Pattern matching emission ---
+; _emit_pat_cond: returns [cond_code, li, lifted] where cond_code is a C boolean expr
+; _emit_pat_bind: returns [bind_code, li, lifted] where bind_code is C statements
+
+fn _emit_pat_cond(pat, target, bm, ctx, li) {
+  let tag = pat["tag"]
+  if tag == "PatWildcard" { ret _R("1", li) }
+  if tag == "PatIdent" { ret _R("1", li) }
+
+  if tag == "PatLiteral" {
+    let val = pat["value"]
+    let vr = emit_expr(val, bm, ctx, li)
+    ret _RL(str.concat("a_truthy(a_eq(", str.concat(target, str.concat(", ", str.concat(vr[0], "))")))), vr[1], vr[2])
+  }
+
+  if tag == "PatConstructor" {
+    let name = pat["name"]
+    if name == "Ok" { ret _R(str.concat("a_is_ok_raw(", str.concat(target, ")")), li) }
+    if name == "Err" { ret _R(str.concat("a_is_err_raw(", str.concat(target, ")")), li) }
+    ret _R("0 /* unknown constructor */", li)
+  }
+
+  if tag == "PatArray" {
+    let elems = pat["elems"]
+    let mut has_rest = false
+    let mut fixed_count = 0
+    for e in elems {
+      if e["tag"] == "PatRest" { has_rest = true }
+      if e["tag"] == "PatElem" { fixed_count = fixed_count + 1 }
+    }
+    let mut cond = ""
+    if has_rest {
+      cond = str.concat("a_is_array_min_len(", str.concat(target, str.concat(", ", str.concat(to_str(fixed_count), ")"))))
+    } else {
+      cond = str.concat("a_is_array_of_len(", str.concat(target, str.concat(", ", str.concat(to_str(fixed_count), ")"))))
+    }
+    ; Add nested element conditions
+    let mut idx = 0
+    let mut lifted = []
+    for e in elems {
+      if e["tag"] == "PatElem" {
+        let sub = e["pattern"]
+        if sub["tag"] != "PatIdent" && sub["tag"] != "PatWildcard" {
+          let elem_var = str.concat(target, str.concat(".aval->items[", str.concat(to_str(idx), "]")))
+          let sc = _emit_pat_cond(sub, elem_var, bm, ctx, li)
+          li = sc[1]
+          lifted = concat_arr(lifted, sc[2])
+          cond = str.concat(cond, str.concat(" && ", sc[0]))
+        }
+        idx = idx + 1
+      }
+    }
+    ret _RL(cond, li, lifted)
+  }
+
+  if tag == "PatMap" {
+    let entries = pat["entries"]
+    let mut cond = str.concat(target, ".tag == TAG_MAP")
+    let mut lifted = []
+    for e in entries {
+      let key = e["key"]
+      cond = str.concat(cond, str.concat(" && a_is_map_with(", str.concat(target, str.concat(", \"", str.concat(_escape_c_str(key), "\")")))))
+      ; Add nested value conditions
+      let sub = e["pattern"]
+      if sub["tag"] != "PatIdent" && sub["tag"] != "PatWildcard" {
+        let val_expr = str.concat("a_map_get(", str.concat(target, str.concat(", a_string(\"", str.concat(_escape_c_str(key), "\"))"))))
+        let sc = _emit_pat_cond(sub, val_expr, bm, ctx, li)
+        li = sc[1]
+        lifted = concat_arr(lifted, sc[2])
+        cond = str.concat(cond, str.concat(" && ", sc[0]))
+      }
+    }
+    ret _RL(cond, li, lifted)
+  }
+
+  ret _R("0 /* unknown pattern */", li)
+}
+
+fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
+  let tag = pat["tag"]
+  let ind = _indent(depth)
+
+  if tag == "PatWildcard" { ret _R("", li) }
+
+  if tag == "PatIdent" {
+    ret _R(str.concat(ind, str.concat(_mangle(pat["name"]), str.concat(" = ", str.concat(target, ";")))), li)
+  }
+
+  if tag == "PatLiteral" { ret _R("", li) }
+
+  if tag == "PatConstructor" {
+    let name = pat["name"]
+    let args = pat["args"]
+    let mut code = ""
+    if (name == "Ok" || name == "Err") && len(args) > 0 {
+      let inner = args[0]
+      let inner_expr = str.concat("a_unwrap_unsafe(", str.concat(target, ")"))
+      let br = _emit_pat_bind(inner, inner_expr, depth, bm, ctx, li)
+      code = br[0]
+      li = br[1]
+    }
+    ret _R(code, li)
+  }
+
+  if tag == "PatArray" {
+    let elems = pat["elems"]
+    let mut code = ""
+    let mut idx = 0
+    let mut lifted = []
+    for e in elems {
+      if e["tag"] == "PatElem" {
+        let elem_var = str.concat(target, str.concat(".aval->items[", str.concat(to_str(idx), "]")))
+        let br = _emit_pat_bind(e["pattern"], elem_var, depth, bm, ctx, li)
+        if len(br[0]) > 0 {
+          if len(code) > 0 { code = str.concat(code, "\n") }
+          code = str.concat(code, br[0])
+        }
+        li = br[1]
+        lifted = concat_arr(lifted, br[2])
+        idx = idx + 1
+      }
+      if e["tag"] == "PatRest" {
+        let rest_expr = str.concat("a_drop(", str.concat(target, str.concat(", a_int(", str.concat(to_str(idx), "))"))))
+        if len(code) > 0 { code = str.concat(code, "\n") }
+        code = str.concat(code, str.concat(ind, str.concat(_mangle(e["name"]), str.concat(" = ", str.concat(rest_expr, ";")))))
+      }
+    }
+    ret _RL(code, li, lifted)
+  }
+
+  if tag == "PatMap" {
+    let entries = pat["entries"]
+    let mut code = ""
+    let mut lifted = []
+    for e in entries {
+      let key = e["key"]
+      let val_expr = str.concat("a_map_get(", str.concat(target, str.concat(", a_string(\"", str.concat(_escape_c_str(key), "\"))"))))
+      let br = _emit_pat_bind(e["pattern"], val_expr, depth, bm, ctx, li)
+      if len(br[0]) > 0 {
+        if len(code) > 0 { code = str.concat(code, "\n") }
+        code = str.concat(code, br[0])
+      }
+      li = br[1]
+      lifted = concat_arr(lifted, br[2])
+    }
+    ret _RL(code, li, lifted)
+  }
+
+  ret _R("", li)
+}
+
+fn _emit_arm_body(body, depth, bm, ctx, li) {
+  let mut code = ""
+  let mut lifted = []
+  if type_of(body["stmts"]) == "array" {
+    for s in body["stmts"] {
+      let sr = emit_stmt(s, depth, bm, ctx, li)
+      if len(code) > 0 { code = str.concat(code, "\n") }
+      code = str.concat(code, sr[0])
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
+  } else {
+    ; Single expression body -- emit as expression statement
+    let er = emit_expr(body, bm, ctx, li)
+    li = er[1]
+    lifted = concat_arr(lifted, er[2])
+    code = str.concat(_indent(depth), str.concat(er[0], ";"))
+  }
+  ret _RL(code, li, lifted)
+}
+
+fn _emit_match(node, depth, bm, ctx, li) {
+  let ind = _indent(depth)
+  let d1 = _indent(depth + 1)
+  let d2 = _indent(depth + 2)
+  let er = emit_expr(node["expr"], bm, ctx, li)
+  li = er[1]
+  let mut lifted = er[2]
+  let arms = node["arms"]
+
+  let mut out = str.concat(ind, "\{")
+  out = str.concat(out, str.concat("\n", str.concat(d1, str.concat("AValue __match = ", str.concat(er[0], ";")))))
+  out = str.concat(out, str.concat("\n", str.concat(d1, "int __matched = 0;")))
+
+  for arm in arms {
+    let pat = arm["pattern"]
+    let guard = arm["guard"]
+    let body = arm["body"]
+
+    let cr = _emit_pat_cond(pat, "__match", bm, ctx, li)
+    li = cr[1]
+    lifted = concat_arr(lifted, cr[2])
+
+    let mut has_guard = type_of(guard) != "void"
+    if has_guard { if guard["tag"] == "Void" { has_guard = false } }
+
+    out = str.concat(out, str.concat("\n", str.concat(d1, str.concat("if (!__matched && ", str.concat(cr[0], ") \{")))))
+
+    ; Emit bindings
+    let br = _emit_pat_bind(pat, "__match", depth + 2, bm, ctx, li)
+    li = br[1]
+    lifted = concat_arr(lifted, br[2])
+    if len(br[0]) > 0 {
+      out = str.concat(out, str.concat("\n", br[0]))
+    }
+
+    if has_guard {
+      let gr = emit_expr(guard, bm, ctx, li)
+      li = gr[1]
+      lifted = concat_arr(lifted, gr[2])
+      out = str.concat(out, str.concat("\n", str.concat(d2, str.concat("if (a_truthy(", str.concat(gr[0], ")) \{")))))
+
+      let br2 = _emit_arm_body(body, depth + 3, bm, ctx, li)
+      li = br2[1]
+      lifted = concat_arr(lifted, br2[2])
+      if len(br2[0]) > 0 { out = str.concat(out, str.concat("\n", br2[0])) }
+      out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 3), "__matched = 1;")))
+
+      out = str.concat(out, str.concat("\n", str.concat(d2, "\}")))
+    } else {
+      let br2 = _emit_arm_body(body, depth + 2, bm, ctx, li)
+      li = br2[1]
+      lifted = concat_arr(lifted, br2[2])
+      if len(br2[0]) > 0 { out = str.concat(out, str.concat("\n", br2[0])) }
+      out = str.concat(out, str.concat("\n", str.concat(d2, "__matched = 1;")))
+    }
+
+    out = str.concat(out, str.concat("\n", str.concat(d1, "\}")))
+  }
+
+  out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+  ret _RL(out, li, lifted)
+}
+
 ; --- Statement emission ---
 ; Returns [code, li, [lifted_fns]]
 
@@ -594,6 +901,24 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
   if tag == "Let" {
     let vr = emit_expr(node["value"], bm, ctx, li)
     ret _RL(str.concat(ind, str.concat(_mangle(node["name"]), str.concat(" = ", str.concat(vr[0], ";")))), vr[1], vr[2])
+  }
+
+  if tag == "LetDestructure" {
+    let vr = emit_expr(node["value"], bm, ctx, li)
+    let mut code = str.concat(ind, str.concat("__dest = ", str.concat(vr[0], ";")))
+    let bindings = node["bindings"]
+    let mut i = 0
+    for b in bindings {
+      if b != "" && b != "_" {
+        code = str.concat(code, str.concat("\n", str.concat(ind, str.concat(_mangle(b), str.concat(" = a_array_get(__dest, a_int(", str.concat(to_str(i), "));"))))))
+      }
+      i = i + 1
+    }
+    let rest_name = node["rest"]
+    if rest_name != "" {
+      code = str.concat(code, str.concat("\n", str.concat(ind, str.concat(_mangle(rest_name), str.concat(" = a_drop(__dest, a_int(", str.concat(to_str(len(bindings)), "));"))))))
+    }
+    ret _RL(code, vr[1], vr[2])
   }
 
   if tag == "Assign" {
@@ -702,6 +1027,40 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     ret _RL(out, li, lifted)
   }
 
+  if tag == "ForDestructure" {
+    let bindings = node["bindings"]
+    let ir = emit_expr(node["iter"], bm, ctx, li)
+    li = ir[1]
+    let mut lifted = ir[2]
+    let mut out = str.concat(ind, "\{")
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(ir[0], ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
+    ; Collect all variables to declare
+    let mut decls = ["__elem"]
+    for b in bindings { decls = push(decls, _mangle(b)) }
+    let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
+    for v in body_vars { if !contains(decls, v) { decls = push(decls, v) } }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(decls, ", "), ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), "__elem = a_array_get(__iter_arr, a_int(__fi));")))
+    let mut bi = 0
+    for b in bindings {
+      out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(_mangle(b), str.concat(" = a_array_get(__elem, a_int(", str.concat(to_str(bi), "));"))))))
+      bi = bi + 1
+    }
+    let body_stmts = node["body"]["stmts"]
+    for s in body_stmts {
+      let sr = emit_stmt(s, depth + 2, bm, ctx, li)
+      out = str.concat(out, str.concat("\n", sr[0]))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "\}")))
+    out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+    ret _RL(out, li, lifted)
+  }
+
+  if tag == "Match" { ret _emit_match(node, depth, bm, ctx, li) }
+
   if tag == "Break" { ret _R(str.concat(ind, "break;"), li) }
   if tag == "Continue" { ret _R(str.concat(ind, "continue;"), li) }
 
@@ -709,6 +1068,33 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
 }
 
 ; --- Variable collection (for pre-declaration) ---
+
+fn _collect_pattern_vars(pat) -> [str] {
+  let tag = pat["tag"]
+  if tag == "PatIdent" { ret [_mangle(pat["name"])] }
+  if tag == "PatRest" { ret [_mangle(pat["name"])] }
+  if tag == "PatWildcard" { ret [] }
+  if tag == "PatLiteral" { ret [] }
+  if tag == "PatConstructor" {
+    let mut vs = []
+    for a in pat["args"] { vs = concat_arr(vs, _collect_pattern_vars(a)) }
+    ret vs
+  }
+  if tag == "PatArray" {
+    let mut vs = []
+    for e in pat["elems"] {
+      if e["tag"] == "PatElem" { vs = concat_arr(vs, _collect_pattern_vars(e["pattern"])) }
+      if e["tag"] == "PatRest" { vs = push(vs, _mangle(e["name"])) }
+    }
+    ret vs
+  }
+  if tag == "PatMap" {
+    let mut vs = []
+    for e in pat["entries"] { vs = concat_arr(vs, _collect_pattern_vars(e["pattern"])) }
+    ret vs
+  }
+  ret []
+}
 
 fn _collect_vars_in_stmts(stmts) -> [str] {
   let mut vars = []
@@ -740,6 +1126,35 @@ fn _collect_vars_in_stmts(stmts) -> [str] {
     if tag == "For" {
       let fv = _collect_vars_in_stmts(s["body"]["stmts"])
       for v in fv { if !contains(vars, v) { vars = push(vars, v) } }
+    }
+    if tag == "LetDestructure" {
+      if !contains(vars, "__dest") { vars = push(vars, "__dest") }
+      for b in s["bindings"] {
+        if b != "" && b != "_" {
+          let name = _mangle(b)
+          if !contains(vars, name) { vars = push(vars, name) }
+        }
+      }
+      let rn = s["rest"]
+      if rn != "" {
+        let name = _mangle(rn)
+        if !contains(vars, name) { vars = push(vars, name) }
+      }
+    }
+    if tag == "ForDestructure" {
+      let fv = _collect_vars_in_stmts(s["body"]["stmts"])
+      for v in fv { if !contains(vars, v) { vars = push(vars, v) } }
+    }
+    if tag == "Match" {
+      for arm in s["arms"] {
+        let pv = _collect_pattern_vars(arm["pattern"])
+        for v in pv { if !contains(vars, v) { vars = push(vars, v) } }
+        let body = arm["body"]
+        if type_of(body["stmts"]) == "array" {
+          let bv = _collect_vars_in_stmts(body["stmts"])
+          for v in bv { if !contains(vars, v) { vars = push(vars, v) } }
+        }
+      }
     }
   }
   ret vars

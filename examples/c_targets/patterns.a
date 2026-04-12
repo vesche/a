@@ -1,0 +1,82 @@
+; Test pattern matching in native compilation
+
+fn describe_number(n) {
+  match n {
+    1 => println("one")
+    2 => println("two")
+    3 => println("three")
+    _ => println("other")
+  }
+}
+
+fn result_handler(r) {
+  match r {
+    Ok(v) => println("got: {v}")
+    Err(e) => println("error: {e}")
+  }
+}
+
+fn classify(val) {
+  match val {
+    0 => { ret "zero" }
+    x if x > 0 => { ret "positive" }
+    _ => { ret "negative" }
+  }
+}
+
+fn array_match(arr) {
+  match arr {
+    [] => println("empty")
+    [x] => println("single: {x}")
+    [a, b] => println("pair: {a}, {b}")
+    [h, ...t] => println("head={h} rest={t}")
+  }
+}
+
+fn map_match(m) {
+  match m {
+    #{"tag": "Add", "left": l, "right": r} => {
+      println("Add({l}, {r})")
+    }
+    #{"tag": "Lit", "value": v} => {
+      println("Lit({v})")
+    }
+    _ => println("unknown node")
+  }
+}
+
+fn main() {
+  ; Literal patterns
+  describe_number(1)
+  describe_number(2)
+  describe_number(3)
+  describe_number(99)
+
+  ; Result constructor patterns
+  result_handler(Ok(42))
+  result_handler(Err("not found"))
+
+  ; Guard clauses
+  println(classify(0))
+  println(classify(5))
+  println(classify(-3))
+
+  ; Array patterns
+  array_match([])
+  array_match([10])
+  array_match([1, 2])
+  array_match([1, 2, 3, 4])
+
+  ; Map patterns
+  map_match(#{"tag": "Lit", "value": 7})
+  map_match(#{"tag": "Add", "left": 3, "right": 4})
+  map_match(#{"tag": "Unknown"})
+
+  ; Ident catch-all binding
+  let x = 42
+  match x {
+    val => println("bound: {val}")
+  }
+
+  println("all pattern tests passed")
+}

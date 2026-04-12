@@ -114,7 +114,7 @@ use std.lexer                 # legacy tokenizer
 
 ## Self-hosting
 
-The "a" compiler is fully self-hosting through native compilation. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into 4,388 lines of C. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. Closures, lambdas, higher-order functions, and the pipe operator all compile natively.
+The "a" compiler is fully self-hosting through native compilation. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into 4,951 lines of C. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. Closures, lambdas, higher-order functions, pattern matching, try/catch, destructuring, and the pipe operator all compile natively.
 
 ```
 a run std/compiler/cgen.a -- std/compiler/cgen.a > ac.c     # "a" compiles itself to C
@@ -130,7 +130,7 @@ gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O2      # gcc builds native
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C. Lambdas are lifted to top-level C functions with captured environment arrays. Combined with a ~980-line C runtime (`c_runtime/runtime.c`), this produces native binaries via `gcc`.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C. Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics. Combined with a ~1,200-line C runtime, this produces native binaries via `gcc`.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -186,15 +186,15 @@ fn main() -> void {
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 99 | static site generator using path, datetime, hash, csv, template, encoding |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
-| `std/compiler/cgen.a` | 957 | **C code generator** -- self-hosting native compiler via C (closures, HOFs, pipes, module inlining, fixed-point bootstrap) |
+| `std/compiler/cgen.a` | 1,372 | **C code generator** -- self-hosting native compiler via C (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, module inlining, fixed-point bootstrap) |
 
 ## Stats
 
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~1,170 lines (runtime.h + runtime.c) |
-| **"a" source** | ~18,800 lines across 86 files |
+| **C runtime** | ~1,200 lines (runtime.h + runtime.c) |
+| **"a" source** | ~19,000 lines across 88 files |
 | **Standard library** | 20 modules, 380+ functions, ~8,200 lines |
 | **Test suites** | 27 suites + cgen test script, 498+ native tests, ~4,200 lines |
 | **Examples & tools** | 35 programs, ~6,100 lines |

@@ -1294,3 +1294,58 @@ Fixed-point test: gen0.c == gen1.c (4,388 lines, byte-identical)
 
 Closures capture variables **by value**. Mutating a captured variable inside a lambda does not affect the outer scope. This matches the compiled C semantics where each `AValue` is a stack-local struct. Patterns like `each(arr, fn(x) { total = total + x })` will not propagate `total` back; use `reduce` instead.
 
+---
+
+## v0.45 -- Error Handling, Destructuring & Spread in Native Compilation ✅
+
+### Motivation
+
+Close the biggest remaining feature gaps between VM and native: `try`/`?` error handling, `let [a, b] = ...` destructuring, `for [k, v] in ...` destructured loops, and `[...arr, x]` array spread. These patterns are used heavily in real "a" programs (`search.a`, `todo_scan.a`, `std/meta.a`).
+
+### Architecture
+
+**Try/? (setjmp/longjmp):**
+- Global try stack: `jmp_buf a_try_stack[64]` + depth counter in C runtime
+- `a_try_unwrap(v)`: if Ok, returns inner value; if Err and inside try block, `longjmp`; if Err and no try block, exits with error
+- `TryBlock` emission: GCC statement expression `({...})` wrapping `setjmp`/`longjmp` scaffold with local variable pre-declaration
+- `Try` / `?` emission: simple `a_try_unwrap(<expr>)` call
+
+**LetDestructure:**
+- Emits indexed access: `__dest = <value>; a = a_array_get(__dest, a_int(0)); ...`
+- Supports rest patterns: `let [first, ...rest] = arr` emits `a_drop(__dest, a_int(N))`
+- Skips `_` bindings
+
+**ForDestructure:**
+- Same loop structure as `For`, but each iteration indexes into the element: `__elem = a_array_get(__iter_arr, a_int(__fi)); k = a_array_get(__elem, a_int(0)); ...`
+
+**Array Spread:**
+- Detects `Spread` nodes in array elements
+- Switches from `a_array_new(N, ...)` to incremental `a_array_push` / `a_concat_arr` chain
+
+### Changes
+
+| File | What |
+|------|------|
+| `c_runtime/runtime.h` | `setjmp.h` include, try stack globals, `a_try_unwrap` declaration |
+| `c_runtime/runtime.c` | Try stack initialization, `a_try_unwrap` implementation |
+| `std/compiler/cgen.a` | `Try`, `TryBlock`, `LetDestructure`, `ForDestructure` emission; spread-aware array emission; var collection for destructure and try blocks |
+
+### Test Results
+
+All 10 test programs pass (original 8 + patterns + features):
+
+| Program | Status |
+|---------|--------|
+| arrays | PASS |
+| closures | PASS |
+| complex | PASS |
+| features | PASS |
+| fib | PASS |
+| maps | PASS |
+| multi_fn | PASS |
+| patterns | PASS |
+| strings | PASS |
+| bench_fib | PASS |
+
+Fixed-point test: gen1.c == gen2.c (4,951 lines, byte-identical)
+

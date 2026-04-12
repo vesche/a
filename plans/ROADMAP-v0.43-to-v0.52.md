@@ -4,12 +4,14 @@
 
 ## Where We Are
 
-At v0.42, the language has two execution paths:
+At v0.45, the native path has closed most of the language feature gap:
 
 1. **VM path** (Rust-hosted): Full language -- closures, HOFs, pattern matching, destructuring, try/catch, concurrency, eval, metaprogramming, 100+ builtins, 20 stdlib modules, 498 tests.
-2. **Native path** (C codegen): Core language -- functions, control flow, data structures, 45 builtins, self-hosting bootstrap, 164x faster than VM, but no closures, no pattern matching, no error handling, no concurrency.
+2. **Native path** (C codegen): Most language features -- functions, control flow, closures, HOFs, pipes, pattern matching (statement), try/catch/?, destructuring, spread, 60+ builtins, self-hosting bootstrap (4,951 lines C, fixed point verified), 164x faster than VM.
 
-The VM is the comfortable path. The native path is the freedom path. These ten versions close the gap, then go further -- until the language needs nothing outside itself.
+**What's done** (v0.43-v0.45): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread.
+
+**What remains before FFI**: expression completeness (MatchExpr, BlockExpr), native I/O primitives (read_file, write_file, fs.ls), and test hardening. Eval and concurrency are deferred to post-FFI.
 
 ---
 
@@ -79,22 +81,88 @@ Pattern matching is the most expressive control flow in "a". The self-hosted com
 
 ---
 
-## v0.45 -- Full Native Feature Parity
+## v0.45 -- Error Handling, Destructuring & Spread in Native ✅
 
-**Everything the VM does, native does.** This is the version where the feature gap closes completely.
+**The core control flow gap closes.** Real "a" programs use `try { }` blocks, the `?` operator, destructuring let/for, and array spread everywhere. This version adds them all to native compilation.
 
-### Remaining Features
+### Completed
 
-- **Try/catch/?**: `try { block }` → C `setjmp`/`longjmp`. `?` postfix checks `is_err`, longjmps on error.
-- **Destructuring**: `let [a, b] = expr`, `let [first, ...rest] = arr`, `for [k, v] in map`
-- **Spread**: `[...arr1, x, ...arr2]` in array literals
-- **String interpolation edge cases**: nested interpolation, interpolation in all expression positions
-- **Eval**: `eval(code)` in native -- the native compiler includes a minimal "a" compiler that can compile and execute code at runtime. This might use a compact bytecode interpreter embedded in the C runtime, or it might shell out to the native `ac` binary. Either way, `eval` works.
-- **Structured concurrency**: `spawn`/`await` via pthreads. Each spawned task gets its own stack. `parallel_map` divides work across OS threads.
+- **Try/catch/?**: `try { block }` → C `setjmp`/`longjmp`. `?` postfix checks `is_err`, longjmps on error. Global try stack with `a_try_unwrap()` runtime function.
+- **Destructuring**: `let [a, b] = expr`, `let [first, ...rest] = arr` via indexed access and `a_drop`.
+- **For destructuring**: `for [k, v] in pairs` via per-iteration element indexing.
+- **Spread**: `[...arr1, x, ...arr2]` in array literals via incremental `a_array_push`/`a_concat_arr` chains.
+
+### Deferred to Post-FFI
+
+- **Eval**: Enormous scope (embedding a compiler/interpreter in the runtime). Better built after FFI exists, potentially by shelling out to the native `ac` binary.
+- **Structured concurrency**: `spawn`/`await` via pthreads. Benefits from FFI for pthread calls. Planned for v0.47+.
+
+---
+
+## v0.45.1 -- Expression Completeness
+
+**Every expression the VM evaluates, native compiles correctly.** Small but correctness-critical gaps in how expressions are emitted to C.
+
+### Scope
+
+- **MatchExpr**: Match as an *expression* that returns a value (e.g. `let x = match val { Ok(v) => v, _ => 0 }`). The bytecode compiler handles this via `compile_match_expr`; cgen.a only has statement-form `Match`. Emit using GCC statement expressions `({...})`, reusing `_emit_match` internals but capturing the result from arm bodies.
+- **BlockExpr trailing return**: cgen.a only promotes the last statement of a `BlockExpr` when it is `ExprStmt`. The VM also handles trailing `Return`. Fix to match.
+- **UnaryOp audit**: Verify all unary operators (`!`, `-`) emit correctly for all operand types.
+
+### Why Before FFI
+
+Programs using FFI will use match expressions for result handling (`let val = match ffi_call() { ... }`). These must work.
+
+---
+
+## v0.45.2 -- Native I/O Primitives
+
+**The native compiler becomes a standalone tool.** Currently, `cgen.a` compiled natively can emit C, but it relies on the Rust VM to read source files. This version adds POSIX I/O to the C runtime so the native binary can read files, write files, and list directories on its own.
+
+### C Runtime Additions
+
+| Builtin | C Implementation | Priority |
+|---------|-----------------|----------|
+| `io.read_file(path)` | `fopen`/`fread`/`fclose`, return string or Err | Critical -- cgen.a uses this |
+| `io.write_file(path, data)` | `fopen`/`fwrite`/`fclose` | High |
+| `fs.ls(path)` | `opendir`/`readdir`/`closedir`, return array of maps | High |
+| `fs.mkdir(path)` | `mkdir()` | Medium |
+| `fs.cwd()` | `getcwd()` | Medium |
+| `exec(cmd)` | `popen`/`pclose`, return stdout as string | Medium |
+| `env.get(key)` | `getenv()` | Medium |
+| `json.parse(str)` | Minimal recursive-descent JSON parser in C | Medium |
 
 ### The Milestone
 
-After v0.45, this assertion holds: **any "a" program that runs on the VM produces identical output when compiled to native.** The test suite can be run in both modes. The native compiler is no longer a subset -- it's a full implementation.
+After v0.45.2, this works -- no Rust VM in the loop:
+
+```bash
+./ac std/compiler/cgen.a > ac2.c
+gcc ac2.c c_runtime/runtime.c -o ac2 -I c_runtime -lm
+./ac2 std/compiler/cgen.a > ac3.c
+diff ac2.c ac3.c  # identical -- three-stage bootstrap
+```
+
+### Why Before FFI
+
+FFI adds complexity. The native compiler should be self-sufficient for I/O *before* we layer on foreign function calls. Also, the I/O primitives needed here are exactly what v0.48 (Native Stdlib) would later reimplement via FFI -- doing them in C first validates the approach.
+
+---
+
+## v0.45.3 -- Test Hardening
+
+**Confidence before complexity.** Run the VM test suite through native compilation, fix every edge case, and stress-test with large programs.
+
+### Scope
+
+- Run existing VM tests (`tests/test_destructure.a`, `tests/test_patterns.a`, `tests/test_maps.a`, `tests/test_functional.a`, `tests/test_strings.a`, etc.) through native compilation where applicable.
+- Create a test harness script: compile each test to C, build, run, compare output to VM output.
+- Fix any edge cases that surface (string interpolation, nested expressions, etc.).
+- Stress test: compile `std/compiler/compiler.a` (the bytecode compiler) to C -- a large, complex "a" program that exercises nearly every language feature.
+
+### Why Before FFI
+
+FFI introduces a new category of bugs (memory layout, calling conventions, pointer semantics). We need high confidence that the existing language features work perfectly before adding that complexity. A passing test suite is the proof.
 
 ---
 
@@ -321,9 +389,12 @@ This is the destination. Everything from v0.43 to v0.51 is the road.
 
 | Version | Name | Key Capability | Unlocks |
 |---------|------|---------------|---------|
-| **v0.43** | Closures in Native | Lambda lifting, HOF builtins, pipes | Functional programming natively |
-| **v0.44** | Pattern Matching in Native | match/guard/destructure in C | Complex dispatch natively |
-| **v0.45** | Full Feature Parity | try/catch, spread, eval, concurrency | VM == Native for all programs |
+| **v0.43** ✅ | Closures in Native | Lambda lifting, HOF builtins, pipes | Functional programming natively |
+| **v0.44** ✅ | Pattern Matching in Native | match/guard/destructure in C | Complex dispatch natively |
+| **v0.45** ✅ | Error Handling & Destructuring | try/catch/?, let/for destructure, spread | Real programs compile natively |
+| **v0.45.1** | Expression Completeness | MatchExpr, BlockExpr fixes | Correct expression semantics |
+| **v0.45.2** | Native I/O Primitives | read_file, write_file, fs.ls, exec, env | Standalone native compiler |
+| **v0.45.3** | Test Hardening | VM test suite on native, stress tests | Confidence before FFI |
 | **v0.46** | C FFI | `extern fn`, link C libraries | Access entire C ecosystem |
 | **v0.47** | Memory Architecture | Escape analysis, arenas, GC | Production-grade native runtime |
 | **v0.48** | Native Stdlib | POSIX I/O, HTTP, JSON, hash | No Rust dependency in stdlib |
