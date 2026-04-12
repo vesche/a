@@ -1,0 +1,90 @@
+use std.testing
+use std.template
+
+fn test_plain_passthrough() -> bool {
+  assert_eq(template.render("hello world", #{}), "hello world")
+}
+
+fn test_variable_substitution() -> bool {
+  let tmpl = r#"hello {{name}}"#
+  assert_eq(template.render(tmpl, #{"name": "Alice"}), "hello Alice")
+}
+
+fn test_multiple_vars() -> bool {
+  let tmpl = r#"{{a}} and {{b}}"#
+  let result = template.render(tmpl, #{"a": "X", "b": "Y"})
+  assert_eq(result, "X and Y")
+}
+
+fn test_missing_var() -> bool {
+  let tmpl = r#"hello {{name}}"#
+  assert_eq(template.render(tmpl, #{}), "hello ")
+}
+
+fn test_if_truthy() -> bool {
+  let tmpl = r#"{{#if show}}visible{{/if}}"#
+  let result = template.render(tmpl, #{"show": true})
+  assert_eq(result, "visible")
+}
+
+fn test_if_falsy() -> bool {
+  let tmpl = r#"{{#if show}}visible{{/if}}"#
+  let result = template.render(tmpl, #{"show": false})
+  assert_eq(result, "")
+}
+
+fn test_if_else() -> bool {
+  let tmpl = r#"{{#if ok}}yes{{#else}}no{{/if}}"#
+  assert_eq(template.render(tmpl, #{"ok": true}), "yes")
+  assert_eq(template.render(tmpl, #{"ok": false}), "no")
+}
+
+fn test_if_string_truthy() -> bool {
+  let tmpl = r#"{{#if s}}yes{{/if}}"#
+  assert_eq(template.render(tmpl, #{"s": "hi"}), "yes")
+  assert_eq(template.render(tmpl, #{"s": ""}), "")
+}
+
+fn test_each_array() -> bool {
+  let tmpl = r#"{{#each items}}[{{.}}]{{/each}}"#
+  let result = template.render(tmpl, #{"items": ["a", "b", "c"]})
+  assert_eq(result, "[a][b][c]")
+}
+
+fn test_each_index() -> bool {
+  let tmpl = r#"{{#each items}}{{@index}}:{{.}} {{/each}}"#
+  let result = template.render(tmpl, #{"items": ["x", "y"]})
+  assert_eq(result, "0:x 1:y ")
+}
+
+fn test_each_empty() -> bool {
+  let tmpl = r#"{{#each items}}item{{#else}}none{{/each}}"#
+  let result = template.render(tmpl, #{"items": []})
+  assert_eq(result, "none")
+}
+
+fn test_each_maps() -> bool {
+  let items = [#{"name": "A"}, #{"name": "B"}]
+  let tmpl = r#"{{#each items}}{{name}}{{/each}}"#
+  let result = template.render(tmpl, #{"items": items})
+  assert_eq(result, "AB")
+}
+
+fn test_nested_if_in_each() -> bool {
+  let items = [#{"name": "A", "active": true}, #{"name": "B", "active": false}]
+  let tmpl = r#"{{#each items}}{{#if active}}*{{/if}}{{name}} {{/each}}"#
+  let result = template.render(tmpl, #{"items": items})
+  assert_eq(result, "*A B ")
+}
+
+fn test_render_file() -> bool effects [io] {
+  let tmpl_content = r#"Hello {{name}}!"#
+  io.write_file("/tmp/test_tmpl.txt", tmpl_content)
+  let result = template.render_file("/tmp/test_tmpl.txt", #{"name": "World"})
+  assert_eq(result, "Hello World!")
+}
+
+fn test_int_var() -> bool {
+  let tmpl = r#"count: {{n}}"#
+  assert_eq(template.render(tmpl, #{"n": 42}), "count: 42")
+}

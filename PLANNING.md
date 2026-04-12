@@ -1011,3 +1011,66 @@ let r = timeout(3000, fn() => slow_operation())   ; Err("timeout") if too slow
 - `**examples/parallel_fetch.a**`: demo fetching multiple URLs concurrently
 - All 204 native "a" tests passing across 10 test suites
 
+---
+
+## v0.40 -- Practical Standard Library  ✅
+
+*Completed: April 2026*
+
+Six new standard library modules that fill the practical gaps blocking real-world use. After this, "a" is a language you can actually use to build real tools -- static site generators, data pipelines, deploy scripts, API test harnesses.
+
+### New Rust-Side Builtins
+
+Four new builtins implemented in the Rust runtime (functionality that cannot be implemented in pure "a"):
+
+- `**time.now()**` -- current Unix epoch milliseconds (`std::time::SystemTime`)
+- `**time.sleep(ms)**` -- sleep for milliseconds (`std::thread::sleep`)
+- `**hash.sha256(s)**` -- SHA-256 hex digest (via `sha2` crate)
+- `**hash.md5(s)**` -- MD5 hex digest (via `md-5` crate)
+
+### New Modules
+
+**`std/path.a`** -- Path manipulation (pure "a", ~115 lines)
+- `join`, `join3`, `dirname`, `basename`, `extension`, `stem`, `with_extension`, `is_absolute`, `segments`, `normalize`
+- Unix-oriented, string-based, no OS dependencies
+
+**`std/datetime.a`** -- Date and time (~130 lines, uses `time.now`/`time.sleep` builtins)
+- `now`, `timestamp`, `sleep`, `to_parts`, `from_parts`, `format`, `iso`
+- `add_ms`, `add_seconds`, `add_minutes`, `add_hours`, `add_days`, `diff_ms`, `diff_seconds`
+- Format tokens: `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%F` (date), `%T` (time)
+- Full epoch-to-calendar conversion with leap year handling
+
+**`std/hash.a`** -- Hashing utilities (~25 lines, wraps Rust builtins)
+- `sha256`, `md5`, `sha256_file`, `md5_file`, `quick` (short md5 for cache keys)
+
+**`std/encoding.a`** -- Encoding/decoding (pure "a", ~185 lines)
+- `base64_encode`, `base64_decode` -- lookup-table based, RFC 4648
+- `hex_encode`, `hex_decode` -- byte-to-hex conversion
+- `url_encode`, `url_decode` -- percent-encoding with `+` for space
+
+**`std/csv.a`** -- CSV parsing and generation (pure "a", ~140 lines)
+- `parse`, `parse_records`, `stringify`, `stringify_records`, `parse_row`, `escape_field`
+- RFC 4180 compliant: quoted fields, embedded commas, escaped quotes
+
+**`std/template.a`** -- Mustache-style string templating (pure "a", ~210 lines)
+- `render(template, vars)`, `render_file(path, vars)`
+- Variable substitution: `{{name}}`
+- Conditionals: `{{#if key}}...{{#else}}...{{/if}}`
+- Iteration: `{{#each arr}}...{{.}}...{{@index}}...{{#else}}...{{/each}}`
+- Nested block support, map-item field promotion in each blocks
+
+### Changes
+
+- `**Cargo.toml**`: Added `sha2 = "0.10"`, `md-5 = "0.10"` dependencies
+- `**src/builtins.rs**`: `time.now`, `time.sleep`, `hash.sha256`, `hash.md5` implemented and registered
+- `**src/vm.rs**`: Fast-path VM handling for all 4 new builtins
+- `**std/path.a**`, `**std/datetime.a**`, `**std/hash.a**`, `**std/encoding.a**`, `**std/csv.a**`, `**std/template.a**`: 6 new standard library modules
+- `**tests/test_path.a**`: 35 tests
+- `**tests/test_datetime.a**`: 15 tests
+- `**tests/test_hash.a**`: 10 tests
+- `**tests/test_encoding.a**`: 20 tests
+- `**tests/test_csv.a**`: 17 tests
+- `**tests/test_template.a**`: 15 tests
+- `**examples/site_gen.a**`: Static site generator demo exercising all 6 modules
+- All 498 native "a" tests passing across 27 test suites
+

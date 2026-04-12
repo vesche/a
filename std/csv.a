@@ -1,0 +1,161 @@
+; std/csv.a -- CSV parsing and generation (RFC 4180)
+
+fn escape_field(field: str) -> str {
+  let needs_quote = false
+  if str.contains(field, ",") { needs_quote = true }
+  if str.contains(field, "\n") { needs_quote = true }
+  if str.contains(field, "\"") { needs_quote = true }
+  if needs_quote {
+    let escaped = str.replace(field, "\"", "\"\"")
+    ret str.concat("\"", str.concat(escaped, "\""))
+  }
+  ret field
+}
+
+fn parse_row(line: str) -> [str] {
+  let chars = str.chars(line)
+  let n = len(chars)
+  let mut fields = []
+  let mut current = ""
+  let mut in_quotes = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_quotes {
+      if c == "\"" {
+        if i + 1 < n {
+          if chars[i + 1] == "\"" {
+            current = str.concat(current, "\"")
+            i = i + 2
+            continue
+          }
+        }
+        in_quotes = false
+      } else {
+        current = str.concat(current, c)
+      }
+    } else {
+      if c == "\"" {
+        in_quotes = true
+      } else {
+        if c == "," {
+          fields = push(fields, current)
+          current = ""
+        } else {
+          current = str.concat(current, c)
+        }
+      }
+    }
+    i = i + 1
+  }
+  fields = push(fields, current)
+  ret fields
+}
+
+fn parse(text: str) -> [[str]] {
+  let chars = str.chars(text)
+  let n = len(chars)
+  let mut rows = []
+  let mut fields = []
+  let mut current = ""
+  let mut in_quotes = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_quotes {
+      if c == "\"" {
+        if i + 1 < n {
+          if chars[i + 1] == "\"" {
+            current = str.concat(current, "\"")
+            i = i + 2
+            continue
+          }
+        }
+        in_quotes = false
+      } else {
+        current = str.concat(current, c)
+      }
+    } else {
+      if c == "\"" {
+        in_quotes = true
+      } else {
+        if c == "," {
+          fields = push(fields, current)
+          current = ""
+        } else {
+          if c == "\n" {
+            fields = push(fields, current)
+            current = ""
+            rows = push(rows, fields)
+            fields = []
+          } else {
+            if c == "\r" {
+              ; skip carriage return
+            } else {
+              current = str.concat(current, c)
+            }
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  if len(fields) > 0 {
+    fields = push(fields, current)
+    rows = push(rows, fields)
+  } else {
+    if current != "" {
+      fields = push(fields, current)
+      rows = push(rows, fields)
+    }
+  }
+  ret rows
+}
+
+fn parse_records(text: str) -> [map] {
+  let rows = parse(text)
+  if len(rows) < 2 { ret [] }
+  let headers = rows[0]
+  let mut records = []
+  let mut i = 1
+  while i < len(rows) {
+    let row = rows[i]
+    let mut rec = #{}
+    let mut j = 0
+    while j < len(headers) {
+      let val = ""
+      if j < len(row) { val = row[j] }
+      rec = map.set(rec, headers[j], val)
+      j = j + 1
+    }
+    records = push(records, rec)
+    i = i + 1
+  }
+  ret records
+}
+
+fn stringify(rows: [[str]]) -> str {
+  let mut lines = []
+  for row in rows {
+    let mut escaped = []
+    for field in row {
+      escaped = push(escaped, escape_field(field))
+    }
+    lines = push(lines, str.join(escaped, ","))
+  }
+  ret str.join(lines, "\n")
+}
+
+fn stringify_records(records: [map], headers: [str]) -> str {
+  let mut rows = [headers]
+  for rec in records {
+    let mut row = []
+    for h in headers {
+      let val = ""
+      if map.has(rec, h) { val = to_str(map.get(rec, h)) }
+      row = push(row, val)
+    }
+    rows = push(rows, row)
+  }
+  ret stringify(rows)
+}

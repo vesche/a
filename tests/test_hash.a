@@ -1,0 +1,51 @@
+use std.testing
+use std.hash
+
+fn test_sha256_empty() -> bool {
+  assert_eq(hash.sha256(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+}
+
+fn test_sha256_abc() -> bool {
+  assert_eq(hash.sha256("abc"), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+}
+
+fn test_sha256_hello() -> bool {
+  assert_eq(hash.sha256("hello world"), "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+}
+
+fn test_md5_empty() -> bool {
+  assert_eq(hash.md5(""), "d41d8cd98f00b204e9800998ecf8427e")
+}
+
+fn test_md5_abc() -> bool {
+  assert_eq(hash.md5("abc"), "900150983cd24fb0d6963f7d28e17f72")
+}
+
+fn test_md5_hello() -> bool {
+  assert_eq(hash.md5("hello world"), "5eb63bbbe01eeed093cb22bb8f5acdc3")
+}
+
+fn test_sha256_deterministic() -> bool {
+  let h1 = hash.sha256("test")
+  let h2 = hash.sha256("test")
+  assert_eq(h1, h2)
+}
+
+fn test_sha256_file() -> bool effects [io] {
+  io.write_file("/tmp/test_hash_file.txt", "hello world")
+  let h = hash.sha256_file("/tmp/test_hash_file.txt")
+  assert_eq(h, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+}
+
+fn test_md5_file() -> bool effects [io] {
+  io.write_file("/tmp/test_hash_file2.txt", "abc")
+  let h = hash.md5_file("/tmp/test_hash_file2.txt")
+  assert_eq(h, "900150983cd24fb0d6963f7d28e17f72")
+}
+
+fn test_quick_consistent() -> bool {
+  let h1 = hash.quick("test")
+  let h2 = hash.quick("test")
+  assert_eq(h1, h2)
+  assert_eq(len(h1), 16)
+}

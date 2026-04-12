@@ -1,0 +1,144 @@
+use std.testing
+use std.path
+
+fn test_join_two() -> bool {
+  assert_eq(path.join("a", "b"), "a/b")
+}
+
+fn test_join_trailing_slash() -> bool {
+  assert_eq(path.join("a/", "b"), "a/b")
+}
+
+fn test_join_absolute_right() -> bool {
+  assert_eq(path.join("a", "/b"), "/b")
+}
+
+fn test_join_empty_left() -> bool {
+  assert_eq(path.join("", "b"), "b")
+}
+
+fn test_join_empty_right() -> bool {
+  assert_eq(path.join("a", ""), "a")
+}
+
+fn test_join3() -> bool {
+  assert_eq(path.join3("a", "b", "c"), "a/b/c")
+}
+
+fn test_dirname_normal() -> bool {
+  assert_eq(path.dirname("a/b/c.txt"), "a/b")
+}
+
+fn test_dirname_root() -> bool {
+  assert_eq(path.dirname("/"), "/")
+}
+
+fn test_dirname_no_dir() -> bool {
+  assert_eq(path.dirname("file.txt"), ".")
+}
+
+fn test_dirname_trailing_slash() -> bool {
+  assert_eq(path.dirname("a/b/"), "a")
+}
+
+fn test_dirname_root_file() -> bool {
+  assert_eq(path.dirname("/file.txt"), "/")
+}
+
+fn test_basename_normal() -> bool {
+  assert_eq(path.basename("a/b/c.txt"), "c.txt")
+}
+
+fn test_basename_no_dir() -> bool {
+  assert_eq(path.basename("file.txt"), "file.txt")
+}
+
+fn test_basename_trailing_slash() -> bool {
+  assert_eq(path.basename("a/b/"), "b")
+}
+
+fn test_basename_root() -> bool {
+  assert_eq(path.basename("/"), "/")
+}
+
+fn test_extension_normal() -> bool {
+  assert_eq(path.extension("file.txt"), "txt")
+}
+
+fn test_extension_none() -> bool {
+  assert_eq(path.extension("file"), "")
+}
+
+fn test_extension_multiple_dots() -> bool {
+  assert_eq(path.extension("archive.tar.gz"), "gz")
+}
+
+fn test_extension_hidden() -> bool {
+  assert_eq(path.extension(".gitignore"), "")
+}
+
+fn test_stem_normal() -> bool {
+  assert_eq(path.stem("file.txt"), "file")
+}
+
+fn test_stem_no_ext() -> bool {
+  assert_eq(path.stem("file"), "file")
+}
+
+fn test_stem_multiple_dots() -> bool {
+  assert_eq(path.stem("archive.tar.gz"), "archive.tar")
+}
+
+fn test_with_extension() -> bool {
+  assert_eq(path.with_extension("file.txt", "md"), "file.md")
+}
+
+fn test_with_extension_add() -> bool {
+  assert_eq(path.with_extension("file", "txt"), "file.txt")
+}
+
+fn test_with_extension_remove() -> bool {
+  assert_eq(path.with_extension("file.txt", ""), "file")
+}
+
+fn test_with_extension_path() -> bool {
+  assert_eq(path.with_extension("a/b/file.txt", "md"), "a/b/file.md")
+}
+
+fn test_is_absolute() -> bool {
+  assert_true(path.is_absolute("/usr/bin"))
+  assert_false(path.is_absolute("relative/path"))
+  assert_false(path.is_absolute(""))
+}
+
+fn test_segments_normal() -> bool {
+  assert_eq(path.segments("a/b/c"), ["a", "b", "c"])
+}
+
+fn test_segments_absolute() -> bool {
+  assert_eq(path.segments("/a/b"), ["a", "b"])
+}
+
+fn test_segments_empty() -> bool {
+  assert_eq(path.segments(""), [])
+}
+
+fn test_normalize_double_slash() -> bool {
+  assert_eq(path.normalize("a//b"), "a/b")
+}
+
+fn test_normalize_dot() -> bool {
+  assert_eq(path.normalize("a/./b"), "a/b")
+}
+
+fn test_normalize_dotdot() -> bool {
+  assert_eq(path.normalize("a/b/../c"), "a/c")
+}
+
+fn test_normalize_absolute() -> bool {
+  assert_eq(path.normalize("/a/b/../c"), "/a/c")
+}
+
+fn test_normalize_complex() -> bool {
+  assert_eq(path.normalize("a/b/c/../../d/./e"), "a/d/e")
+}

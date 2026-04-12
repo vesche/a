@@ -1079,6 +1079,53 @@ impl VM {
             return Ok(());
         }
 
+        if name == "time.now" && nargs == 0 {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            self.stack.push(Value::Int(ms));
+            return Ok(());
+        }
+        if name == "time.sleep" && nargs == 1 {
+            let ms = match self.stack.pop() {
+                Some(Value::Int(n)) => n as u64,
+                _ => 0,
+            };
+            std::thread::sleep(std::time::Duration::from_millis(ms));
+            self.stack.push(Value::Void);
+            return Ok(());
+        }
+        if name == "hash.sha256" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use sha2::Digest;
+                let mut hasher = sha2::Sha256::new();
+                hasher.update(s.as_bytes());
+                let result = hasher.finalize();
+                let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
+                self.stack.push(Value::string(hex));
+            } else {
+                return Err(AError::runtime("hash.sha256: expected string", None));
+            }
+            return Ok(());
+        }
+        if name == "hash.md5" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use md5::Digest;
+                let mut hasher = md5::Md5::new();
+                hasher.update(s.as_bytes());
+                let result = hasher.finalize();
+                let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
+                self.stack.push(Value::string(hex));
+            } else {
+                return Err(AError::runtime("hash.md5: expected string", None));
+            }
+            return Ok(());
+        }
+
         if name == "spawn" && nargs == 1 {
             let closure_val = self.stack.pop().unwrap_or(Value::Void);
             let program = Arc::clone(&self.program);

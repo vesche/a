@@ -64,7 +64,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**80+ builtins** covering everything an agent needs:
+**85+ builtins** covering everything an agent needs:
 
 | Domain | Operations |
 |--------|-----------|
@@ -82,7 +82,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Environment** | `env.get`, `env.set`, `env.all` |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 13 modules:
+**Standard library** with 19 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -91,6 +91,12 @@ use std.testing               # assert_eq, assert_true, report
 use std.cli                   # red, green, yellow, bold, dim (ANSI colors)
 use std.re                    # match_full, test, search, find_all, replace, split
 use std.meta                  # parse, emit, walk, search, transform, analyze, generate
+use std.path                  # join, dirname, basename, extension, stem, normalize
+use std.datetime              # now, timestamp, format, iso, add_days, diff_ms
+use std.hash                  # sha256, md5, sha256_file, quick
+use std.encoding              # base64_encode, base64_decode, hex, url_encode
+use std.csv                   # parse, parse_records, stringify, escape_field
+use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
 use std.compiler.ast          # AST node constructors and accessors
@@ -160,6 +166,7 @@ fn main() -> void {
 | `examples/resilient.a` | 91 | error-resilient HTTP workflow with retries |
 | `examples/api_workflow.a` | 61 | multi-step API orchestration |
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
+| `examples/site_gen.a` | 99 | static site generator using path, datetime, hash, csv, template, encoding |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 
 ## Stats
@@ -167,10 +174,10 @@ fn main() -> void {
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **"a" source** | ~16,000 lines across 63 files |
-| **Standard library** | 13 modules, 304 functions, ~7,000 lines |
-| **Test suites** | 21 suites, 386 native tests, ~3,600 lines |
-| **Examples & tools** | 27 programs, ~5,500 lines |
+| **"a" source** | ~17,700 lines across 76 files |
+| **Standard library** | 19 modules, 366 functions, ~7,800 lines |
+| **Test suites** | 27 suites, 498 native tests, ~4,200 lines |
+| **Examples & tools** | 28 programs, ~5,600 lines |
 
 ## Editor support
 

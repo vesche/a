@@ -1,0 +1,101 @@
+use std.testing
+use std.csv
+
+fn test_parse_simple() -> bool {
+  let rows = csv.parse("a,b,c\n1,2,3")
+  assert_eq(len(rows), 2)
+  assert_eq(rows[0], ["a", "b", "c"])
+  assert_eq(rows[1], ["1", "2", "3"])
+}
+
+fn test_parse_quoted() -> bool {
+  let rows = csv.parse("name,value\n\"hello\",world")
+  assert_eq(rows[1][0], "hello")
+  assert_eq(rows[1][1], "world")
+}
+
+fn test_parse_comma_in_field() -> bool {
+  let rows = csv.parse("a,b\n\"one,two\",three")
+  assert_eq(rows[1][0], "one,two")
+  assert_eq(rows[1][1], "three")
+}
+
+fn test_parse_escaped_quote() -> bool {
+  let rows = csv.parse("a\n\"he said \"\"hi\"\"\"")
+  assert_eq(rows[1][0], "he said \"hi\"")
+}
+
+fn test_parse_empty_fields() -> bool {
+  let rows = csv.parse("a,b,c\n,,")
+  assert_eq(rows[1], ["", "", ""])
+}
+
+fn test_parse_single_field() -> bool {
+  let rows = csv.parse("hello")
+  assert_eq(len(rows), 1)
+  assert_eq(rows[0], ["hello"])
+}
+
+fn test_parse_row_simple() -> bool {
+  let fields = csv.parse_row("a,b,c")
+  assert_eq(fields, ["a", "b", "c"])
+}
+
+fn test_parse_row_quoted() -> bool {
+  let fields = csv.parse_row("\"hello, world\",42")
+  assert_eq(fields[0], "hello, world")
+  assert_eq(fields[1], "42")
+}
+
+fn test_parse_records() -> bool {
+  let recs = csv.parse_records("name,age\nAlice,30\nBob,25")
+  assert_eq(len(recs), 2)
+  assert_eq(recs[0]["name"], "Alice")
+  assert_eq(recs[0]["age"], "30")
+  assert_eq(recs[1]["name"], "Bob")
+}
+
+fn test_parse_records_empty() -> bool {
+  let recs = csv.parse_records("name,age")
+  assert_eq(len(recs), 0)
+}
+
+fn test_stringify_simple() -> bool {
+  let out = csv.stringify([["a", "b"], ["1", "2"]])
+  assert_eq(out, "a,b\n1,2")
+}
+
+fn test_stringify_quoting() -> bool {
+  let out = csv.stringify([["name"], ["hello, world"]])
+  assert_eq(out, "name\n\"hello, world\"")
+}
+
+fn test_stringify_records() -> bool {
+  let recs = [#{"name": "Alice", "age": "30"}]
+  let out = csv.stringify_records(recs, ["name", "age"])
+  assert_eq(out, "name,age\nAlice,30")
+}
+
+fn test_escape_field_plain() -> bool {
+  assert_eq(csv.escape_field("hello"), "hello")
+}
+
+fn test_escape_field_comma() -> bool {
+  assert_eq(csv.escape_field("a,b"), "\"a,b\"")
+}
+
+fn test_escape_field_quote() -> bool {
+  assert_eq(csv.escape_field("say \"hi\""), "\"say \"\"hi\"\"\"")
+}
+
+fn test_roundtrip() -> bool {
+  let original = [["name", "desc"], ["Alice", "says \"hello\""], ["Bob", "a,b,c"]]
+  let text = csv.stringify(original)
+  let parsed = csv.parse(text)
+  assert_eq(len(parsed), 3)
+  assert_eq(parsed[0], ["name", "desc"])
+  assert_eq(parsed[1][0], "Alice")
+  assert_eq(parsed[1][1], "says \"hello\"")
+  assert_eq(parsed[2][0], "Bob")
+  assert_eq(parsed[2][1], "a,b,c")
+}

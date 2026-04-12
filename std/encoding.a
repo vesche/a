@@ -1,0 +1,208 @@
+; std/encoding.a -- Base64, hex, and URL encoding/decoding
+
+fn _b64_chars() -> str {
+  ret "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+}
+
+fn _b64_char_val(c: str) -> int {
+  let code = char_code(c)
+  if code >= 65 {
+    if code <= 90 { ret code - 65 }
+  }
+  if code >= 97 {
+    if code <= 122 { ret code - 97 + 26 }
+  }
+  if code >= 48 {
+    if code <= 57 { ret code - 48 + 52 }
+  }
+  if c == "+" { ret 62 }
+  if c == "/" { ret 63 }
+  ret -1
+}
+
+fn base64_encode(s: str) -> str {
+  let tbl = _b64_chars()
+  let chars = str.chars(tbl)
+  let input = str.chars(s)
+  let n = len(input)
+  let mut out = ""
+  let mut i = 0
+  while i < n {
+    let b0 = char_code(input[i])
+    let b1 = 0
+    let b2 = 0
+    let pad = 0
+    if i + 1 < n {
+      b1 = char_code(input[i + 1])
+      if i + 2 < n {
+        b2 = char_code(input[i + 2])
+      } else {
+        pad = 1
+      }
+    } else {
+      pad = 2
+    }
+    let idx0 = b0 / 4
+    let idx1 = ((b0 - idx0 * 4) * 16) + (b1 / 16)
+    let idx2 = ((b1 - (b1 / 16) * 16) * 4) + (b2 / 64)
+    let idx3 = b2 - (b2 / 64) * 64
+    out = str.concat(out, chars[idx0])
+    out = str.concat(out, chars[idx1])
+    if pad >= 2 {
+      out = str.concat(out, "==")
+    } else {
+      if pad >= 1 {
+        out = str.concat(out, chars[idx2])
+        out = str.concat(out, "=")
+      } else {
+        out = str.concat(out, chars[idx2])
+        out = str.concat(out, chars[idx3])
+      }
+    }
+    i = i + 3
+  }
+  ret out
+}
+
+fn base64_decode(s: str) -> str {
+  let input = str.replace(s, "\n", "")
+  let chars = str.chars(input)
+  let n = len(chars)
+  if n == 0 { ret "" }
+  let mut out = ""
+  let mut i = 0
+  while i < n {
+    if i + 3 >= n {
+      if i < n { ret out }
+    }
+    let c0 = chars[i]
+    let c1 = chars[i + 1]
+    let c2 = chars[i + 2]
+    let c3 = chars[i + 3]
+    let v0 = _b64_char_val(c0)
+    let v1 = _b64_char_val(c1)
+    let byte0 = v0 * 4 + v1 / 16
+    out = str.concat(out, from_code(byte0))
+    if c2 != "=" {
+      let v2 = _b64_char_val(c2)
+      let byte1 = (v1 - (v1 / 16) * 16) * 16 + v2 / 4
+      out = str.concat(out, from_code(byte1))
+      if c3 != "=" {
+        let v3 = _b64_char_val(c3)
+        let byte2 = (v2 - (v2 / 4) * 4) * 64 + v3
+        out = str.concat(out, from_code(byte2))
+      }
+    }
+    i = i + 4
+  }
+  ret out
+}
+
+fn _hex_digit(n: int) -> str {
+  if n < 10 { ret to_str(n) }
+  if n == 10 { ret "a" }
+  if n == 11 { ret "b" }
+  if n == 12 { ret "c" }
+  if n == 13 { ret "d" }
+  if n == 14 { ret "e" }
+  ret "f"
+}
+
+fn _hex_val(c: str) -> int {
+  let code = char_code(c)
+  if code >= 48 {
+    if code <= 57 { ret code - 48 }
+  }
+  if code >= 97 {
+    if code <= 102 { ret code - 97 + 10 }
+  }
+  if code >= 65 {
+    if code <= 70 { ret code - 65 + 10 }
+  }
+  ret -1
+}
+
+fn hex_encode(s: str) -> str {
+  let chars = str.chars(s)
+  let mut out = ""
+  for c in chars {
+    let code = char_code(c)
+    let hi = code / 16
+    let lo = code - hi * 16
+    out = str.concat(out, str.concat(_hex_digit(hi), _hex_digit(lo)))
+  }
+  ret out
+}
+
+fn hex_decode(s: str) -> str {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut out = ""
+  let mut i = 0
+  while i + 1 < n {
+    let hi = _hex_val(chars[i])
+    let lo = _hex_val(chars[i + 1])
+    if hi < 0 { ret out }
+    if lo < 0 { ret out }
+    out = str.concat(out, from_code(hi * 16 + lo))
+    i = i + 2
+  }
+  ret out
+}
+
+fn _is_unreserved(c: str) -> bool {
+  if is_alnum(c) { ret true }
+  if c == "-" { ret true }
+  if c == "_" { ret true }
+  if c == "." { ret true }
+  if c == "~" { ret true }
+  ret false
+}
+
+fn url_encode(s: str) -> str {
+  let chars = str.chars(s)
+  let mut out = ""
+  for c in chars {
+    if _is_unreserved(c) {
+      out = str.concat(out, c)
+    } else {
+      let code = char_code(c)
+      let hi = code / 16
+      let lo = code - hi * 16
+      out = str.concat(out, str.concat("%", str.concat(str.upper(_hex_digit(hi)), str.upper(_hex_digit(lo)))))
+    }
+  }
+  ret out
+}
+
+fn url_decode(s: str) -> str {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut out = ""
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == "%" {
+      if i + 2 < n {
+        let hi = _hex_val(chars[i + 1])
+        let lo = _hex_val(chars[i + 2])
+        if hi >= 0 {
+          if lo >= 0 {
+            out = str.concat(out, from_code(hi * 16 + lo))
+            i = i + 3
+            continue
+          }
+        }
+      }
+      out = str.concat(out, "%")
+    } else {
+      if c == "+" {
+        out = str.concat(out, " ")
+      } else {
+        out = str.concat(out, c)
+      }
+    }
+    i = i + 1
+  }
+  ret out
+}

@@ -1,0 +1,107 @@
+use std.testing
+use std.datetime
+
+fn test_now_positive() -> bool {
+  let t = datetime.now()
+  assert_true(t > 0)
+}
+
+fn test_timestamp_is_seconds() -> bool {
+  let ms = datetime.now()
+  let secs = datetime.timestamp()
+  let diff = ms / 1000 - secs
+  assert_true(diff >= 0)
+  assert_true(diff <= 1)
+}
+
+fn test_to_parts_epoch_zero() -> bool {
+  let p = datetime.to_parts(0)
+  assert_eq(p["year"], 1970)
+  assert_eq(p["month"], 1)
+  assert_eq(p["day"], 1)
+  assert_eq(p["hour"], 0)
+  assert_eq(p["minute"], 0)
+  assert_eq(p["second"], 0)
+}
+
+fn test_to_parts_known_date() -> bool {
+  ; 2024-01-01T00:00:00Z = 1704067200000 ms
+  let p = datetime.to_parts(1704067200000)
+  assert_eq(p["year"], 2024)
+  assert_eq(p["month"], 1)
+  assert_eq(p["day"], 1)
+  assert_eq(p["hour"], 0)
+}
+
+fn test_from_parts_epoch() -> bool {
+  let ms = datetime.from_parts(1970, 1, 1, 0, 0, 0)
+  assert_eq(ms, 0)
+}
+
+fn test_from_parts_roundtrip() -> bool {
+  let ms = datetime.from_parts(2024, 6, 15, 12, 30, 45)
+  let p = datetime.to_parts(ms)
+  assert_eq(p["year"], 2024)
+  assert_eq(p["month"], 6)
+  assert_eq(p["day"], 15)
+  assert_eq(p["hour"], 12)
+  assert_eq(p["minute"], 30)
+  assert_eq(p["second"], 45)
+}
+
+fn test_format_date() -> bool {
+  let ms = datetime.from_parts(2024, 3, 15, 0, 0, 0)
+  assert_eq(datetime.format(ms, "%Y-%m-%d"), "2024-03-15")
+}
+
+fn test_format_time() -> bool {
+  let ms = datetime.from_parts(2024, 1, 1, 9, 5, 3)
+  assert_eq(datetime.format(ms, "%H:%M:%S"), "09:05:03")
+}
+
+fn test_format_F_T() -> bool {
+  let ms = datetime.from_parts(2024, 12, 25, 14, 30, 0)
+  assert_eq(datetime.format(ms, "%F %T"), "2024-12-25 14:30:00")
+}
+
+fn test_iso_format() -> bool {
+  let ms = datetime.from_parts(2026, 4, 10, 15, 30, 0)
+  assert_eq(datetime.iso(ms), "2026-04-10T15:30:00Z")
+}
+
+fn test_add_seconds() -> bool {
+  let base = datetime.from_parts(2024, 1, 1, 0, 0, 0)
+  let result = datetime.add_seconds(base, 90)
+  let p = datetime.to_parts(result)
+  assert_eq(p["minute"], 1)
+  assert_eq(p["second"], 30)
+}
+
+fn test_add_days() -> bool {
+  let base = datetime.from_parts(2024, 1, 1, 0, 0, 0)
+  let result = datetime.add_days(base, 31)
+  let p = datetime.to_parts(result)
+  assert_eq(p["month"], 2)
+  assert_eq(p["day"], 1)
+}
+
+fn test_diff_ms() -> bool {
+  let a = datetime.from_parts(2024, 1, 1, 0, 0, 0)
+  let b = datetime.from_parts(2024, 1, 1, 0, 1, 0)
+  assert_eq(datetime.diff_ms(a, b), 60000)
+  assert_eq(datetime.diff_ms(b, a), 60000)
+}
+
+fn test_diff_seconds() -> bool {
+  let a = datetime.from_parts(2024, 1, 1, 0, 0, 0)
+  let b = datetime.from_parts(2024, 1, 1, 1, 0, 0)
+  assert_eq(datetime.diff_seconds(a, b), 3600)
+}
+
+fn test_sleep_elapsed() -> bool {
+  let before = datetime.now()
+  datetime.sleep(50)
+  let after = datetime.now()
+  let elapsed = after - before
+  assert_true(elapsed >= 40)
+}

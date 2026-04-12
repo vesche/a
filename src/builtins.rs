@@ -1088,6 +1088,47 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
             }
         }
 
+        "time.now" => {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let ms = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0);
+            Ok(Value::Int(ms))
+        }
+        "time.sleep" => {
+            if let Value::Int(ms) = &args[0] {
+                std::thread::sleep(std::time::Duration::from_millis(*ms as u64));
+                Ok(Value::Void)
+            } else {
+                Err(AError::runtime("time.sleep: expected int milliseconds", None))
+            }
+        }
+        "hash.sha256" => {
+            if let Value::String(s) = &args[0] {
+                use sha2::Digest;
+                let mut hasher = sha2::Sha256::new();
+                hasher.update(s.as_bytes());
+                let result = hasher.finalize();
+                let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
+                Ok(Value::string(hex))
+            } else {
+                Err(AError::runtime("hash.sha256: expected string", None))
+            }
+        }
+        "hash.md5" => {
+            if let Value::String(s) = &args[0] {
+                use md5::Digest;
+                let mut hasher = md5::Md5::new();
+                hasher.update(s.as_bytes());
+                let result = hasher.finalize();
+                let hex: String = result.iter().map(|b| format!("{:02x}", b)).collect();
+                Ok(Value::string(hex))
+            } else {
+                Err(AError::runtime("hash.md5: expected string", None))
+            }
+        }
+
         "__bridge_convert__" => {
             match crate::bridge::value_to_program(&args[0]) {
                 Ok(program) => {
@@ -1302,7 +1343,8 @@ pub fn is_builtin(name: &str) -> bool {
         "__bridge_exec__" | "__bridge_convert__" | "eval" |
         "regex.is_match" | "regex.find" | "regex.find_all" |
         "regex.replace" | "regex.replace_all" | "regex.split" | "regex.captures" |
-        "spawn" | "await" | "await_all" | "parallel_map" | "parallel_each" | "timeout"
+        "spawn" | "await" | "await_all" | "parallel_map" | "parallel_each" | "timeout" |
+        "time.now" | "time.sleep" | "hash.sha256" | "hash.md5"
     )
 }
 

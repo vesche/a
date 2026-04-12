@@ -1,0 +1,88 @@
+use std.testing
+use std.encoding
+
+fn test_base64_encode_empty() -> bool {
+  assert_eq(encoding.base64_encode(""), "")
+}
+
+fn test_base64_encode_f() -> bool {
+  assert_eq(encoding.base64_encode("f"), "Zg==")
+}
+
+fn test_base64_encode_fo() -> bool {
+  assert_eq(encoding.base64_encode("fo"), "Zm8=")
+}
+
+fn test_base64_encode_foo() -> bool {
+  assert_eq(encoding.base64_encode("foo"), "Zm9v")
+}
+
+fn test_base64_encode_foobar() -> bool {
+  assert_eq(encoding.base64_encode("foobar"), "Zm9vYmFy")
+}
+
+fn test_base64_encode_hello() -> bool {
+  assert_eq(encoding.base64_encode("Hello, World!"), "SGVsbG8sIFdvcmxkIQ==")
+}
+
+fn test_base64_decode_empty() -> bool {
+  assert_eq(encoding.base64_decode(""), "")
+}
+
+fn test_base64_decode_f() -> bool {
+  assert_eq(encoding.base64_decode("Zg=="), "f")
+}
+
+fn test_base64_decode_foobar() -> bool {
+  assert_eq(encoding.base64_decode("Zm9vYmFy"), "foobar")
+}
+
+fn test_base64_roundtrip() -> bool {
+  let original = "The quick brown fox jumps over the lazy dog"
+  let encoded = encoding.base64_encode(original)
+  let decoded = encoding.base64_decode(encoded)
+  assert_eq(decoded, original)
+}
+
+fn test_hex_encode_empty() -> bool {
+  assert_eq(encoding.hex_encode(""), "")
+}
+
+fn test_hex_encode_hello() -> bool {
+  assert_eq(encoding.hex_encode("abc"), "616263")
+}
+
+fn test_hex_decode_abc() -> bool {
+  assert_eq(encoding.hex_decode("616263"), "abc")
+}
+
+fn test_hex_roundtrip() -> bool {
+  let original = "Hello!"
+  assert_eq(encoding.hex_decode(encoding.hex_encode(original)), original)
+}
+
+fn test_url_encode_passthrough() -> bool {
+  assert_eq(encoding.url_encode("hello"), "hello")
+}
+
+fn test_url_encode_space() -> bool {
+  assert_eq(encoding.url_encode("hello world"), "hello%20world")
+}
+
+fn test_url_encode_special() -> bool {
+  let encoded = encoding.url_encode("a=1&b=2")
+  assert_eq(encoded, "a%3D1%26b%3D2")
+}
+
+fn test_url_decode_basic() -> bool {
+  assert_eq(encoding.url_decode("hello%20world"), "hello world")
+}
+
+fn test_url_decode_plus() -> bool {
+  assert_eq(encoding.url_decode("hello+world"), "hello world")
+}
+
+fn test_url_roundtrip() -> bool {
+  let original = "key=value&foo=bar baz"
+  assert_eq(encoding.url_decode(encoding.url_encode(original)), original)
+}

@@ -1,0 +1,131 @@
+; std/path.a -- Path manipulation utilities
+
+fn join(a: str, b: str) -> str {
+  if a == "" { ret b }
+  if b == "" { ret a }
+  if str.starts_with(b, "/") { ret b }
+  if str.ends_with(a, "/") {
+    ret str.concat(a, b)
+  }
+  ret str.concat(str.concat(a, "/"), b)
+}
+
+fn join3(a: str, b: str, c: str) -> str {
+  ret join(join(a, b), c)
+}
+
+fn dirname(p: str) -> str {
+  if p == "/" { ret "/" }
+  let clean = p
+  if str.ends_with(clean, "/") {
+    clean = str.slice(clean, 0, len(clean) - 1)
+  }
+  let idx = _last_slash(clean)
+  if idx < 0 { ret "." }
+  if idx == 0 { ret "/" }
+  ret str.slice(clean, 0, idx)
+}
+
+fn basename(p: str) -> str {
+  if p == "/" { ret "/" }
+  let clean = p
+  if str.ends_with(clean, "/") {
+    clean = str.slice(clean, 0, len(clean) - 1)
+  }
+  let idx = _last_slash(clean)
+  if idx < 0 { ret clean }
+  ret str.slice(clean, idx + 1, len(clean))
+}
+
+fn extension(p: str) -> str {
+  let base = basename(p)
+  let idx = _last_dot(base)
+  if idx <= 0 { ret "" }
+  ret str.slice(base, idx + 1, len(base))
+}
+
+fn stem(p: str) -> str {
+  let base = basename(p)
+  let idx = _last_dot(base)
+  if idx <= 0 { ret base }
+  ret str.slice(base, 0, idx)
+}
+
+fn with_extension(p: str, ext: str) -> str {
+  let dir = dirname(p)
+  let s = stem(p)
+  let new_base = s
+  if ext != "" {
+    new_base = str.concat(str.concat(s, "."), ext)
+  }
+  if dir == "." { ret new_base }
+  ret join(dir, new_base)
+}
+
+fn is_absolute(p: str) -> bool {
+  ret str.starts_with(p, "/")
+}
+
+fn segments(p: str) -> [str] {
+  if p == "" { ret [] }
+  let parts = str.split(p, "/")
+  let mut out = []
+  for part in parts {
+    if part != "" {
+      out = push(out, part)
+    }
+  }
+  ret out
+}
+
+fn normalize(p: str) -> str {
+  let is_abs = str.starts_with(p, "/")
+  let parts = str.split(p, "/")
+  let mut stack = []
+  for part in parts {
+    if part == "" { continue }
+    if part == "." { continue }
+    if part == ".." {
+      if len(stack) > 0 {
+        let top = stack[len(stack) - 1]
+        if top != ".." {
+          stack = slice(stack, 0, len(stack) - 1)
+          continue
+        }
+      }
+      if !is_abs {
+        stack = push(stack, "..")
+      }
+      continue
+    }
+    stack = push(stack, part)
+  }
+  let result = str.join(stack, "/")
+  if is_abs {
+    ret str.concat("/", result)
+  }
+  if result == "" { ret "." }
+  ret result
+}
+
+fn _last_slash(s: str) -> int {
+  let chars = str.chars(s)
+  let mut last = -1
+  let mut i = 0
+  for c in chars {
+    if c == "/" { last = i }
+    i = i + 1
+  }
+  ret last
+}
+
+fn _last_dot(s: str) -> int {
+  let chars = str.chars(s)
+  let mut last = -1
+  let mut i = 0
+  for c in chars {
+    if c == "." { last = i }
+    i = i + 1
+  }
+  ret last
+}

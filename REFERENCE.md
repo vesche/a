@@ -782,6 +782,20 @@ let r = timeout(5000, fn() => slow_network_call())
 if is_err(r) { println("timed out!") }
 ```
 
+### Time
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `time.now()` | -> i64 | Current Unix epoch milliseconds |
+| `time.sleep(ms)` | i64 -> void | Sleep for `ms` milliseconds |
+
+### Hashing
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `hash.sha256(s)` | str -> str | SHA-256 hash as lowercase hex string |
+| `hash.md5(s)` | str -> str | MD5 hash as lowercase hex string |
+
 ---
 
 ## 13. Standard Library
@@ -868,6 +882,125 @@ Pure "a" regex engine (no Rust dependency). For most use cases, the builtin `reg
 | `replace(pattern, text, rep)` | str, str, str -> str | Replace all |
 | `replace_first(pattern, text, rep)` | str, str, str -> str | Replace first |
 | `split(pattern, text)` | str, str -> [str] | Split on pattern |
+
+### std.path
+
+Path manipulation utilities. Pure "a" module, Unix-oriented.
+
+```a
+use std.path
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `join(a, b)` | str, str -> str | Join path segments with `/` |
+| `join3(a, b, c)` | str, str, str -> str | Join three segments |
+| `dirname(p)` | str -> str | Parent directory |
+| `basename(p)` | str -> str | Final path component |
+| `extension(p)` | str -> str | File extension (empty if none) |
+| `stem(p)` | str -> str | Basename without extension |
+| `with_extension(p, ext)` | str, str -> str | Replace file extension |
+| `is_absolute(p)` | str -> bool | True if starts with `/` |
+| `segments(p)` | str -> [str] | Split into path components |
+| `normalize(p)` | str -> str | Collapse `//`, resolve `.` and `..` |
+
+### std.datetime
+
+Date and time utilities. Timestamps are Unix epoch milliseconds.
+
+```a
+use std.datetime
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `now()` | -> i64 | Current epoch milliseconds |
+| `timestamp()` | -> i64 | Current epoch seconds |
+| `sleep(ms)` | i64 -> void | Sleep for milliseconds |
+| `to_parts(epoch_ms)` | i64 -> map | Decompose to `year`, `month`, `day`, `hour`, `minute`, `second`, `ms` |
+| `from_parts(y, mo, d, h, mi, s)` | i64... -> i64 | Construct epoch ms from components |
+| `format(epoch_ms, fmt)` | i64, str -> str | Format with `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%F`, `%T` |
+| `iso(epoch_ms)` | i64 -> str | ISO 8601 format (`2026-04-10T15:30:00Z`) |
+| `add_ms(epoch_ms, n)` | i64, i64 -> i64 | Add milliseconds |
+| `add_seconds(epoch_ms, n)` | i64, i64 -> i64 | Add seconds |
+| `add_minutes(epoch_ms, n)` | i64, i64 -> i64 | Add minutes |
+| `add_hours(epoch_ms, n)` | i64, i64 -> i64 | Add hours |
+| `add_days(epoch_ms, n)` | i64, i64 -> i64 | Add days |
+| `diff_ms(a, b)` | i64, i64 -> i64 | Absolute difference in ms |
+| `diff_seconds(a, b)` | i64, i64 -> i64 | Absolute difference in seconds |
+
+### std.hash
+
+Hashing utilities. Wraps `hash.sha256` and `hash.md5` builtins with convenience functions.
+
+```a
+use std.hash
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `sha256(s)` | str -> str | SHA-256 hex digest |
+| `md5(s)` | str -> str | MD5 hex digest |
+| `sha256_file(path)` | str -> str | SHA-256 of file contents |
+| `md5_file(path)` | str -> str | MD5 of file contents |
+| `quick(s)` | str -> str | Short md5 hash (16 hex chars) for cache keys |
+
+### std.encoding
+
+Base64, hex, and URL encoding/decoding. Pure "a" module.
+
+```a
+use std.encoding
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `base64_encode(s)` | str -> str | Base64 encode |
+| `base64_decode(s)` | str -> str | Base64 decode |
+| `hex_encode(s)` | str -> str | Hex encode (each byte -> 2 hex chars) |
+| `hex_decode(s)` | str -> str | Hex decode |
+| `url_encode(s)` | str -> str | Percent-encode for URLs |
+| `url_decode(s)` | str -> str | Percent-decode (handles `+` as space) |
+
+### std.csv
+
+CSV parsing and generation. RFC 4180 compliant. Pure "a" module.
+
+```a
+use std.csv
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `parse(text)` | str -> [[str]] | Parse CSV to array of rows |
+| `parse_records(text)` | str -> [map] | Parse with first row as headers |
+| `stringify(rows)` | [[str]] -> str | Convert rows to CSV text |
+| `stringify_records(records, headers)` | [map], [str] -> str | Convert maps to CSV |
+| `parse_row(line)` | str -> [str] | Parse a single CSV line |
+| `escape_field(field)` | str -> str | Quote/escape a field if needed |
+
+### std.template
+
+Mustache-style string templating. Pure "a" module.
+
+```a
+use std.template
+```
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `render(tmpl, vars)` | str, map -> str | Render template with variable map |
+| `render_file(path, vars)` | str, map -> str | Read template file and render |
+
+Template syntax:
+
+- `{{name}}` -- variable substitution
+- `{{#if key}}...{{/if}}` -- conditional block
+- `{{#if key}}...{{#else}}...{{/if}}` -- conditional with else
+- `{{#each items}}...{{/each}}` -- iteration over array
+- `{{.}}` -- current item in each block
+- `{{@index}}` -- current index in each block
+- `{{#each items}}...{{#else}}...{{/each}}` -- iteration with empty fallback
 
 ---
 
