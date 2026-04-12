@@ -69,7 +69,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**85+ builtins** covering everything an agent needs (plus native compilation to C):
+**100+ builtins** covering everything an agent needs (plus native compilation to C):
 
 | Domain | Operations |
 |--------|-----------|
@@ -78,7 +78,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
-| **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `len` |
+| **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`, `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`, `len` |
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
 | **Error handling** | `try { }`, `?` operator, `Ok`/`Err` constructors, `unwrap`, `unwrap_or`, `is_ok`, `is_err`, `expect`, pattern matching on Results |
 | **Concurrency** | `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout` |
@@ -114,7 +114,7 @@ use std.lexer                 # legacy tokenizer
 
 ## Self-hosting
 
-The "a" compiler is fully self-hosting through native compilation. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into 3,856 lines of C. gcc compiles that C into a freestanding native binary with **zero Rust dependency**.
+The "a" compiler is fully self-hosting through native compilation. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into 4,388 lines of C. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. Closures, lambdas, higher-order functions, and the pipe operator all compile natively.
 
 ```
 a run std/compiler/cgen.a -- std/compiler/cgen.a > ac.c     # "a" compiles itself to C
@@ -130,7 +130,7 @@ gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O2      # gcc builds native
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C. Combined with a ~700-line C runtime (`c_runtime/runtime.c`), this produces native binaries via `gcc`.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C. Lambdas are lifted to top-level C functions with captured environment arrays. Combined with a ~980-line C runtime (`c_runtime/runtime.c`), this produces native binaries via `gcc`.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -186,15 +186,15 @@ fn main() -> void {
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 99 | static site generator using path, datetime, hash, csv, template, encoding |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
-| `std/compiler/cgen.a` | 530 | **C code generator** -- self-hosting native compiler via C (module inlining, fixed-point bootstrap) |
+| `std/compiler/cgen.a` | 957 | **C code generator** -- self-hosting native compiler via C (closures, HOFs, pipes, module inlining, fixed-point bootstrap) |
 
 ## Stats
 
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~880 lines (runtime.h + runtime.c) |
-| **"a" source** | ~18,500 lines across 84 files |
+| **C runtime** | ~1,170 lines (runtime.h + runtime.c) |
+| **"a" source** | ~18,800 lines across 86 files |
 | **Standard library** | 20 modules, 380+ functions, ~8,200 lines |
 | **Test suites** | 27 suites + cgen test script, 498+ native tests, ~4,200 lines |
 | **Examples & tools** | 35 programs, ~6,100 lines |

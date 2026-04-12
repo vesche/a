@@ -35,6 +35,7 @@ AValue a_retain(AValue v) {
     if (v.tag == TAG_STRING && v.sval) v.sval->rc++;
     else if (v.tag == TAG_ARRAY && v.aval) v.aval->rc++;
     else if (v.tag == TAG_MAP && v.mval) v.mval->rc++;
+    else if (v.tag == TAG_CLOSURE && v.cval) v.cval->rc++;
     return v;
 }
 
@@ -46,6 +47,11 @@ void a_release(AValue v) {
             for (int i = 0; i < v.aval->len; i++) a_release(v.aval->items[i]);
             free(v.aval->items);
             free(v.aval);
+        }
+    } else if (v.tag == TAG_CLOSURE && v.cval) {
+        if (--v.cval->rc <= 0) {
+            a_release(v.cval->env);
+            free(v.cval);
         }
     } else if (v.tag == TAG_MAP && v.mval) {
         if (--v.mval->rc <= 0) {
@@ -158,6 +164,8 @@ AValue a_neq(AValue a, AValue b) { return a_bool(!val_eq(a, b)); }
 
 AValue a_lt(AValue a, AValue b) {
     if (a.tag == TAG_INT && b.tag == TAG_INT) return a_bool(a.ival < b.ival);
+    if (a.tag == TAG_STRING && b.tag == TAG_STRING)
+        return a_bool(strcmp(a.sval->data, b.sval->data) < 0);
     double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
     double fb = (b.tag == TAG_INT) ? (double)b.ival : b.fval;
     return a_bool(fa < fb);
@@ -165,6 +173,8 @@ AValue a_lt(AValue a, AValue b) {
 AValue a_gt(AValue a, AValue b) { return a_lt(b, a); }
 AValue a_lteq(AValue a, AValue b) {
     if (a.tag == TAG_INT && b.tag == TAG_INT) return a_bool(a.ival <= b.ival);
+    if (a.tag == TAG_STRING && b.tag == TAG_STRING)
+        return a_bool(strcmp(a.sval->data, b.sval->data) <= 0);
     double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
     double fb = (b.tag == TAG_INT) ? (double)b.ival : b.fval;
     return a_bool(fa <= fb);
@@ -207,6 +217,14 @@ static void val_to_buf(AValue v, char* buf, int cap) {
             snprintf(buf + pos, cap - pos, "}");
             break;
         }
+        case TAG_RESULT: {
+            char tmp[256];
+            val_to_buf(*v.rval.inner, tmp, 256);
+            if (v.rval.is_ok) snprintf(buf, cap, "Ok(%s)", tmp);
+            else snprintf(buf, cap, "Err(%s)", tmp);
+            break;
+        }
+        case TAG_CLOSURE: snprintf(buf, cap, "<closure>"); break;
         default: snprintf(buf, cap, "<value>"); break;
     }
 }
@@ -666,6 +684,7 @@ AValue a_type_of(AValue v) {
         case TAG_ARRAY: return a_string("array");
         case TAG_MAP: return a_string("map");
         case TAG_RESULT: return a_string("result");
+        case TAG_CLOSURE: return a_string("closure");
         default: return a_string("unknown");
     }
 }
@@ -731,4 +750,234 @@ AValue a_is_alnum(AValue v) {
     if (v.tag == TAG_STRING && v.sval->len > 0)
         return a_bool(isalnum((unsigned char)v.sval->data[0]));
     return a_bool(0);
+}
+
+/* --- Closures --- */
+
+AValue a_closure(AClosureFn fn, AValue env) {
+    AClosure* c = malloc(sizeof(AClosure));
+    c->rc = 1;
+    c->fn = fn;
+    c->env = env;
+    if (env.tag == TAG_ARRAY || env.tag == TAG_STRING || env.tag == TAG_MAP)
+        a_retain(env);
+    AValue v;
+    v.tag = TAG_CLOSURE;
+    v.cval = c;
+    return v;
+}
+
+AValue a_closure_call_arr(AValue closure, int argc, AValue* argv) {
+    if (closure.tag != TAG_CLOSURE || !closure.cval) return a_void();
+    return closure.cval->fn(closure.cval->env, argc, argv);
+}
+
+AValue a_closure_call(AValue closure, int argc, ...) {
+    AValue args[argc > 0 ? argc : 1];
+    va_list ap;
+    va_start(ap, argc);
+    for (int i = 0; i < argc; i++) args[i] = va_arg(ap, AValue);
+    va_end(ap);
+    return a_closure_call_arr(closure, argc, args);
+}
+
+/* --- Higher-order functions --- */
+
+AValue a_hof_map(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        AValue val = a_closure_call(fn, 1, item);
+        result = a_array_push(result, val);
+    }
+    return result;
+}
+
+AValue a_hof_filter(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        AValue pred = a_closure_call(fn, 1, item);
+        if (a_truthy(pred)) result = a_array_push(result, item);
+    }
+    return result;
+}
+
+AValue a_hof_reduce(AValue arr, AValue init, AValue fn) {
+    int n = a_ilen(arr);
+    AValue acc = init;
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        acc = a_closure_call(fn, 2, acc, item);
+    }
+    return acc;
+}
+
+AValue a_hof_each(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        a_closure_call(fn, 1, item);
+    }
+    return a_void();
+}
+
+static int closure_cmp_fn_global_set = 0;
+static AValue closure_cmp_fn_global;
+
+static int closure_sort_cmp(const void* a, const void* b) {
+    AValue va = *(const AValue*)a;
+    AValue vb = *(const AValue*)b;
+    AValue result = a_closure_call(closure_cmp_fn_global, 2, va, vb);
+    if (result.tag == TAG_INT) return (int)result.ival;
+    if (result.tag == TAG_FLOAT) return result.fval < 0 ? -1 : (result.fval > 0 ? 1 : 0);
+    return 0;
+}
+
+AValue a_hof_sort_by(AValue arr, AValue fn) {
+    if (arr.tag != TAG_ARRAY) return arr;
+    int n = arr.aval->len;
+    AArray* na = malloc(sizeof(AArray));
+    na->rc = 1; na->len = n; na->cap = n;
+    na->items = malloc(sizeof(AValue) * (n > 0 ? n : 1));
+    memcpy(na->items, arr.aval->items, sizeof(AValue) * n);
+    closure_cmp_fn_global = fn;
+    closure_cmp_fn_global_set = 1;
+    qsort(na->items, n, sizeof(AValue), closure_sort_cmp);
+    closure_cmp_fn_global_set = 0;
+    return (AValue){.tag = TAG_ARRAY, .aval = na};
+}
+
+AValue a_hof_find(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        if (a_truthy(a_closure_call(fn, 1, item))) return a_ok(item);
+    }
+    return a_err(a_string("not found"));
+}
+
+AValue a_hof_any(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        if (a_truthy(a_closure_call(fn, 1, item))) return a_bool(1);
+    }
+    return a_bool(0);
+}
+
+AValue a_hof_all(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        if (!a_truthy(a_closure_call(fn, 1, item))) return a_bool(0);
+    }
+    return a_bool(1);
+}
+
+AValue a_hof_flat_map(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        AValue sub = a_closure_call(fn, 1, item);
+        if (sub.tag == TAG_ARRAY) {
+            for (int j = 0; j < sub.aval->len; j++)
+                result = a_array_push(result, sub.aval->items[j]);
+        } else {
+            result = a_array_push(result, sub);
+        }
+    }
+    return result;
+}
+
+AValue a_hof_min_by(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    if (n == 0) return a_err(a_string("empty"));
+    AValue best = a_array_get(arr, a_int(0));
+    AValue best_key = a_closure_call(fn, 1, best);
+    for (int i = 1; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        AValue key = a_closure_call(fn, 1, item);
+        if (a_truthy(a_lt(key, best_key))) { best = item; best_key = key; }
+    }
+    return a_ok(best);
+}
+
+AValue a_hof_max_by(AValue arr, AValue fn) {
+    int n = a_ilen(arr);
+    if (n == 0) return a_err(a_string("empty"));
+    AValue best = a_array_get(arr, a_int(0));
+    AValue best_key = a_closure_call(fn, 1, best);
+    for (int i = 1; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        AValue key = a_closure_call(fn, 1, item);
+        if (a_truthy(a_gt(key, best_key))) { best = item; best_key = key; }
+    }
+    return a_ok(best);
+}
+
+/* --- Array utilities --- */
+
+AValue a_enumerate(AValue arr) {
+    int n = a_ilen(arr);
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue pair = a_array_new(2, a_int(i), a_array_get(arr, a_int(i)));
+        result = a_array_push(result, pair);
+    }
+    return result;
+}
+
+AValue a_zip(AValue a, AValue b) {
+    int na = a_ilen(a), nb = a_ilen(b);
+    int n = na < nb ? na : nb;
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue pair = a_array_new(2, a_array_get(a, a_int(i)), a_array_get(b, a_int(i)));
+        result = a_array_push(result, pair);
+    }
+    return result;
+}
+
+AValue a_take(AValue arr, AValue n) {
+    if (arr.tag != TAG_ARRAY || n.tag != TAG_INT) return a_array_new(0);
+    int count = (int)n.ival;
+    if (count > arr.aval->len) count = arr.aval->len;
+    if (count <= 0) return a_array_new(0);
+    return a_array_slice(arr, a_int(0), a_int(count));
+}
+
+AValue a_drop(AValue arr, AValue n) {
+    if (arr.tag != TAG_ARRAY || n.tag != TAG_INT) return a_array_new(0);
+    int start = (int)n.ival;
+    if (start >= arr.aval->len) return a_array_new(0);
+    if (start < 0) start = 0;
+    return a_array_slice(arr, a_int(start), a_int(arr.aval->len));
+}
+
+AValue a_unique(AValue arr) {
+    int n = a_ilen(arr);
+    AValue result = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        AValue item = a_array_get(arr, a_int(i));
+        if (!a_truthy(a_contains(result, item)))
+            result = a_array_push(result, item);
+    }
+    return result;
+}
+
+AValue a_chunk(AValue arr, AValue n) {
+    if (arr.tag != TAG_ARRAY || n.tag != TAG_INT || n.ival <= 0) return a_array_new(0);
+    int sz = (int)n.ival;
+    int total = arr.aval->len;
+    AValue result = a_array_new(0);
+    for (int i = 0; i < total; i += sz) {
+        int end = i + sz;
+        if (end > total) end = total;
+        result = a_array_push(result, a_array_slice(arr, a_int(i), a_int(end)));
+    }
+    return result;
 }

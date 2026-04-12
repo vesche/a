@@ -1090,8 +1090,9 @@ diff ac.c ac2.c    # identical
 2. `use` declarations trigger module inlining: referenced modules are loaded, parsed, and emitted with namespace prefixes (e.g. `fn_parser_parse`, `fn_lexer_lex`)
 3. Each "a" function becomes a C function returning `AValue` (a tagged union)
 4. Variables are pre-declared at function scope to handle "a"'s rebinding semantics
-5. 45+ builtins map directly to C runtime functions
-6. The C runtime library provides the value model, reference counting, and all operations
+5. Lambdas are lifted to top-level C functions; captured variables become an environment array
+6. 60+ builtins map directly to C runtime functions
+7. The C runtime library provides the value model, reference counting, and all operations
 
 ### Supported Features
 
@@ -1101,16 +1102,20 @@ diff ac.c ac2.c    # identical
 - String interpolation
 - Arrays (creation, indexing, iteration)
 - Maps (creation, get/set/has, bracket indexing)
-- Arithmetic and comparison operators
+- Arithmetic and comparison operators (including string comparison)
 - `if`/`else if`/`else`, `while`, `for ... in`
 - `break`, `continue`, `ret`
 - `let` / `let mut` bindings with arbitrary shadowing
 - Variable pre-declaration (handles C redefinition rules)
 - C keyword escaping for variable names
+- Closures / lambdas with captured variables (by value)
+- Higher-order functions: `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`
+- Array utilities: `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`
+- Pipe operator (`|>`)
+- Nested closures (closure-returning-closure)
 
 ### Not Yet Supported (Deferred)
 
-- Closures / lambdas / higher-order functions (`map`, `filter`, `reduce`)
 - Pattern matching
 - `eval`, concurrency, HTTP, filesystem
 - Tail call optimization

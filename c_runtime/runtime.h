@@ -6,7 +6,8 @@
 
 typedef enum {
     TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_VOID,
-    TAG_STRING, TAG_ARRAY, TAG_MAP, TAG_RESULT
+    TAG_STRING, TAG_ARRAY, TAG_MAP, TAG_RESULT,
+    TAG_CLOSURE
 } ATag;
 
 typedef struct AString {
@@ -32,6 +33,8 @@ typedef struct AMap {
     AValue* vals;
 } AMap;
 
+typedef struct AClosure AClosure;
+
 struct AValue {
     ATag tag;
     union {
@@ -41,8 +44,17 @@ struct AValue {
         AString* sval;
         AArray* aval;
         AMap* mval;
+        AClosure* cval;
         struct { int is_ok; AValue* inner; } rval;
     };
+};
+
+typedef AValue (*AClosureFn)(AValue env, int argc, AValue* argv);
+
+struct AClosure {
+    int rc;
+    AClosureFn fn;
+    AValue env;
 };
 
 extern int g_argc;
@@ -144,5 +156,31 @@ AValue a_from_code(AValue v);
 AValue a_is_alpha(AValue v);
 AValue a_is_digit(AValue v);
 AValue a_is_alnum(AValue v);
+
+/* Closures */
+AValue a_closure(AClosureFn fn, AValue env);
+AValue a_closure_call(AValue closure, int argc, ...);
+AValue a_closure_call_arr(AValue closure, int argc, AValue* argv);
+
+/* Higher-order functions */
+AValue a_hof_map(AValue arr, AValue fn);
+AValue a_hof_filter(AValue arr, AValue fn);
+AValue a_hof_reduce(AValue arr, AValue init, AValue fn);
+AValue a_hof_each(AValue arr, AValue fn);
+AValue a_hof_sort_by(AValue arr, AValue fn);
+AValue a_hof_find(AValue arr, AValue fn);
+AValue a_hof_any(AValue arr, AValue fn);
+AValue a_hof_all(AValue arr, AValue fn);
+AValue a_hof_flat_map(AValue arr, AValue fn);
+AValue a_hof_min_by(AValue arr, AValue fn);
+AValue a_hof_max_by(AValue arr, AValue fn);
+
+/* Array utilities */
+AValue a_enumerate(AValue arr);
+AValue a_zip(AValue a, AValue b);
+AValue a_take(AValue arr, AValue n);
+AValue a_drop(AValue arr, AValue n);
+AValue a_unique(AValue arr);
+AValue a_chunk(AValue arr, AValue n);
 
 #endif

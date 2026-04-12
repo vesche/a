@@ -1214,3 +1214,83 @@ Fixed-point test: gen0.c == gen1.c (3,856 lines, byte-identical)
 - **`tests/test_bootstrap.sh`**: Full bootstrap validation script (gen0 → ac0 → milestones → gen1 → fixed point)
 - **`examples/c_targets/newline_test.a`**: Test case for special character escaping
 
+## v0.43 -- Closures & Higher-Order Functions in Native Compilation  ✅
+
+*Completed: April 2026*
+
+The native compiler now supports **closures, lambdas, higher-order functions, and the pipe operator**. Every `map`, `filter`, `reduce`, `sort_by`, `find` call that takes a lambda -- the bread and butter of idiomatic "a" code -- now compiles to native C. The self-compiled output grew from 3,856 to 4,388 lines of C, and the bootstrap fixed point still holds.
+
+### Closure Implementation
+
+Closures in C are represented as a struct pairing a **function pointer** with a **captured environment**:
+
+```c
+typedef struct AClosure {
+    int rc;
+    AClosureFn fn;       // AValue (*)(AValue env, int argc, AValue* argv)
+    AValue env;           // TAG_ARRAY of captured values, or TAG_VOID if none
+} AClosure;
+```
+
+`AValue` gained a new tag `TAG_CLOSURE` with `AClosure* cval` in the union. The runtime manages closure lifecycle through the existing reference counting system.
+
+### Lambda Lifting
+
+When the code generator encounters a lambda expression:
+
+1. **Free variable analysis** walks the lambda body, collects Ident references not in the lambda's own params or local bindings -- these are captures.
+2. **Lift to top-level C function**: generate `AValue __lambda_N(AValue __env, int __argc, AValue* __argv)`. Captures are loaded from `__env` by index, params from `__argv`.
+3. **Emit closure creation** at the original expression site: `a_closure(__lambda_N, a_array_new(K, capture1, ...))`.
+
+Nested lambdas are handled correctly -- a closure-returning-closure (like a curried `add_n`) works through recursive lambda lifting with proper capture propagation.
+
+### Code Generator Refactoring
+
+All emit functions were refactored to return `[code, lambda_id, [lifted_fns]]` triples instead of plain strings. This threads the lambda counter through emission and accumulates lifted function definitions that get prepended in the output.
+
+### What was added
+
+**C runtime (`runtime.c` / `runtime.h`):**
+- `TAG_CLOSURE`, `AClosure` struct, `a_closure()`, `a_closure_call()`, `a_closure_call_arr()`
+- Reference counting for closures in `a_retain` / `a_release`
+- 11 higher-order functions: `a_hof_map`, `a_hof_filter`, `a_hof_reduce`, `a_hof_each`, `a_hof_sort_by`, `a_hof_find`, `a_hof_any`, `a_hof_all`, `a_hof_flat_map`, `a_hof_min_by`, `a_hof_max_by`
+- 6 array utilities: `a_enumerate`, `a_zip`, `a_take`, `a_drop`, `a_unique`, `a_chunk`
+- String comparison support in `a_lt` / `a_lteq` (was numeric-only)
+- Result display in `val_to_buf` (prints `Ok(...)` / `Err(...)`)
+
+**Code generator (`cgen.a`):**
+- Free variable analysis (`_collect_idents_in_expr/block/stmt`, `_compute_captures`, `_collect_lets_in_block`)
+- Lambda lifting with environment capture
+- Pipe operator desugaring (`|>` inserts left-hand side as first argument)
+- Closure-aware call dispatch (unknown idents emit `a_closure_call` instead of direct calls)
+- Lambda forward declarations in output
+- All HOF and array utility builtins in the builtin map
+- Emit function refactoring to `[code, li, lifted_fns]` triples (~957 lines, up from ~530)
+
+**Test program (`examples/c_targets/closures.a`):**
+- map, filter, reduce, each, sort_by, find, any, all, flat_map
+- Closure captures, nested closures (closure-returning-closure)
+- Array utilities: enumerate, zip, take, drop, unique, chunk
+
+### Test Results
+
+All 9 test programs pass (original 8 + closures):
+
+| Program | Status |
+|---------|--------|
+| arrays | PASS |
+| bench_fib | PASS |
+| closures | PASS |
+| complex | PASS |
+| fib | PASS |
+| maps | PASS |
+| multi_fn | PASS |
+| newline_test | PASS |
+| strings | PASS |
+
+Fixed-point test: gen0.c == gen1.c (4,388 lines, byte-identical)
+
+### Known Limitation
+
+Closures capture variables **by value**. Mutating a captured variable inside a lambda does not affect the outer scope. This matches the compiled C semantics where each `AValue` is a stack-local struct. Patterns like `each(arr, fn(x) { total = total + x })` will not propagate `total` back; use `reduce` instead.
+

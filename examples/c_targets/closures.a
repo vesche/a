@@ -1,0 +1,67 @@
+; Test closures, HOFs, and pipes
+
+fn main() {
+  ; --- Basic HOFs ---
+  let nums = [1, 2, 3, 4, 5]
+
+  let doubled = map(nums, fn(x) { ret x * 2 })
+  println(doubled)
+
+  let evens = filter(nums, fn(x) { ret x % 2 == 0 })
+  println(evens)
+
+  let sum = reduce(nums, 0, fn(acc, x) { ret acc + x })
+  println(sum)
+
+  ; --- Closure with captures ---
+  let factor = 10
+  let scaled = map(nums, fn(x) { ret x * factor })
+  println(scaled)
+
+  ; --- each (just verify it runs; captures are by-value) ---
+  each(["a", "b", "c"], fn(x) { println(x) })
+
+  ; --- reduce for sum ---
+  let total = reduce(nums, 0, fn(acc, x) { ret acc + x })
+  println(total)
+
+  ; --- find ---
+  let found = find(nums, fn(x) { ret x > 3 })
+  println(found)
+
+  ; --- any / all ---
+  println(any(nums, fn(x) { ret x > 4 }))
+  println(all(nums, fn(x) { ret x > 0 }))
+
+  ; --- flat_map ---
+  let expanded = flat_map([1, 2, 3], fn(x) { ret [x, x * 10] })
+  println(expanded)
+
+  ; --- sort_by ---
+  let words = ["banana", "apple", "cherry"]
+  let sorted = sort_by(words, fn(a, b) {
+    if a < b { ret -1 }
+    if a > b { ret 1 }
+    ret 0
+  })
+  println(sorted)
+
+  ; --- Array utilities ---
+  let pairs = enumerate(["a", "b", "c"])
+  println(pairs)
+
+  let zipped = zip([1, 2, 3], ["x", "y", "z"])
+  println(zipped)
+
+  println(take([1, 2, 3, 4, 5], 3))
+  println(drop([1, 2, 3, 4, 5], 2))
+  println(unique([1, 2, 2, 3, 3, 3]))
+  println(chunk([1, 2, 3, 4, 5], 2))
+
+  ; --- Closure stored in variable ---
+  let add_n = fn(n) { ret fn(x) { ret x + n } }
+  let add5 = add_n(5)
+  println(add5(10))
+
+  println("all tests passed")
+}

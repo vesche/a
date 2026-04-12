@@ -1,6 +1,6 @@
 ; std/compiler/cgen.a -- C code generation backend
 ; Reads an "a" source file, parses to AST, emits C source to stdout.
-; Supports `use` module inlining for multi-file compilation.
+; Supports `use` module inlining, closures/lambdas, HOFs, pipes.
 ; Usage: a run std/compiler/cgen.a -- input.a > output.c
 
 use std.compiler.parser
@@ -26,12 +26,18 @@ fn _builtin_map() -> map {
     "map.get": "a_map_get", "map.set": "a_map_set", "map.has": "a_map_has",
     "map.keys": "a_map_keys", "map.values": "a_map_values", "map.merge": "a_map_merge",
     "io.read_file": "a_io_read_file", "io.write_file": "a_io_write_file",
-    "json.stringify": "a_to_str", "json.pretty": "a_to_str"
+    "json.stringify": "a_to_str", "json.pretty": "a_to_str",
+    "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",
+    "each": "a_hof_each", "sort_by": "a_hof_sort_by", "find": "a_hof_find",
+    "any": "a_hof_any", "all": "a_hof_all", "flat_map": "a_hof_flat_map",
+    "min_by": "a_hof_min_by", "max_by": "a_hof_max_by",
+    "enumerate": "a_enumerate", "zip": "a_zip",
+    "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk"
   }
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail"]
+  ret ["println", "print", "eprintln", "fail", "each"]
 }
 
 fn _c_keywords() -> [str] {
@@ -73,8 +79,8 @@ fn _indent(depth: int) -> str {
   ret out
 }
 
-; ctx = #{"prefix": "parser", "fns": ["parse", "parse_program", ...]}
-; prefix="" for the main file, "modname" for imported modules
+; ctx = #{"prefix": "parser", "fns": ["parse", ...]}
+; prefix="" for main file, "modname" for imported modules
 
 fn _prefixed_name(name, ctx) -> str {
   let prefix = ctx["prefix"]
@@ -98,55 +104,220 @@ fn _is_intra_module_call(fname, ctx) -> bool {
   ret false
 }
 
-; --- Expression emission ---
+; --- Result triple: [code, lambda_id, [lifted_fns]] ---
+; All emit functions return this so lambda state threads correctly.
 
-fn emit_expr(node, bm, ctx) -> str {
+fn _R(code, li) { ret [code, li, []] }
+fn _RL(code, li, lifted) { ret [code, li, lifted] }
+
+; --- Free variable analysis for closures ---
+
+fn _collect_idents_in_expr(node) -> [str] {
+  let tag = node["tag"]
+  if type_of(tag) != "str" { ret [] }
+
+  if tag == "Ident" { ret [node["name"]] }
+  if tag == "Int" { ret [] }
+  if tag == "Float" { ret [] }
+  if tag == "Bool" { ret [] }
+  if tag == "Void" { ret [] }
+  if tag == "String" { ret [] }
+
+  if tag == "BinOp" {
+    ret concat_arr(_collect_idents_in_expr(node["left"]), _collect_idents_in_expr(node["right"]))
+  }
+  if tag == "UnaryOp" { ret _collect_idents_in_expr(node["expr"]) }
+
+  if tag == "Call" {
+    let mut ids = []
+    let func = node["func"]
+    if func["tag"] == "Ident" {
+      ; function name idents are NOT variable captures
+    } else {
+      ids = concat_arr(ids, _collect_idents_in_expr(func))
+    }
+    for arg in node["args"] { ids = concat_arr(ids, _collect_idents_in_expr(arg)) }
+    ret ids
+  }
+
+  if tag == "FieldAccess" { ret _collect_idents_in_expr(node["expr"]) }
+  if tag == "Index" {
+    ret concat_arr(_collect_idents_in_expr(node["expr"]), _collect_idents_in_expr(node["index"]))
+  }
+
+  if tag == "Array" {
+    let mut ids = []
+    for e in node["elems"] { ids = concat_arr(ids, _collect_idents_in_expr(e)) }
+    ret ids
+  }
+
+  if tag == "MapLiteral" {
+    let mut ids = []
+    for e in node["entries"] { ids = concat_arr(ids, _collect_idents_in_expr(e["value"])) }
+    ret ids
+  }
+
+  if tag == "Interpolation" {
+    let mut ids = []
+    for p in node["parts"] {
+      if p["tag"] != "InterpLit" { ids = concat_arr(ids, _collect_idents_in_expr(p["expr"])) }
+    }
+    ret ids
+  }
+
+  if tag == "IfExpr" {
+    ret concat_arr(_collect_idents_in_expr(node["cond"]),
+      concat_arr(_collect_idents_in_expr(node["then"]), _collect_idents_in_expr(node["else"])))
+  }
+
+  if tag == "Pipe" {
+    ret concat_arr(_collect_idents_in_expr(node["left"]), _collect_idents_in_expr(node["right"]))
+  }
+
+  if tag == "Lambda" {
+    ; lambdas capture, so we need to look inside but exclude lambda params
+    let mut bound = []
+    for p in node["params"] { bound = push(bound, p["name"]) }
+    let body_ids = _collect_idents_in_block(node["body"])
+    let mut free = []
+    for id in body_ids {
+      if !contains(bound, id) { if !contains(free, id) { free = push(free, id) } }
+    }
+    ret free
+  }
+
+  ret []
+}
+
+fn _collect_idents_in_block(block) -> [str] {
+  if type_of(block["tag"]) == "str" {
+    if block["tag"] == "BlockExpr" {
+      ret _collect_idents_in_block(block["block"])
+    }
+  }
+  let mut ids = []
+  let stmts = block["stmts"]
+  if type_of(stmts) != "array" { ret _collect_idents_in_expr(block) }
+  for s in stmts { ids = concat_arr(ids, _collect_idents_in_stmt(s)) }
+  ret ids
+}
+
+fn _collect_idents_in_stmt(s) -> [str] {
+  let tag = s["tag"]
+  if tag == "Let" { ret _collect_idents_in_expr(s["value"]) }
+  if tag == "Assign" {
+    ret concat_arr(_collect_idents_in_expr(s["target"]), _collect_idents_in_expr(s["value"]))
+  }
+  if tag == "Return" {
+    if type_of(s["expr"]) != "void" { ret _collect_idents_in_expr(s["expr"]) }
+    ret []
+  }
+  if tag == "ExprStmt" { ret _collect_idents_in_expr(s["expr"]) }
+  if tag == "If" {
+    let mut ids = _collect_idents_in_expr(s["cond"])
+    ids = concat_arr(ids, _collect_idents_in_block(s["then"]))
+    let eb = s["else"]
+    if type_of(eb) != "void" {
+      if eb["tag"] == "ElseBlock" { ids = concat_arr(ids, _collect_idents_in_block(eb["block"])) }
+      if eb["tag"] == "ElseIf" { ids = concat_arr(ids, _collect_idents_in_stmt(eb["if"])) }
+    }
+    ret ids
+  }
+  if tag == "While" {
+    ret concat_arr(_collect_idents_in_expr(s["cond"]), _collect_idents_in_block(s["body"]))
+  }
+  if tag == "For" {
+    ret concat_arr(_collect_idents_in_expr(s["iter"]), _collect_idents_in_block(s["body"]))
+  }
+  ret []
+}
+
+fn _compute_captures(lambda_node, enclosing_vars, bm) -> [str] {
+  let mut bound = []
+  for p in lambda_node["params"] { bound = push(bound, p["name"]) }
+  let body = lambda_node["body"]
+  let body_lets = _collect_lets_in_block(body)
+  bound = concat_arr(bound, body_lets)
+
+  let body_ids = _collect_idents_in_block(body)
+  let mut captures = []
+  for id in body_ids {
+    if !contains(bound, id) && !map.has(bm, id) && contains(enclosing_vars, id) {
+      if !contains(captures, id) { captures = push(captures, id) }
+    }
+  }
+  ret captures
+}
+
+fn _collect_lets_in_block(block) -> [str] {
+  if type_of(block["tag"]) == "str" {
+    if block["tag"] == "BlockExpr" { ret _collect_lets_in_block(block["block"]) }
+  }
+  let mut names = []
+  let stmts = block["stmts"]
+  if type_of(stmts) != "array" { ret [] }
+  for s in stmts {
+    if s["tag"] == "Let" { names = push(names, s["name"]) }
+  }
+  ret names
+}
+
+; --- Expression emission ---
+; Returns [code, li, [lifted_fns]]
+
+fn emit_expr(node, bm, ctx, li) {
   let tag = node["tag"]
 
-  if tag == "Int" { ret str.concat("a_int(", str.concat(to_str(node["value"]), ")")) }
-  if tag == "Float" { ret str.concat("a_float(", str.concat(to_str(node["value"]), ")")) }
+  if tag == "Int" { ret _R(str.concat("a_int(", str.concat(to_str(node["value"]), ")")), li) }
+  if tag == "Float" { ret _R(str.concat("a_float(", str.concat(to_str(node["value"]), ")")), li) }
   if tag == "Bool" {
-    if node["value"] { ret "a_bool(1)" }
-    ret "a_bool(0)"
+    if node["value"] { ret _R("a_bool(1)", li) }
+    ret _R("a_bool(0)", li)
   }
-  if tag == "Void" { ret "a_void()" }
+  if tag == "Void" { ret _R("a_void()", li) }
 
   if tag == "String" {
-    ret str.concat("a_string(\"", str.concat(_escape_c_str(node["value"]), "\")"))
+    ret _R(str.concat("a_string(\"", str.concat(_escape_c_str(node["value"]), "\")")), li)
   }
 
   if tag == "Ident" {
     let name = node["name"]
-    if name == "true" { ret "a_bool(1)" }
-    if name == "false" { ret "a_bool(0)" }
-    ret _mangle(name)
+    if name == "true" { ret _R("a_bool(1)", li) }
+    if name == "false" { ret _R("a_bool(0)", li) }
+    ret _R(_mangle(name), li)
   }
 
   if tag == "BinOp" {
     let op = node["op"]
-    let l = emit_expr(node["left"], bm, ctx)
-    let r = emit_expr(node["right"], bm, ctx)
-    if op == "+" { ret str.concat("a_add(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "-" { ret str.concat("a_sub(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "*" { ret str.concat("a_mul(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "/" { ret str.concat("a_div(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "%" { ret str.concat("a_mod(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "==" { ret str.concat("a_eq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "!=" { ret str.concat("a_neq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "<" { ret str.concat("a_lt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == ">" { ret str.concat("a_gt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "<=" { ret str.concat("a_lteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == ">=" { ret str.concat("a_gteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "&&" { ret str.concat("a_and(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    if op == "||" { ret str.concat("a_or(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
-    ret str.concat("/* unknown op: ", str.concat(op, " */a_void()"))
+    let lr = emit_expr(node["left"], bm, ctx, li)
+    let rr = emit_expr(node["right"], bm, ctx, lr[1])
+    let l = lr[0]
+    let r = rr[0]
+    li = rr[1]
+    let lifted = concat_arr(lr[2], rr[2])
+    let mut code = ""
+    if op == "+" { code = str.concat("a_add(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "-" && code == "" { code = str.concat("a_sub(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "*" && code == "" { code = str.concat("a_mul(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "/" && code == "" { code = str.concat("a_div(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "%" && code == "" { code = str.concat("a_mod(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "==" && code == "" { code = str.concat("a_eq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "!=" && code == "" { code = str.concat("a_neq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "<" && code == "" { code = str.concat("a_lt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == ">" && code == "" { code = str.concat("a_gt(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "<=" && code == "" { code = str.concat("a_lteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == ">=" && code == "" { code = str.concat("a_gteq(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "&&" && code == "" { code = str.concat("a_and(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if op == "||" && code == "" { code = str.concat("a_or(", str.concat(l, str.concat(", ", str.concat(r, ")")))) }
+    if code == "" { code = str.concat("/* unknown op: ", str.concat(op, " */a_void()")) }
+    ret _RL(code, li, lifted)
   }
 
   if tag == "UnaryOp" {
-    let inner = emit_expr(node["expr"], bm, ctx)
-    if node["op"] == "!" { ret str.concat("a_not(", str.concat(inner, ")")) }
-    if node["op"] == "-" { ret str.concat("a_neg(", str.concat(inner, ")")) }
-    ret inner
+    let ir = emit_expr(node["expr"], bm, ctx, li)
+    if node["op"] == "!" { ret _RL(str.concat("a_not(", str.concat(ir[0], ")")), ir[1], ir[2]) }
+    if node["op"] == "-" { ret _RL(str.concat("a_neg(", str.concat(ir[0], ")")), ir[1], ir[2]) }
+    ret ir
   }
 
   if tag == "Call" {
@@ -155,23 +326,47 @@ fn emit_expr(node, bm, ctx) -> str {
     let fname = _resolve_call_name(func)
 
     if fname == "fail" {
-      if len(a) > 0 { ret str.concat("(a_fail(", str.concat(emit_expr(a[0], bm, ctx), "), a_void())")) }
-      ret "(a_fail(a_string(\"assertion failed\")), a_void())"
+      if len(a) > 0 {
+        let ar = emit_expr(a[0], bm, ctx, li)
+        ret _RL(str.concat("(a_fail(", str.concat(ar[0], "), a_void())")), ar[1], ar[2])
+      }
+      ret _R("(a_fail(a_string(\"assertion failed\")), a_void())", li)
     }
     if fname == "exit" {
-      if len(a) > 0 { ret str.concat("(exit((int)", str.concat(emit_expr(a[0], bm, ctx), ".ival), a_void())")) }
-      ret "(exit(0), a_void())"
+      if len(a) > 0 {
+        let ar = emit_expr(a[0], bm, ctx, li)
+        ret _RL(str.concat("(exit((int)", str.concat(ar[0], ".ival), a_void())")), ar[1], ar[2])
+      }
+      ret _R("(exit(0), a_void())", li)
+    }
+
+    ; Emit args
+    let mut arg_codes = []
+    let mut lifted = []
+    for arg in a {
+      let ar = emit_expr(arg, bm, ctx, li)
+      arg_codes = push(arg_codes, ar[0])
+      li = ar[1]
+      lifted = concat_arr(lifted, ar[2])
     }
 
     if map.has(bm, fname) {
       let cfn = bm[fname]
-      let mut arg_parts = []
-      for arg in a { arg_parts = push(arg_parts, emit_expr(arg, bm, ctx)) }
-      ret str.concat(cfn, str.concat("(", str.concat(str.join(arg_parts, ", "), ")")))
+      ret _RL(str.concat(cfn, str.concat("(", str.concat(str.join(arg_codes, ", "), ")"))), li, lifted)
     }
 
-    let mut arg_parts = []
-    for arg in a { arg_parts = push(arg_parts, emit_expr(arg, bm, ctx)) }
+    ; Check if this is a closure call (variable, not a known function)
+    let all_fns = ctx["fns"]
+    let is_known_fn = false
+    if type_of(all_fns) == "array" { is_known_fn = contains(all_fns, fname) }
+    if str.contains(fname, ".") { is_known_fn = true }
+
+    if func["tag"] == "Ident" && !is_known_fn && !_is_intra_module_call(fname, ctx) {
+      ; Closure call: a_closure_call(var, argc, arg1, arg2, ...)
+      let mut call_args = [to_str(len(arg_codes))]
+      call_args = concat_arr(call_args, arg_codes)
+      ret _RL(str.concat("a_closure_call(", str.concat(_mangle(fname), str.concat(", ", str.concat(str.join(call_args, ", "), ")")))), li, lifted)
+    }
 
     let mut mangled = ""
     if _is_intra_module_call(fname, ctx) {
@@ -179,61 +374,75 @@ fn emit_expr(node, bm, ctx) -> str {
     } else {
       mangled = str.concat("fn_", _mangle(fname))
     }
-    ret str.concat(mangled, str.concat("(", str.concat(str.join(arg_parts, ", "), ")")))
+    ret _RL(str.concat(mangled, str.concat("(", str.concat(str.join(arg_codes, ", "), ")"))), li, lifted)
   }
 
   if tag == "FieldAccess" {
-    let obj = emit_expr(node["expr"], bm, ctx)
+    let er = emit_expr(node["expr"], bm, ctx, li)
     let field = node["field"]
-    ret str.concat("a_map_get(", str.concat(obj, str.concat(", a_string(\"", str.concat(field, "\")"))))
+    ret _RL(str.concat("a_map_get(", str.concat(er[0], str.concat(", a_string(\"", str.concat(field, "\")")))), er[1], er[2])
   }
 
   if tag == "Index" {
-    let obj = emit_expr(node["expr"], bm, ctx)
-    let idx = emit_expr(node["index"], bm, ctx)
-    ret str.concat("a_array_get(", str.concat(obj, str.concat(", ", str.concat(idx, ")"))))
+    let er = emit_expr(node["expr"], bm, ctx, li)
+    let ir = emit_expr(node["index"], bm, ctx, er[1])
+    ret _RL(str.concat("a_array_get(", str.concat(er[0], str.concat(", ", str.concat(ir[0], ")")))), ir[1], concat_arr(er[2], ir[2]))
   }
 
   if tag == "Array" {
     let elems = node["elems"]
-    if len(elems) == 0 { ret "a_array_new(0)" }
+    if len(elems) == 0 { ret _R("a_array_new(0)", li) }
     let mut parts = []
-    for e in elems { parts = push(parts, emit_expr(e, bm, ctx)) }
-    ret str.concat("a_array_new(", str.concat(to_str(len(elems)), str.concat(", ", str.concat(str.join(parts, ", "), ")"))))
+    let mut lifted = []
+    for e in elems {
+      let er = emit_expr(e, bm, ctx, li)
+      parts = push(parts, er[0])
+      li = er[1]
+      lifted = concat_arr(lifted, er[2])
+    }
+    ret _RL(str.concat("a_array_new(", str.concat(to_str(len(elems)), str.concat(", ", str.concat(str.join(parts, ", "), ")")))), li, lifted)
   }
 
   if tag == "MapLiteral" {
     let entries = node["entries"]
-    if len(entries) == 0 { ret "a_map_new(0)" }
+    if len(entries) == 0 { ret _R("a_map_new(0)", li) }
     let mut parts = []
+    let mut lifted = []
     for e in entries {
       let key_node = e["key"]
       let key_str = ""
       if key_node["tag"] == "String" { key_str = key_node["value"] }
-      let v = emit_expr(e["value"], bm, ctx)
-      parts = push(parts, str.concat("\"", str.concat(_escape_c_str(key_str), str.concat("\", ", v))))
+      let vr = emit_expr(e["value"], bm, ctx, li)
+      li = vr[1]
+      lifted = concat_arr(lifted, vr[2])
+      parts = push(parts, str.concat("\"", str.concat(_escape_c_str(key_str), str.concat("\", ", vr[0]))))
     }
-    ret str.concat("a_map_new(", str.concat(to_str(len(entries)), str.concat(", ", str.concat(str.join(parts, ", "), ")"))))
+    ret _RL(str.concat("a_map_new(", str.concat(to_str(len(entries)), str.concat(", ", str.concat(str.join(parts, ", "), ")")))), li, lifted)
   }
 
   if tag == "Interpolation" {
     let parts = node["parts"]
     let mut cparts = []
+    let mut lifted = []
     for p in parts {
       if p["tag"] == "InterpLit" {
         cparts = push(cparts, str.concat("a_string(\"", str.concat(_escape_c_str(p["value"]), "\")")))
       } else {
-        cparts = push(cparts, str.concat("a_to_str(", str.concat(emit_expr(p["expr"], bm, ctx), ")")))
+        let er = emit_expr(p["expr"], bm, ctx, li)
+        li = er[1]
+        lifted = concat_arr(lifted, er[2])
+        cparts = push(cparts, str.concat("a_to_str(", str.concat(er[0], ")")))
       }
     }
-    ret str.concat("a_concat_n(", str.concat(to_str(len(cparts)), str.concat(", ", str.concat(str.join(cparts, ", "), ")"))))
+    ret _RL(str.concat("a_concat_n(", str.concat(to_str(len(cparts)), str.concat(", ", str.concat(str.join(cparts, ", "), ")")))), li, lifted)
   }
 
   if tag == "IfExpr" {
-    let cond = emit_expr(node["cond"], bm, ctx)
-    let then_e = emit_expr(node["then"], bm, ctx)
-    let else_e = emit_expr(node["else"], bm, ctx)
-    ret str.concat("(a_truthy(", str.concat(cond, str.concat(") ? ", str.concat(then_e, str.concat(" : ", str.concat(else_e, ")"))))))
+    let cr = emit_expr(node["cond"], bm, ctx, li)
+    let tr = emit_expr(node["then"], bm, ctx, cr[1])
+    let er = emit_expr(node["else"], bm, ctx, tr[1])
+    let lifted = concat_arr(cr[2], concat_arr(tr[2], er[2]))
+    ret _RL(str.concat("(a_truthy(", str.concat(cr[0], str.concat(") ? ", str.concat(tr[0], str.concat(" : ", str.concat(er[0], ")")))))), er[1], lifted)
   }
 
   if tag == "BlockExpr" {
@@ -241,13 +450,127 @@ fn emit_expr(node, bm, ctx) -> str {
     if len(stmts) > 0 {
       let last = stmts[len(stmts) - 1]
       if last["tag"] == "ExprStmt" {
-        ret emit_expr(last["expr"], bm, ctx)
+        ret emit_expr(last["expr"], bm, ctx, li)
       }
     }
-    ret "a_void()"
+    ret _R("a_void()", li)
   }
 
-  ret str.concat("/* unhandled expr: ", str.concat(tag, " */a_void()"))
+  ; --- Pipe: desugar to function call ---
+  if tag == "Pipe" {
+    let right = node["right"]
+    if right["tag"] == "Call" {
+      let new_args = concat_arr([node["left"]], right["args"])
+      let new_call = #{"tag": "Call", "func": right["func"], "args": new_args}
+      ret emit_expr(new_call, bm, ctx, li)
+    }
+    ; Pipe to a non-call: treat as closure call with one arg
+    let lr = emit_expr(node["left"], bm, ctx, li)
+    let rr = emit_expr(node["right"], bm, ctx, lr[1])
+    let lifted = concat_arr(lr[2], rr[2])
+    ret _RL(str.concat("a_closure_call(", str.concat(rr[0], str.concat(", 1, ", str.concat(lr[0], ")")))), rr[1], lifted)
+  }
+
+  ; --- Lambda: lift to top-level function, emit closure creation ---
+  if tag == "Lambda" {
+    let lambda_name = str.concat("__lambda_", to_str(li))
+    let params = node["params"]
+    let body = node["body"]
+
+    ; Determine captures
+    let enclosing_vars = ctx["enclosing_vars"]
+    let mut captures = []
+    if type_of(enclosing_vars) == "array" {
+      captures = _compute_captures(node, enclosing_vars, bm)
+    }
+
+    ; Build lifted function body
+    let mut fn_code = str.concat("AValue ", str.concat(lambda_name, "(AValue __env, int __argc, AValue* __argv) \{"))
+
+    ; Load captures from env
+    let mut ci = 0
+    for cap in captures {
+      fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(_mangle(cap), str.concat(" = a_array_get(__env, a_int(", str.concat(to_str(ci), "));")))))
+      ci = ci + 1
+    }
+
+    ; Load params from argv
+    let mut pi = 0
+    for p in params {
+      fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(_mangle(p["name"]), str.concat(" = __argv[", str.concat(to_str(pi), "];")))))
+      pi = pi + 1
+    }
+
+    let next_li = li + 1
+    let mut body_lifted = []
+
+    ; Build lambda ctx with its own enclosing vars for nested lambdas
+    let mut lambda_vars = []
+    for cap in captures { lambda_vars = push(lambda_vars, cap) }
+    for p in params { lambda_vars = push(lambda_vars, p["name"]) }
+
+    ; Unwrap body: BlockExpr wraps a block, or body is an expression
+    let body_tag = body["tag"]
+    if body_tag == "BlockExpr" {
+      let stmts = body["block"]["stmts"]
+
+      ; Pre-declare body locals
+      let body_vars = _collect_vars_in_stmts(stmts)
+      let mut bound = []
+      for cap in captures { bound = push(bound, _mangle(cap)) }
+      for p in params { bound = push(bound, _mangle(p["name"])) }
+      let mut decl_vars = []
+      for v in body_vars {
+        if !contains(bound, v) { if !contains(decl_vars, v) { decl_vars = push(decl_vars, v) } }
+      }
+      ; Add body-scoped lets to lambda_vars for nested lambda capture analysis
+      let body_lets = _collect_lets_in_block(body["block"])
+      for bl in body_lets { lambda_vars = push(lambda_vars, bl) }
+      let lambda_ctx = map.set(ctx, "enclosing_vars", lambda_vars)
+
+      if len(decl_vars) > 0 {
+        fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
+      }
+
+      for s in stmts {
+        let sr = emit_stmt(s, 1, bm, lambda_ctx, next_li)
+        fn_code = str.concat(fn_code, str.concat("\n", sr[0]))
+        next_li = sr[1]
+        body_lifted = concat_arr(body_lifted, sr[2])
+      }
+
+      let has_return = false
+      if len(stmts) > 0 {
+        let last = stmts[len(stmts) - 1]
+        if last["tag"] == "Return" { has_return = true }
+      }
+      if !has_return {
+        fn_code = str.concat(fn_code, "\n    return a_void();")
+      }
+    } else {
+      ; Expression-body lambda: fn(x) => expr
+      let lambda_ctx = map.set(ctx, "enclosing_vars", lambda_vars)
+      let er = emit_expr(body, bm, lambda_ctx, next_li)
+      next_li = er[1]
+      body_lifted = concat_arr(body_lifted, er[2])
+      fn_code = str.concat(fn_code, str.concat("\n    return ", str.concat(er[0], ";")))
+    }
+    fn_code = str.concat(fn_code, "\n\}\n")
+
+    ; Emit closure creation at the expression site
+    let mut env_code = "a_void()"
+    if len(captures) > 0 {
+      let mut cap_parts = []
+      for cap in captures { cap_parts = push(cap_parts, _mangle(cap)) }
+      env_code = str.concat("a_array_new(", str.concat(to_str(len(captures)), str.concat(", ", str.concat(str.join(cap_parts, ", "), ")"))))
+    }
+    let closure_code = str.concat("a_closure(", str.concat(lambda_name, str.concat(", ", str.concat(env_code, ")"))))
+
+    let all_lifted = concat_arr(body_lifted, [fn_code])
+    ret _RL(closure_code, next_li, all_lifted)
+  }
+
+  ret _R(str.concat("/* unhandled expr: ", str.concat(tag, " */a_void()")), li)
 }
 
 fn _resolve_call_name(func) -> str {
@@ -262,79 +585,104 @@ fn _resolve_call_name(func) -> str {
 }
 
 ; --- Statement emission ---
+; Returns [code, li, [lifted_fns]]
 
-fn emit_stmt(node, depth: int, bm, ctx) -> str {
+fn emit_stmt(node, depth: int, bm, ctx, li) {
   let tag = node["tag"]
   let ind = _indent(depth)
 
   if tag == "Let" {
-    let val = emit_expr(node["value"], bm, ctx)
-    ret str.concat(ind, str.concat(_mangle(node["name"]), str.concat(" = ", str.concat(val, ";"))))
+    let vr = emit_expr(node["value"], bm, ctx, li)
+    ret _RL(str.concat(ind, str.concat(_mangle(node["name"]), str.concat(" = ", str.concat(vr[0], ";")))), vr[1], vr[2])
   }
 
   if tag == "Assign" {
     let target = node["target"]
     if target["tag"] == "Ident" {
-      let val = emit_expr(node["value"], bm, ctx)
-      ret str.concat(ind, str.concat(_mangle(target["name"]), str.concat(" = ", str.concat(val, ";"))))
+      let vr = emit_expr(node["value"], bm, ctx, li)
+      ret _RL(str.concat(ind, str.concat(_mangle(target["name"]), str.concat(" = ", str.concat(vr[0], ";")))), vr[1], vr[2])
     }
     if target["tag"] == "Index" {
-      let val = emit_expr(node["value"], bm, ctx)
-      ret str.concat(ind, str.concat("/* index assign */ ", str.concat(emit_expr(target["expr"], bm, ctx), str.concat(" = ", str.concat(val, ";")))))
+      let vr = emit_expr(node["value"], bm, ctx, li)
+      let tr = emit_expr(target["expr"], bm, ctx, vr[1])
+      ret _RL(str.concat(ind, str.concat("/* index assign */ ", str.concat(tr[0], str.concat(" = ", str.concat(vr[0], ";"))))), tr[1], concat_arr(vr[2], tr[2]))
     }
-    let val = emit_expr(node["value"], bm, ctx)
-    ret str.concat(ind, str.concat(emit_expr(target, bm, ctx), str.concat(" = ", str.concat(val, ";"))))
+    let vr = emit_expr(node["value"], bm, ctx, li)
+    let tr = emit_expr(target, bm, ctx, vr[1])
+    ret _RL(str.concat(ind, str.concat(tr[0], str.concat(" = ", str.concat(vr[0], ";")))), tr[1], concat_arr(vr[2], tr[2]))
   }
 
   if tag == "Return" {
-    if type_of(node["expr"]) == "void" { ret str.concat(ind, "return a_void();") }
-    let val = emit_expr(node["expr"], bm, ctx)
-    ret str.concat(ind, str.concat("return ", str.concat(val, ";")))
+    if type_of(node["expr"]) == "void" { ret _R(str.concat(ind, "return a_void();"), li) }
+    let vr = emit_expr(node["expr"], bm, ctx, li)
+    ret _RL(str.concat(ind, str.concat("return ", str.concat(vr[0], ";"))), vr[1], vr[2])
   }
 
   if tag == "ExprStmt" {
-    let expr = node["expr"]
-    let code = emit_expr(expr, bm, ctx)
-    ret str.concat(ind, str.concat(code, ";"))
+    let er = emit_expr(node["expr"], bm, ctx, li)
+    ret _RL(str.concat(ind, str.concat(er[0], ";")), er[1], er[2])
   }
 
   if tag == "If" {
-    let cond = emit_expr(node["cond"], bm, ctx)
-    let mut out = str.concat(ind, str.concat("if (a_truthy(", str.concat(cond, ")) \{")))
+    let cr = emit_expr(node["cond"], bm, ctx, li)
+    li = cr[1]
+    let mut lifted = cr[2]
+    let mut out = str.concat(ind, str.concat("if (a_truthy(", str.concat(cr[0], ")) \{")))
     let then_stmts = node["then"]["stmts"]
-    for s in then_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+    for s in then_stmts {
+      let sr = emit_stmt(s, depth + 1, bm, ctx, li)
+      out = str.concat(out, str.concat("\n", sr[0]))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
     out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
     let else_branch = node["else"]
     if type_of(else_branch) != "void" {
       if else_branch["tag"] == "ElseBlock" {
         out = str.concat(out, " else \{")
         let else_stmts = else_branch["block"]["stmts"]
-        for s in else_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+        for s in else_stmts {
+          let sr = emit_stmt(s, depth + 1, bm, ctx, li)
+          out = str.concat(out, str.concat("\n", sr[0]))
+          li = sr[1]
+          lifted = concat_arr(lifted, sr[2])
+        }
         out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
       }
       if else_branch["tag"] == "ElseIf" {
-        out = str.concat(out, str.concat(" else ", emit_stmt(else_branch["if"], depth, bm, ctx)))
+        let sr = emit_stmt(else_branch["if"], depth, bm, ctx, li)
+        out = str.concat(out, str.concat(" else ", sr[0]))
+        li = sr[1]
+        lifted = concat_arr(lifted, sr[2])
       }
     }
-    ret out
+    ret _RL(out, li, lifted)
   }
 
   if tag == "While" {
-    let cond = emit_expr(node["cond"], bm, ctx)
-    let mut out = str.concat(ind, str.concat("while (a_truthy(", str.concat(cond, ")) \{")))
+    let cr = emit_expr(node["cond"], bm, ctx, li)
+    li = cr[1]
+    let mut lifted = cr[2]
+    let mut out = str.concat(ind, str.concat("while (a_truthy(", str.concat(cr[0], ")) \{")))
     let body_stmts = node["body"]["stmts"]
-    for s in body_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 1, bm, ctx))) }
+    for s in body_stmts {
+      let sr = emit_stmt(s, depth + 1, bm, ctx, li)
+      out = str.concat(out, str.concat("\n", sr[0]))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
     out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
-    ret out
+    ret _RL(out, li, lifted)
   }
 
   if tag == "For" {
     let var_name = _mangle(node["var"])
-    let iter = emit_expr(node["iter"], bm, ctx)
+    let ir = emit_expr(node["iter"], bm, ctx, li)
+    li = ir[1]
+    let mut lifted = ir[2]
     let mut out = str.concat(ind, "\{")
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(iter, ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(ir[0], ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
-    ; for-loop variable is block-scoped, declare it here
     let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
     let mut for_decls = [var_name]
     for v in body_vars {
@@ -343,16 +691,21 @@ fn emit_stmt(node, depth: int, bm, ctx) -> str {
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(for_decls, ", "), ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(var_name, " = a_array_get(__iter_arr, a_int(__fi));"))))
     let body_stmts = node["body"]["stmts"]
-    for s in body_stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, depth + 2, bm, ctx))) }
+    for s in body_stmts {
+      let sr = emit_stmt(s, depth + 2, bm, ctx, li)
+      out = str.concat(out, str.concat("\n", sr[0]))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+    }
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "\}")))
     out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
-    ret out
+    ret _RL(out, li, lifted)
   }
 
-  if tag == "Break" { ret str.concat(ind, "break;") }
-  if tag == "Continue" { ret str.concat(ind, "continue;") }
+  if tag == "Break" { ret _R(str.concat(ind, "break;"), li) }
+  if tag == "Continue" { ret _R(str.concat(ind, "continue;"), li) }
 
-  ret str.concat(ind, str.concat("/* unhandled stmt: ", str.concat(tag, " */")))
+  ret _R(str.concat(ind, str.concat("/* unhandled stmt: ", str.concat(tag, " */"))), li)
 }
 
 ; --- Variable collection (for pre-declaration) ---
@@ -394,7 +747,7 @@ fn _collect_vars_in_stmts(stmts) -> [str] {
 
 ; --- Function emission ---
 
-fn emit_fn(node, bm, ctx) -> str {
+fn emit_fn(node, bm, ctx, li) {
   let name = node["name"]
   let full_name = _prefixed_name(name, ctx)
   let params = node["params"]
@@ -409,7 +762,7 @@ fn emit_fn(node, bm, ctx) -> str {
 
   let mut out = str.concat("AValue fn_", str.concat(_mangle(full_name), str.concat("(", str.concat(param_str, ") \{"))))
 
-  ; Pre-declare all local variables to avoid C redefinition errors
+  ; Pre-declare all local variables
   let all_vars = _collect_vars_in_stmts(body["stmts"])
   let mut param_names = []
   for p in params { param_names = push(param_names, _mangle(p["name"])) }
@@ -423,8 +776,20 @@ fn emit_fn(node, bm, ctx) -> str {
     out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
   }
 
+  ; Build enclosing_vars for lambda capture analysis
+  let mut enc_vars = []
+  for p in params { enc_vars = push(enc_vars, p["name"]) }
+  for v in all_vars { if !contains(enc_vars, _mangle(v)) { enc_vars = push(enc_vars, v) } }
+  let fn_ctx = map.set(ctx, "enclosing_vars", enc_vars)
+
+  let mut lifted = []
   let stmts = body["stmts"]
-  for s in stmts { out = str.concat(out, str.concat("\n", emit_stmt(s, 1, bm, ctx))) }
+  for s in stmts {
+    let sr = emit_stmt(s, 1, bm, fn_ctx, li)
+    out = str.concat(out, str.concat("\n", sr[0]))
+    li = sr[1]
+    lifted = concat_arr(lifted, sr[2])
+  }
 
   let has_return = false
   if len(stmts) > 0 {
@@ -436,7 +801,7 @@ fn emit_fn(node, bm, ctx) -> str {
   }
 
   out = str.concat(out, "\n\}\n")
-  ret out
+  ret _RL(out, li, lifted)
 }
 
 fn _emit_fwd_decl(name, params) -> str {
@@ -469,10 +834,10 @@ fn _collect_fn_names(items) -> [str] {
   ret names
 }
 
-fn _load_module(path_arr, bm, loaded) -> map {
+fn _load_module(path_arr, bm, loaded, li) -> map {
   let use_key = str.join(path_arr, ".")
   if contains(loaded, use_key) {
-    ret #{"fwd": [], "fns": [], "loaded": loaded}
+    ret #{"fwd": [], "fns": [], "loaded": loaded, "li": li}
   }
   loaded = push(loaded, use_key)
 
@@ -485,30 +850,32 @@ fn _load_module(path_arr, bm, loaded) -> map {
   let mut all_fwd = []
   let mut all_fns = []
 
-  ; Recursively load this module's own use declarations
   for item in items {
     if item["tag"] == "UseDecl" {
-      let sub = _load_module(item["path"], bm, loaded)
+      let sub = _load_module(item["path"], bm, loaded, li)
       loaded = sub["loaded"]
+      li = sub["li"]
       all_fwd = concat_arr(all_fwd, sub["fwd"])
       all_fns = concat_arr(all_fns, sub["fns"])
     }
   }
 
-  ; Build context for this module
   let fn_names = _collect_fn_names(items)
   let ctx = #{"prefix": short, "fns": fn_names}
 
-  ; Emit functions with module prefix
   for item in items {
     if item["tag"] == "FnDecl" {
       let full_name = _prefixed_name(item["name"], ctx)
       all_fwd = push(all_fwd, _emit_fwd_decl(full_name, item["params"]))
-      all_fns = push(all_fns, emit_fn(item, bm, ctx))
+      let fr = emit_fn(item, bm, ctx, li)
+      li = fr[1]
+      ; Prepend lifted lambdas, then the function itself
+      for lf in fr[2] { all_fns = push(all_fns, lf) }
+      all_fns = push(all_fns, fr[0])
     }
   }
 
-  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded}
+  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li}
 }
 
 ; --- Program emission ---
@@ -519,29 +886,45 @@ fn emit_program(prog_ast, bm) -> str {
   let mut all_fwd = []
   let mut all_fns = []
   let mut loaded = []
+  let mut li = 0
 
-  ; Process use declarations -- load and inline modules
   for item in items {
     if item["tag"] == "UseDecl" {
-      let result = _load_module(item["path"], bm, loaded)
+      let result = _load_module(item["path"], bm, loaded, li)
       loaded = result["loaded"]
+      li = result["li"]
       all_fwd = concat_arr(all_fwd, result["fwd"])
       all_fns = concat_arr(all_fns, result["fns"])
     }
   }
 
-  ; Emit main file functions (no module prefix)
   let main_fn_names = _collect_fn_names(items)
   let main_ctx = #{"prefix": "", "fns": main_fn_names}
 
   for item in items {
     if item["tag"] == "FnDecl" {
       all_fwd = push(all_fwd, _emit_fwd_decl(item["name"], item["params"]))
-      all_fns = push(all_fns, emit_fn(item, bm, main_ctx))
+      let fr = emit_fn(item, bm, main_ctx, li)
+      li = fr[1]
+      for lf in fr[2] { all_fns = push(all_fns, lf) }
+      all_fns = push(all_fns, fr[0])
     }
   }
 
   let mut out = "#include \"runtime.h\"\n#include <stdlib.h>\n\n"
+
+  ; Forward declarations for lifted lambdas
+  let mut lambda_fwd = []
+  let mut i = 0
+  while i < li {
+    lambda_fwd = push(lambda_fwd, str.concat("AValue __lambda_", str.concat(to_str(i), "(AValue __env, int __argc, AValue* __argv);")))
+    i = i + 1
+  }
+  if len(lambda_fwd) > 0 {
+    out = str.concat(out, "/* Lambda forward declarations */\n")
+    for f in lambda_fwd { out = str.concat(out, str.concat(f, "\n")) }
+    out = str.concat(out, "\n")
+  }
 
   out = str.concat(out, "/* Forward declarations */\n")
   for f in all_fwd { out = str.concat(out, str.concat(f, "\n")) }
