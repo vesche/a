@@ -25,6 +25,10 @@ fn mk_use_decl(path) {
   ret #{"tag": "UseDecl", "path": path}
 }
 
+fn mk_extern_fn(name, params, ret_type) {
+  ret #{"tag": "ExternFn", "name": name, "params": params, "ret_type": ret_type}
+}
+
 ; --- Type body variants ---
 
 fn mk_type_record(fields) {

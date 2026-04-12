@@ -4,14 +4,14 @@
 
 ## Where We Are
 
-At v0.45, the native path has closed most of the language feature gap:
+At v0.46, the native path has FFI — the entire C ecosystem is now accessible:
 
 1. **VM path** (Rust-hosted): Full language -- closures, HOFs, pattern matching, destructuring, try/catch, concurrency, eval, metaprogramming, 100+ builtins, 20 stdlib modules, 498 tests.
-2. **Native path** (C codegen): Most language features -- functions, control flow, closures, HOFs, pipes, pattern matching (statement), try/catch/?, destructuring, spread, 60+ builtins, self-hosting bootstrap (4,951 lines C, fixed point verified), 164x faster than VM.
+2. **Native path** (C codegen): Most language features + FFI -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn` declarations, `ptr` type, type marshalling (i32/i64/f32/f64/str/bool/ptr/void), 75+ builtins, self-hosting bootstrap (5,415 lines C, three-stage fixed point verified), 113 native tests passing across 7 test suites, 14 example programs.
 
-**What's done** (v0.43-v0.45): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread.
+**What's done** (v0.43-v0.46): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing, module import aliases, else-if codegen, index assignment, map iteration, test harness, C FFI with `extern fn` and automatic AValue shim generation.
 
-**What remains before FFI**: expression completeness (MatchExpr, BlockExpr), native I/O primitives (read_file, write_file, fs.ls), and test hardening. Eval and concurrency are deferred to post-FFI.
+**What remains**: memory architecture (v0.47), and everything beyond.
 
 ---
 
@@ -99,9 +99,9 @@ Pattern matching is the most expressive control flow in "a". The self-hosted com
 
 ---
 
-## v0.45.1 -- Expression Completeness
+## v0.45.1 -- Expression Completeness ✅
 
-**Every expression the VM evaluates, native compiles correctly.** Small but correctness-critical gaps in how expressions are emitted to C.
+**Every expression the VM evaluates, native compiles correctly.** Found and fixed a critical bug: lambda bodies were not returning their last expression value (closures, map, filter, reduce all returned void). Also fixed void-returning builtins, added MatchExpr infrastructure, and BlockExpr trailing Return handling.
 
 ### Scope
 
@@ -115,9 +115,9 @@ Programs using FFI will use match expressions for result handling (`let val = ma
 
 ---
 
-## v0.45.2 -- Native I/O Primitives
+## v0.45.2 -- Native I/O Primitives ✅
 
-**The native compiler becomes a standalone tool.** Currently, `cgen.a` compiled natively can emit C, but it relies on the Rust VM to read source files. This version adds POSIX I/O to the C runtime so the native binary can read files, write files, and list directories on its own.
+**The native compiler becomes a standalone tool.** The C runtime now includes POSIX I/O, filesystem operations, shell execution, environment access, and a recursive-descent JSON parser. The native binary reads its own source files, compiles itself, and the result is byte-identical across three generations — a fully self-contained bootstrap with no Rust in the loop.
 
 ### C Runtime Additions
 
@@ -149,51 +149,71 @@ FFI adds complexity. The native compiler should be self-sufficient for I/O *befo
 
 ---
 
-## v0.45.3 -- Test Hardening
+## v0.45.3 -- Test Hardening ✅
 
-**Confidence before complexity.** Run the VM test suite through native compilation, fix every edge case, and stress-test with large programs.
+**Confidence before complexity.** Ran the VM test suite through native compilation, built a test harness, and fixed every edge case that surfaced.
 
-### Scope
+### Completed
 
-- Run existing VM tests (`tests/test_destructure.a`, `tests/test_patterns.a`, `tests/test_maps.a`, `tests/test_functional.a`, `tests/test_strings.a`, etc.) through native compilation where applicable.
-- Create a test harness script: compile each test to C, build, run, compare output to VM output.
-- Fix any edge cases that surface (string interpolation, nested expressions, etc.).
-- Stress test: compile `std/compiler/compiler.a` (the bytecode compiler) to C -- a large, complex "a" program that exercises nearly every language feature.
+- **Test harness**: `scripts/native_test.sh` -- compiles test files to C, builds, runs, reports pass/fail. Auto-detects `test_*` functions, generates `main()` wrappers, handles both bool-returning and void (assert-based) tests.
+- **7 test suites passing natively** (113 individual tests): `test_patterns` (22), `test_maps` (21), `test_stack_traces` (4), `test_core` (8), `test_destructure` (18), `test_functional` (26), `test_strings` (14).
+- **13 example programs** all compiling and running correctly.
+- **Three-stage bootstrap** verified: 5,138 lines C, byte-identical across all three stages.
 
-### Why Before FFI
+### Bugs Found and Fixed
 
-FFI introduces a new category of bugs (memory layout, calling conventions, pointer semantics). We need high confidence that the existing language features work perfectly before adding that complexity. A passing test suite is the proof.
+1. **`else if` codegen was completely broken**: The `ElseIf` AST node uses key `"stmt"` but cgen accessed `"if"`. Every `else if` in the language emitted `/* unhandled stmt: void */`. Fixed in three places.
+2. **Index assignment (`m["key"] = val`) was broken**: Emitted `m = val` instead of `m = a_index_set(m, key, val)`. Added `a_index_set` runtime function that dispatches on array/map type.
+3. **FieldAccess (`m.name`) had a missing closing paren**: `a_map_get(m, a_string("name")` was missing `)`. Single character fix.
+4. **Module import name resolution missing**: `use std.testing` imported functions with prefixed names but call sites used unprefixed names. Added import alias tracking to `emit_program` and call resolution.
+5. **Map iteration in for-loops broken**: `for [k,v] in map` needed maps to be auto-converted to entry arrays. Added `a_iterable()` runtime helper.
+6. **Missing builtins**: Added `map.delete`, `map.entries`, `map.from_entries`, `str.find`, `str.count` to both C runtime and cgen builtin map.
+
+### Known Limitations
+
+- **TCO tests skipped**: `test_tco.a` uses 100,000-depth recursion which overflows the C stack. Native TCO would require a trampoline or `goto`-based emission. Deferred.
+- **Tests requiring VM-only features skipped**: `test_eval`, `test_concurrency`, `test_regex`, `test_hash`, `test_datetime`, `test_bridge`, `test_serialize`, `test_self_compile` (all require eval, spawn, or VM internals).
 
 ---
 
-## v0.46 -- C Foreign Function Interface
+## v0.46 -- C Foreign Function Interface ✅
 
 **Access the entire C ecosystem.** The native compiler can now call arbitrary C functions. This opens SQLite, OpenSSL, libcurl, zlib, POSIX, and every other C library ever written.
 
 ### Syntax
 
 ```a
-extern fn sqlite3_open(filename: str, db: ptr) -> int
-extern fn sqlite3_exec(db: ptr, sql: str, cb: ptr, arg: ptr, err: ptr) -> int
+extern fn abs(n: i32) -> i32
+extern fn atoi(s: str) -> i32
+extern fn strlen(s: str) -> i64
+extern fn getpid() -> i32
 
-fn main() effects [ffi] {
-  let db = sqlite3_open("data.db")
-  sqlite3_exec(db, "CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT)")
-  sqlite3_exec(db, "INSERT INTO items (name) VALUES ('hello')")
+fn main() {
+  println(to_str(abs(-42)))       ; 42
+  println(to_str(atoi("12345")))  ; 12345
+  println(to_str(strlen("hello"))) ; 5
+  println(to_str(getpid()))       ; some pid
 }
 ```
 
-### Implementation
+### Completed
 
-- `extern fn` declarations in the parser/AST
-- C codegen emits standard C function declarations and calls
-- Link flags via `#link "sqlite3"` pragma or CLI arguments
-- A `ptr` type for opaque C pointers (stored as `void*` in the AValue union)
-- Callback support: "a" closures can be passed to C functions expecting function pointers (via a trampoline)
+- **`extern fn` declarations**: New keyword `extern` in both self-hosted lexer (`KwExtern`) and Rust lexer (`TokenKind::Extern`). Parser produces `ExternFn` AST nodes with typed parameters and return type.
+- **`ptr` type**: `TAG_PTR` added to ATag enum, `void* pval` in AValue union, `TyPtr` token in lexer, constructors `a_ptr()`, `a_ptr_null()`, `a_is_null()` in C runtime.
+- **Type marshalling**: Automatic bidirectional conversion between AValue and C types — `i8`/`i16`/`i32`/`i64`/`u8`-`u64` ↔ `int*_t`, `f32`/`f64` ↔ `float`/`double`, `str` ↔ `const char*`, `bool` ↔ `int`, `ptr` ↔ `void*`, `void`.
+- **Shim generation**: Each `extern fn` produces two C declarations — a raw C prototype (`extern int32_t abs(int32_t)`) and an AValue shim (`AValue fn_abs(AValue __p0) { ... }`). Call sites use the shim, so the rest of the call resolution system works unchanged.
+- **Rust VM parity**: `ExternFn` variant added to `TopLevelKind`, parsed by the Rust parser, handled as no-op in interpreter/compiler/checker/formatter. The VM can parse files containing `extern fn` without errors.
+- **Pointer builtins**: `ptr.null` and `ptr.is_null` registered in cgen builtin map.
+- **Test program**: `examples/c_targets/ffi_test.a` exercises `abs`, `atoi`, `strlen`, `getpid` — all passing.
+- **Bootstrap**: Three-stage bootstrap verified at 5,415 lines C (up from 5,138), byte-identical across all stages.
+- **Full regression suite**: 113 native tests passing, 14 example programs passing.
 
-### Why It Matters
+### Deferred
 
-FFI is the inflection point where the native language becomes practically useful for _anything_. Need a database? Link SQLite. Need compression? Link zlib. Need crypto? Link OpenSSL. The language stops being a toy and becomes a tool.
+- **Callback trampolines**: Passing "a" closures as C function pointers (needed for `sqlite3_exec` callbacks). Planned for v0.46.1.
+- **Struct layout** (`extern struct`): Direct C struct access. Can use `ptr` + offset math for now. Deferred to v0.47+.
+- **Variadic C functions** (`printf`, etc.): Requires special handling. Deferred.
+- **`#link` build integration**: Link directives are not yet parsed; library flags are passed to gcc manually. Deferred.
 
 ---
 
@@ -392,10 +412,10 @@ This is the destination. Everything from v0.43 to v0.51 is the road.
 | **v0.43** ✅ | Closures in Native | Lambda lifting, HOF builtins, pipes | Functional programming natively |
 | **v0.44** ✅ | Pattern Matching in Native | match/guard/destructure in C | Complex dispatch natively |
 | **v0.45** ✅ | Error Handling & Destructuring | try/catch/?, let/for destructure, spread | Real programs compile natively |
-| **v0.45.1** | Expression Completeness | MatchExpr, BlockExpr fixes | Correct expression semantics |
-| **v0.45.2** | Native I/O Primitives | read_file, write_file, fs.ls, exec, env | Standalone native compiler |
-| **v0.45.3** | Test Hardening | VM test suite on native, stress tests | Confidence before FFI |
-| **v0.46** | C FFI | `extern fn`, link C libraries | Access entire C ecosystem |
+| **v0.45.1** ✅ | Expression Completeness | Lambda implicit return, BlockExpr, MatchExpr | Correct expression semantics |
+| **v0.45.2** ✅ | Native I/O Primitives | read_file, write_file, fs.ls, exec, env, json.parse | Standalone native compiler |
+| **v0.45.3** ✅ | Test Hardening | 113 native tests, 6 bugs fixed, bootstrap verified | Confidence before FFI |
+| **v0.46** ✅ | C FFI | `extern fn`, ptr type, type marshalling, shim gen | Access entire C ecosystem |
 | **v0.47** | Memory Architecture | Escape analysis, arenas, GC | Production-grade native runtime |
 | **v0.48** | Native Stdlib | POSIX I/O, HTTP, JSON, hash | No Rust dependency in stdlib |
 | **v0.49** | Package Manager | deps, registry, lockfile | Reusable libraries |

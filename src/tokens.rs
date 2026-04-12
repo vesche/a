@@ -39,6 +39,7 @@ pub enum TokenKind {
     Pre,
     Post,
     Where,
+    Extern,
 
     // Literals
     IntLit(i64),
@@ -58,6 +59,7 @@ pub enum TokenKind {
     Str,
     Bytes,
     Void,
+    Ptr,
 
     // Punctuation
     LParen,
@@ -130,6 +132,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Pre => write!(f, "pre"),
             TokenKind::Post => write!(f, "post"),
             TokenKind::Where => write!(f, "where"),
+            TokenKind::Extern => write!(f, "extern"),
             TokenKind::IntLit(v) => write!(f, "{v}"),
             TokenKind::FloatLit(v) => write!(f, "{v}"),
             TokenKind::StringLit(v) => write!(f, "\"{v}\""),
@@ -150,6 +153,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Str => write!(f, "str"),
             TokenKind::Bytes => write!(f, "bytes"),
             TokenKind::Void => write!(f, "void"),
+            TokenKind::Ptr => write!(f, "ptr"),
             TokenKind::LParen => write!(f, "("),
             TokenKind::RParen => write!(f, ")"),
             TokenKind::LBrace => write!(f, "{{"),

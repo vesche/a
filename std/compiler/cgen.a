@@ -23,16 +23,22 @@ fn _builtin_map() -> map {
     "str.trim": "a_str_trim", "str.upper": "a_str_upper", "str.lower": "a_str_lower",
     "str.join": "a_str_join", "str.chars": "a_str_chars", "str.slice": "a_str_slice",
     "str.starts_with": "a_str_starts_with", "str.ends_with": "a_str_ends_with",
+    "str.find": "a_str_find", "str.count": "a_str_count",
     "map.get": "a_map_get", "map.set": "a_map_set", "map.has": "a_map_has",
     "map.keys": "a_map_keys", "map.values": "a_map_values", "map.merge": "a_map_merge",
+    "map.delete": "a_map_delete", "map.entries": "a_map_entries", "map.from_entries": "a_map_from_entries",
     "io.read_file": "a_io_read_file", "io.write_file": "a_io_write_file",
-    "json.stringify": "a_to_str", "json.pretty": "a_to_str",
+    "fs.ls": "a_fs_ls", "fs.mkdir": "a_fs_mkdir", "fs.cwd": "a_fs_cwd",
+    "fs.exists": "a_fs_exists", "fs.is_dir": "a_fs_is_dir",
+    "exec": "a_exec", "env.get": "a_env_get",
+    "json.parse": "a_json_parse", "json.stringify": "a_to_str", "json.pretty": "a_to_str",
     "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",
     "each": "a_hof_each", "sort_by": "a_hof_sort_by", "find": "a_hof_find",
     "any": "a_hof_any", "all": "a_hof_all", "flat_map": "a_hof_flat_map",
     "min_by": "a_hof_min_by", "max_by": "a_hof_max_by",
     "enumerate": "a_enumerate", "zip": "a_zip",
-    "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk"
+    "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk",
+    "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null"
   }
 }
 
@@ -174,6 +180,22 @@ fn _collect_idents_in_expr(node) -> [str] {
     ret concat_arr(_collect_idents_in_expr(node["left"]), _collect_idents_in_expr(node["right"]))
   }
 
+  if tag == "MatchExpr" {
+    let mut ids = _collect_idents_in_expr(node["expr"])
+    for arm in node["arms"] {
+      if type_of(arm["guard"]) != "void" && arm["guard"]["tag"] != "Void" {
+        ids = concat_arr(ids, _collect_idents_in_expr(arm["guard"]))
+      }
+      let body = arm["body"]
+      if type_of(body["stmts"]) == "array" {
+        ids = concat_arr(ids, _collect_idents_in_block(body))
+      } else {
+        ids = concat_arr(ids, _collect_idents_in_expr(body))
+      }
+    }
+    ret ids
+  }
+
   if tag == "Lambda" {
     ; lambdas capture, so we need to look inside but exclude lambda params
     let mut bound = []
@@ -219,7 +241,7 @@ fn _collect_idents_in_stmt(s) -> [str] {
     let eb = s["else"]
     if type_of(eb) != "void" {
       if eb["tag"] == "ElseBlock" { ids = concat_arr(ids, _collect_idents_in_block(eb["block"])) }
-      if eb["tag"] == "ElseIf" { ids = concat_arr(ids, _collect_idents_in_stmt(eb["if"])) }
+      if eb["tag"] == "ElseIf" { ids = concat_arr(ids, _collect_idents_in_stmt(eb["stmt"])) }
     }
     ret ids
   }
@@ -369,7 +391,10 @@ fn emit_expr(node, bm, ctx, li) {
     }
 
     let mut mangled = ""
-    if _is_intra_module_call(fname, ctx) {
+    let aliases = ctx["import_aliases"]
+    if type_of(aliases) == "map" && map.has(aliases, fname) {
+      mangled = str.concat("fn_", _mangle(aliases[fname]))
+    } else if _is_intra_module_call(fname, ctx) {
       mangled = str.concat("fn_", _mangle(_prefixed_name(fname, ctx)))
     } else {
       mangled = str.concat("fn_", _mangle(fname))
@@ -380,7 +405,7 @@ fn emit_expr(node, bm, ctx, li) {
   if tag == "FieldAccess" {
     let er = emit_expr(node["expr"], bm, ctx, li)
     let field = node["field"]
-    ret _RL(str.concat("a_map_get(", str.concat(er[0], str.concat(", a_string(\"", str.concat(field, "\")")))), er[1], er[2])
+    ret _RL(str.concat("a_map_get(", str.concat(er[0], str.concat(", a_string(\"", str.concat(field, "\"))")))), er[1], er[2])
   }
 
   if tag == "Index" {
@@ -469,12 +494,21 @@ fn emit_expr(node, bm, ctx, li) {
     ret _RL(str.concat("(a_truthy(", str.concat(cr[0], str.concat(") ? ", str.concat(tr[0], str.concat(" : ", str.concat(er[0], ")")))))), er[1], lifted)
   }
 
+  if tag == "MatchExpr" {
+    ret _emit_match_expr(node, bm, ctx, li)
+  }
+
   if tag == "BlockExpr" {
     let stmts = node["block"]["stmts"]
     if len(stmts) > 0 {
       let last = stmts[len(stmts) - 1]
       if last["tag"] == "ExprStmt" {
         ret emit_expr(last["expr"], bm, ctx, li)
+      }
+      if last["tag"] == "Return" {
+        if type_of(last["expr"]) != "void" {
+          ret emit_expr(last["expr"], bm, ctx, li)
+        }
       }
     }
     ret _R("a_void()", li)
@@ -556,17 +590,27 @@ fn emit_expr(node, bm, ctx, li) {
         fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
       }
 
-      for s in stmts {
-        let sr = emit_stmt(s, 1, bm, lambda_ctx, next_li)
-        fn_code = str.concat(fn_code, str.concat("\n", sr[0]))
-        next_li = sr[1]
-        body_lifted = concat_arr(body_lifted, sr[2])
-      }
-
-      let has_return = false
-      if len(stmts) > 0 {
-        let last = stmts[len(stmts) - 1]
-        if last["tag"] == "Return" { has_return = true }
+      ; Emit body, making the last ExprStmt an implicit return
+      let mut has_return = false
+      let mut si = 0
+      while si < len(stmts) {
+        let s = stmts[si]
+        let is_last = si == len(stmts) - 1
+        if is_last && s["tag"] == "ExprStmt" {
+          ; Implicit return from last expression
+          let er = emit_expr(s["expr"], bm, lambda_ctx, next_li)
+          fn_code = str.concat(fn_code, str.concat("\n    return ", str.concat(er[0], ";")))
+          next_li = er[1]
+          body_lifted = concat_arr(body_lifted, er[2])
+          has_return = true
+        } else {
+          let sr = emit_stmt(s, 1, bm, lambda_ctx, next_li)
+          fn_code = str.concat(fn_code, str.concat("\n", sr[0]))
+          next_li = sr[1]
+          body_lifted = concat_arr(body_lifted, sr[2])
+          if is_last && s["tag"] == "Return" { has_return = true }
+        }
+        si = si + 1
       }
       if !has_return {
         fn_code = str.concat(fn_code, "\n    return a_void();")
@@ -891,6 +935,118 @@ fn _emit_match(node, depth, bm, ctx, li) {
   ret _RL(out, li, lifted)
 }
 
+fn _emit_match_expr(node, bm, ctx, li) {
+  let nl = _newline_char()
+  let er = emit_expr(node["expr"], bm, ctx, li)
+  li = er[1]
+  let mut lifted = er[2]
+  let arms = node["arms"]
+
+  let mut code = str.concat("(\{", nl)
+  code = str.concat(code, str.concat("        AValue __match = ", str.concat(er[0], str.concat(";", nl))))
+  code = str.concat(code, str.concat("        AValue __match_result = a_void();", nl))
+  code = str.concat(code, str.concat("        int __matched = 0;", nl))
+
+  ; Pre-declare arm variables
+  let mut arm_vars = []
+  for arm in arms {
+    let pv = _collect_pattern_vars(arm["pattern"])
+    for v in pv { if !contains(arm_vars, v) { arm_vars = push(arm_vars, v) } }
+  }
+  if len(arm_vars) > 0 {
+    code = str.concat(code, str.concat("        AValue ", str.concat(str.join(arm_vars, ", "), str.concat(";", nl))))
+  }
+
+  for arm in arms {
+    let pat = arm["pattern"]
+    let guard = arm["guard"]
+    let body = arm["body"]
+
+    let cr = _emit_pat_cond(pat, "__match", bm, ctx, li)
+    li = cr[1]
+    lifted = concat_arr(lifted, cr[2])
+
+    let mut has_guard = type_of(guard) != "void"
+    if has_guard { if guard["tag"] == "Void" { has_guard = false } }
+
+    code = str.concat(code, str.concat("        if (!__matched && ", str.concat(cr[0], str.concat(") \{", nl))))
+
+    let br = _emit_pat_bind(pat, "__match", 3, bm, ctx, li)
+    li = br[1]
+    lifted = concat_arr(lifted, br[2])
+    if len(br[0]) > 0 {
+      code = str.concat(code, str.concat(br[0], nl))
+    }
+
+    if has_guard {
+      let gr = emit_expr(guard, bm, ctx, li)
+      li = gr[1]
+      lifted = concat_arr(lifted, gr[2])
+      code = str.concat(code, str.concat("            if (a_truthy(", str.concat(gr[0], str.concat(")) \{", nl))))
+
+      let body_r = _emit_match_expr_body(body, bm, ctx, li)
+      li = body_r[1]
+      lifted = concat_arr(lifted, body_r[2])
+      code = str.concat(code, str.concat("                __match_result = ", str.concat(body_r[0], str.concat(";", nl))))
+      code = str.concat(code, str.concat("                __matched = 1;", nl))
+      code = str.concat(code, str.concat("            \}", nl))
+    } else {
+      let body_r = _emit_match_expr_body(body, bm, ctx, li)
+      li = body_r[1]
+      lifted = concat_arr(lifted, body_r[2])
+      code = str.concat(code, str.concat("            __match_result = ", str.concat(body_r[0], str.concat(";", nl))))
+      code = str.concat(code, str.concat("            __matched = 1;", nl))
+    }
+
+    code = str.concat(code, str.concat("        \}", nl))
+  }
+
+  code = str.concat(code, str.concat("        __match_result;", nl))
+  code = str.concat(code, "    \})")
+
+  ret _RL(code, li, lifted)
+}
+
+fn _emit_match_expr_body(body, bm, ctx, li) {
+  let mut lifted = []
+  if type_of(body["stmts"]) == "array" {
+    ; Block body -- emit all statements, then the last expression
+    let stmts = body["stmts"]
+    if len(stmts) == 0 { ret _R("a_void()", li) }
+    let last = stmts[len(stmts) - 1]
+    let nl = _newline_char()
+    let mut preamble = ""
+    let mut i = 0
+    while i < len(stmts) - 1 {
+      let sr = emit_stmt(stmts[i], 4, bm, ctx, li)
+      preamble = str.concat(preamble, str.concat(sr[0], nl))
+      li = sr[1]
+      lifted = concat_arr(lifted, sr[2])
+      i = i + 1
+    }
+    ; Last stmt is the value
+    if last["tag"] == "ExprStmt" {
+      let er = emit_expr(last["expr"], bm, ctx, li)
+      if len(preamble) > 0 {
+        ret _RL(str.concat("(\{", str.concat(nl, str.concat(preamble, str.concat("                ", str.concat(er[0], str.concat(";", str.concat(nl, "            \})"))))))), er[1], concat_arr(lifted, er[2]))
+      }
+      ret _RL(er[0], er[1], concat_arr(lifted, er[2]))
+    }
+    if last["tag"] == "Return" {
+      if type_of(last["expr"]) != "void" {
+        let er = emit_expr(last["expr"], bm, ctx, li)
+        if len(preamble) > 0 {
+          ret _RL(str.concat("(\{", str.concat(nl, str.concat(preamble, str.concat("                ", str.concat(er[0], str.concat(";", str.concat(nl, "            \})"))))))), er[1], concat_arr(lifted, er[2]))
+        }
+        ret _RL(er[0], er[1], concat_arr(lifted, er[2]))
+      }
+    }
+    ret _R("a_void()", li)
+  }
+  ; Single expression body
+  ret emit_expr(body, bm, ctx, li)
+}
+
 ; --- Statement emission ---
 ; Returns [code, li, [lifted_fns]]
 
@@ -930,7 +1086,8 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     if target["tag"] == "Index" {
       let vr = emit_expr(node["value"], bm, ctx, li)
       let tr = emit_expr(target["expr"], bm, ctx, vr[1])
-      ret _RL(str.concat(ind, str.concat("/* index assign */ ", str.concat(tr[0], str.concat(" = ", str.concat(vr[0], ";"))))), tr[1], concat_arr(vr[2], tr[2]))
+      let ir = emit_expr(target["index"], bm, ctx, tr[1])
+      ret _RL(str.concat(ind, str.concat(tr[0], str.concat(" = a_index_set(", str.concat(tr[0], str.concat(", ", str.concat(ir[0], str.concat(", ", str.concat(vr[0], ");")))))))), ir[1], concat_arr(vr[2], concat_arr(tr[2], ir[2])))
     }
     let vr = emit_expr(node["value"], bm, ctx, li)
     let tr = emit_expr(target, bm, ctx, vr[1])
@@ -975,7 +1132,7 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
         out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
       }
       if else_branch["tag"] == "ElseIf" {
-        let sr = emit_stmt(else_branch["if"], depth, bm, ctx, li)
+        let sr = emit_stmt(else_branch["stmt"], depth, bm, ctx, li)
         out = str.concat(out, str.concat(" else ", sr[0]))
         li = sr[1]
         lifted = concat_arr(lifted, sr[2])
@@ -1006,7 +1163,7 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     li = ir[1]
     let mut lifted = ir[2]
     let mut out = str.concat(ind, "\{")
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(ir[0], ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = a_iterable(", str.concat(ir[0], ");")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
     let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
     let mut for_decls = [var_name]
@@ -1033,7 +1190,7 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     li = ir[1]
     let mut lifted = ir[2]
     let mut out = str.concat(ind, "\{")
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = ", str.concat(ir[0], ";")))))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = a_iterable(", str.concat(ir[0], ");")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
     ; Collect all variables to declare
     let mut decls = ["__elem"]
@@ -1114,7 +1271,7 @@ fn _collect_vars_in_stmts(stmts) -> [str] {
           for v in ev { if !contains(vars, v) { vars = push(vars, v) } }
         }
         if eb["tag"] == "ElseIf" {
-          let eiv = _collect_vars_in_stmts([eb["if"]])
+          let eiv = _collect_vars_in_stmts([eb["stmt"]])
           for v in eiv { if !contains(vars, v) { vars = push(vars, v) } }
         }
       }
@@ -1277,6 +1434,7 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
 
   let fn_names = _collect_fn_names(items)
   let ctx = #{"prefix": short, "fns": fn_names}
+  let mut aliases = #{}
 
   for item in items {
     if item["tag"] == "FnDecl" {
@@ -1284,13 +1442,129 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
       all_fwd = push(all_fwd, _emit_fwd_decl(full_name, item["params"]))
       let fr = emit_fn(item, bm, ctx, li)
       li = fr[1]
-      ; Prepend lifted lambdas, then the function itself
       for lf in fr[2] { all_fns = push(all_fns, lf) }
       all_fns = push(all_fns, fr[0])
+      aliases = map.set(aliases, item["name"], full_name)
     }
   }
 
-  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li}
+  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li, "aliases": aliases}
+}
+
+; --- FFI type mapping ---
+
+fn _ffi_c_type(ty_node) -> str {
+  let tag = ty_node["tag"]
+  if tag == "TyPrim" {
+    let name = ty_node["name"]
+    if name == "i8" { ret "int8_t" }
+    if name == "i16" { ret "int16_t" }
+    if name == "i32" { ret "int32_t" }
+    if name == "i64" { ret "int64_t" }
+    if name == "u8" { ret "uint8_t" }
+    if name == "u16" { ret "uint16_t" }
+    if name == "u32" { ret "uint32_t" }
+    if name == "u64" { ret "uint64_t" }
+    if name == "f32" { ret "float" }
+    if name == "f64" { ret "double" }
+    if name == "bool" { ret "int" }
+    if name == "str" { ret "const char*" }
+    if name == "ptr" { ret "void*" }
+    if name == "void" { ret "void" }
+  }
+  ret "AValue"
+}
+
+fn _ffi_extract(ty_node, var_name) -> str {
+  let tag = ty_node["tag"]
+  if tag == "TyPrim" {
+    let name = ty_node["name"]
+    if name == "i8" || name == "i16" || name == "i32" {
+      ret str.concat("(", str.concat(_ffi_c_type(ty_node), str.concat(")", str.concat(var_name, ".ival"))))
+    }
+    if name == "i64" { ret str.concat(var_name, ".ival") }
+    if name == "u8" || name == "u16" || name == "u32" || name == "u64" {
+      ret str.concat("(", str.concat(_ffi_c_type(ty_node), str.concat(")", str.concat(var_name, ".ival"))))
+    }
+    if name == "f32" { ret str.concat("(float)", str.concat(var_name, ".fval")) }
+    if name == "f64" { ret str.concat(var_name, ".fval") }
+    if name == "bool" { ret str.concat(var_name, ".bval") }
+    if name == "str" { ret str.concat(var_name, ".sval->data") }
+    if name == "ptr" { ret str.concat(var_name, ".pval") }
+  }
+  ret var_name
+}
+
+fn _ffi_wrap(ty_node, expr) -> str {
+  let tag = ty_node["tag"]
+  if tag == "TyPrim" {
+    let name = ty_node["name"]
+    if name == "i8" || name == "i16" || name == "i32" || name == "i64" ||
+       name == "u8" || name == "u16" || name == "u32" || name == "u64" {
+      ret str.concat("a_int((int64_t)", str.concat(expr, ")"))
+    }
+    if name == "f32" || name == "f64" { ret str.concat("a_float((double)", str.concat(expr, ")")) }
+    if name == "bool" { ret str.concat("a_bool(", str.concat(expr, ")")) }
+    if name == "str" { ret str.concat("a_string(", str.concat(expr, ")")) }
+    if name == "ptr" { ret str.concat("a_ptr(", str.concat(expr, ")")) }
+    if name == "void" { ret "a_void()" }
+  }
+  ret expr
+}
+
+fn _emit_extern_fn(node) -> [str] {
+  let name = node["name"]
+  let params = node["params"]
+  let ret_type = node["ret_type"]
+  let c_ret = _ffi_c_type(ret_type)
+  let is_void = c_ret == "void"
+
+  ; Build raw C prototype: extern <c_ret> <name>(<c_param_types>);
+  let mut c_param_parts = []
+  for p in params {
+    c_param_parts = push(c_param_parts, _ffi_c_type(p["type"]))
+  }
+  let c_param_str = str.join(c_param_parts, ", ")
+  if len(params) == 0 { c_param_str = "void" }
+  let raw_proto = str.concat("extern ", str.concat(c_ret, str.concat(" ", str.concat(name, str.concat("(", str.concat(c_param_str, ");"))))))
+
+  ; Build AValue shim: AValue fn_<name>(AValue p0, ...) { ... }
+  let mut shim_params = []
+  let mut pi = 0
+  while pi < len(params) {
+    shim_params = push(shim_params, str.concat("AValue __p", to_str(pi)))
+    pi = pi + 1
+  }
+  let shim_param_str = str.join(shim_params, ", ")
+  if len(params) == 0 { shim_param_str = "void" }
+
+  let mut shim = str.concat("AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ") \{\n"))))
+
+  ; Extract arguments
+  let mut call_args = []
+  pi = 0
+  while pi < len(params) {
+    let p = params[pi]
+    let extracted = _ffi_extract(p["type"], str.concat("__p", to_str(pi)))
+    call_args = push(call_args, extracted)
+    pi = pi + 1
+  }
+
+  ; Emit call
+  let call_str = str.concat(name, str.concat("(", str.concat(str.join(call_args, ", "), ")")))
+  if is_void {
+    shim = str.concat(shim, str.concat("    ", str.concat(call_str, ";\n")))
+    shim = str.concat(shim, "    return a_void();\n")
+  } else {
+    shim = str.concat(shim, str.concat("    ", str.concat(c_ret, str.concat(" __result = ", str.concat(call_str, ";\n")))))
+    shim = str.concat(shim, str.concat("    return ", str.concat(_ffi_wrap(ret_type, "__result"), ";\n")))
+  }
+  shim = str.concat(shim, "\}\n")
+
+  ; Forward declaration for the shim
+  let fwd = str.concat("AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ");"))))
+
+  ret [raw_proto, fwd, shim]
 }
 
 ; --- Program emission ---
@@ -1302,6 +1576,7 @@ fn emit_program(prog_ast, bm) -> str {
   let mut all_fns = []
   let mut loaded = []
   let mut li = 0
+  let mut import_aliases = #{}
 
   for item in items {
     if item["tag"] == "UseDecl" {
@@ -1310,11 +1585,30 @@ fn emit_program(prog_ast, bm) -> str {
       li = result["li"]
       all_fwd = concat_arr(all_fwd, result["fwd"])
       all_fns = concat_arr(all_fns, result["fns"])
+      let al = result["aliases"]
+      if type_of(al) == "map" {
+        for [k, v] in al { import_aliases = map.set(import_aliases, k, v) }
+      }
     }
   }
 
-  let main_fn_names = _collect_fn_names(items)
-  let main_ctx = #{"prefix": "", "fns": main_fn_names}
+  let mut main_fn_names = _collect_fn_names(items)
+  for [k, v] in import_aliases { main_fn_names = push(main_fn_names, k) }
+
+  ; Collect extern fn names so call resolution treats them as known
+  let mut extern_protos = []
+  let mut extern_shims = []
+  for item in items {
+    if item["tag"] == "ExternFn" {
+      main_fn_names = push(main_fn_names, item["name"])
+      let parts = _emit_extern_fn(item)
+      extern_protos = push(extern_protos, parts[0])
+      all_fwd = push(all_fwd, parts[1])
+      extern_shims = push(extern_shims, parts[2])
+    }
+  }
+
+  let main_ctx = #{"prefix": "", "fns": main_fn_names, "import_aliases": import_aliases}
 
   for item in items {
     if item["tag"] == "FnDecl" {
@@ -1327,6 +1621,13 @@ fn emit_program(prog_ast, bm) -> str {
   }
 
   let mut out = "#include \"runtime.h\"\n#include <stdlib.h>\n\n"
+
+  ; Emit extern C prototypes
+  if len(extern_protos) > 0 {
+    out = str.concat(out, "/* FFI extern prototypes */\n")
+    for p in extern_protos { out = str.concat(out, str.concat(p, "\n")) }
+    out = str.concat(out, "\n")
+  }
 
   ; Forward declarations for lifted lambdas
   let mut lambda_fwd = []
@@ -1344,6 +1645,9 @@ fn emit_program(prog_ast, bm) -> str {
   out = str.concat(out, "/* Forward declarations */\n")
   for f in all_fwd { out = str.concat(out, str.concat(f, "\n")) }
   out = str.concat(out, "\n")
+
+  ; Emit FFI shim wrappers
+  for s in extern_shims { out = str.concat(out, str.concat(s, "\n")) }
 
   for f in all_fns { out = str.concat(out, str.concat(f, "\n")) }
 

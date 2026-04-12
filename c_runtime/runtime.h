@@ -8,7 +8,7 @@
 typedef enum {
     TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_VOID,
     TAG_STRING, TAG_ARRAY, TAG_MAP, TAG_RESULT,
-    TAG_CLOSURE
+    TAG_CLOSURE, TAG_PTR
 } ATag;
 
 typedef struct AString {
@@ -47,6 +47,7 @@ struct AValue {
         AMap* mval;
         AClosure* cval;
         struct { int is_ok; AValue* inner; } rval;
+        void* pval;
     };
 };
 
@@ -69,6 +70,11 @@ AValue a_void(void);
 AValue a_string(const char* s);
 AValue a_string_len(const char* s, int len);
 
+/* Pointers (FFI) */
+AValue a_ptr(void* p);
+AValue a_ptr_null(void);
+AValue a_is_null(AValue v);
+
 /* Refcounting */
 AValue a_retain(AValue v);
 void a_release(AValue v);
@@ -76,6 +82,10 @@ void a_release(AValue v);
 /* Truthiness */
 int a_truthy(AValue v);
 int a_ilen(AValue v);
+AValue a_iterable(AValue v);
+AValue a_index_set(AValue coll, AValue idx, AValue val);
+AValue a_str_find(AValue s, AValue needle);
+AValue a_str_count(AValue s, AValue needle);
 
 /* Arithmetic */
 AValue a_add(AValue a, AValue b);
@@ -131,13 +141,30 @@ AValue a_map_has(AValue m, AValue key);
 AValue a_map_keys(AValue m);
 AValue a_map_values(AValue m);
 AValue a_map_merge(AValue a, AValue b);
+AValue a_map_delete(AValue m, AValue key);
+AValue a_map_entries(AValue m);
+AValue a_map_from_entries(AValue arr);
 
 /* I/O */
-void a_println(AValue v);
-void a_print(AValue v);
-void a_eprintln(AValue v);
+AValue a_println(AValue v);
+AValue a_print(AValue v);
+AValue a_eprintln(AValue v);
 AValue a_io_read_file(AValue path);
 AValue a_io_write_file(AValue path, AValue contents);
+
+/* Filesystem */
+AValue a_fs_ls(AValue path);
+AValue a_fs_mkdir(AValue path);
+AValue a_fs_cwd(void);
+AValue a_fs_exists(AValue path);
+AValue a_fs_is_dir(AValue path);
+
+/* System */
+AValue a_exec(AValue cmd);
+AValue a_env_get(AValue key);
+
+/* JSON */
+AValue a_json_parse(AValue input);
 
 /* Result */
 AValue a_ok(AValue v);

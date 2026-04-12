@@ -1,0 +1,124 @@
+; Test expression completeness for native compilation
+
+fn test_unary() {
+  let x = -42
+  println(x)
+  let y = 3.14
+  println(-y)
+  println(!true)
+  println(!false)
+  println(--5)
+  println(!!true)
+}
+
+fn test_match_with_result() {
+  ; Match on Results
+  let mut out = ""
+  match Ok(42) {
+    Ok(v) => { out = to_str(v) }
+    Err(e) => { out = "error" }
+  }
+  println(out)
+
+  ; Match on array
+  match [1, 2, 3] {
+    [a, b, c] => { println(a + b + c) }
+    _ => { println("no match") }
+  }
+
+  ; Match with guard
+  let n = 15
+  let mut label = ""
+  match n {
+    0 => { label = "zero" }
+    1 => { label = "one" }
+    _ if n < 0 => { label = "negative" }
+    _ => { label = "many" }
+  }
+  println(label)
+
+  ; Nested match
+  let data = #{"status": 200, "body": "ok"}
+  match data {
+    #{"status": 200} => { println("success") }
+    _ => { println("failure") }
+  }
+}
+
+fn test_nested_exprs() {
+  ; Pipe chains with closures
+  let doubled = [1, 2, 3, 4, 5] |> map(fn(x) { x * 2 })
+  println(doubled)
+
+  ; Filter + reduce
+  let sum = [1, 2, 3, 4, 5] |> filter(fn(x) { x > 2 }) |> reduce(fn(acc, x) { acc + x }, 0)
+  println(sum)
+
+  ; Try with ?
+  let r = try { Ok(10)? + Ok(20)? }
+  println(r)
+
+  let r2 = try { Err("fail")? }
+  println(r2)
+
+  ; Spread in various positions
+  let a = [1, 2]
+  let b = [3, 4]
+  println([...a, ...b])
+  println([0, ...a, 99])
+
+  ; Destructuring
+  let [x, y, z] = [10, 20, 30]
+  println(x + y + z)
+
+  let [head, ...tail] = [1, 2, 3, 4]
+  println(head)
+  println(tail)
+
+  ; For destructuring
+  for [k, v] in [[1, "a"], [2, "b"], [3, "c"]] {
+    println("{k}={v}")
+  }
+}
+
+fn test_closures_in_expr() {
+  ; Closure capturing variables
+  let multiplier = 3
+  let mul = fn(x) { x * multiplier }
+  println(mul(7))
+
+  ; Closure returning closure
+  let adder = fn(n) {
+    ret fn(x) { x + n }
+  }
+  let add5 = adder(5)
+  println(add5(10))
+
+  ; HOF chain
+  let result = [1, 2, 3, 4, 5]
+    |> map(fn(x) { x * x })
+    |> filter(fn(x) { x > 5 })
+    |> reduce(fn(acc, x) { acc + x }, 0)
+  println(result)
+}
+
+fn test_string_interp() {
+  let name = "world"
+  println("hello {name}")
+
+  let n = 42
+  println("value is {n}")
+
+  ; Interpolation with expressions
+  println("sum is {1 + 2}")
+  println("len is {len([1,2,3])}")
+}
+
+fn main() {
+  test_unary()
+  test_match_with_result()
+  test_nested_exprs()
+  test_closures_in_expr()
+  test_string_interp()
+  println("all expression tests passed")
+}

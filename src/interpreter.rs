@@ -135,6 +135,7 @@ impl Interpreter {
             TopLevelKind::UseDecl(u) => {
                 self.load_module(&u.path);
             }
+            TopLevelKind::ExternFn(_) => {}
         }
     }
 

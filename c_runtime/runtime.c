@@ -4,6 +4,9 @@
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int g_argc = 0;
 char** g_argv = NULL;
@@ -18,6 +21,10 @@ AValue a_int(int64_t v) { return (AValue){.tag = TAG_INT, .ival = v}; }
 AValue a_float(double v) { return (AValue){.tag = TAG_FLOAT, .fval = v}; }
 AValue a_bool(int v) { return (AValue){.tag = TAG_BOOL, .bval = v != 0}; }
 AValue a_void(void) { return (AValue){.tag = TAG_VOID}; }
+
+AValue a_ptr(void* p) { return (AValue){.tag = TAG_PTR, .pval = p}; }
+AValue a_ptr_null(void) { return (AValue){.tag = TAG_PTR, .pval = NULL}; }
+AValue a_is_null(AValue v) { return a_bool(v.tag == TAG_PTR && v.pval == NULL); }
 
 AValue a_string(const char* s) {
     int len = s ? (int)strlen(s) : 0;
@@ -89,7 +96,13 @@ int a_truthy(AValue v) {
 int a_ilen(AValue v) {
     if (v.tag == TAG_ARRAY && v.aval) return v.aval->len;
     if (v.tag == TAG_STRING && v.sval) return v.sval->len;
+    if (v.tag == TAG_MAP && v.mval) return v.mval->len;
     return 0;
+}
+
+AValue a_iterable(AValue v) {
+    if (v.tag == TAG_MAP) return a_map_entries(v);
+    return v;
 }
 
 /* --- Arithmetic --- */
@@ -229,6 +242,7 @@ static void val_to_buf(AValue v, char* buf, int cap) {
             break;
         }
         case TAG_CLOSURE: snprintf(buf, cap, "<closure>"); break;
+        case TAG_PTR: snprintf(buf, cap, "<ptr:%p>", v.pval); break;
         default: snprintf(buf, cap, "<value>"); break;
     }
 }
@@ -413,6 +427,23 @@ AValue a_str_ends_with(AValue s, AValue suf) {
     return a_bool(memcmp(s.sval->data + s.sval->len - suf.sval->len, suf.sval->data, suf.sval->len) == 0);
 }
 
+AValue a_str_find(AValue s, AValue needle) {
+    if (s.tag != TAG_STRING || needle.tag != TAG_STRING) return a_int(-1);
+    char* p = strstr(s.sval->data, needle.sval->data);
+    if (!p) return a_int(-1);
+    return a_int((int)(p - s.sval->data));
+}
+
+AValue a_str_count(AValue s, AValue needle) {
+    if (s.tag != TAG_STRING || needle.tag != TAG_STRING) return a_int(0);
+    int count = 0;
+    const char* p = s.sval->data;
+    int nlen = needle.sval->len;
+    if (nlen == 0) return a_int(0);
+    while ((p = strstr(p, needle.sval->data)) != NULL) { count++; p += nlen; }
+    return a_int(count);
+}
+
 /* --- Arrays --- */
 
 AValue a_array_new(int n, ...) {
@@ -439,6 +470,20 @@ AValue a_array_get(AValue arr, AValue idx) {
     if (arr.tag != TAG_ARRAY) return a_void();
     if (i < 0 || i >= arr.aval->len) return a_void();
     return arr.aval->items[i];
+}
+
+AValue a_index_set(AValue coll, AValue idx, AValue val) {
+    if (coll.tag == TAG_MAP) return a_map_set(coll, idx, val);
+    if (coll.tag != TAG_ARRAY || idx.tag != TAG_INT) return coll;
+    int i = (int)idx.ival;
+    int n = coll.aval->len;
+    if (i < 0 || i >= n) return coll;
+    AArray* na = malloc(sizeof(AArray));
+    na->rc = 1; na->len = n; na->cap = n;
+    na->items = malloc(sizeof(AValue) * n);
+    for (int j = 0; j < n; j++) na->items[j] = coll.aval->items[j];
+    na->items[i] = val;
+    return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
 AValue a_array_push(AValue arr, AValue val) {
@@ -603,6 +648,47 @@ AValue a_map_merge(AValue a, AValue b) {
     return result;
 }
 
+AValue a_map_delete(AValue m, AValue key) {
+    if (m.tag != TAG_MAP) return m;
+    const char* k = val_as_key(key);
+    int idx = map_find(m.mval, k);
+    if (idx < 0) return m;
+    AMap* nm = malloc(sizeof(AMap));
+    nm->rc = 1; nm->len = m.mval->len - 1;
+    nm->cap = nm->len > 0 ? nm->len : 1;
+    nm->keys = malloc(sizeof(char*) * nm->cap);
+    nm->vals = malloc(sizeof(AValue) * nm->cap);
+    int j = 0;
+    for (int i = 0; i < m.mval->len; i++) {
+        if (i == idx) continue;
+        nm->keys[j] = strdup(m.mval->keys[i]);
+        nm->vals[j] = m.mval->vals[i];
+        j++;
+    }
+    return (AValue){.tag = TAG_MAP, .mval = nm};
+}
+
+AValue a_map_entries(AValue m) {
+    if (m.tag != TAG_MAP) return a_array_new(0);
+    AArray* arr = malloc(sizeof(AArray));
+    arr->rc = 1; arr->len = m.mval->len; arr->cap = arr->len > 0 ? arr->len : 1;
+    arr->items = malloc(sizeof(AValue) * arr->cap);
+    for (int i = 0; i < m.mval->len; i++)
+        arr->items[i] = a_array_new(2, a_string(m.mval->keys[i]), m.mval->vals[i]);
+    return (AValue){.tag = TAG_ARRAY, .aval = arr};
+}
+
+AValue a_map_from_entries(AValue arr) {
+    if (arr.tag != TAG_ARRAY) return a_map_new(0);
+    AValue m = a_map_new(0);
+    for (int i = 0; i < arr.aval->len; i++) {
+        AValue entry = arr.aval->items[i];
+        if (entry.tag == TAG_ARRAY && entry.aval->len >= 2)
+            m = a_map_set(m, entry.aval->items[0], entry.aval->items[1]);
+    }
+    return m;
+}
+
 /* --- I/O --- */
 
 static void print_val(AValue v) {
@@ -612,12 +698,13 @@ static void print_val(AValue v) {
     fputs(buf, stdout);
 }
 
-void a_println(AValue v) { print_val(v); putchar('\n'); }
-void a_print(AValue v) { print_val(v); }
-void a_eprintln(AValue v) {
+AValue a_println(AValue v) { print_val(v); putchar('\n'); return (AValue){.tag = TAG_VOID}; }
+AValue a_print(AValue v) { print_val(v); return (AValue){.tag = TAG_VOID}; }
+AValue a_eprintln(AValue v) {
     char buf[4096];
     val_to_buf(v, buf, 4096);
     fprintf(stderr, "%s\n", buf);
+    return (AValue){.tag = TAG_VOID};
 }
 
 AValue a_io_read_file(AValue path) {
@@ -643,6 +730,193 @@ AValue a_io_write_file(AValue path, AValue contents) {
     fwrite(contents.sval->data, 1, contents.sval->len, f);
     fclose(f);
     return a_ok(a_void());
+}
+
+AValue a_fs_ls(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.ls: expected string path"));
+    DIR* d = opendir(path.sval->data);
+    if (!d) return a_err(a_string("fs.ls: cannot open directory"));
+    AValue arr = a_array_new(0);
+    struct dirent* entry;
+    while ((entry = readdir(d)) != NULL) {
+        if (entry->d_name[0] == '.' && (entry->d_name[1] == '\0' ||
+            (entry->d_name[1] == '.' && entry->d_name[2] == '\0'))) continue;
+        AValue name = a_string(entry->d_name);
+        int is_dir = (entry->d_type == DT_DIR);
+        AValue item = a_map_new(0);
+        item = a_map_set(item, a_string("name"), name);
+        item = a_map_set(item, a_string("is_dir"), a_bool(is_dir));
+        arr = a_array_push(arr, item);
+    }
+    closedir(d);
+    return arr;
+}
+
+AValue a_fs_mkdir(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.mkdir: expected string path"));
+    if (mkdir(path.sval->data, 0755) == 0) return a_void();
+    return a_err(a_string("fs.mkdir: failed"));
+}
+
+AValue a_fs_cwd(void) {
+    char buf[4096];
+    if (getcwd(buf, sizeof(buf))) return a_string(buf);
+    return a_err(a_string("fs.cwd: failed"));
+}
+
+AValue a_fs_exists(AValue path) {
+    if (path.tag != TAG_STRING) return a_bool(0);
+    return a_bool(access(path.sval->data, F_OK) == 0);
+}
+
+AValue a_fs_is_dir(AValue path) {
+    if (path.tag != TAG_STRING) return a_bool(0);
+    struct stat st;
+    if (stat(path.sval->data, &st) != 0) return a_bool(0);
+    return a_bool(S_ISDIR(st.st_mode));
+}
+
+AValue a_exec(AValue cmd) {
+    if (cmd.tag != TAG_STRING) return a_err(a_string("exec: expected string"));
+    FILE* p = popen(cmd.sval->data, "r");
+    if (!p) {
+        AValue r = a_map_new(0);
+        r = a_map_set(r, a_string("stdout"), a_string(""));
+        r = a_map_set(r, a_string("stderr"), a_string("exec: popen failed"));
+        r = a_map_set(r, a_string("code"), a_int(-1));
+        return r;
+    }
+    size_t cap = 4096, len = 0;
+    char* buf = malloc(cap);
+    size_t n;
+    while ((n = fread(buf + len, 1, cap - len, p)) > 0) {
+        len += n;
+        if (len >= cap) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    buf[len] = '\0';
+    int status = pclose(p);
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    AValue stdout_val = a_string_len(buf, (int)len);
+    free(buf);
+    AValue r = a_map_new(0);
+    r = a_map_set(r, a_string("stdout"), stdout_val);
+    r = a_map_set(r, a_string("stderr"), a_string(""));
+    r = a_map_set(r, a_string("code"), a_int(code));
+    return r;
+}
+
+AValue a_env_get(AValue key) {
+    if (key.tag != TAG_STRING) return a_void();
+    const char* val = getenv(key.sval->data);
+    if (val) return a_string(val);
+    return a_void();
+}
+
+/* --- JSON parser --- */
+
+static AValue json_parse_value(const char** p);
+
+static void json_skip_ws(const char** p) {
+    while (**p == ' ' || **p == '\t' || **p == '\n' || **p == '\r') (*p)++;
+}
+
+static AValue json_parse_string(const char** p) {
+    (*p)++; /* skip opening quote */
+    size_t cap = 256, len = 0;
+    char* buf = malloc(cap);
+    while (**p && **p != '"') {
+        if (**p == '\\') {
+            (*p)++;
+            switch (**p) {
+                case '"': buf[len++] = '"'; break;
+                case '\\': buf[len++] = '\\'; break;
+                case '/': buf[len++] = '/'; break;
+                case 'n': buf[len++] = '\n'; break;
+                case 't': buf[len++] = '\t'; break;
+                case 'r': buf[len++] = '\r'; break;
+                case 'b': buf[len++] = '\b'; break;
+                case 'f': buf[len++] = '\f'; break;
+                default: buf[len++] = **p; break;
+            }
+        } else {
+            buf[len++] = **p;
+        }
+        (*p)++;
+        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    if (**p == '"') (*p)++;
+    buf[len] = '\0';
+    AValue result = a_string_len(buf, (int)len);
+    free(buf);
+    return result;
+}
+
+static AValue json_parse_number(const char** p) {
+    const char* start = *p;
+    int is_float = 0;
+    if (**p == '-') (*p)++;
+    while (isdigit(**p)) (*p)++;
+    if (**p == '.') { is_float = 1; (*p)++; while (isdigit(**p)) (*p)++; }
+    if (**p == 'e' || **p == 'E') { is_float = 1; (*p)++; if (**p == '+' || **p == '-') (*p)++; while (isdigit(**p)) (*p)++; }
+    if (is_float) return a_float(strtod(start, NULL));
+    return a_int(strtoll(start, NULL, 10));
+}
+
+static AValue json_parse_array(const char** p) {
+    (*p)++; /* skip [ */
+    json_skip_ws(p);
+    AValue arr = a_array_new(0);
+    if (**p == ']') { (*p)++; return arr; }
+    while (1) {
+        json_skip_ws(p);
+        AValue v = json_parse_value(p);
+        arr = a_array_push(arr, v);
+        json_skip_ws(p);
+        if (**p == ',') { (*p)++; continue; }
+        if (**p == ']') { (*p)++; break; }
+        break;
+    }
+    return arr;
+}
+
+static AValue json_parse_object(const char** p) {
+    (*p)++; /* skip { */
+    json_skip_ws(p);
+    AValue m = a_map_new(0);
+    if (**p == '}') { (*p)++; return m; }
+    while (1) {
+        json_skip_ws(p);
+        if (**p != '"') break;
+        AValue key = json_parse_string(p);
+        json_skip_ws(p);
+        if (**p == ':') (*p)++;
+        json_skip_ws(p);
+        AValue val = json_parse_value(p);
+        m = a_map_set(m, key, val);
+        json_skip_ws(p);
+        if (**p == ',') { (*p)++; continue; }
+        if (**p == '}') { (*p)++; break; }
+        break;
+    }
+    return m;
+}
+
+static AValue json_parse_value(const char** p) {
+    json_skip_ws(p);
+    if (**p == '"') return json_parse_string(p);
+    if (**p == '[') return json_parse_array(p);
+    if (**p == '{') return json_parse_object(p);
+    if (**p == 't' && strncmp(*p, "true", 4) == 0) { *p += 4; return a_bool(1); }
+    if (**p == 'f' && strncmp(*p, "false", 5) == 0) { *p += 5; return a_bool(0); }
+    if (**p == 'n' && strncmp(*p, "null", 4) == 0) { *p += 4; return a_void(); }
+    if (**p == '-' || isdigit(**p)) return json_parse_number(p);
+    return a_void();
+}
+
+AValue a_json_parse(AValue input) {
+    if (input.tag != TAG_STRING) return a_err(a_string("json.parse: expected string"));
+    const char* p = input.sval->data;
+    return json_parse_value(&p);
 }
 
 /* --- Result --- */
@@ -703,6 +977,7 @@ AValue a_type_of(AValue v) {
         case TAG_MAP: return a_string("map");
         case TAG_RESULT: return a_string("result");
         case TAG_CLOSURE: return a_string("closure");
+        case TAG_PTR: return a_string("ptr");
         default: return a_string("unknown");
     }
 }

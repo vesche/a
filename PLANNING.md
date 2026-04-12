@@ -1349,3 +1349,187 @@ All 10 test programs pass (original 8 + patterns + features):
 
 Fixed-point test: gen1.c == gen2.c (4,951 lines, byte-identical)
 
+---
+
+## v0.45.1 -- Expression Completeness ✅
+
+### Motivation
+
+Audit and fix expression handling in the native compiler to ensure every expression the VM evaluates compiles correctly to C.
+
+### Findings & Fixes
+
+**Lambda implicit return (critical bug fix):**
+Lambda bodies like `fn(x) { x * 2 }` were not returning their last expression value — they always returned `void`. The lambda body emission now detects when the last statement is an `ExprStmt` and emits it as `return <expr>;` instead of just `<expr>;`. This fixed closures, map, filter, reduce, and all HOF results.
+
+**Void-returning builtins:**
+`a_println`, `a_print`, `a_eprintln` were `void` in C but could appear as the last expression in a lambda body. Changed them to return `AValue` (returning `a_void()`) for consistency, so `return a_println(x);` is valid C.
+
+**MatchExpr / IfExpr:**
+Investigated — neither the Rust parser nor self-hosted parser produces `MatchExpr` or `IfExpr` nodes. These are AST infrastructure for future use. Added `_emit_match_expr` to cgen.a for when the parser adds support.
+
+**BlockExpr trailing Return:**
+Fixed `BlockExpr` to handle `Return` as the last statement (previously only handled `ExprStmt`).
+
+**UnaryOp:**
+Audited — both the VM and native compiler handle only `!` (not) and `-` (negate). cgen.a maps these to `a_not()` and `a_neg()`. Complete.
+
+### Test Results
+
+All 11 test programs pass (original 10 + expressions):
+
+| Program | Status |
+|---------|--------|
+| arrays | PASS |
+| closures | PASS |
+| complex | PASS |
+| expressions | PASS |
+| features | PASS |
+| fib | PASS |
+| maps | PASS |
+| multi_fn | PASS |
+| patterns | PASS |
+| strings | PASS |
+| bench_fib | PASS |
+
+Fixed-point test: gen1.c == gen2.c (5,108 lines, byte-identical)
+
+---
+
+## v0.45.2 -- Native I/O Primitives ✅
+
+### Motivation
+
+The native compiler could emit C code, but it relied on the Rust VM to read source files. This version adds POSIX I/O to the C runtime so the native binary is fully standalone.
+
+### C Runtime Additions (~190 lines)
+
+| Function | What |
+|----------|------|
+| `a_fs_ls(path)` | `opendir`/`readdir`/`closedir`, returns array of `#{name, is_dir}` maps |
+| `a_fs_mkdir(path)` | `mkdir()` with 0755 permissions |
+| `a_fs_cwd()` | `getcwd()` |
+| `a_fs_exists(path)` | `access(path, F_OK)` |
+| `a_fs_is_dir(path)` | `stat()` + `S_ISDIR` |
+| `a_exec(cmd)` | `popen`/`pclose`, returns `#{stdout, stderr, code}` map |
+| `a_env_get(key)` | `getenv()` |
+| `a_json_parse(input)` | Recursive-descent JSON parser (~130 lines), handles strings, numbers, arrays, objects, booleans, null |
+
+Also: `io.read_file` and `io.write_file` already existed from earlier work.
+
+### The Milestone: Three-Stage Bootstrap
+
+```
+Stage 1: VM compiles cgen.a → gen1.c (5,108 lines)
+Stage 2: gcc gen1.c → ac_s1 (native binary)
+Stage 3: ac_s1 reads cgen.a from disk → gen2.c (5,108 lines)
+Stage 4: gen1.c == gen2.c (byte-identical)
+Stage 5: gcc gen2.c → ac_s2 → gen3.c == gen2.c (three-stage fixed point)
+```
+
+No Rust VM in the loop. The native compiler reads its own source, compiles itself, and produces identical output across three generations.
+
+### Test Results
+
+All 12 test programs pass:
+
+| Program | Status |
+|---------|--------|
+| arrays | PASS |
+| closures | PASS |
+| complex | PASS |
+| expressions | PASS |
+| features | PASS |
+| fib | PASS |
+| io_test | PASS |
+| maps | PASS |
+| multi_fn | PASS |
+| patterns | PASS |
+| strings | PASS |
+| bench_fib | PASS |
+
+C runtime: ~1,400 lines. cgen.a: 1,522 lines. Generated C: 5,108 lines.
+
+---
+
+## v0.45.3 -- Test Hardening ✅
+
+### Motivation
+
+Before adding FFI complexity, every existing language feature must work correctly in native compilation. This version ran the VM test suite through native, built a test harness, and fixed every edge case.
+
+### Test Harness
+
+Created `scripts/native_test.sh` -- a shell script that:
+1. Scans test files for `fn test_*` functions
+2. Generates a `main()` wrapper that calls each test (handling both bool-returning and assert-based tests)
+3. Compiles to C via the VM → C → gcc pipeline
+4. Runs the binary and reports pass/fail
+
+### Bugs Found and Fixed
+
+1. **`else if` codegen completely broken** -- The `ElseIf` AST node stores its inner `If` under key `"stmt"`, but cgen accessed `"if"` (which returns void). Every `else if` in the language emitted dead code. Fixed in three locations: `_collect_idents_in_stmt`, `emit_stmt`, `_collect_vars_in_stmts`.
+
+2. **Index assignment broken** (`m["key"] = val`) -- Emitted `m = val` instead of `m = a_index_set(m, key, val)`. Added `a_index_set` to C runtime (dispatches on array vs map).
+
+3. **FieldAccess missing paren** (`m.name`) -- `a_map_get(m, a_string("name")` was missing closing `)`. One character.
+
+4. **Module import name resolution missing** -- `use std.testing` imported functions with prefixed names (e.g., `fn_testing_assert_eq`) but call sites in the importing file used unprefixed names (`assert_eq`). Added `import_aliases` map to track unprefixed→prefixed mappings. Call resolution now checks aliases first.
+
+5. **Map iteration broken** -- `for [k,v] in map` assumed the iterable was an array. Added `a_iterable()` runtime helper that auto-converts maps to entry arrays.
+
+6. **Missing builtins** -- Added `map.delete`, `map.entries`, `map.from_entries`, `str.find`, `str.count` to both C runtime and cgen builtin map.
+
+### Test Results
+
+7 test suites, 113 individual tests, all passing:
+
+| Test Suite | Tests | Status |
+|-----------|-------|--------|
+| test_patterns | 22 | PASS |
+| test_maps | 21 | PASS |
+| test_destructure | 18 | PASS |
+| test_functional | 26 | PASS |
+| test_strings | 14 | PASS |
+| test_core | 8 | PASS |
+| test_stack_traces | 4 | PASS |
+
+Plus 13 example programs all passing. Three-stage bootstrap verified: 5,138 lines C, byte-identical.
+
+C runtime: ~1,500 lines. cgen.a: ~1,530 lines. Generated C: 5,138 lines.
+
+---
+
+## v0.46 -- C Foreign Function Interface
+
+**Goal**: Allow "a" programs to call arbitrary C functions via `extern fn` declarations with automatic type marshalling.
+
+### What Was Added
+
+1. **`extern fn` syntax**: New `extern` keyword in both self-hosted lexer (`KwExtern`) and Rust lexer (`TokenKind::Extern`). Parser produces `ExternFn` AST nodes with typed parameters and return type. No function body — just a declaration.
+
+2. **`ptr` type**: `TAG_PTR` in C runtime's `ATag` enum, `void* pval` in `AValue` union, `TyPtr` token in lexer, constructors `a_ptr()`, `a_ptr_null()`, `a_is_null()`. Builtin map entries `ptr.null` and `ptr.is_null`.
+
+3. **Shim generation** (the key insight): Each `extern fn` generates two C declarations:
+   - A raw C prototype: `extern int32_t abs(int32_t);`
+   - An AValue shim wrapper: `AValue fn_abs(AValue __p0) { int32_t __result = abs((int32_t)__p0.ival); return a_int((int64_t)__result); }`
+   
+   Call sites use the shim, so the entire existing call resolution system (builtin check, known-fn check, closure fallback) works unchanged.
+
+4. **Type marshalling**: `_ffi_c_type()` maps "a" types to C types, `_ffi_extract()` generates AValue→C extraction code, `_ffi_wrap()` generates C→AValue construction code. Full table: i8-i64/u8-u64 ↔ int*_t/uint*_t, f32/f64 ↔ float/double, str ↔ const char*, bool ↔ int, ptr ↔ void*, void.
+
+5. **Rust VM parity**: `ExternFn` variant in `TopLevelKind`, parsed by Rust parser, handled as no-op in interpreter/compiler/checker/formatter. VM can parse files with `extern fn` without errors.
+
+### Verification
+
+- Three-stage bootstrap: 5,415 lines C, byte-identical across all stages
+- 113 native tests passing (7 suites), 14 example programs (including `ffi_test.a`)
+- `ffi_test.a` exercises `abs`, `atoi`, `strlen`, `getpid` — all correct
+
+### Deferred
+
+- Callback trampolines (passing closures as C function pointers)
+- `extern struct` for direct C struct access
+- Variadic C functions (`printf`, etc.)
+- `#link` build integration
+

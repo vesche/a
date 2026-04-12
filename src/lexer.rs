@@ -411,6 +411,7 @@ impl Lexer {
             "pre" => TokenKind::Pre,
             "post" => TokenKind::Post,
             "where" => TokenKind::Where,
+            "extern" => TokenKind::Extern,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "i8" => TokenKind::I8,
@@ -427,6 +428,7 @@ impl Lexer {
             "str" => TokenKind::Str,
             "bytes" => TokenKind::Bytes,
             "void" => TokenKind::Void,
+            "ptr" => TokenKind::Ptr,
             "_" => TokenKind::Underscore,
             _ => TokenKind::Ident(text),
         };

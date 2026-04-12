@@ -18,6 +18,7 @@ pub enum TopLevelKind {
     TypeDecl(TypeDecl),
     ModDecl(ModDecl),
     UseDecl(UseDecl),
+    ExternFn(ExternFnDecl),
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -68,8 +69,15 @@ pub enum TypeExpr {
     I8, I16, I32, I64,
     U8, U16, U32, U64,
     F32, F64,
-    Bool, Str, Bytes, Void,
+    Bool, Str, Bytes, Void, Ptr,
     Infer,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ExternFnDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub ret_type: TypeExpr,
 }
 
 #[derive(Debug, Clone, Serialize)]

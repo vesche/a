@@ -22,6 +22,15 @@ fn format_top_level(out: &mut String, item: &TopLevel, level: usize) {
         TopLevelKind::TypeDecl(t) => format_type_decl(out, t, level),
         TopLevelKind::ModDecl(m) => format_mod(out, m, level),
         TopLevelKind::UseDecl(u) => format_use(out, u, level),
+        TopLevelKind::ExternFn(e) => {
+            indent(out, level);
+            out.push_str(&format!("extern fn {}(", e.name));
+            for (i, p) in e.params.iter().enumerate() {
+                if i > 0 { out.push_str(", "); }
+                out.push_str(&format!("{}: {}", p.name, format_type_expr(&p.ty)));
+            }
+            out.push_str(&format!(") -> {}\n", format_type_expr(&e.ret_type)));
+        }
     }
 }
 
@@ -117,7 +126,7 @@ fn format_type_expr(ty: &TypeExpr) -> String {
         TypeExpr::U32 => "u32".into(), TypeExpr::U64 => "u64".into(),
         TypeExpr::F32 => "f32".into(), TypeExpr::F64 => "f64".into(),
         TypeExpr::Bool => "bool".into(), TypeExpr::Str => "str".into(),
-        TypeExpr::Bytes => "bytes".into(), TypeExpr::Void => "void".into(),
+        TypeExpr::Bytes => "bytes".into(), TypeExpr::Void => "void".into(), TypeExpr::Ptr => "ptr".into(),
         TypeExpr::Array(inner) => format!("[{}]", format_type_expr(inner)),
         TypeExpr::Tuple(types) => {
             let inner: Vec<String> = types.iter().map(format_type_expr).collect();

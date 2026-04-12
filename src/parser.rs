@@ -106,8 +106,9 @@ impl Parser {
             TokenKind::Ty => TopLevelKind::TypeDecl(self.parse_type_decl()?),
             TokenKind::Mod => TopLevelKind::ModDecl(self.parse_mod_decl()?),
             TokenKind::Use => TopLevelKind::UseDecl(self.parse_use_decl()?),
+            TokenKind::Extern => TopLevelKind::ExternFn(self.parse_extern_fn()?),
             _ => return Err(AError::parse(
-                format!("expected fn, ty, mod, or use; found {}", self.peek_kind()),
+                format!("expected fn, ty, mod, use, or extern; found {}", self.peek_kind()),
                 self.peek_span(),
             )),
         };
@@ -286,6 +287,7 @@ impl Parser {
             TokenKind::Str => { self.advance(); Ok(TypeExpr::Str) }
             TokenKind::Bytes => { self.advance(); Ok(TypeExpr::Bytes) }
             TokenKind::Void => { self.advance(); Ok(TypeExpr::Void) }
+            TokenKind::Ptr => { self.advance(); Ok(TypeExpr::Ptr) }
             TokenKind::LBracket => {
                 self.advance();
                 let inner = self.parse_type_expr()?;
@@ -352,6 +354,27 @@ impl Parser {
                 self.peek_span(),
             )),
         }
+    }
+
+    fn parse_extern_fn(&mut self) -> AResult<ExternFnDecl> {
+        self.expect(&TokenKind::Extern)?;
+        self.expect(&TokenKind::Fn)?;
+        let name = self.expect_ident()?;
+        self.expect(&TokenKind::LParen)?;
+        let params = if self.peek_kind() != &TokenKind::RParen {
+            self.parse_param_list()?
+        } else {
+            Vec::new()
+        };
+        self.expect(&TokenKind::RParen)?;
+        let ret_type = if self.peek_kind() == &TokenKind::Arrow {
+            self.advance();
+            self.parse_type_expr()?
+        } else {
+            TypeExpr::Void
+        };
+        self.expect_newline_or_eof()?;
+        Ok(ExternFnDecl { name, params, ret_type })
     }
 
     fn parse_fn_decl(&mut self) -> AResult<FnDecl> {

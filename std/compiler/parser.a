@@ -83,7 +83,8 @@ fn parse_top_level(toks, pos) {
   if k == "KwTy" { ret parse_type_decl(toks, pos) }
   if k == "KwMod" { ret parse_mod_decl(toks, pos) }
   if k == "KwUse" { ret parse_use_decl(toks, pos) }
-  ret err("expected fn, ty, mod, or use; found " + k, pos)
+  if k == "KwExtern" { ret parse_extern_fn(toks, pos) }
+  ret err("expected fn, ty, mod, use, or extern; found " + k, pos)
 }
 
 fn parse_fn_decl(toks, pos) {
@@ -169,6 +170,52 @@ fn parse_fn_decl(toks, pos) {
   pos = r[1]
 
   ret [ast.mk_fn_decl(name, params, ret_type, effs, precond, postcond, body), pos]
+}
+
+fn parse_extern_fn(toks, pos) {
+  let r = expect(toks, pos, "KwExtern")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let r = expect(toks, pos, "KwFn")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let r = expect_ident(toks, pos)
+  if is_err(r) { ret r }
+  let name = r[0]
+  pos = r[1]
+
+  let r = expect(toks, pos, "LParen")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let mut params = []
+  if tk(toks, pos) != "RParen" {
+    let r = parse_param_list(toks, pos)
+    if is_err(r) { ret r }
+    params = r[0]
+    pos = r[1]
+  }
+
+  let r = expect(toks, pos, "RParen")
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  let mut ret_type = ast.mk_ty_prim("void")
+  if tk(toks, pos) == "Arrow" {
+    pos = pos + 1
+    let r = parse_type_expr(toks, pos)
+    if is_err(r) { ret r }
+    ret_type = r[0]
+    pos = r[1]
+  }
+
+  let r = expect_nl_or_eof(toks, pos)
+  if is_err(r) { ret r }
+  pos = r[1]
+
+  ret [ast.mk_extern_fn(name, params, ret_type), pos]
 }
 
 fn parse_param_list(toks, pos) {
@@ -464,6 +511,7 @@ fn parse_type_expr(toks, pos) {
   if k == "TyStr" { ret [ast.mk_ty_prim("str"), pos + 1] }
   if k == "TyBytes" { ret [ast.mk_ty_prim("bytes"), pos + 1] }
   if k == "TyVoid" { ret [ast.mk_ty_prim("void"), pos + 1] }
+  if k == "TyPtr" { ret [ast.mk_ty_prim("ptr"), pos + 1] }
 
   if k == "LBracket" {
     pos = pos + 1

@@ -37,6 +37,7 @@ fn keyword_or_ident(word: str) -> str {
   if word == "pre" { ret "KwPre" }
   if word == "post" { ret "KwPost" }
   if word == "where" { ret "KwWhere" }
+  if word == "extern" { ret "KwExtern" }
   if word == "true" { ret "KwTrue" }
   if word == "false" { ret "KwFalse" }
   if word == "i8" { ret "TyI8" }
@@ -53,6 +54,7 @@ fn keyword_or_ident(word: str) -> str {
   if word == "str" { ret "TyStr" }
   if word == "bytes" { ret "TyBytes" }
   if word == "void" { ret "TyVoid" }
+  if word == "ptr" { ret "TyPtr" }
   if word == "_" { ret "Underscore" }
   ret "Ident"
 }

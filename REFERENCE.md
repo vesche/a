@@ -1091,7 +1091,7 @@ diff ac.c ac2.c    # identical
 3. Each "a" function becomes a C function returning `AValue` (a tagged union)
 4. Variables are pre-declared at function scope to handle "a"'s rebinding semantics
 5. Lambdas are lifted to top-level C functions; captured variables become an environment array
-6. 60+ builtins map directly to C runtime functions
+6. 75+ builtins map directly to C runtime functions
 7. The C runtime library provides the value model, reference counting, and all operations
 
 ### Supported Features
@@ -1118,11 +1118,39 @@ diff ac.c ac2.c    # identical
 - `let [a, b] = expr` and `let [first, ...rest] = arr` destructuring
 - `for [k, v] in pairs` destructured iteration
 - Array spread `[...arr1, x, ...arr2]`
+- `io.read_file`, `io.write_file` (POSIX file I/O)
+- `fs.ls`, `fs.mkdir`, `fs.cwd`, `fs.exists`, `fs.is_dir` (filesystem operations)
+- `exec(cmd)` (shell execution via `popen`)
+- `env.get(key)` (environment variables)
+- `json.parse(str)` (recursive-descent JSON parser)
+- Lambda implicit return (last expression is the return value)
+- C FFI via `extern fn` declarations with automatic type marshalling
+- `ptr` type for opaque C pointers
+- Module import alias resolution (unprefixed function calls from imported modules)
+- 113 native tests passing across 7 test suites
+
+### FFI (Foreign Function Interface)
+
+Call C functions directly from "a":
+
+```a
+extern fn abs(n: i32) -> i32
+extern fn strlen(s: str) -> i64
+extern fn getpid() -> i32
+
+fn main() {
+  println(to_str(abs(-42)))       ; 42
+  println(to_str(strlen("hello"))) ; 5
+}
+```
+
+Supported FFI types: `i8`, `i16`, `i32`, `i64`, `u8`-`u64`, `f32`, `f64`, `str`, `bool`, `ptr`, `void`. The code generator produces type-marshalling shim wrappers automatically. Link external libraries by passing `-l` flags to gcc.
 
 ### Not Yet Supported (Deferred)
 
-- `eval`, concurrency, HTTP, filesystem
+- `eval`, concurrency, HTTP
 - Tail call optimization
+- FFI callback trampolines, variadic C functions, extern structs
 
 ### Performance
 

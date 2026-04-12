@@ -402,6 +402,7 @@ impl Checker {
                 }
             }
             TopLevelKind::UseDecl(_) => {}
+            TopLevelKind::ExternFn(_) => {}
         }
     }
 
@@ -778,7 +779,7 @@ impl Checker {
             TypeExpr::U32 => Type::U32, TypeExpr::U64 => Type::U64,
             TypeExpr::F32 => Type::F32, TypeExpr::F64 => Type::F64,
             TypeExpr::Bool => Type::Bool, TypeExpr::Str => Type::Str,
-            TypeExpr::Bytes => Type::Bytes, TypeExpr::Void => Type::Void,
+            TypeExpr::Bytes => Type::Bytes, TypeExpr::Void => Type::Void, TypeExpr::Ptr => Type::Unknown,
             TypeExpr::Array(inner) => Type::Array(Box::new(self.resolve_type(inner))),
             TypeExpr::Tuple(types) => Type::Tuple(types.iter().map(|t| self.resolve_type(t)).collect()),
             TypeExpr::Record(fields) => Type::Record(fields.iter().map(|f| (f.name.clone(), self.resolve_type(&f.ty))).collect()),

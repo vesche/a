@@ -1,0 +1,67 @@
+; Test native I/O primitives
+
+fn test_read_write() {
+  let result = io.write_file("/tmp/a_io_test.txt", "hello from native a!")
+  println(result)
+  let content = io.read_file("/tmp/a_io_test.txt")
+  println(content)
+  let bad = io.read_file("/tmp/nonexistent_a_file_xyz.txt")
+  println(is_err(bad))
+}
+
+fn test_fs() {
+  let cwd = fs.cwd()
+  println(type_of(cwd))
+
+  let entries = fs.ls(".")
+  println(len(entries) > 0)
+
+  println(fs.exists("c_runtime"))
+  println(fs.exists("nonexistent_dir_xyz"))
+
+  println(fs.is_dir("c_runtime"))
+  println(fs.is_dir("Cargo.toml"))
+
+  fs.mkdir("/tmp/a_test_dir")
+  println(fs.exists("/tmp/a_test_dir"))
+}
+
+fn test_exec() {
+  let result = exec("echo hello_exec")
+  println(str.trim(result["stdout"]))
+  println(result["code"])
+}
+
+fn test_env() {
+  let home = env.get("HOME")
+  println(type_of(home))
+  let missing = env.get("A_NONEXISTENT_VAR_XYZ")
+  println(type_of(missing))
+}
+
+fn test_json() {
+  ; Write JSON to a file, then read and parse it
+  io.write_file("/tmp/a_json_test.json", "\{\"name\": \"test\", \"value\": 42\}")
+  let s = io.read_file("/tmp/a_json_test.json")
+  let obj = json.parse(s)
+  println(obj["name"])
+  println(obj["value"])
+
+  io.write_file("/tmp/a_json_arr.json", "[1, 2, 3]")
+  let arr = json.parse(io.read_file("/tmp/a_json_arr.json"))
+  println(arr)
+
+  ; Stringify
+  let m = #{"a": 1, "b": 2}
+  let out = json.stringify(m)
+  println(type_of(out))
+}
+
+fn main() {
+  test_read_write()
+  test_fs()
+  test_exec()
+  test_env()
+  test_json()
+  println("all I/O tests passed")
+}

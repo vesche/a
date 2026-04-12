@@ -110,6 +110,7 @@ impl Compiler {
                 self.load_module(&u.path, fns);
             }
             TopLevelKind::TypeDecl(_) => {}
+            TopLevelKind::ExternFn(_) => {}
         }
     }
 

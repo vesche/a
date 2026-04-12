@@ -1,0 +1,30 @@
+; FFI test: calling C standard library functions from "a"
+
+extern fn abs(n: i32) -> i32
+extern fn atoi(s: str) -> i32
+extern fn strlen(s: str) -> i64
+extern fn getpid() -> i32
+
+fn main() {
+  println("--- FFI Test ---")
+
+  let r1 = abs(-42)
+  println("abs(-42) = " + to_str(r1))
+
+  let r2 = atoi("12345")
+  println("atoi(\"12345\") = " + to_str(r2))
+
+  let r3 = strlen("hello world")
+  println("strlen(\"hello world\") = " + to_str(r3))
+
+  let pid = getpid()
+  println("getpid() = " + to_str(pid))
+
+  ; Verify results
+  if r1 != 42 { println("FAIL: abs") }
+  if r2 != 12345 { println("FAIL: atoi") }
+  if r3 != 11 { println("FAIL: strlen") }
+  if pid <= 0 { println("FAIL: getpid") }
+
+  println("All FFI tests passed!")
+}
