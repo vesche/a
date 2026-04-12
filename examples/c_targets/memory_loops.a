@@ -1,0 +1,71 @@
+; memory_loops.a -- Loop memory: string creation, array building, nested loops
+
+fn test_string_loop() {
+  let mut s = ""
+  let mut i = 0
+  while i < 100 {
+    s = s + "x"
+    i = i + 1
+  }
+  println(len(s))
+}
+
+fn test_array_build() {
+  let mut arr = []
+  let mut i = 0
+  while i < 100 {
+    arr = push(arr, i * 2)
+    i = i + 1
+  }
+  println(len(arr))
+  println(arr[0])
+  println(arr[99])
+}
+
+fn test_nested_loops() {
+  let mut total = 0
+  let mut i = 0
+  while i < 10 {
+    let mut j = 0
+    while j < 10 {
+      total = total + i * j
+      j = j + 1
+    }
+    i = i + 1
+  }
+  println(total)
+}
+
+fn test_map_in_loop() {
+  let mut items = []
+  let mut i = 0
+  while i < 50 {
+    let m = #{"idx": i, "val": to_str(i)}
+    items = push(items, m)
+    i = i + 1
+  }
+  println(len(items))
+  println(items[0]["idx"])
+  println(items[49]["val"])
+}
+
+fn test_string_concat_loop() {
+  let words = ["the", "quick", "brown", "fox"]
+  let mut result = ""
+  for w in words {
+    if len(result) > 0 {
+      result = result + " "
+    }
+    result = result + w
+  }
+  println(result)
+}
+
+fn main() {
+  test_string_loop()
+  test_array_build()
+  test_nested_loops()
+  test_map_in_loop()
+  test_string_concat_loop()
+  println("memory_loops: OK")
+}

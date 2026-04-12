@@ -218,6 +218,33 @@ extern AValue a_try_err;
 extern int a_try_depth;
 AValue a_try_unwrap(AValue v);
 
+/* Garbage collector */
+typedef enum { GC_STRING, GC_ARRAY, GC_MAP, GC_CLOSURE } GCType;
+
+typedef struct GCNode {
+    struct GCNode* next;
+    GCType type;
+    uint8_t mark;
+    void* obj;
+} GCNode;
+
+void a_gc_push_root(AValue* root);
+void a_gc_pop_roots(int n);
+void a_gc_collect(void);
+
+/* Arena allocator */
+typedef struct AArena {
+    char* buf;
+    int size;
+    int pos;
+} AArena;
+
+AArena* a_arena_new(int initial_size);
+void    a_arena_free(AArena* arena);
+void*   a_arena_alloc(AArena* arena, int bytes);
+int     a_arena_save(AArena* arena);
+void    a_arena_restore(AArena* arena, int saved_pos);
+
 /* Pattern matching helpers (inline for zero overhead) */
 static inline int a_is_ok_raw(AValue v) { return v.tag == TAG_RESULT && v.rval.is_ok; }
 static inline int a_is_err_raw(AValue v) { return v.tag == TAG_RESULT && !v.rval.is_ok; }

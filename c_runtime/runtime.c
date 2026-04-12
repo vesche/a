@@ -52,20 +52,24 @@ AValue a_retain(AValue v) {
 
 void a_release(AValue v) {
     if (v.tag == TAG_STRING && v.sval) {
-        if (--v.sval->rc <= 0) free(v.sval);
+        if (v.sval->rc <= 0) return;
+        if (--v.sval->rc == 0) free(v.sval);
     } else if (v.tag == TAG_ARRAY && v.aval) {
-        if (--v.aval->rc <= 0) {
+        if (v.aval->rc <= 0) return;
+        if (--v.aval->rc == 0) {
             for (int i = 0; i < v.aval->len; i++) a_release(v.aval->items[i]);
             free(v.aval->items);
             free(v.aval);
         }
     } else if (v.tag == TAG_CLOSURE && v.cval) {
-        if (--v.cval->rc <= 0) {
+        if (v.cval->rc <= 0) return;
+        if (--v.cval->rc == 0) {
             a_release(v.cval->env);
             free(v.cval);
         }
     } else if (v.tag == TAG_MAP && v.mval) {
-        if (--v.mval->rc <= 0) {
+        if (v.mval->rc <= 0) return;
+        if (--v.mval->rc == 0) {
             for (int i = 0; i < v.mval->len; i++) {
                 free(v.mval->keys[i]);
                 a_release(v.mval->vals[i]);
@@ -102,7 +106,7 @@ int a_ilen(AValue v) {
 
 AValue a_iterable(AValue v) {
     if (v.tag == TAG_MAP) return a_map_entries(v);
-    return v;
+    return a_retain(v);
 }
 
 /* --- Arithmetic --- */
@@ -264,6 +268,8 @@ AValue a_str_concat(AValue a, AValue b) {
     memcpy(ns->data, sa.sval->data, sa.sval->len);
     memcpy(ns->data + sa.sval->len, sb.sval->data, sb.sval->len);
     ns->data[newlen] = '\0';
+    a_release(sa);
+    a_release(sb);
     return (AValue){.tag = TAG_STRING, .sval = ns};
 }
 
@@ -272,7 +278,8 @@ AValue a_concat_n(int n, ...) {
     va_start(ap, n);
     AValue parts[64];
     int total_len = 0;
-    for (int i = 0; i < n && i < 64; i++) {
+    int count = (n < 64) ? n : 64;
+    for (int i = 0; i < count; i++) {
         parts[i] = a_to_str(va_arg(ap, AValue));
         total_len += parts[i].sval->len;
     }
@@ -281,11 +288,12 @@ AValue a_concat_n(int n, ...) {
     ns->rc = 1;
     ns->len = total_len;
     int pos = 0;
-    for (int i = 0; i < n && i < 64; i++) {
+    for (int i = 0; i < count; i++) {
         memcpy(ns->data + pos, parts[i].sval->data, parts[i].sval->len);
         pos += parts[i].sval->len;
     }
     ns->data[total_len] = '\0';
+    for (int i = 0; i < count; i++) a_release(parts[i]);
     return (AValue){.tag = TAG_STRING, .sval = ns};
 }
 
@@ -377,21 +385,24 @@ AValue a_str_lower(AValue s) {
 
 AValue a_str_join(AValue arr, AValue sep) {
     if (arr.tag != TAG_ARRAY || sep.tag != TAG_STRING) return a_string("");
+    int count = arr.aval->len;
+    AValue* parts = malloc(sizeof(AValue) * (count > 0 ? count : 1));
     int total = 0;
-    for (int i = 0; i < arr.aval->len; i++) {
-        AValue s = a_to_str(arr.aval->items[i]);
-        total += s.sval->len;
+    for (int i = 0; i < count; i++) {
+        parts[i] = a_to_str(arr.aval->items[i]);
+        total += parts[i].sval->len;
         if (i > 0) total += sep.sval->len;
     }
     AString* ns = malloc(sizeof(AString) + total + 1);
     ns->rc = 1; ns->len = total;
     int pos = 0;
-    for (int i = 0; i < arr.aval->len; i++) {
+    for (int i = 0; i < count; i++) {
         if (i > 0) { memcpy(ns->data + pos, sep.sval->data, sep.sval->len); pos += sep.sval->len; }
-        AValue s = a_to_str(arr.aval->items[i]);
-        memcpy(ns->data + pos, s.sval->data, s.sval->len); pos += s.sval->len;
+        memcpy(ns->data + pos, parts[i].sval->data, parts[i].sval->len); pos += parts[i].sval->len;
     }
     ns->data[total] = '\0';
+    for (int i = 0; i < count; i++) a_release(parts[i]);
+    free(parts);
     return (AValue){.tag = TAG_STRING, .sval = ns};
 }
 
@@ -452,7 +463,7 @@ AValue a_array_new(int n, ...) {
     arr->items = malloc(sizeof(AValue) * arr->cap);
     va_list ap;
     va_start(ap, n);
-    for (int i = 0; i < n; i++) arr->items[i] = va_arg(ap, AValue);
+    for (int i = 0; i < n; i++) arr->items[i] = a_retain(va_arg(ap, AValue));
     va_end(ap);
     return (AValue){.tag = TAG_ARRAY, .aval = arr};
 }
@@ -469,7 +480,7 @@ AValue a_array_get(AValue arr, AValue idx) {
     }
     if (arr.tag != TAG_ARRAY) return a_void();
     if (i < 0 || i >= arr.aval->len) return a_void();
-    return arr.aval->items[i];
+    return a_retain(arr.aval->items[i]);
 }
 
 AValue a_index_set(AValue coll, AValue idx, AValue val) {
@@ -481,8 +492,9 @@ AValue a_index_set(AValue coll, AValue idx, AValue val) {
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * n);
-    for (int j = 0; j < n; j++) na->items[j] = coll.aval->items[j];
-    na->items[i] = val;
+    for (int j = 0; j < n; j++) {
+        na->items[j] = (j == i) ? a_retain(val) : a_retain(coll.aval->items[j]);
+    }
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -492,8 +504,8 @@ AValue a_array_push(AValue arr, AValue val) {
     na->rc = 1; na->len = olen + 1; na->cap = olen + 1;
     na->items = malloc(sizeof(AValue) * na->cap);
     if (arr.tag == TAG_ARRAY)
-        for (int i = 0; i < olen; i++) na->items[i] = arr.aval->items[i];
-    na->items[olen] = val;
+        for (int i = 0; i < olen; i++) na->items[i] = a_retain(arr.aval->items[i]);
+    na->items[olen] = a_retain(val);
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -507,7 +519,7 @@ AValue a_array_slice(AValue arr, AValue start, AValue end) {
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * n);
-    for (int i = 0; i < n; i++) na->items[i] = arr.aval->items[st + i];
+    for (int i = 0; i < n; i++) na->items[i] = a_retain(arr.aval->items[st + i]);
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -524,7 +536,7 @@ AValue a_sort(AValue arr) {
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * (n > 0 ? n : 1));
-    memcpy(na->items, arr.aval->items, sizeof(AValue) * n);
+    for (int i = 0; i < n; i++) na->items[i] = a_retain(arr.aval->items[i]);
     qsort(na->items, n, sizeof(AValue), sort_cmp);
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
@@ -542,7 +554,7 @@ AValue a_reverse_arr(AValue arr) {
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * (n > 0 ? n : 1));
-    for (int i = 0; i < n; i++) na->items[i] = arr.aval->items[n - 1 - i];
+    for (int i = 0; i < n; i++) na->items[i] = a_retain(arr.aval->items[n - 1 - i]);
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -552,8 +564,8 @@ AValue a_concat_arr(AValue a, AValue b) {
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * (n > 0 ? n : 1));
-    memcpy(na->items, a.aval->items, sizeof(AValue) * a.aval->len);
-    memcpy(na->items + a.aval->len, b.aval->items, sizeof(AValue) * b.aval->len);
+    for (int i = 0; i < a.aval->len; i++) na->items[i] = a_retain(a.aval->items[i]);
+    for (int i = 0; i < b.aval->len; i++) na->items[a.aval->len + i] = a_retain(b.aval->items[i]);
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -569,7 +581,7 @@ AValue a_map_new(int n, ...) {
     for (int i = 0; i < n; i++) {
         const char* k = va_arg(ap, const char*);
         m->keys[i] = strdup(k);
-        m->vals[i] = va_arg(ap, AValue);
+        m->vals[i] = a_retain(va_arg(ap, AValue));
     }
     va_end(ap);
     return (AValue){.tag = TAG_MAP, .mval = m};
@@ -591,7 +603,7 @@ static const char* val_as_key(AValue key) {
 AValue a_map_get(AValue m, AValue key) {
     if (m.tag != TAG_MAP) return a_void();
     int idx = map_find(m.mval, val_as_key(key));
-    return idx >= 0 ? m.mval->vals[idx] : a_void();
+    return idx >= 0 ? a_retain(m.mval->vals[idx]) : a_void();
 }
 
 AValue a_map_set(AValue m, AValue key, AValue val) {
@@ -606,13 +618,11 @@ AValue a_map_set(AValue m, AValue key, AValue val) {
     nm->vals = malloc(sizeof(AValue) * nm->cap);
     for (int i = 0; i < olen; i++) {
         nm->keys[i] = strdup(old->keys[i]);
-        nm->vals[i] = old->vals[i];
+        nm->vals[i] = (i == existing) ? a_retain(val) : a_retain(old->vals[i]);
     }
-    if (existing >= 0) {
-        nm->vals[existing] = val;
-    } else {
+    if (existing < 0) {
         nm->keys[olen] = strdup(k);
-        nm->vals[olen] = val;
+        nm->vals[olen] = a_retain(val);
     }
     return (AValue){.tag = TAG_MAP, .mval = nm};
 }
@@ -636,15 +646,18 @@ AValue a_map_values(AValue m) {
     AArray* arr = malloc(sizeof(AArray));
     arr->rc = 1; arr->len = m.mval->len; arr->cap = m.mval->len;
     arr->items = malloc(sizeof(AValue) * (arr->cap > 0 ? arr->cap : 1));
-    for (int i = 0; i < m.mval->len; i++) arr->items[i] = m.mval->vals[i];
+    for (int i = 0; i < m.mval->len; i++) arr->items[i] = a_retain(m.mval->vals[i]);
     return (AValue){.tag = TAG_ARRAY, .aval = arr};
 }
 
 AValue a_map_merge(AValue a, AValue b) {
     if (a.tag != TAG_MAP || b.tag != TAG_MAP) return a;
     AValue result = a;
-    for (int i = 0; i < b.mval->len; i++)
-        result = a_map_set(result, a_string(b.mval->keys[i]), b.mval->vals[i]);
+    for (int i = 0; i < b.mval->len; i++) {
+        AValue key = a_string(b.mval->keys[i]);
+        result = a_map_set(result, key, a_retain(b.mval->vals[i]));
+        a_release(key);
+    }
     return result;
 }
 
@@ -662,7 +675,7 @@ AValue a_map_delete(AValue m, AValue key) {
     for (int i = 0; i < m.mval->len; i++) {
         if (i == idx) continue;
         nm->keys[j] = strdup(m.mval->keys[i]);
-        nm->vals[j] = m.mval->vals[i];
+        nm->vals[j] = a_retain(m.mval->vals[i]);
         j++;
     }
     return (AValue){.tag = TAG_MAP, .mval = nm};
@@ -674,7 +687,7 @@ AValue a_map_entries(AValue m) {
     arr->rc = 1; arr->len = m.mval->len; arr->cap = arr->len > 0 ? arr->len : 1;
     arr->items = malloc(sizeof(AValue) * arr->cap);
     for (int i = 0; i < m.mval->len; i++)
-        arr->items[i] = a_array_new(2, a_string(m.mval->keys[i]), m.mval->vals[i]);
+        arr->items[i] = a_array_new(2, a_string(m.mval->keys[i]), a_retain(m.mval->vals[i]));
     return (AValue){.tag = TAG_ARRAY, .aval = arr};
 }
 
@@ -684,7 +697,7 @@ AValue a_map_from_entries(AValue arr) {
     for (int i = 0; i < arr.aval->len; i++) {
         AValue entry = arr.aval->items[i];
         if (entry.tag == TAG_ARRAY && entry.aval->len >= 2)
-            m = a_map_set(m, entry.aval->items[0], entry.aval->items[1]);
+            m = a_map_set(m, entry.aval->items[0], a_retain(entry.aval->items[1]));
     }
     return m;
 }
@@ -942,7 +955,7 @@ AValue a_is_err(AValue v) { return a_bool(v.tag == TAG_RESULT && !v.rval.is_ok);
 
 AValue a_unwrap(AValue v) {
     if (v.tag == TAG_RESULT) {
-        if (v.rval.is_ok) return *v.rval.inner;
+        if (v.rval.is_ok) return a_retain(*v.rval.inner);
         fprintf(stderr, "unwrap on Err: ");
         a_eprintln(*v.rval.inner);
         exit(1);
@@ -1273,4 +1286,151 @@ AValue a_chunk(AValue arr, AValue n) {
         result = a_array_push(result, a_array_slice(arr, a_int(i), a_int(end)));
     }
     return result;
+}
+
+/* --- Garbage collector --- */
+
+static GCNode* gc_alloc_list = NULL;
+static int gc_alloc_count = 0;
+static int gc_threshold = 4096;
+
+#define GC_ROOT_STACK_MAX 8192
+static AValue* gc_root_stack[GC_ROOT_STACK_MAX];
+static int gc_root_sp = 0;
+
+static void gc_register(GCType type, void* obj) {
+    GCNode* node = malloc(sizeof(GCNode));
+    node->next = gc_alloc_list;
+    node->type = type;
+    node->mark = 0;
+    node->obj = obj;
+    gc_alloc_list = node;
+    gc_alloc_count++;
+}
+
+void a_gc_push_root(AValue* root) {
+    if (gc_root_sp < GC_ROOT_STACK_MAX)
+        gc_root_stack[gc_root_sp++] = root;
+}
+
+void a_gc_pop_roots(int n) {
+    gc_root_sp -= n;
+    if (gc_root_sp < 0) gc_root_sp = 0;
+}
+
+static GCNode* gc_find_node(void* obj) {
+    for (GCNode* n = gc_alloc_list; n; n = n->next)
+        if (n->obj == obj) return n;
+    return NULL;
+}
+
+static void gc_mark_value(AValue v) {
+    void* obj = NULL;
+    if (v.tag == TAG_STRING && v.sval) obj = v.sval;
+    else if (v.tag == TAG_ARRAY && v.aval) obj = v.aval;
+    else if (v.tag == TAG_MAP && v.mval) obj = v.mval;
+    else if (v.tag == TAG_CLOSURE && v.cval) obj = v.cval;
+    else return;
+
+    GCNode* node = gc_find_node(obj);
+    if (!node || node->mark) return;
+    node->mark = 1;
+
+    if (v.tag == TAG_ARRAY) {
+        for (int i = 0; i < v.aval->len; i++)
+            gc_mark_value(v.aval->items[i]);
+    } else if (v.tag == TAG_MAP) {
+        for (int i = 0; i < v.mval->len; i++)
+            gc_mark_value(v.mval->vals[i]);
+    } else if (v.tag == TAG_CLOSURE) {
+        gc_mark_value(v.cval->env);
+    }
+}
+
+static void gc_mark_roots(void) {
+    for (int i = 0; i < gc_root_sp; i++)
+        gc_mark_value(*gc_root_stack[i]);
+}
+
+static void gc_free_object(GCNode* node) {
+    switch (node->type) {
+        case GC_STRING:
+            free(node->obj);
+            break;
+        case GC_ARRAY: {
+            AArray* a = (AArray*)node->obj;
+            free(a->items);
+            free(a);
+            break;
+        }
+        case GC_MAP: {
+            AMap* m = (AMap*)node->obj;
+            for (int i = 0; i < m->len; i++) free(m->keys[i]);
+            free(m->keys);
+            free(m->vals);
+            free(m);
+            break;
+        }
+        case GC_CLOSURE:
+            free(node->obj);
+            break;
+    }
+}
+
+static void gc_sweep(void) {
+    GCNode** p = &gc_alloc_list;
+    while (*p) {
+        if (!(*p)->mark) {
+            GCNode* dead = *p;
+            *p = dead->next;
+            gc_alloc_count--;
+            gc_free_object(dead);
+            free(dead);
+        } else {
+            (*p)->mark = 0;
+            p = &(*p)->next;
+        }
+    }
+}
+
+void a_gc_collect(void) {
+    gc_mark_roots();
+    gc_sweep();
+    if (gc_alloc_count > gc_threshold / 2)
+        gc_threshold *= 2;
+}
+
+/* --- Arena allocator --- */
+
+AArena* a_arena_new(int initial_size) {
+    AArena* a = malloc(sizeof(AArena));
+    a->size = initial_size > 64 ? initial_size : 64;
+    a->buf = malloc(a->size);
+    a->pos = 0;
+    return a;
+}
+
+void a_arena_free(AArena* arena) {
+    if (!arena) return;
+    free(arena->buf);
+    free(arena);
+}
+
+void* a_arena_alloc(AArena* arena, int bytes) {
+    int aligned = (bytes + 7) & ~7;
+    if (arena->pos + aligned > arena->size) {
+        while (arena->pos + aligned > arena->size) arena->size *= 2;
+        arena->buf = realloc(arena->buf, arena->size);
+    }
+    void* ptr = arena->buf + arena->pos;
+    arena->pos += aligned;
+    return ptr;
+}
+
+int a_arena_save(AArena* arena) {
+    return arena->pos;
+}
+
+void a_arena_restore(AArena* arena, int saved_pos) {
+    arena->pos = saved_pos;
 }

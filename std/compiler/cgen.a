@@ -116,6 +116,93 @@ fn _is_intra_module_call(fname, ctx) -> bool {
 fn _R(code, li) { ret [code, li, []] }
 fn _RL(code, li, lifted) { ret [code, li, lifted] }
 
+fn _is_ident(node) -> bool {
+  if type_of(node) != "map" { ret false }
+  if node["tag"] != "Ident" { ret false }
+  let n = node["name"]
+  if n == "true" { ret false }
+  if n == "false" { ret false }
+  ret true
+}
+
+fn _emit_cleanup(vars, depth) -> str {
+  let ind = _indent(depth)
+  let mut out = ""
+  for v in vars {
+    out = str.concat(out, str.concat("\n", str.concat(ind, str.concat("a_release(", str.concat(v, ");")))))
+  }
+  ret out
+}
+
+; --- Escape analysis ---
+; A variable escapes if its value can outlive its scope:
+;   - returned from the function
+;   - captured by a lambda
+;   - stored in a collection passed to a non-builtin function
+
+fn _ea_collect_idents(expr) -> [str] {
+  if type_of(expr) != "map" { ret [] }
+  let tag = expr["tag"]
+  if tag == "Ident" {
+    let n = expr["name"]
+    if n == "true" { ret [] }
+    if n == "false" { ret [] }
+    ret [n]
+  }
+  if tag == "BinOp" { ret concat_arr(_ea_collect_idents(expr["left"]), _ea_collect_idents(expr["right"])) }
+  if tag == "UnaryOp" { ret _ea_collect_idents(expr["expr"]) }
+  if tag == "Call" {
+    let mut ids = _ea_collect_idents(expr["func"])
+    for a in expr["args"] { ids = concat_arr(ids, _ea_collect_idents(a)) }
+    ret ids
+  }
+  if tag == "Index" { ret concat_arr(_ea_collect_idents(expr["expr"]), _ea_collect_idents(expr["index"])) }
+  if tag == "FieldAccess" { ret _ea_collect_idents(expr["expr"]) }
+  if tag == "Array" {
+    let mut ids = []
+    for e in expr["elems"] { ids = concat_arr(ids, _ea_collect_idents(e)) }
+    ret ids
+  }
+  if tag == "Map" {
+    let mut ids = []
+    for e in expr["entries"] { ids = concat_arr(ids, _ea_collect_idents(e["value"])) }
+    ret ids
+  }
+  if tag == "Spread" { ret _ea_collect_idents(expr["expr"]) }
+  if tag == "Pipe" { ret concat_arr(_ea_collect_idents(expr["left"]), _ea_collect_idents(expr["right"])) }
+  if tag == "InterpolatedString" {
+    let mut ids = []
+    for p in expr["parts"] {
+      if p["tag"] == "Expr" { ids = concat_arr(ids, _ea_collect_idents(p["expr"])) }
+    }
+    ret ids
+  }
+  ret []
+}
+
+fn _escape_analysis(stmts, captures) -> [str] {
+  let mut escaping = []
+
+  for s in stmts {
+    let tag = s["tag"]
+    if tag == "Return" {
+      if type_of(s["expr"]) != "void" {
+        let ids = _ea_collect_idents(s["expr"])
+        for id in ids {
+          if !contains(escaping, id) { escaping = push(escaping, id) }
+        }
+      }
+    }
+  }
+
+  ; Variables captured by lambdas escape
+  for cap in captures {
+    if !contains(escaping, cap) { escaping = push(escaping, cap) }
+  }
+
+  ret escaping
+}
+
 ; --- Free variable analysis for closures ---
 
 fn _collect_idents_in_expr(node) -> [str] {
@@ -587,8 +674,15 @@ fn emit_expr(node, bm, ctx, li) {
       let lambda_ctx = map.set(ctx, "enclosing_vars", lambda_vars)
 
       if len(decl_vars) > 0 {
-        fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
+        let mut init_parts = []
+        for v in decl_vars { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
+        fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(str.join(init_parts, ", "), ";")))
       }
+
+      let mut lambda_cleanup = []
+      for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
+      lambda_cleanup = concat_arr(lambda_cleanup, decl_vars)
+      lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
 
       ; Emit body, making the last ExprStmt an implicit return
       let mut has_return = false
@@ -597,9 +691,9 @@ fn emit_expr(node, bm, ctx, li) {
         let s = stmts[si]
         let is_last = si == len(stmts) - 1
         if is_last && s["tag"] == "ExprStmt" {
-          ; Implicit return from last expression
           let er = emit_expr(s["expr"], bm, lambda_ctx, next_li)
-          fn_code = str.concat(fn_code, str.concat("\n    return ", str.concat(er[0], ";")))
+          let cleanup = _emit_cleanup(lambda_cleanup, 1)
+          fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(er[0], str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
           next_li = er[1]
           body_lifted = concat_arr(body_lifted, er[2])
           has_return = true
@@ -613,15 +707,20 @@ fn emit_expr(node, bm, ctx, li) {
         si = si + 1
       }
       if !has_return {
-        fn_code = str.concat(fn_code, "\n    return a_void();")
+        let cleanup = _emit_cleanup(lambda_cleanup, 1)
+        fn_code = str.concat(fn_code, str.concat(cleanup, "\n    return a_void();"))
       }
     } else {
       ; Expression-body lambda: fn(x) => expr
       let lambda_ctx = map.set(ctx, "enclosing_vars", lambda_vars)
+      let mut lambda_cleanup = []
+      for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
+      lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
       let er = emit_expr(body, bm, lambda_ctx, next_li)
+      let cleanup = _emit_cleanup(lambda_cleanup, 1)
+      fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(er[0], str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
       next_li = er[1]
       body_lifted = concat_arr(body_lifted, er[2])
-      fn_code = str.concat(fn_code, str.concat("\n    return ", str.concat(er[0], ";")))
     }
     fn_code = str.concat(fn_code, "\n\}\n")
 
@@ -629,7 +728,7 @@ fn emit_expr(node, bm, ctx, li) {
     let mut env_code = "a_void()"
     if len(captures) > 0 {
       let mut cap_parts = []
-      for cap in captures { cap_parts = push(cap_parts, _mangle(cap)) }
+      for cap in captures { cap_parts = push(cap_parts, str.concat("a_retain(", str.concat(_mangle(cap), ")"))) }
       env_code = str.concat("a_array_new(", str.concat(to_str(len(captures)), str.concat(", ", str.concat(str.join(cap_parts, ", "), ")"))))
     }
     let closure_code = str.concat("a_closure(", str.concat(lambda_name, str.concat(", ", str.concat(env_code, ")"))))
@@ -1056,7 +1155,15 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
 
   if tag == "Let" {
     let vr = emit_expr(node["value"], bm, ctx, li)
-    ret _RL(str.concat(ind, str.concat(_mangle(node["name"]), str.concat(" = ", str.concat(vr[0], ";")))), vr[1], vr[2])
+    let vname = _mangle(node["name"])
+    let assign_expr = vr[0]
+    let mut code = ""
+    if _is_ident(node["value"]) {
+      code = str.concat(ind, str.concat("\{ AValue __old = ", str.concat(vname, str.concat("; ", str.concat(vname, str.concat(" = a_retain(", str.concat(assign_expr, "); a_release(__old); \}")))))))
+    } else {
+      code = str.concat(ind, str.concat("\{ AValue __old = ", str.concat(vname, str.concat("; ", str.concat(vname, str.concat(" = ", str.concat(assign_expr, "; a_release(__old); \}")))))))
+    }
+    ret _RL(code, vr[1], vr[2])
   }
 
   if tag == "LetDestructure" {
@@ -1081,7 +1188,15 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     let target = node["target"]
     if target["tag"] == "Ident" {
       let vr = emit_expr(node["value"], bm, ctx, li)
-      ret _RL(str.concat(ind, str.concat(_mangle(target["name"]), str.concat(" = ", str.concat(vr[0], ";")))), vr[1], vr[2])
+      let tname = _mangle(target["name"])
+      let assign_expr = vr[0]
+      let mut code = ""
+      if _is_ident(node["value"]) {
+        code = str.concat(ind, str.concat("\{ AValue __old = ", str.concat(tname, str.concat("; ", str.concat(tname, str.concat(" = a_retain(", str.concat(assign_expr, "); a_release(__old); \}")))))))
+      } else {
+        code = str.concat(ind, str.concat("\{ AValue __old = ", str.concat(tname, str.concat("; ", str.concat(tname, str.concat(" = ", str.concat(assign_expr, "; a_release(__old); \}")))))))
+      }
+      ret _RL(code, vr[1], vr[2])
     }
     if target["tag"] == "Index" {
       let vr = emit_expr(node["value"], bm, ctx, li)
@@ -1095,8 +1210,26 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
   }
 
   if tag == "Return" {
-    if type_of(node["expr"]) == "void" { ret _R(str.concat(ind, "return a_void();"), li) }
+    let cleanup_vars = ctx["cleanup_vars"]
+    let has_cleanup = type_of(cleanup_vars) == "array" && len(cleanup_vars) > 0
+    if type_of(node["expr"]) == "void" {
+      if has_cleanup {
+        let cleanup = _emit_cleanup(cleanup_vars, depth)
+        ret _R(str.concat(ind, str.concat("\{", str.concat(cleanup, str.concat("\n", str.concat(ind, "return a_void(); \}"))))), li)
+      }
+      ret _R(str.concat(ind, "return a_void();"), li)
+    }
     let vr = emit_expr(node["expr"], bm, ctx, li)
+    if has_cleanup {
+      let val_expr = vr[0]
+      let ret_expr = val_expr
+      if _is_ident(node["expr"]) {
+        ret_expr = str.concat("a_retain(", str.concat(val_expr, ")"))
+      }
+      let cleanup = _emit_cleanup(cleanup_vars, depth)
+      let code = str.concat(ind, str.concat("\{ AValue __ret = ", str.concat(ret_expr, str.concat(";", str.concat(cleanup, str.concat("\n", str.concat(ind, "return __ret; \}")))))))
+      ret _RL(code, vr[1], vr[2])
+    }
     ret _RL(str.concat(ind, str.concat("return ", str.concat(vr[0], ";"))), vr[1], vr[2])
   }
 
@@ -1170,7 +1303,9 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     for v in body_vars {
       if !contains(for_decls, v) { for_decls = push(for_decls, v) }
     }
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(for_decls, ", "), ";")))))
+    let mut init_parts = []
+    for v in for_decls { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(init_parts, ", "), ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(var_name, " = a_array_get(__iter_arr, a_int(__fi));"))))
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
@@ -1179,7 +1314,10 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
       li = sr[1]
       lifted = concat_arr(lifted, sr[2])
     }
+    let for_cleanup = _emit_cleanup(for_decls, depth + 2)
+    out = str.concat(out, for_cleanup)
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "\}")))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "a_release(__iter_arr);")))
     out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
     ret _RL(out, li, lifted)
   }
@@ -1197,7 +1335,9 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
     for b in bindings { decls = push(decls, _mangle(b)) }
     let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
     for v in body_vars { if !contains(decls, v) { decls = push(decls, v) } }
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(decls, ", "), ";")))))
+    let mut init_parts = []
+    for v in decls { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(init_parts, ", "), ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), "__elem = a_array_get(__iter_arr, a_int(__fi));")))
     let mut bi = 0
     for b in bindings {
@@ -1211,7 +1351,10 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
       li = sr[1]
       lifted = concat_arr(lifted, sr[2])
     }
+    let fd_cleanup = _emit_cleanup(decls, depth + 2)
+    out = str.concat(out, fd_cleanup)
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "\}")))
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "a_release(__iter_arr);")))
     out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
     ret _RL(out, li, lifted)
   }
@@ -1345,14 +1488,22 @@ fn emit_fn(node, bm, ctx, li) {
     }
   }
   if len(decl_vars) > 0 {
-    out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(decl_vars, ", "), ";")))
+    let mut init_parts = []
+    for v in decl_vars { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
+    out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(init_parts, ", "), ";")))
   }
+
+  let all_cleanup_vars = decl_vars
 
   ; Build enclosing_vars for lambda capture analysis
   let mut enc_vars = []
   for p in params { enc_vars = push(enc_vars, p["name"]) }
   for v in all_vars { if !contains(enc_vars, _mangle(v)) { enc_vars = push(enc_vars, v) } }
   let fn_ctx = map.set(ctx, "enclosing_vars", enc_vars)
+  fn_ctx = map.set(fn_ctx, "cleanup_vars", all_cleanup_vars)
+
+  ; Escape analysis result stored in context for Phase 4 arena allocation
+  fn_ctx = map.set(fn_ctx, "escaping_vars", [])
 
   let mut lifted = []
   let stmts = body["stmts"]
@@ -1369,7 +1520,8 @@ fn emit_fn(node, bm, ctx, li) {
     if last["tag"] == "Return" { has_return = true }
   }
   if !has_return {
-    out = str.concat(out, "\n    return a_void();")
+    let cleanup = _emit_cleanup(all_cleanup_vars, 1)
+    out = str.concat(out, str.concat(cleanup, "\n    return a_void();"))
   }
 
   out = str.concat(out, "\n\}\n")

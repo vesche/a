@@ -1533,3 +1533,75 @@ C runtime: ~1,500 lines. cgen.a: ~1,530 lines. Generated C: 5,138 lines.
 - Variadic C functions (`printf`, etc.)
 - `#link` build integration
 
+---
+
+## v0.47 -- Memory Architecture
+
+*Completed: April 2026*
+
+The native runtime now has a **three-tier memory management system**: reference counting with ownership semantics, arena allocation infrastructure, and a mark-and-sweep garbage collector for cycle collection. The generated C code grew from 5,415 to 12,300 lines due to retain/release instrumentation, and the three-stage bootstrap still holds.
+
+### Ownership Model
+
+All expressions produce **owned values**. The code generator enforces this with three mechanisms:
+
+1. **Zero-initialization**: Every local variable is initialized to `AValue {0}` to prevent undefined behavior when released.
+2. **Retain on copy**: When a value is assigned from one variable to another (or passed to a function that stores it), `a_retain` increments the reference count.
+3. **Release at scope exit**: At every function return (explicit and implicit), all local variables are released via `a_release`. Loop variables are released at the end of each iteration.
+
+The assignment pattern uses a safe three-step protocol:
+```c
+{ AValue __old = target; target = new_value; a_release(__old); }
+```
+This ensures the old value isn't freed before the new value is computed (which may reference the old value, e.g., `arr = push(arr, x)`).
+
+### Reference Counting (Phase 1-2)
+
+- `a_release` hardened with `rc <= 0` guard to prevent double-free
+- All collection constructors (`a_array_new`, `a_array_push`, `a_map_set`, etc.) retain values they store
+- `a_array_get`, `a_map_get`, `a_unwrap`, `a_iterable` return retained (owned) values
+- Runtime helpers (`a_str_concat`, `a_concat_n`, `a_str_join`) release intermediate values
+- Cleanup blocks emitted at function exits, loop boundaries, and lambda returns
+
+### Escape Analysis (Phase 3)
+
+Analysis functions defined (`_ea_collect_idents`, `_escape_analysis`) that walk the AST to determine which variables' values can leave their scope (returned, captured, stored in collections). The context slot `escaping_vars` is prepared in `fn_ctx`. Full wiring deferred to avoid intermediate allocation overhead during self-compilation -- the analysis itself generates significant temporary data that, without arena allocation for the analysis pass, causes memory pressure.
+
+### Arena Allocator (Phase 4)
+
+Runtime API implemented:
+- `a_arena_new(size)` / `a_arena_free(arena)` -- lifecycle
+- `a_arena_alloc(arena, bytes)` -- bump allocation with auto-grow
+- `a_arena_save(arena)` / `a_arena_restore(arena, pos)` -- scope checkpoints
+
+Designed for loop bodies: save position before each iteration, restore after. Codegen integration deferred until escape analysis is fully wired (to know which allocations are safe to arena-allocate).
+
+### Mark-and-Sweep GC (Phase 5)
+
+Infrastructure for cycle collection:
+- `GCNode` side-linked list tracks registered heap objects by type (`GC_STRING`, `GC_ARRAY`, `GC_MAP`, `GC_CLOSURE`)
+- Root shadow stack (`a_gc_push_root` / `a_gc_pop_roots`) for marking reachable objects
+- `gc_mark_value` recursively marks arrays, maps, and closure environments
+- `gc_sweep` frees unreachable nodes, `a_gc_collect` provides the public API with adaptive threshold
+
+The GC is opt-in -- not wired into every allocation. RC handles the common case; the GC API is available for programs that create closure cycles.
+
+### Verification
+
+- Three-stage bootstrap: 12,300 lines C, byte-identical across all stages
+- 11/12 existing example programs match VM output (1 pre-existing try-block issue)
+- 4 memory-specific test programs (basic, sharing, closures, loops) all passing
+- All memory tests clean under AddressSanitizer (no use-after-free, double-free, buffer overflow)
+- Self-compilation time: ~3.9s (native compiler compiling its own source)
+- Requires `-Wl,-stack_size,0x4000000` (64MB stack) due to increased frame depth from cleanup blocks
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.h` | `GCNode`/`GCType` types, GC API declarations, `AArena` struct and API |
+| `c_runtime/runtime.c` | RC hardening, owned-return convention, collection retain fixes, GC infrastructure, arena implementation (~1,440 lines, up from ~1,000) |
+| `std/compiler/cgen.a` | Zero-init locals, retain/release at assignments, cleanup at returns/loops/lambdas, escape analysis stubs (~1,830 lines, up from ~1,530) |
+
+C runtime: ~1,700 lines. cgen.a: ~1,830 lines. Generated C: 12,300 lines.
+

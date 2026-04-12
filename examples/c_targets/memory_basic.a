@@ -1,0 +1,42 @@
+; memory_basic.a -- Basic reference counting: create, alias, let go out of scope
+
+fn test_string_scope() {
+  let s = "hello world"
+  let t = str.slice(s, 0, 5)
+  println(t)
+  println(s)
+}
+
+fn test_array_scope() {
+  let a = [1, 2, 3, 4, 5]
+  let b = push(a, 6)
+  println(len(a))
+  println(len(b))
+  println(b)
+}
+
+fn test_map_scope() {
+  let m = #{"x": 1, "y": 2}
+  let m2 = map.set(m, "z", 3)
+  println(m["x"])
+  println(m["y"])
+  println(m2["z"])
+  println(len(m2))
+}
+
+fn test_nested() {
+  let data = [#{"name": "alice", "scores": [90, 85, 92]}, #{"name": "bob", "scores": [88, 91, 79]}]
+  for item in data {
+    let name = item["name"]
+    let scores = item["scores"]
+    println("{name}: {scores}")
+  }
+}
+
+fn main() {
+  test_string_scope()
+  test_array_scope()
+  test_map_scope()
+  test_nested()
+  println("memory_basic: OK")
+}

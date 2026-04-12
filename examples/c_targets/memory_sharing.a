@@ -1,0 +1,55 @@
+; memory_sharing.a -- Aliased values: copy semantics, function passing
+
+fn identity(x) {
+  ret x
+}
+
+fn make_greeting(name) {
+  ret "Hello, " + name + "!"
+}
+
+fn test_alias() {
+  let x = "hello"
+  let y = x
+  let z = x
+  println(x)
+  println(y)
+  println(z)
+}
+
+fn test_pass_to_fn() {
+  let s = "world"
+  let g = make_greeting(s)
+  println(g)
+  println(s)
+}
+
+fn test_array_alias() {
+  let a = [1, 2, 3]
+  let b = a
+  let c = push(a, 4)
+  println(a)
+  println(b)
+  println(c)
+}
+
+fn test_return_from_fn() {
+  let val = identity("keep me")
+  println(val)
+  let arr = identity([10, 20, 30])
+  println(arr)
+}
+
+fn test_chain() {
+  let result = "hello" |> str.upper() |> str.trim()
+  println(result)
+}
+
+fn main() {
+  test_alias()
+  test_pass_to_fn()
+  test_array_alias()
+  test_return_from_fn()
+  test_chain()
+  println("memory_sharing: OK")
+}
