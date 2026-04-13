@@ -1,0 +1,32 @@
+; mcp_server.a -- Example MCP server: file search tool
+; Usage: a run examples/mcp_server.a
+; (Designed to be launched by an MCP client as a subprocess)
+
+use std.mcp
+
+fn main() {
+  let mut srv = mcp.server("file-search", "0.1.0")
+
+  let schema = #{
+    "type": "object",
+    "properties": #{
+      "pattern": #{"type": "string", "description": "Glob pattern to search for files"}
+    },
+    "required": ["pattern"]
+  }
+
+  srv = mcp.add_tool(srv, "search_files", "Search for files matching a glob pattern", schema, fn(args) {
+    let pattern = args["pattern"]
+    let files = fs.glob(pattern)
+    if len(files) == 0 {
+      ret "No files found"
+    }
+    ret str.join(files, "\n")
+  })
+
+  srv = mcp.add_resource(srv, "file:///info", "server-info", "Server information", fn(uri) {
+    ret "file-search MCP server v0.1.0 written in the a language"
+  })
+
+  mcp.serve(srv)
+}

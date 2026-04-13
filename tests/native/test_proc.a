@@ -1,0 +1,29 @@
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  ; Test proc.spawn + write + read_line + kill with cat
+  let h = proc.spawn("cat")
+  proc.write(h, "hello world\n")
+  let line = proc.read_line(h)
+  assert(line == "hello world", "read_line should return 'hello world'")
+
+  ; Write multiple lines, read them back
+  proc.write(h, "line two\n")
+  proc.write(h, "line three\n")
+  let l2 = proc.read_line(h)
+  let l3 = proc.read_line(h)
+  assert(l2 == "line two", "multi-line read: line two")
+  assert(l3 == "line three", "multi-line read: line three")
+
+  proc.kill(h)
+
+  ; Test spawn with echo (auto-closes)
+  let h2 = proc.spawn("echo done")
+  let out = proc.read_line(h2)
+  assert(out == "done", "echo should return 'done'")
+  proc.kill(h2)
+
+  print("all proc tests passed")
+}

@@ -3,8 +3,14 @@ use crate::interpreter::{Interpreter, Value};
 use std::collections::HashMap;
 use std::io::Read;
 use std::process::Command;
+use std::sync::Mutex;
 #[allow(unused_imports)]
 use std::sync::Arc;
+
+fn child_procs() -> &'static Mutex<Vec<Option<std::process::Child>>> {
+    static PROCS: std::sync::OnceLock<Mutex<Vec<Option<std::process::Child>>>> = std::sync::OnceLock::new();
+    PROCS.get_or_init(|| Mutex::new(Vec::new()))
+}
 
 pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> AResult<Value> {
     match name {
@@ -633,6 +639,97 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
             } else {
                 Err(AError::runtime("exec: expected string command", None))
             }
+        }
+
+        // --- Subprocess pipes ---
+        "proc.spawn" => {
+            if let Value::String(cmd) = &args[0] {
+                use std::process::{Stdio};
+                match Command::new("sh")
+                    .args(["-c", cmd.as_str()])
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::piped())
+                    .stderr(Stdio::null())
+                    .spawn()
+                {
+                    Ok(child) => {
+                        let mut procs = child_procs().lock().unwrap();
+                        let slot = procs.len();
+                        procs.push(Some(child));
+                        Ok(Value::Int(slot as i64))
+                    }
+                    Err(e) => Err(AError::runtime(format!("proc.spawn: {e}"), None)),
+                }
+            } else {
+                Err(AError::runtime("proc.spawn: expected string command", None))
+            }
+        }
+        "proc.write" => {
+            use std::io::Write;
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("proc.write: expected int handle", None)) };
+            let data = match &args[1] { Value::String(s) => s.clone(), _ => return Err(AError::runtime("proc.write: expected string data", None)) };
+            let mut procs = child_procs().lock().unwrap();
+            if handle >= procs.len() || procs[handle].is_none() {
+                return Err(AError::runtime("proc.write: invalid handle", None));
+            }
+            if let Some(ref mut child) = procs[handle] {
+                if let Some(ref mut stdin) = child.stdin {
+                    match stdin.write_all(data.as_bytes()) {
+                        Ok(_) => { let _ = stdin.flush(); Ok(Value::Void) }
+                        Err(e) => Err(AError::runtime(format!("proc.write: {e}"), None)),
+                    }
+                } else {
+                    Err(AError::runtime("proc.write: stdin not available", None))
+                }
+            } else {
+                Err(AError::runtime("proc.write: invalid handle", None))
+            }
+        }
+        "proc.read_line" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("proc.read_line: expected int handle", None)) };
+            let mut procs = child_procs().lock().unwrap();
+            if handle >= procs.len() || procs[handle].is_none() {
+                return Err(AError::runtime("proc.read_line: invalid handle", None));
+            }
+            if let Some(ref mut child) = procs[handle] {
+                if let Some(ref mut stdout) = child.stdout {
+                    let mut buf = Vec::new();
+                    let mut byte = [0u8; 1];
+                    loop {
+                        match stdout.read(&mut byte) {
+                            Ok(0) => break,
+                            Ok(_) => {
+                                if byte[0] == b'\n' { break; }
+                                buf.push(byte[0]);
+                            }
+                            Err(e) => return Ok(Value::Result(Err(Box::new(Value::string(e.to_string()))))),
+                        }
+                    }
+                    if buf.is_empty() && byte[0] != b'\n' {
+                        Ok(Value::Result(Err(Box::new(Value::string("eof".to_string())))))
+                    } else {
+                        if buf.last() == Some(&b'\r') { buf.pop(); }
+                        let line = String::from_utf8_lossy(&buf).to_string();
+                        Ok(Value::string(line))
+                    }
+                } else {
+                    Err(AError::runtime("proc.read_line: stdout not available", None))
+                }
+            } else {
+                Err(AError::runtime("proc.read_line: invalid handle", None))
+            }
+        }
+        "proc.kill" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("proc.kill: expected int handle", None)) };
+            let mut procs = child_procs().lock().unwrap();
+            if handle >= procs.len() || procs[handle].is_none() {
+                return Err(AError::runtime("proc.kill: invalid handle", None));
+            }
+            if let Some(mut child) = procs[handle].take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+            Ok(Value::Void)
         }
 
         // --- JSON ---
@@ -1415,6 +1512,7 @@ pub fn is_builtin(name: &str) -> bool {
         "str.replace" | "str.trim" | "str.upper" | "str.lower" |
         "str.join" | "str.chars" | "str.slice" | "str.lines" | "str.find" | "str.count" |
         "exec" |
+        "proc.spawn" | "proc.write" | "proc.read_line" | "proc.kill" |
         "json.parse" | "json.stringify" | "json.pretty" |
         "env.get" | "env.set" | "env.all" |
         "type_of" | "int" | "float" |

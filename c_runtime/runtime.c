@@ -820,6 +820,114 @@ AValue a_exec(AValue cmd) {
     return r;
 }
 
+/* --- Subprocess pipes (proc.*) --- */
+
+#include <signal.h>
+
+typedef struct {
+    pid_t pid;
+    int stdin_fd;
+    int stdout_fd;
+    int active;
+} SubProcess;
+
+#define MAX_SUBPROCS 16
+static SubProcess subprocs[MAX_SUBPROCS];
+
+AValue a_proc_spawn(AValue cmd) {
+    if (cmd.tag != TAG_STRING) return a_err(a_string("proc.spawn: expected string command"));
+    int slot = -1;
+    for (int i = 0; i < MAX_SUBPROCS; i++) {
+        if (!subprocs[i].active) { slot = i; break; }
+    }
+    if (slot < 0) return a_err(a_string("proc.spawn: too many subprocesses"));
+
+    int to_child[2], from_child[2];
+    if (pipe(to_child) < 0 || pipe(from_child) < 0)
+        return a_err(a_string("proc.spawn: pipe failed"));
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(to_child[0]); close(to_child[1]);
+        close(from_child[0]); close(from_child[1]);
+        return a_err(a_string("proc.spawn: fork failed"));
+    }
+
+    if (pid == 0) {
+        close(to_child[1]);
+        close(from_child[0]);
+        dup2(to_child[0], STDIN_FILENO);
+        dup2(from_child[1], STDOUT_FILENO);
+        close(to_child[0]);
+        close(from_child[1]);
+        execl("/bin/sh", "sh", "-c", cmd.sval->data, (char*)NULL);
+        _exit(127);
+    }
+
+    close(to_child[0]);
+    close(from_child[1]);
+    subprocs[slot].pid = pid;
+    subprocs[slot].stdin_fd = to_child[1];
+    subprocs[slot].stdout_fd = from_child[0];
+    subprocs[slot].active = 1;
+    return a_int(slot);
+}
+
+AValue a_proc_write(AValue handle, AValue data) {
+    if (handle.tag != TAG_INT) return a_err(a_string("proc.write: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_SUBPROCS || !subprocs[h].active)
+        return a_err(a_string("proc.write: invalid handle"));
+    if (data.tag != TAG_STRING) return a_err(a_string("proc.write: expected string data"));
+    const char* buf = data.sval->data;
+    int len = data.sval->len;
+    int sent = 0;
+    while (sent < len) {
+        ssize_t n = write(subprocs[h].stdin_fd, buf + sent, len - sent);
+        if (n <= 0) return a_err(a_string("proc.write: write failed"));
+        sent += (int)n;
+    }
+    return a_void();
+}
+
+AValue a_proc_read_line(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("proc.read_line: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_SUBPROCS || !subprocs[h].active)
+        return a_err(a_string("proc.read_line: invalid handle"));
+    size_t cap = 256, len = 0;
+    char* buf = malloc(cap);
+    for (;;) {
+        char c;
+        ssize_t n = read(subprocs[h].stdout_fd, &c, 1);
+        if (n <= 0) {
+            if (len == 0) { free(buf); return a_err(a_string("eof")); }
+            break;
+        }
+        if (c == '\n') break;
+        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+        buf[len++] = c;
+    }
+    buf[len] = '\0';
+    AValue result = a_string_len(buf, (int)len);
+    free(buf);
+    return result;
+}
+
+AValue a_proc_kill(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("proc.kill: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_SUBPROCS || !subprocs[h].active)
+        return a_err(a_string("proc.kill: invalid handle"));
+    close(subprocs[h].stdin_fd);
+    close(subprocs[h].stdout_fd);
+    kill(subprocs[h].pid, SIGTERM);
+    int status;
+    waitpid(subprocs[h].pid, &status, 0);
+    subprocs[h].active = 0;
+    return a_void();
+}
+
 AValue a_env_get(AValue key) {
     if (key.tag != TAG_STRING) return a_void();
     const char* val = getenv(key.sval->data);

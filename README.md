@@ -109,6 +109,8 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **HTTP server** | `http.serve(port, handler)` -- POSIX sockets, closure handler receives `{method, path, headers, body}`, returns `{status, headers, body}`; `http.serve_static(port, dir)` for file serving |
 | **Database** | `db.open(path)` (or `":memory:"`), `db.exec(db, sql)`, `db.query(db, sql, params)` with `?` binding, `db.close(db)` -- bundled SQLite, zero setup |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
+| **Subprocess** | `proc.spawn(cmd)`, `proc.write(h, data)`, `proc.read_line(h)`, `proc.kill(h)` -- bidirectional pipe I/O with long-lived child processes |
+| **MCP** | `mcp.server`, `mcp.add_tool`, `mcp.add_resource`, `mcp.serve` (server); `mcp.connect`, `mcp.list_tools`, `mcp.call_tool`, `mcp.close` (client) -- JSON-RPC 2.0 over stdio (via stdlib) |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
 | **LLM client** | `llm.chat(provider, model, messages, options)` -- unified API for OpenAI, Anthropic, Google AI with retry, tool use, normalized responses (via stdlib) |
@@ -123,7 +125,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Compression** | `compress.deflate`, `compress.inflate` (raw deflate), `compress.gzip`, `compress.gunzip` (gzip format) -- via bundled miniz |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 19 modules:
+**Standard library** with 20 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -142,6 +144,7 @@ use std.toml                  # parse, stringify -- TOML (tables, arrays of tabl
 use std.html                  # parse, select, text -- HTML DOM tree with CSS selector queries
 use std.url                   # parse, encode, decode, build -- full URL structure parsing
 use std.llm                   # chat(provider, model, msgs, opts) -- unified LLM client (OpenAI, Anthropic, Google)
+use std.mcp                   # MCP server + client -- JSON-RPC 2.0 over stdio, tool/resource registration
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -164,7 +167,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 110+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 17 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 115+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 18 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -174,7 +177,7 @@ The C code generator compiles itself -- including the lexer, parser, and AST mod
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,800 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~3,200 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -233,6 +236,8 @@ fn main() -> void {
 | `examples/crud.a` | 40 | **CRUD API** -- HTTP + SQLite with parameterized queries, create/read/delete users |
 | `examples/test_formats.a` | 115 | tests for YAML, TOML, HTML, URL modules -- round-trip, selectors, edge cases |
 | `examples/chat.a` | 20 | **LLM chat** -- one-shot conversation with any provider in ~15 lines |
+| `examples/mcp_server.a` | 33 | **MCP server** -- file search tool with tool + resource registration, JSON-RPC stdio |
+| `examples/mcp_client.a` | 55 | **MCP client** -- connects to any MCP server, lists tools, calls first tool |
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
@@ -245,7 +250,7 @@ fn main() -> void {
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~2,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
+| **C runtime** | ~3,200 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
 | **"a" source** | ~19,000 lines across 88 files |
 | **Standard library** | 20 modules, 380+ functions, ~8,200 lines |
 | **Test suites** | 27 suites + cgen test script, 498+ native tests, ~4,200 lines |

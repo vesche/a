@@ -1,0 +1,280 @@
+; std/mcp.a -- MCP (Model Context Protocol) server and client
+; JSON-RPC 2.0 over stdio transport.
+
+fn _mcp_version() -> str {
+  ret "2025-11-05"
+}
+
+; --- Server ---
+
+fn server(name, version) {
+  ret #{
+    "name": name,
+    "version": version,
+    "tools": [],
+    "resources": []
+  }
+}
+
+fn add_tool(srv, name, description, input_schema, handler) {
+  let mut tools = srv["tools"]
+  let entry = #{
+    "name": name,
+    "description": description,
+    "inputSchema": input_schema,
+    "handler": handler
+  }
+  tools = push(tools, entry)
+  ret map.set(srv, "tools", tools)
+}
+
+fn add_resource(srv, uri, name, description, handler) {
+  let mut resources = srv["resources"]
+  let entry = #{
+    "uri": uri,
+    "name": name,
+    "description": description,
+    "handler": handler
+  }
+  resources = push(resources, entry)
+  ret map.set(srv, "resources", resources)
+}
+
+fn _jsonrpc_response(id, result) {
+  ret json.stringify(#{"jsonrpc": "2.0", "id": id, "result": result})
+}
+
+fn _jsonrpc_error(id, code, message) {
+  ret json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": id,
+    "error": #{"code": code, "message": message}
+  })
+}
+
+fn _text_content(text) {
+  ret [#{"type": "text", "text": text}]
+}
+
+fn _handle_initialize(srv, msg) {
+  let id = msg["id"]
+  let mut caps = #{}
+  if len(srv["tools"]) > 0 {
+    caps = map.set(caps, "tools", #{})
+  }
+  if len(srv["resources"]) > 0 {
+    caps = map.set(caps, "resources", #{})
+  }
+  let result = #{
+    "protocolVersion": _mcp_version(),
+    "capabilities": caps,
+    "serverInfo": #{
+      "name": srv["name"],
+      "version": srv["version"]
+    }
+  }
+  ret _jsonrpc_response(id, result)
+}
+
+fn _handle_tools_list(srv, msg) {
+  let id = msg["id"]
+  let mut tool_list = []
+  let tools = srv["tools"]
+  let mut i = 0
+  while i < len(tools) {
+    let t = tools[i]
+    let entry = #{
+      "name": t["name"],
+      "description": t["description"],
+      "inputSchema": t["inputSchema"]
+    }
+    tool_list = push(tool_list, entry)
+    i = i + 1
+  }
+  ret _jsonrpc_response(id, #{"tools": tool_list})
+}
+
+fn _handle_tools_call(srv, msg) {
+  let id = msg["id"]
+  let params = msg["params"]
+  let tool_name = params["name"]
+  let args = params["arguments"]
+  let tools = srv["tools"]
+  let mut i = 0
+  while i < len(tools) {
+    if tools[i]["name"] == tool_name {
+      let handler = tools[i]["handler"]
+      let result = handler(args)
+      if type_of(result) == "str" {
+        ret _jsonrpc_response(id, #{"content": _text_content(result)})
+      }
+      ret _jsonrpc_response(id, #{"content": result})
+    }
+    i = i + 1
+  }
+  ret _jsonrpc_error(id, -32602, str.concat("unknown tool: ", tool_name))
+}
+
+fn _handle_resources_list(srv, msg) {
+  let id = msg["id"]
+  let mut res_list = []
+  let resources = srv["resources"]
+  let mut i = 0
+  while i < len(resources) {
+    let r = resources[i]
+    let entry = #{
+      "uri": r["uri"],
+      "name": r["name"],
+      "description": r["description"]
+    }
+    res_list = push(res_list, entry)
+    i = i + 1
+  }
+  ret _jsonrpc_response(id, #{"resources": res_list})
+}
+
+fn _handle_resources_read(srv, msg) {
+  let id = msg["id"]
+  let params = msg["params"]
+  let uri = params["uri"]
+  let resources = srv["resources"]
+  let mut i = 0
+  while i < len(resources) {
+    if resources[i]["uri"] == uri {
+      let handler = resources[i]["handler"]
+      let result = handler(uri)
+      if type_of(result) == "str" {
+        ret _jsonrpc_response(id, #{
+          "contents": [#{"uri": uri, "mimeType": "text/plain", "text": result}]
+        })
+      }
+      ret _jsonrpc_response(id, #{"contents": result})
+    }
+    i = i + 1
+  }
+  ret _jsonrpc_error(id, -32602, str.concat("unknown resource: ", uri))
+}
+
+fn serve(srv) {
+  while true {
+    let line = io.read_line()
+    if type_of(line) != "str" { ret 0 }
+    if len(line) == 0 { continue }
+    let msg = json.parse(line)
+    let method = msg["method"]
+    let mut response = ""
+    if method == "initialize" {
+      response = _handle_initialize(srv, msg)
+    } else if method == "initialized" {
+      continue
+    } else if method == "notifications/initialized" {
+      continue
+    } else if method == "tools/list" {
+      response = _handle_tools_list(srv, msg)
+    } else if method == "tools/call" {
+      response = _handle_tools_call(srv, msg)
+    } else if method == "resources/list" {
+      response = _handle_resources_list(srv, msg)
+    } else if method == "resources/read" {
+      response = _handle_resources_read(srv, msg)
+    } else if method == "ping" {
+      response = _jsonrpc_response(msg["id"], #{})
+    } else {
+      if map.has(msg, "id") {
+        response = _jsonrpc_error(msg["id"], -32601, str.concat("method not found: ", method))
+      } else {
+        continue
+      }
+    }
+    print(response)
+    io.flush()
+  }
+}
+
+; --- Client ---
+
+fn connect(cmd) {
+  let h = proc.spawn(cmd)
+  let init_req = json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": #{
+      "protocolVersion": _mcp_version(),
+      "capabilities": #{},
+      "clientInfo": #{"name": "a-mcp-client", "version": "0.59.0"}
+    }
+  })
+  proc.write(h, str.concat(init_req, "\n"))
+  let resp_line = proc.read_line(h)
+  let resp = json.parse(resp_line)
+  if map.has(resp, "error") {
+    proc.kill(h)
+    ret Err(resp["error"]["message"])
+  }
+  let notif = json.stringify(#{
+    "jsonrpc": "2.0",
+    "method": "initialized"
+  })
+  proc.write(h, str.concat(notif, "\n"))
+  ret #{
+    "handle": h,
+    "capabilities": resp["result"]["capabilities"],
+    "server_info": resp["result"]["serverInfo"],
+    "_next_id": 2
+  }
+}
+
+fn _client_request(client, method, params) {
+  let id = client["_next_id"]
+  let req = json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": id,
+    "method": method,
+    "params": params
+  })
+  proc.write(client["handle"], str.concat(req, "\n"))
+  let resp_line = proc.read_line(client["handle"])
+  let resp = json.parse(resp_line)
+  let new_client = map.set(client, "_next_id", id + 1)
+  if map.has(resp, "error") {
+    ret #{"client": new_client, "error": resp["error"]["message"]}
+  }
+  ret #{"client": new_client, "result": resp["result"]}
+}
+
+fn list_tools(client) {
+  let r = _client_request(client, "tools/list", #{})
+  if map.has(r, "error") {
+    ret Err(r["error"])
+  }
+  ret #{"client": r["client"], "tools": r["result"]["tools"]}
+}
+
+fn call_tool(client, name, args) {
+  let r = _client_request(client, "tools/call", #{"name": name, "arguments": args})
+  if map.has(r, "error") {
+    ret Err(r["error"])
+  }
+  ret #{"client": r["client"], "result": r["result"]}
+}
+
+fn list_resources(client) {
+  let r = _client_request(client, "resources/list", #{})
+  if map.has(r, "error") {
+    ret Err(r["error"])
+  }
+  ret #{"client": r["client"], "resources": r["result"]["resources"]}
+}
+
+fn read_resource(client, uri) {
+  let r = _client_request(client, "resources/read", #{"uri": uri})
+  if map.has(r, "error") {
+    ret Err(r["error"])
+  }
+  ret #{"client": r["client"], "result": r["result"]}
+}
+
+fn close(client) {
+  proc.kill(client["handle"])
+}

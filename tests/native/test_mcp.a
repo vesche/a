@@ -1,0 +1,46 @@
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  ; --- Test proc builtins ---
+  let h = proc.spawn("cat")
+  proc.write(h, "hello mcp\n")
+  let line = proc.read_line(h)
+  assert(line == "hello mcp", "proc roundtrip failed")
+  proc.kill(h)
+
+  ; --- Test MCP server/client via proc pipes ---
+  ; Spawn a simple echo-based JSON-RPC server using sh
+  ; This tests the wire format without needing the full mcp.a library
+  let srv = proc.spawn("cat")
+
+  ; Send initialize request
+  let init_req = json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": #{}
+  })
+  proc.write(srv, str.concat(init_req, "\n"))
+
+  ; Read it back (cat echoes)
+  let echo = proc.read_line(srv)
+  let parsed = json.parse(echo)
+  assert(parsed["id"] == 1, "json-rpc id should be 1")
+  assert(parsed["method"] == "initialize", "method should be initialize")
+
+  proc.kill(srv)
+
+  ; --- Test multiple subprocess handles ---
+  let h1 = proc.spawn("echo alpha")
+  let h2 = proc.spawn("echo beta")
+  let r1 = proc.read_line(h1)
+  let r2 = proc.read_line(h2)
+  assert(r1 == "alpha", "handle 1 should read alpha")
+  assert(r2 == "beta", "handle 2 should read beta")
+  proc.kill(h1)
+  proc.kill(h2)
+
+  print("all mcp tests passed")
+}

@@ -2175,3 +2175,47 @@ All methods return `{status, body, headers}` map (previously native only returne
 | `.github/workflows/ci.yml` | Replaced `curl` with `libssl-dev` in Linux deps |
 | `Cargo.toml` | Version bump to 0.58.0 |
 | `README.md` | Updated HTTP client description to reflect in-process implementation |
+
+## v0.59 -- MCP Framework
+
+**Date**: 2026-04-13
+
+### Summary
+
+Added subprocess pipe builtins (`proc.spawn`, `proc.write`, `proc.read_line`, `proc.kill`) to both C runtime and Rust VM. Built a complete MCP (Model Context Protocol) implementation in `std/mcp.a` with both server and client libraries. The MCP server supports tool/resource registration with JSON-RPC 2.0 over stdio. The MCP client uses the new proc builtins for bidirectional pipe communication with MCP servers.
+
+### New builtins
+
+**`proc.spawn(cmd)`** -- Fork/exec a subprocess with piped stdin/stdout, returns integer handle. C runtime uses `pipe()`/`fork()`/`execl()`; Rust VM uses `Command::new().stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()`.
+
+**`proc.write(handle, data)`** -- Write string data to a subprocess's stdin pipe.
+
+**`proc.read_line(handle)`** -- Read one line from a subprocess's stdout pipe (byte-at-a-time to avoid buffering issues). Returns `Err("eof")` at end of stream.
+
+**`proc.kill(handle)`** -- Close pipes, send SIGTERM, waitpid, release handle.
+
+### MCP library (`std/mcp.a`)
+
+**Server API** -- `mcp.server(name, version)`, `mcp.add_tool(srv, name, desc, schema, handler)`, `mcp.add_resource(srv, uri, name, desc, handler)`, `mcp.serve(srv)`. The serve function enters a stdio read loop, dispatching JSON-RPC 2.0 messages for `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read`, and `ping`.
+
+**Client API** -- `mcp.connect(cmd)`, `mcp.list_tools(client)`, `mcp.call_tool(client, name, args)`, `mcp.list_resources(client)`, `mcp.read_resource(client, uri)`, `mcp.close(client)`. The connect function spawns a subprocess, performs the MCP initialize handshake, and returns a client map with handle and capabilities.
+
+Protocol version: `2025-11-05`. JSON-RPC 2.0 compliant with proper error codes (-32601 method not found, -32602 invalid params).
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Added `SubProcess` struct, `subprocs[]` pool (max 16), and `a_proc_spawn`, `a_proc_write`, `a_proc_read_line`, `a_proc_kill` implementations using POSIX `pipe()`/`fork()`/`execl()` |
+| `c_runtime/runtime.h` | Added `a_proc_spawn`, `a_proc_write`, `a_proc_read_line`, `a_proc_kill` declarations |
+| `src/builtins.rs` | Added `proc.spawn`, `proc.write`, `proc.read_line`, `proc.kill` using `std::process::Command` with `Stdio::piped()` and `OnceLock<Mutex<Vec<Option<Child>>>>` for handle storage |
+| `src/checker.rs` | Added type signatures for all 4 proc builtins |
+| `std/compiler/cgen.a` | Added `proc.spawn`, `proc.write`, `proc.read_line`, `proc.kill` to `_builtin_map()` |
+| `src/lsp.a` | Added proc.* builtin completion entries |
+| `std/mcp.a` | NEW -- MCP server + client library (~280 lines), JSON-RPC 2.0 over stdio |
+| `examples/mcp_server.a` | NEW -- Example MCP server with file search tool |
+| `examples/mcp_client.a` | NEW -- Example MCP client that connects to any server |
+| `tests/native/test_proc.a` | NEW -- proc builtin tests (spawn, write, read_line, kill, multi-handle) |
+| `tests/native/test_mcp.a` | NEW -- MCP wire format tests via proc pipes |
+| `Cargo.toml` | Version bump to 0.59.0 |
+| `README.md` | Added proc.* and MCP builtins, std.mcp module, example entries |

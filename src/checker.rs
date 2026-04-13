@@ -211,6 +211,26 @@ impl Checker {
             ret: Type::Unknown,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("proc.spawn".into(), FnSig {
+            params: vec![("cmd".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("proc.write".into(), FnSig {
+            params: vec![("handle".into(), Type::I64), ("data".into(), Type::Str)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("proc.read_line".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("proc.kill".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
         self.fn_sigs.insert("json.parse".into(), FnSig {
             params: vec![("s".into(), Type::Str)],
             ret: Type::Unknown,

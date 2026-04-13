@@ -243,6 +243,12 @@ AValue a_http_delete(AValue url, AValue headers);
 AValue a_http_serve(AValue port, AValue handler);
 AValue a_http_serve_static(AValue port, AValue dir);
 
+/* Subprocess pipes */
+AValue a_proc_spawn(AValue cmd);
+AValue a_proc_write(AValue handle, AValue data);
+AValue a_proc_read_line(AValue handle);
+AValue a_proc_kill(AValue handle);
+
 /* Database (SQLite) */
 AValue a_db_open(AValue path);
 AValue a_db_close(AValue db);

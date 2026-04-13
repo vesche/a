@@ -145,22 +145,20 @@ This avoids vendoring 100k-200k+ lines of TLS code. The tradeoff is platform-spe
 
 With HTTP self-contained, build the protocols AI agents actually use.
 
-### v0.59 -- MCP Framework
+### v0.59 -- MCP Framework [DONE]
 
 MCP (Model Context Protocol) is the standard for AI tool integration. If "a" makes MCP servers trivial, every AI tool developer reaches for it.
 
 #### Deliverables
 
-- **`std/mcp.a`** -- pure "a" MCP implementation:
-  - `mcp.serve(tools, options)` -- start an MCP server over stdio (the standard transport)
-  - `mcp.tool(name, description, input_schema, handler)` -- register a tool
-  - `mcp.resource(uri, name, handler)` -- register a resource provider
-  - JSON-RPC message parsing and dispatch (MCP uses JSON-RPC 2.0)
-  - Capability negotiation (`initialize` / `initialized`)
-- **`mcp.connect(cmd)` / `mcp.call_tool(client, name, args)`** -- MCP client for calling other MCP servers.
-- **Example: `examples/mcp_server.a`** -- file search MCP tool in ~30 lines.
-- **Example: `examples/mcp_client.a`** -- connect to an MCP server and call tools.
-- Bump to `0.59.0`.
+- [x] **Subprocess pipe builtins**: `proc.spawn`, `proc.write`, `proc.read_line`, `proc.kill` in both C runtime and Rust VM
+- [x] **`std/mcp.a`** -- pure "a" MCP server + client (~280 lines):
+  - Server: `mcp.server()`, `mcp.add_tool()`, `mcp.add_resource()`, `mcp.serve()` -- JSON-RPC 2.0 over stdio
+  - Client: `mcp.connect()`, `mcp.list_tools()`, `mcp.call_tool()`, `mcp.close()` -- uses proc.* builtins
+  - Full JSON-RPC 2.0 compliance with error codes, capability negotiation, protocol version 2025-11-05
+- [x] **`examples/mcp_server.a`** -- file search MCP tool in ~33 lines
+- [x] **`examples/mcp_client.a`** -- connects to any MCP server, lists tools, calls first tool
+- [x] Bump to `0.59.0`
 
 ### v0.60 -- Streaming + Real-Time Protocols
 
@@ -376,7 +374,7 @@ What v1.0 means:
 |---------|------|---------------|---------|
 | **v0.57** | Bootstrap + Compression | Pre-generated bootstrap C, miniz, VENDORS.md | Build from gcc alone, no Rust required |
 | **v0.58** | In-Process HTTP | Replace curl, platform TLS, full method parity | Truly hermetic binary, no external deps |
-| **v0.59** | MCP Framework | `mcp.serve()`, `mcp.connect()`, tool definitions | Easiest way to build AI tools |
+| **v0.59** | MCP Framework | `proc.*` builtins, `std/mcp.a` server + client, JSON-RPC 2.0 | **DONE** |
 | **v0.60** | Streaming | `llm.stream()`, SSE, WebSocket client | Real-time LLM output, live protocols |
 | **v0.61** | Agent Stdlib | retry, cache, rate_limit, uuid, logging, args, signals | Production-grade agent code, real CLI tools |
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | Structured output, code review |

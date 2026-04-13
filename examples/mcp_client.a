@@ -1,0 +1,56 @@
+; mcp_client.a -- Example MCP client
+; Usage: a run examples/mcp_client.a "a run examples/mcp_server.a"
+; Connects to an MCP server, lists tools, calls the first one.
+
+use std.mcp
+
+fn main() {
+  let args = env.args()
+  if len(args) < 2 {
+    eprintln("usage: a run examples/mcp_client.a <server-command>")
+    ret 0
+  }
+  let cmd = args[1]
+  print("Connecting to: {cmd}")
+  let mut client = mcp.connect(cmd)
+  if is_err(client) {
+    eprintln("connect failed: {client}")
+    ret 0
+  }
+  print("Connected to: {client.server_info.name} v{client.server_info.version}")
+
+  let tr = mcp.list_tools(client)
+  if is_err(tr) {
+    eprintln("list_tools failed: {tr}")
+    mcp.close(client)
+    ret 0
+  }
+  client = tr["client"]
+  let tools = tr["tools"]
+  print("Available tools: {len(tools)}")
+  let mut i = 0
+  while i < len(tools) {
+    print("  - {tools[i].name}: {tools[i].description}")
+    i = i + 1
+  }
+
+  if len(tools) > 0 {
+    let tool_name = tools[0]["name"]
+    print("\nCalling {tool_name}...")
+    let cr = mcp.call_tool(client, tool_name, #{"pattern": "*.a"})
+    if is_err(cr) {
+      eprintln("call_tool failed: {cr}")
+    } else {
+      client = cr["client"]
+      let content = cr["result"]["content"]
+      let mut j = 0
+      while j < len(content) {
+        print(content[j]["text"])
+        j = j + 1
+      }
+    }
+  }
+
+  mcp.close(client)
+  print("\nDone.")
+}
