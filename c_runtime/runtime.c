@@ -1499,111 +1499,662 @@ AValue a_json_pretty(AValue v) {
     return result;
 }
 
-/* --- HTTP client (via system curl) --- */
+/* --- HTTP client (in-process, POSIX sockets + platform TLS) --- */
 
 #include <sys/wait.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+#include <poll.h>
+#include <fcntl.h>
+#include <errno.h>
 
-static AValue http_request(const char* method, const char* url, const char* body, AValue headers) {
+#ifdef __APPLE__
+#include <Security/Security.h>
+#include <Security/SecureTransport.h>
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+#else
+#include <dlfcn.h>
+#endif
+
+/* --- URL parser --- */
+
+typedef struct {
+    char scheme[8];
+    char host[256];
+    int port;
+    char path[4096];
+} HttpUrl;
+
+static int http_parse_url(const char* url, HttpUrl* out) {
+    memset(out, 0, sizeof(*out));
+    const char* p = url;
+    if (strncmp(p, "https://", 8) == 0) {
+        strcpy(out->scheme, "https");
+        out->port = 443;
+        p += 8;
+    } else if (strncmp(p, "http://", 7) == 0) {
+        strcpy(out->scheme, "http");
+        out->port = 80;
+        p += 7;
+    } else {
+        return -1;
+    }
+    const char* slash = strchr(p, '/');
+    const char* colon = strchr(p, ':');
+    if (colon && (!slash || colon < slash)) {
+        int hlen = (int)(colon - p);
+        if (hlen >= (int)sizeof(out->host)) hlen = (int)sizeof(out->host) - 1;
+        memcpy(out->host, p, hlen);
+        out->host[hlen] = '\0';
+        out->port = atoi(colon + 1);
+        if (slash) {
+            strncpy(out->path, slash, sizeof(out->path) - 1);
+        } else {
+            strcpy(out->path, "/");
+        }
+    } else if (slash) {
+        int hlen = (int)(slash - p);
+        if (hlen >= (int)sizeof(out->host)) hlen = (int)sizeof(out->host) - 1;
+        memcpy(out->host, p, hlen);
+        out->host[hlen] = '\0';
+        strncpy(out->path, slash, sizeof(out->path) - 1);
+    } else {
+        strncpy(out->host, p, sizeof(out->host) - 1);
+        strcpy(out->path, "/");
+    }
+    return 0;
+}
+
+/* --- TCP connection --- */
+
+static int http_tcp_connect(const char* host, int port, int timeout_ms) {
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+
+    struct addrinfo hints, *res, *rp;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) return -1;
+
+    int fd = -1;
+    for (rp = res; rp; rp = rp->ai_next) {
+        fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (fd < 0) continue;
+
+        int flags = fcntl(fd, F_GETFL, 0);
+        fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+        int rc = connect(fd, rp->ai_addr, rp->ai_addrlen);
+        if (rc == 0) {
+            fcntl(fd, F_SETFL, flags);
+            break;
+        }
+        if (errno == EINPROGRESS) {
+            struct pollfd pfd = { .fd = fd, .events = POLLOUT };
+            int pr = poll(&pfd, 1, timeout_ms > 0 ? timeout_ms : 10000);
+            if (pr > 0 && (pfd.revents & POLLOUT)) {
+                int err = 0;
+                socklen_t elen = sizeof(err);
+                getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &elen);
+                if (err == 0) { fcntl(fd, F_SETFL, flags); break; }
+            }
+        }
+        close(fd);
+        fd = -1;
+    }
+    freeaddrinfo(res);
+    return fd;
+}
+
+/* --- I/O abstraction --- */
+
+typedef struct {
+    int fd;
+    void* tls_ctx;
+    int use_tls;
+} HttpConn;
+
+static int http_io_write(HttpConn* c, const void* buf, int len);
+static int http_io_read(HttpConn* c, void* buf, int len);
+static void http_conn_close(HttpConn* c);
+
+/* --- Platform TLS --- */
+
+#ifdef __APPLE__
+
+static OSStatus _tls_read_cb(SSLConnectionRef conn, void* data, size_t* len) {
+    int fd = *(int*)conn;
+    ssize_t n = recv(fd, data, *len, 0);
+    if (n > 0) { *len = (size_t)n; return noErr; }
+    if (n == 0) { *len = 0; return errSSLClosedGraceful; }
+    *len = 0;
+    return (errno == EAGAIN || errno == EWOULDBLOCK) ? errSSLWouldBlock : errSecIO;
+}
+
+static OSStatus _tls_write_cb(SSLConnectionRef conn, const void* data, size_t* len) {
+    int fd = *(int*)conn;
+    ssize_t n = send(fd, data, *len, 0);
+    if (n >= 0) { *len = (size_t)n; return noErr; }
+    *len = 0;
+    return (errno == EAGAIN || errno == EWOULDBLOCK) ? errSSLWouldBlock : errSecIO;
+}
+
+typedef struct {
+    SSLContextRef ctx;
+    int fd;
+} AppleTLS;
+
+static int http_tls_connect(HttpConn* c, const char* host) {
+    AppleTLS* t = calloc(1, sizeof(AppleTLS));
+    t->fd = c->fd;
+    t->ctx = SSLCreateContext(NULL, kSSLClientSide, kSSLStreamType);
+    if (!t->ctx) { free(t); return -1; }
+    SSLSetIOFuncs(t->ctx, _tls_read_cb, _tls_write_cb);
+    SSLSetConnection(t->ctx, &t->fd);
+    SSLSetPeerDomainName(t->ctx, host, strlen(host));
+
+    OSStatus st;
+    do { st = SSLHandshake(t->ctx); } while (st == errSSLWouldBlock);
+    if (st != noErr) {
+        CFRelease(t->ctx);
+        free(t);
+        return -1;
+    }
+    c->tls_ctx = t;
+    c->use_tls = 1;
+    return 0;
+}
+
+static int http_tls_write(HttpConn* c, const void* buf, int len) {
+    AppleTLS* t = (AppleTLS*)c->tls_ctx;
+    size_t written = 0;
+    OSStatus st = SSLWrite(t->ctx, buf, (size_t)len, &written);
+    return (st == noErr || written > 0) ? (int)written : -1;
+}
+
+static int http_tls_read(HttpConn* c, void* buf, int len) {
+    AppleTLS* t = (AppleTLS*)c->tls_ctx;
+    size_t read_n = 0;
+    OSStatus st = SSLRead(t->ctx, buf, (size_t)len, &read_n);
+    if (read_n > 0) return (int)read_n;
+    if (st == errSSLClosedGraceful || st == errSSLClosedAbort) return 0;
+    return -1;
+}
+
+static void http_tls_close(HttpConn* c) {
+    if (!c->tls_ctx) return;
+    AppleTLS* t = (AppleTLS*)c->tls_ctx;
+    SSLClose(t->ctx);
+    CFRelease(t->ctx);
+    free(t);
+    c->tls_ctx = NULL;
+}
+
+#pragma clang diagnostic pop
+
+#else /* Linux: OpenSSL via dlopen */
+
+typedef struct ssl_st SSL;
+typedef struct ssl_ctx_st SSL_CTX;
+typedef struct ssl_method_st SSL_METHOD;
+
+static void* _ssl_lib = NULL;
+static void* _crypto_lib = NULL;
+static int _ssl_init_done = 0;
+static int _ssl_available = 0;
+
+static SSL_CTX* (*_SSL_CTX_new)(const SSL_METHOD*) = NULL;
+static const SSL_METHOD* (*_TLS_client_method)(void) = NULL;
+static SSL* (*_SSL_new)(SSL_CTX*) = NULL;
+static int (*_SSL_set_fd)(SSL*, int) = NULL;
+static int (*_SSL_connect)(SSL*) = NULL;
+static int (*_SSL_read)(SSL*, void*, int) = NULL;
+static int (*_SSL_write)(SSL*, const void*, int) = NULL;
+static int (*_SSL_shutdown)(SSL*) = NULL;
+static void (*_SSL_free)(SSL*) = NULL;
+static void (*_SSL_CTX_free)(SSL_CTX*) = NULL;
+static long (*_SSL_ctrl)(SSL*, int, long, void*) = NULL;
+
+#define SSL_CTRL_SET_TLSEXT_HOSTNAME 55
+#define TLSEXT_NAMETYPE_host_name 0
+
+static void _ssl_try_init(void) {
+    if (_ssl_init_done) return;
+    _ssl_init_done = 1;
+    const char* libs[] = { "libssl.so.3", "libssl.so.1.1", "libssl.so", NULL };
+    for (int i = 0; libs[i]; i++) {
+        _ssl_lib = dlopen(libs[i], RTLD_NOW);
+        if (_ssl_lib) break;
+    }
+    if (!_ssl_lib) return;
+    const char* crypto_libs[] = { "libcrypto.so.3", "libcrypto.so.1.1", "libcrypto.so", NULL };
+    for (int i = 0; crypto_libs[i]; i++) {
+        _crypto_lib = dlopen(crypto_libs[i], RTLD_NOW);
+        if (_crypto_lib) break;
+    }
+    _SSL_CTX_new = dlsym(_ssl_lib, "SSL_CTX_new");
+    _TLS_client_method = dlsym(_ssl_lib, "TLS_client_method");
+    _SSL_new = dlsym(_ssl_lib, "SSL_new");
+    _SSL_set_fd = dlsym(_ssl_lib, "SSL_set_fd");
+    _SSL_connect = dlsym(_ssl_lib, "SSL_connect");
+    _SSL_read = dlsym(_ssl_lib, "SSL_read");
+    _SSL_write = dlsym(_ssl_lib, "SSL_write");
+    _SSL_shutdown = dlsym(_ssl_lib, "SSL_shutdown");
+    _SSL_free = dlsym(_ssl_lib, "SSL_free");
+    _SSL_CTX_free = dlsym(_ssl_lib, "SSL_CTX_free");
+    _SSL_ctrl = dlsym(_ssl_lib, "SSL_ctrl");
+    if (_SSL_CTX_new && _TLS_client_method && _SSL_new && _SSL_set_fd &&
+        _SSL_connect && _SSL_read && _SSL_write && _SSL_shutdown &&
+        _SSL_free && _SSL_CTX_free) {
+        _ssl_available = 1;
+    }
+}
+
+typedef struct {
+    SSL* ssl;
+    SSL_CTX* ctx;
+} LinuxTLS;
+
+static int http_tls_connect(HttpConn* c, const char* host) {
+    _ssl_try_init();
+    if (!_ssl_available) return -1;
+    LinuxTLS* t = calloc(1, sizeof(LinuxTLS));
+    t->ctx = _SSL_CTX_new(_TLS_client_method());
+    if (!t->ctx) { free(t); return -1; }
+    t->ssl = _SSL_new(t->ctx);
+    if (!t->ssl) { _SSL_CTX_free(t->ctx); free(t); return -1; }
+    _SSL_set_fd(t->ssl, c->fd);
+    if (_SSL_ctrl)
+        _SSL_ctrl(t->ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name, (void*)host);
+    if (_SSL_connect(t->ssl) != 1) {
+        _SSL_free(t->ssl);
+        _SSL_CTX_free(t->ctx);
+        free(t);
+        return -1;
+    }
+    c->tls_ctx = t;
+    c->use_tls = 1;
+    return 0;
+}
+
+static int http_tls_write(HttpConn* c, const void* buf, int len) {
+    LinuxTLS* t = (LinuxTLS*)c->tls_ctx;
+    return _SSL_write(t->ssl, buf, len);
+}
+
+static int http_tls_read(HttpConn* c, void* buf, int len) {
+    LinuxTLS* t = (LinuxTLS*)c->tls_ctx;
+    return _SSL_read(t->ssl, buf, len);
+}
+
+static void http_tls_close(HttpConn* c) {
+    if (!c->tls_ctx) return;
+    LinuxTLS* t = (LinuxTLS*)c->tls_ctx;
+    _SSL_shutdown(t->ssl);
+    _SSL_free(t->ssl);
+    _SSL_CTX_free(t->ctx);
+    free(t);
+    c->tls_ctx = NULL;
+}
+
+#endif /* __APPLE__ / Linux TLS */
+
+/* --- I/O dispatch --- */
+
+static int http_io_write(HttpConn* c, const void* buf, int len) {
+    if (c->use_tls) return http_tls_write(c, buf, len);
+    return (int)send(c->fd, buf, (size_t)len, 0);
+}
+
+static int http_io_read(HttpConn* c, void* buf, int len) {
+    if (c->use_tls) return http_tls_read(c, buf, len);
+    return (int)recv(c->fd, buf, (size_t)len, 0);
+}
+
+static void http_conn_close(HttpConn* c) {
+    if (c->use_tls) http_tls_close(c);
+    if (c->fd >= 0) close(c->fd);
+    c->fd = -1;
+}
+
+/* --- Curl fallback for HTTPS when TLS unavailable --- */
+
+static AValue http_request_curl(const char* method, const char* url, const char* body, AValue headers) {
     int out_pipe[2], err_pipe[2];
     if (pipe(out_pipe) < 0 || pipe(err_pipe) < 0)
         return a_err(a_string("http: pipe failed"));
-
     pid_t pid = fork();
     if (pid < 0) {
         close(out_pipe[0]); close(out_pipe[1]);
         close(err_pipe[0]); close(err_pipe[1]);
         return a_err(a_string("http: fork failed"));
     }
-
     if (pid == 0) {
-        close(out_pipe[0]);
-        close(err_pipe[0]);
+        close(out_pipe[0]); close(err_pipe[0]);
         dup2(out_pipe[1], STDOUT_FILENO);
         dup2(err_pipe[1], STDERR_FILENO);
-        close(out_pipe[1]);
-        close(err_pipe[1]);
-
-        int argc = 0;
-        char* argv[64];
-        argv[argc++] = "curl";
-        argv[argc++] = "-s";
-        argv[argc++] = "-w";
-        argv[argc++] = "\n__HTTP_STATUS__%{http_code}";
-        argv[argc++] = "-X";
-        argv[argc++] = (char*)method;
-
+        close(out_pipe[1]); close(err_pipe[1]);
+        int ac = 0; char* av[64];
+        av[ac++] = "curl"; av[ac++] = "-s";
+        av[ac++] = "-D"; av[ac++] = "/dev/stderr";
+        av[ac++] = "-w"; av[ac++] = "\n__HTTP_STATUS__%{http_code}";
+        av[ac++] = "-X"; av[ac++] = (char*)method;
         if (headers.tag == TAG_MAP) {
-            for (int i = 0; i < headers.mval->len && argc < 58; i++) {
-                char* hdr = malloc(strlen(headers.mval->keys[i]) + headers.mval->vals[i].sval->len + 4);
-                sprintf(hdr, "%s: %s", headers.mval->keys[i], headers.mval->vals[i].sval->data);
-                argv[argc++] = "-H";
-                argv[argc++] = hdr;
+            for (int i = 0; i < headers.mval->len && ac < 56; i++) {
+                if (headers.mval->vals[i].tag != TAG_STRING) continue;
+                char* h = malloc(strlen(headers.mval->keys[i]) + headers.mval->vals[i].sval->len + 4);
+                sprintf(h, "%s: %s", headers.mval->keys[i], headers.mval->vals[i].sval->data);
+                av[ac++] = "-H"; av[ac++] = h;
             }
         }
-
-        if (body && strlen(body) > 0) {
-            argv[argc++] = "-d";
-            argv[argc++] = (char*)body;
-        }
-
-        argv[argc++] = (char*)url;
-        argv[argc] = NULL;
-        execvp("curl", argv);
-        _exit(127);
+        if (body && strlen(body) > 0) { av[ac++] = "-d"; av[ac++] = (char*)body; }
+        av[ac++] = (char*)url; av[ac] = NULL;
+        execvp("curl", av); _exit(127);
     }
-
-    close(out_pipe[1]);
-    close(err_pipe[1]);
-
-    size_t cap = 4096, len = 0;
-    char* buf = malloc(cap);
+    close(out_pipe[1]); close(err_pipe[1]);
+    size_t bcap = 4096, blen = 0;
+    char* bbuf = malloc(bcap);
     ssize_t n;
-    while ((n = read(out_pipe[0], buf + len, cap - len)) > 0) {
-        len += n;
-        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+    while ((n = read(out_pipe[0], bbuf + blen, bcap - blen)) > 0) {
+        blen += n;
+        if (blen >= bcap - 1) { bcap *= 2; bbuf = realloc(bbuf, bcap); }
     }
-    buf[len] = '\0';
-    close(out_pipe[0]);
-    close(err_pipe[0]);
-
-    int status;
-    waitpid(pid, &status, 0);
-
-    if (!WIFEXITED(status) || WEXITSTATUS(status) == 127)  {
-        free(buf);
-        return a_err(a_string("http: curl not found"));
+    bbuf[blen] = '\0'; close(out_pipe[0]);
+    size_t hcap = 4096, hlen = 0;
+    char* hbuf = malloc(hcap);
+    while ((n = read(err_pipe[0], hbuf + hlen, hcap - hlen)) > 0) {
+        hlen += n;
+        if (hlen >= hcap - 1) { hcap *= 2; hbuf = realloc(hbuf, hcap); }
     }
-
+    hbuf[hlen] = '\0'; close(err_pipe[0]);
+    int st; waitpid(pid, &st, 0);
+    if (!WIFEXITED(st) || WEXITSTATUS(st) == 127) {
+        free(bbuf); free(hbuf);
+        return a_err(a_string("http: curl not found (no TLS library available; install openssl or curl)"));
+    }
     int http_status = 0;
-    char* marker = strstr(buf, "\n__HTTP_STATUS__");
-    if (marker) {
-        http_status = atoi(marker + 16);
-        *marker = '\0';
-        len = marker - buf;
+    char* marker = strstr(bbuf, "\n__HTTP_STATUS__");
+    if (marker) { http_status = atoi(marker + 16); *marker = '\0'; blen = marker - bbuf; }
+    AValue resp_headers = a_map_new(0);
+    char* line = hbuf;
+    while (line && *line) {
+        char* eol = strstr(line, "\r\n");
+        if (!eol) eol = line + strlen(line);
+        char* colon = strchr(line, ':');
+        if (colon && colon < eol && line[0] != 'H') {
+            *colon = '\0';
+            char* val = colon + 1;
+            while (*val == ' ') val++;
+            int vlen = (int)(eol - val);
+            for (char* pp = line; *pp; pp++) *pp = (char)tolower((unsigned char)*pp);
+            resp_headers = a_map_set(resp_headers, a_string(line), a_string_len(val, vlen));
+        }
+        if (*eol) line = eol + 2; else break;
+    }
+    free(hbuf);
+    AValue result = a_map_new(0);
+    result = a_map_set(result, a_string("status"), a_int(http_status));
+    result = a_map_set(result, a_string("body"), a_string_len(bbuf, (int)blen));
+    result = a_map_set(result, a_string("headers"), resp_headers);
+    free(bbuf);
+    return result;
+}
+
+/* --- HTTP/1.1 request/response --- */
+
+static int http_io_write_all(HttpConn* c, const char* buf, int len) {
+    int sent = 0;
+    while (sent < len) {
+        int n = http_io_write(c, buf + sent, len - sent);
+        if (n <= 0) return -1;
+        sent += n;
+    }
+    return sent;
+}
+
+static AValue http_request_inprocess(const char* method, const char* url_str,
+                                      const char* body, int body_len, AValue req_headers) {
+    HttpUrl url;
+    if (http_parse_url(url_str, &url) != 0)
+        return a_err(a_string("http: invalid URL"));
+
+    int need_tls = (strcmp(url.scheme, "https") == 0);
+
+    int fd = http_tcp_connect(url.host, url.port, 10000);
+    if (fd < 0) return a_err(a_string("http: connection failed"));
+
+    HttpConn conn = { .fd = fd, .tls_ctx = NULL, .use_tls = 0 };
+
+    if (need_tls) {
+        if (http_tls_connect(&conn, url.host) != 0) {
+            close(fd);
+            return http_request_curl(method, url_str, body, req_headers);
+        }
+    }
+
+    /* Format request */
+    size_t req_cap = 4096 + body_len;
+    char* req = malloc(req_cap);
+    int rlen = snprintf(req, req_cap, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, url.path, url.host);
+
+    int has_ct = 0;
+    int has_accept_enc = 0;
+    if (req_headers.tag == TAG_MAP) {
+        for (int i = 0; i < req_headers.mval->len; i++) {
+            if (req_headers.mval->vals[i].tag != TAG_STRING) continue;
+            rlen += snprintf(req + rlen, req_cap - rlen, "%s: %s\r\n",
+                             req_headers.mval->keys[i], req_headers.mval->vals[i].sval->data);
+            if (strcasecmp(req_headers.mval->keys[i], "content-type") == 0) has_ct = 1;
+            if (strcasecmp(req_headers.mval->keys[i], "accept-encoding") == 0) has_accept_enc = 1;
+        }
+    }
+    if (body && body_len > 0 && !has_ct) {
+        rlen += snprintf(req + rlen, req_cap - rlen, "Content-Type: application/json\r\n");
+    }
+    if (body && body_len > 0) {
+        rlen += snprintf(req + rlen, req_cap - rlen, "Content-Length: %d\r\n", body_len);
+    }
+    if (!has_accept_enc) {
+        rlen += snprintf(req + rlen, req_cap - rlen, "Accept-Encoding: gzip\r\n");
+    }
+    rlen += snprintf(req + rlen, req_cap - rlen, "Connection: close\r\n\r\n");
+    if (body && body_len > 0) {
+        memcpy(req + rlen, body, body_len);
+        rlen += body_len;
+    }
+
+    if (http_io_write_all(&conn, req, rlen) < 0) {
+        free(req); http_conn_close(&conn);
+        return a_err(a_string("http: send failed"));
+    }
+    free(req);
+
+    /* Read response */
+    size_t resp_cap = 8192, resp_len = 0;
+    char* resp_buf = malloc(resp_cap);
+    char* header_end = NULL;
+
+    while (!header_end) {
+        if (resp_len >= resp_cap - 1) { resp_cap *= 2; resp_buf = realloc(resp_buf, resp_cap); }
+        int n = http_io_read(&conn, resp_buf + resp_len, (int)(resp_cap - resp_len - 1));
+        if (n <= 0) break;
+        resp_len += n;
+        resp_buf[resp_len] = '\0';
+        header_end = strstr(resp_buf, "\r\n\r\n");
+    }
+
+    if (!header_end) {
+        if (resp_len == 0) { free(resp_buf); http_conn_close(&conn); return a_err(a_string("http: no response")); }
+        header_end = resp_buf + resp_len;
+    }
+
+    /* Parse status line */
+    int http_status = 0;
+    char* first_space = strchr(resp_buf, ' ');
+    if (first_space) http_status = atoi(first_space + 1);
+
+    /* Parse headers */
+    AValue resp_headers = a_map_new(0);
+    int content_length = -1;
+    int chunked = 0;
+    int gzipped = 0;
+
+    char* hdr_start = strstr(resp_buf, "\r\n");
+    if (hdr_start) {
+        hdr_start += 2;
+        while (hdr_start < header_end) {
+            char* eol = strstr(hdr_start, "\r\n");
+            if (!eol || eol == hdr_start) break;
+            char* colon = memchr(hdr_start, ':', eol - hdr_start);
+            if (colon) {
+                int klen = (int)(colon - hdr_start);
+                char key[256];
+                if (klen >= (int)sizeof(key)) klen = (int)sizeof(key) - 1;
+                for (int j = 0; j < klen; j++) key[j] = (char)tolower((unsigned char)hdr_start[j]);
+                key[klen] = '\0';
+                char* val = colon + 1;
+                while (val < eol && *val == ' ') val++;
+                int vlen = (int)(eol - val);
+                resp_headers = a_map_set(resp_headers, a_string(key), a_string_len(val, vlen));
+                if (strcmp(key, "content-length") == 0) content_length = atoi(val);
+                if (strcmp(key, "transfer-encoding") == 0 && strstr(val, "chunked")) chunked = 1;
+                if (strcmp(key, "content-encoding") == 0 && strstr(val, "gzip")) gzipped = 1;
+            }
+            hdr_start = eol + 2;
+        }
+    }
+
+    /* Read body */
+    char* body_start = header_end + 4;
+    int already = (int)(resp_len - (body_start - resp_buf));
+    if (already < 0) already = 0;
+
+    char* body_buf = NULL;
+    int body_total = 0;
+
+    if (chunked) {
+        size_t bcap = 8192;
+        body_buf = malloc(bcap);
+        body_total = 0;
+        char* chunk_data = malloc(resp_cap);
+        int chunk_len = already;
+        if (already > 0) memcpy(chunk_data, body_start, already);
+
+        for (;;) {
+            char* crlf = NULL;
+            while (!(crlf = strstr(chunk_data, "\r\n")) || crlf == chunk_data) {
+                if (chunk_len >= (int)resp_cap - 1) { resp_cap *= 2; chunk_data = realloc(chunk_data, resp_cap); }
+                int n = http_io_read(&conn, chunk_data + chunk_len, (int)(resp_cap - chunk_len - 1));
+                if (n <= 0) goto chunk_done;
+                chunk_len += n;
+                chunk_data[chunk_len] = '\0';
+                crlf = strstr(chunk_data, "\r\n");
+            }
+            long csize = strtol(chunk_data, NULL, 16);
+            if (csize <= 0) break;
+            int off = (int)(crlf - chunk_data) + 2;
+            while (chunk_len - off < (int)csize + 2) {
+                if (chunk_len >= (int)resp_cap - 1) { resp_cap *= 2; chunk_data = realloc(chunk_data, resp_cap); }
+                int n = http_io_read(&conn, chunk_data + chunk_len, (int)(resp_cap - chunk_len - 1));
+                if (n <= 0) break;
+                chunk_len += n;
+                chunk_data[chunk_len] = '\0';
+            }
+            while (body_total + (int)csize > (int)bcap) { bcap *= 2; body_buf = realloc(body_buf, bcap); }
+            memcpy(body_buf + body_total, chunk_data + off, csize);
+            body_total += (int)csize;
+            int consumed = off + (int)csize + 2;
+            memmove(chunk_data, chunk_data + consumed, chunk_len - consumed);
+            chunk_len -= consumed;
+            chunk_data[chunk_len] = '\0';
+        }
+        chunk_done:
+        free(chunk_data);
+    } else if (content_length >= 0) {
+        body_buf = malloc(content_length + 1);
+        if (already > 0) { memcpy(body_buf, body_start, already > content_length ? content_length : already); }
+        body_total = already > content_length ? content_length : already;
+        while (body_total < content_length) {
+            int n = http_io_read(&conn, body_buf + body_total, content_length - body_total);
+            if (n <= 0) break;
+            body_total += n;
+        }
+    } else {
+        size_t bcap = 8192;
+        body_buf = malloc(bcap);
+        if (already > 0) { memcpy(body_buf, body_start, already); }
+        body_total = already;
+        for (;;) {
+            if (body_total >= (int)bcap - 1) { bcap *= 2; body_buf = realloc(body_buf, bcap); }
+            int n = http_io_read(&conn, body_buf + body_total, (int)(bcap - body_total - 1));
+            if (n <= 0) break;
+            body_total += n;
+        }
+    }
+    free(resp_buf);
+    http_conn_close(&conn);
+
+    /* gzip decompress if needed */
+    if (gzipped && body_buf && body_total > 0) {
+        AValue gz_in = a_string_len(body_buf, body_total);
+        AValue decompressed = a_compress_gunzip(gz_in);
+        free(body_buf);
+        if (decompressed.tag == TAG_STRING) {
+            body_buf = malloc(decompressed.sval->len + 1);
+            memcpy(body_buf, decompressed.sval->data, decompressed.sval->len);
+            body_total = decompressed.sval->len;
+        } else {
+            body_buf = malloc(1);
+            body_total = 0;
+        }
     }
 
     AValue result = a_map_new(0);
     result = a_map_set(result, a_string("status"), a_int(http_status));
-    result = a_map_set(result, a_string("body"), a_string_len(buf, (int)len));
-    free(buf);
+    result = a_map_set(result, a_string("body"), a_string_len(body_buf ? body_buf : "", body_total));
+    result = a_map_set(result, a_string("headers"), resp_headers);
+    if (body_buf) free(body_buf);
     return result;
 }
 
+/* --- Public HTTP API --- */
+
 AValue a_http_get(AValue url, AValue headers) {
     if (url.tag != TAG_STRING) return a_err(a_string("http.get: expected string url"));
-    return http_request("GET", url.sval->data, NULL, headers);
+    return http_request_inprocess("GET", url.sval->data, NULL, 0, headers);
 }
 
 AValue a_http_post(AValue url, AValue body, AValue headers) {
     if (url.tag != TAG_STRING) return a_err(a_string("http.post: expected string url"));
     const char* b = (body.tag == TAG_STRING) ? body.sval->data : "";
-    return http_request("POST", url.sval->data, b, headers);
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return http_request_inprocess("POST", url.sval->data, b, blen, headers);
+}
+
+AValue a_http_put(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.put: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : "";
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return http_request_inprocess("PUT", url.sval->data, b, blen, headers);
+}
+
+AValue a_http_patch(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.patch: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : "";
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return http_request_inprocess("PATCH", url.sval->data, b, blen, headers);
+}
+
+AValue a_http_delete(AValue url, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.delete: expected string url"));
+    return http_request_inprocess("DELETE", url.sval->data, NULL, 0, headers);
 }
 
 /* --- HTTP server (POSIX sockets) --- */
 
-#include <sys/socket.h>
-#include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
 

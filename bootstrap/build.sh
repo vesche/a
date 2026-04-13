@@ -12,8 +12,10 @@ set -e
 OS=$(uname -s)
 if [ "$OS" = "Darwin" ]; then
     STACK_FLAGS="-Wl,-stack_size,0x10000000"
+    TLS_FLAGS="-framework Security -framework CoreFoundation"
 else
     STACK_FLAGS=""
+    TLS_FLAGS="-ldl"
 fi
 
 SQLITE_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
@@ -40,7 +42,7 @@ echo "Building 'a' from bootstrap C (no Rust required)..."
 gcc "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C" \
     -o "$OUTPUT" \
     -I "$INCLUDE_DIR" \
-    -lm -O2 $STACK_FLAGS $SQLITE_FLAGS
+    -lm -O2 $STACK_FLAGS $TLS_FLAGS $SQLITE_FLAGS
 
 echo "Built $OUTPUT ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
 echo ""

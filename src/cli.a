@@ -40,9 +40,9 @@ fn _gcc_flags() -> str {
   let uname_result = exec("uname -s")
   let os = str.trim(uname_result["stdout"])
   if os == "Darwin" {
-    ret "-lm -O2 -Wl,-stack_size,0x10000000"
+    ret "-lm -O2 -Wl,-stack_size,0x10000000 -framework Security -framework CoreFoundation"
   }
-  ret "-lm -O2"
+  ret "-lm -O2 -ldl"
 }
 
 fn _sqlite_flags() -> str {

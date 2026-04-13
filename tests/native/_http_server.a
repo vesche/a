@@ -1,0 +1,14 @@
+fn main() {
+  http.serve(9877, fn(req) {
+    let method = req.method
+    let body = req.body
+    let path = req.path
+    if path == "/echo" {
+      ret #{ "status": 200, "body": str.concat(method, str.concat(":", body)), "headers": #{"x-test": "hello"} }
+    }
+    if path == "/json" {
+      ret #{ "status": 200, "body": json.stringify(#{"ok": true}), "headers": #{"content-type": "application/json"} }
+    }
+    ret #{ "status": 404, "body": "not found", "headers": #{} }
+  })
+}

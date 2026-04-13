@@ -2125,3 +2125,53 @@ All four builtins work in both the Rust VM (via `flate2` crate) and the native b
 | `Cargo.toml` | Added `flate2` dependency, version bump to 0.57.0 |
 | `README.md` | Added bootstrap section, compression builtins, updated stats |
 
+---
+
+## v0.58.0 -- In-Process HTTP Client
+
+Released: April 2026
+
+### Summary
+
+Replaced the fork/exec `curl` HTTP client with a fully in-process implementation using POSIX sockets, HTTP/1.1 request/response handling, and platform-native TLS. The native binary no longer requires `curl` on the system path.
+
+### What changed
+
+**In-process HTTP client** -- The new HTTP client in `c_runtime/runtime.c` implements:
+- URL parsing (scheme, host, port, path)
+- TCP connection via `getaddrinfo()` + non-blocking `connect()` with `poll()` timeout
+- Platform TLS: macOS via Security.framework/SecureTransport, Linux via `dlopen("libssl.so")`
+- HTTP/1.1 request formatting with proper headers, Content-Length, Connection: close
+- Response parsing: status line, headers (lowercase keys), body via Content-Length, chunked transfer-encoding, or read-until-close
+- Automatic gzip decompression via miniz (Accept-Encoding: gzip sent by default)
+- Curl fallback only when HTTPS is needed and platform TLS is unavailable
+
+**Full method parity** -- All 5 HTTP methods now available in both Rust VM and native binary:
+- `http.get(url, headers)` -- GET request
+- `http.post(url, body, headers)` -- POST with body
+- `http.put(url, body, headers)` -- PUT with body (NEW in native)
+- `http.patch(url, body, headers)` -- PATCH with body (NEW in native)
+- `http.delete(url, headers)` -- DELETE request (NEW in native)
+
+All methods return `{status, body, headers}` map (previously native only returned `{status, body}`).
+
+**Parser fix** -- Fixed `std/compiler/parser.a` to handle `post` keyword after dot in field access expressions (e.g., `http.post`). The self-hosted parser's `expect_ident` did not accept `KwPost` tokens, causing infinite hangs during codegen of any file using `http.post`.
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Replaced curl-based `http_request` with in-process implementation (~650 lines): URL parser, TCP connect, platform TLS, HTTP/1.1 request/response, chunked encoding, gzip decompression. Curl retained as HTTPS fallback. Added `a_http_put`, `a_http_patch`, `a_http_delete`. |
+| `c_runtime/runtime.h` | Added `a_http_put`, `a_http_patch`, `a_http_delete` declarations |
+| `std/compiler/cgen.a` | Added `http.put`, `http.patch`, `http.delete` to `_builtin_map()` |
+| `std/compiler/parser.a` | Fixed dot-access to accept `KwPost` token as field name |
+| `src/cli.a` | Added `-framework Security -framework CoreFoundation` (macOS) and `-ldl` (Linux) to gcc flags |
+| `src/lsp.a` | Added `http.put`, `http.patch`, `http.delete` builtin signatures; updated return type to include headers |
+| `build.sh` | Added `$TLS_FLAGS` (Security.framework on macOS, -ldl on Linux) |
+| `bootstrap/build.sh` | Added `$TLS_FLAGS` |
+| `scripts/test_memory.sh` | Added `$TLS_FLAGS` to all gcc commands |
+| `tests/native/test_http.a` | NEW -- 7 tests covering all methods, headers, status codes |
+| `tests/native/_http_server.a` | NEW -- test HTTP server for test_http.a |
+| `.github/workflows/ci.yml` | Replaced `curl` with `libssl-dev` in Linux deps |
+| `Cargo.toml` | Version bump to 0.58.0 |
+| `README.md` | Updated HTTP client description to reflect in-process implementation |

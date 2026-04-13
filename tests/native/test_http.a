@@ -1,0 +1,58 @@
+use std.testing
+
+fn main() {
+  let port = 9877
+  let addr = str.concat("http://127.0.0.1:", to_str(port))
+
+  ; Launch server in background via exec
+  exec("./a run tests/native/_http_server.a &")
+  time.sleep(1000)
+
+  ; --- Test 1: GET returns status, body, headers ---
+  let r1 = http.get(str.concat(addr, "/json"), #{})
+  testing.assert_eq(to_str(r1.status), "200")
+  testing.assert_eq(type_of(r1.body), "str")
+  testing.assert_eq(type_of(r1.headers), "map")
+  println("PASS: http.get returns status, body, headers")
+
+  ; --- Test 2: POST sends body ---
+  let r2 = http.post(str.concat(addr, "/echo"), "hello", #{})
+  testing.assert_eq(to_str(r2.status), "200")
+  testing.assert_eq(r2.body, "POST:hello")
+  println("PASS: http.post sends body correctly")
+
+  ; --- Test 3: PUT sends body ---
+  let r3 = http.put(str.concat(addr, "/echo"), "putdata", #{})
+  testing.assert_eq(to_str(r3.status), "200")
+  testing.assert_eq(r3.body, "PUT:putdata")
+  println("PASS: http.put works")
+
+  ; --- Test 4: PATCH sends body ---
+  let r4 = http.patch(str.concat(addr, "/echo"), "patchdata", #{})
+  testing.assert_eq(to_str(r4.status), "200")
+  testing.assert_eq(r4.body, "PATCH:patchdata")
+  println("PASS: http.patch works")
+
+  ; --- Test 5: DELETE ---
+  let r5 = http.delete(str.concat(addr, "/echo"), #{})
+  testing.assert_eq(to_str(r5.status), "200")
+  println("PASS: http.delete works")
+
+  ; --- Test 6: Response headers populated ---
+  let r6 = http.get(str.concat(addr, "/json"), #{})
+  let ct = r6.headers["content-type"]
+  testing.assert_eq(type_of(ct), "str")
+  println("PASS: response headers populated")
+
+  ; --- Test 7: 404 for unknown path ---
+  let r7 = http.get(str.concat(addr, "/nonexistent"), #{})
+  testing.assert_eq(to_str(r7.status), "404")
+  testing.assert_eq(r7.body, "not found")
+  println("PASS: 404 for unknown path")
+
+  ; Kill the background server
+  exec("pkill -f '_http_server.a' 2>/dev/null || true")
+
+  println("")
+  println("All HTTP tests passed!")
+}

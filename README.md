@@ -105,7 +105,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | Domain | Operations |
 |--------|-----------|
 | **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `io.read_file`, `io.write_file` |
-| **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) |
+| **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) -- in-process via POSIX sockets + platform TLS (macOS SecureTransport, Linux OpenSSL) |
 | **HTTP server** | `http.serve(port, handler)` -- POSIX sockets, closure handler receives `{method, path, headers, body}`, returns `{status, headers, body}`; `http.serve_static(port, dir)` for file serving |
 | **Database** | `db.open(path)` (or `":memory:"`), `db.exec(db, sql)`, `db.query(db, sql, params)` with `?` binding, `db.close(db)` -- bundled SQLite, zero setup |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
@@ -174,7 +174,7 @@ The C code generator compiles itself -- including the lexer, parser, and AST mod
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,800 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP client (via curl), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,800 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 

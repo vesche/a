@@ -50,6 +50,7 @@ fn _builtin_map() -> map {
     "time.now": "a_time_now", "time.sleep": "a_time_sleep",
     "hash.sha256": "a_hash_sha256", "hash.md5": "a_hash_md5",
     "http.get": "a_http_get", "http.post": "a_http_post",
+    "http.put": "a_http_put", "http.patch": "a_http_patch", "http.delete": "a_http_delete",
     "http.serve": "a_http_serve", "http.serve_static": "a_http_serve_static",
     "db.open": "a_db_open", "db.close": "a_db_close", "db.exec": "a_db_exec", "db.query": "a_db_query",
     "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",

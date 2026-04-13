@@ -235,6 +235,9 @@ AValue a_json_pretty(AValue v);
 /* HTTP client */
 AValue a_http_get(AValue url, AValue headers);
 AValue a_http_post(AValue url, AValue body, AValue headers);
+AValue a_http_put(AValue url, AValue body, AValue headers);
+AValue a_http_patch(AValue url, AValue body, AValue headers);
+AValue a_http_delete(AValue url, AValue headers);
 
 /* HTTP server */
 AValue a_http_serve(AValue port, AValue handler);
