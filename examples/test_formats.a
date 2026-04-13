@@ -1,0 +1,133 @@
+; examples/test_formats.a -- comprehensive tests for v0.55 data format modules
+use std.yaml
+use std.toml
+use std.html
+use std.url
+
+fn check(got, expected, label) {
+  if to_str(got) != to_str(expected) {
+    println("FAIL: {label} -- expected {expected}, got {got}")
+    fail("assertion failed")
+  }
+}
+
+fn test_yaml() {
+  let simple = yaml.parse("name: hello\nversion: 1\ndebug: true\nratio: 3.14")
+  check(simple["name"], "hello", "y:str")
+  check(simple["version"], 1, "y:int")
+  check(simple["debug"], true, "y:bool")
+  check(simple["ratio"], 3.14, "y:float")
+
+  let nested = yaml.parse("server:\n  host: localhost\n  port: 8080")
+  let srv = nested["server"]
+  check(srv["host"], "localhost", "y:nested")
+  check(srv["port"], 8080, "y:nested-int")
+
+  let seq = yaml.parse("items:\n  - apple\n  - banana\n  - cherry")
+  check(len(seq["items"]), 3, "y:seq-len")
+  check(seq["items"][2], "cherry", "y:seq-item")
+
+  let doc = yaml.parse("users:\n  - name: Alice\n    age: 30\n  - name: Bob\n    age: 25")
+  check(len(doc["users"]), 2, "y:seq-map-len")
+  let u0 = doc["users"][0]
+  check(u0["name"], "Alice", "y:seq-map-val")
+
+  let flow = yaml.parse("tags: [web, api, v2]\ncommented: value # a comment")
+  check(len(flow["tags"]), 3, "y:flow-len")
+  check(flow["commented"], "value", "y:comment")
+
+  let top = yaml.parse("- one\n- two\n- three")
+  check(len(top), 3, "y:top-seq")
+
+  let quoted = yaml.parse("val: \"hello world\"")
+  check(quoted["val"], "hello world", "y:dquote")
+
+  let round = yaml.parse(yaml.stringify(simple))
+  check(round["name"], "hello", "y:round-trip")
+
+  println("  yaml: OK")
+}
+
+fn test_toml() {
+  let t = toml.parse("title = \"my app\"\nversion = 2\ndebug = true\nratio = 3.14\nneg = -42")
+  check(t["title"], "my app", "t:str")
+  check(t["version"], 2, "t:int")
+  check(t["debug"], true, "t:bool")
+  check(t["ratio"], 3.14, "t:float")
+  check(t["neg"], -42, "t:neg")
+
+  let t2 = toml.parse("[server]\nhost = \"localhost\"\nport = 8080")
+  let srv = t2["server"]
+  check(srv["host"], "localhost", "t:table")
+  check(srv["port"], 8080, "t:table-int")
+
+  let t3 = toml.parse("tags = [\"web\", \"api\"]\ncounts = [1, 2, 3]")
+  check(len(t3["tags"]), 2, "t:arr-len")
+  check(t3["counts"][2], 3, "t:int-arr")
+
+  let t4 = toml.parse("[[users]]\nname = \"Alice\"\n\n[[users]]\nname = \"Bob\"")
+  check(len(t4["users"]), 2, "t:aot-len")
+  check(t4["users"][1]["name"], "Bob", "t:aot-val")
+
+  let round = toml.parse(toml.stringify(t))
+  check(round["title"], "my app", "t:round-trip")
+
+  println("  toml: OK")
+}
+
+fn test_html() {
+  let doc = html.parse("<div class=\"main\"><h1>Hello</h1><p id=\"intro\">World</p><ul><li class=\"a\">One</li><li class=\"b\">Two</li></ul></div>")
+  check(doc["tag"], "div", "h:tag")
+  check(html.text(doc), "Hello World One Two", "h:text")
+
+  let h1s = html.select(doc, "h1")
+  check(len(h1s), 1, "h:sel-tag")
+  check(html.text(h1s[0]), "Hello", "h:sel-tag-text")
+
+  let by_id = html.select(doc, "#intro")
+  check(len(by_id), 1, "h:sel-id")
+
+  let by_class = html.select(doc, ".b")
+  check(html.text(by_class[0]), "Two", "h:sel-class")
+
+  let desc = html.select(doc, "ul li")
+  check(len(desc), 2, "h:descendant")
+
+  let compound = html.select(doc, "li.b")
+  check(html.text(compound[0]), "Two", "h:compound")
+
+  let void_doc = html.parse("<div><br><img src=\"x.png\"></div>")
+  let imgs = html.select(void_doc, "img")
+  check(len(imgs), 1, "h:void-tag")
+
+  println("  html: OK")
+}
+
+fn test_url() {
+  let u = url.parse("https://user:pass@example.com:8080/api/v1?q=hello&lang=en#results")
+  check(u["scheme"], "https", "u:scheme")
+  check(u["user"], "user", "u:user")
+  check(u["password"], "pass", "u:pass")
+  check(u["host"], "example.com", "u:host")
+  check(u["port"], 8080, "u:port")
+  check(u["path"], "/api/v1", "u:path")
+  check(u["fragment"], "results", "u:frag")
+  let p = u["params"]
+  check(p["q"], "hello", "u:param")
+
+  let rebuilt = url.build(u)
+  check(rebuilt, "https://user:pass@example.com:8080/api/v1?q=hello&lang=en#results", "u:build")
+
+  check(url.encode("hello world"), "hello%20world", "u:encode")
+  check(url.decode("hello%20world"), "hello world", "u:decode")
+
+  println("  url: OK")
+}
+
+fn main() {
+  test_yaml()
+  test_toml()
+  test_html()
+  test_url()
+  println("ALL PASS")
+}

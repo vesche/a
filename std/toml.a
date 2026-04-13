@@ -1,0 +1,506 @@
+; std/toml.a -- TOML parser and emitter
+; Supports: key-value pairs, tables [section], arrays of tables [[section]],
+; basic/literal strings, integers, floats, booleans, arrays, inline tables,
+; dotted keys, and comments.
+
+fn _t_trim(s) -> str {
+  ret str.trim(s)
+}
+
+fn _t_is_int(s) -> bool {
+  let chars = str.chars(s)
+  let n = len(chars)
+  if n == 0 { ret false }
+  let mut start = 0
+  if chars[0] == "-" { start = 1 }
+  if chars[0] == "+" { start = 1 }
+  if start >= n { ret false }
+  let mut i = start
+  while i < n {
+    let c = chars[i]
+    if is_digit(c) == false {
+      if c != "_" { ret false }
+    }
+    i = i + 1
+  }
+  ret true
+}
+
+fn _t_is_float(s) -> bool {
+  let chars = str.chars(s)
+  let n = len(chars)
+  if n == 0 { ret false }
+  let mut start = 0
+  if chars[0] == "-" { start = 1 }
+  if chars[0] == "+" { start = 1 }
+  if start >= n { ret false }
+  let mut has_dot = false
+  let mut has_dig = false
+  let mut i = start
+  while i < n {
+    let c = chars[i]
+    if c == "." {
+      if has_dot { ret false }
+      has_dot = true
+    } else {
+      if is_digit(c) {
+        has_dig = true
+      } else {
+        if c != "_" { ret false }
+      }
+    }
+    i = i + 1
+  }
+  if has_dot == false { ret false }
+  ret has_dig
+}
+
+fn _t_strip_underscores(s) -> str {
+  ret str.replace(s, "_", "")
+}
+
+fn _t_parse_value(s) {
+  let t = _t_trim(s)
+  if t == "true" { ret true }
+  if t == "false" { ret false }
+  let chars = str.chars(t)
+  let n = len(chars)
+  if n == 0 { ret "" }
+  if chars[0] == "\"" {
+    if n >= 2 {
+      if chars[n - 1] == "\"" {
+        ret str.slice(t, 1, n - 1)
+      }
+    }
+    ret t
+  }
+  let sq = from_code(39)
+  if chars[0] == sq {
+    if n >= 2 {
+      let last = chars[n - 1]
+      if char_code(last) == 39 {
+        ret str.slice(t, 1, n - 1)
+      }
+    }
+    ret t
+  }
+  if chars[0] == "[" {
+    ret _t_parse_array(t)
+  }
+  if chars[0] == "\{" {
+    ret _t_parse_inline_table(t)
+  }
+  if _t_is_float(t) { ret float(_t_strip_underscores(t)) }
+  if _t_is_int(t) { ret int(_t_strip_underscores(t)) }
+  ret t
+}
+
+fn _t_split_array(s) -> [str] {
+  let inner = _t_trim(str.slice(s, 1, len(s) - 1))
+  if inner == "" { ret [] }
+  let chars = str.chars(inner)
+  let n = len(chars)
+  let mut parts = []
+  let mut cur = ""
+  let mut depth = 0
+  let mut in_dq = false
+  let mut in_sq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_dq {
+      cur = str.concat(cur, c)
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if in_sq {
+      cur = str.concat(cur, c)
+      if char_code(c) == 39 { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if c == "\"" {
+      in_dq = true
+      cur = str.concat(cur, c)
+      i = i + 1
+      continue
+    }
+    if char_code(c) == 39 {
+      in_sq = true
+      cur = str.concat(cur, c)
+      i = i + 1
+      continue
+    }
+    if c == "[" { depth = depth + 1 }
+    if c == "]" { depth = depth - 1 }
+    if c == "\{" { depth = depth + 1 }
+    if c == "\}" { depth = depth - 1 }
+    if c == "," {
+      if depth == 0 {
+        let trimmed = _t_trim(cur)
+        if trimmed != "" {
+          parts = push(parts, trimmed)
+        }
+        cur = ""
+        i = i + 1
+        continue
+      }
+    }
+    if c == "#" {
+      if depth == 0 {
+        let trimmed = _t_trim(cur)
+        if trimmed != "" {
+          parts = push(parts, trimmed)
+        }
+        ret parts
+      }
+    }
+    cur = str.concat(cur, c)
+    i = i + 1
+  }
+  let trimmed = _t_trim(cur)
+  if trimmed != "" {
+    parts = push(parts, trimmed)
+  }
+  ret parts
+}
+
+fn _t_parse_array(s) {
+  let items = _t_split_array(s)
+  let mut result = []
+  for item in items {
+    result = push(result, _t_parse_value(item))
+  }
+  ret result
+}
+
+fn _t_parse_inline_table(s) {
+  let inner = _t_trim(str.slice(s, 1, len(s) - 1))
+  if inner == "" {
+    let empty = #{}
+    ret empty
+  }
+  let parts = str.split(inner, ",")
+  let mut result = #{}
+  for part in parts {
+    let trimmed = _t_trim(part)
+    if trimmed == "" { continue }
+    let eq_pos = _t_find_eq(trimmed)
+    if eq_pos > 0 {
+      let key = _t_trim(str.slice(trimmed, 0, eq_pos))
+      let val = _t_trim(str.slice(trimmed, eq_pos + 1, len(trimmed)))
+      result = map.set(result, key, _t_parse_value(val))
+    }
+  }
+  ret result
+}
+
+fn _t_find_eq(s) -> int {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut in_dq = false
+  let mut in_sq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_dq {
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if in_sq {
+      if char_code(c) == 39 { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if c == "\"" { in_dq = true }
+    if char_code(c) == 39 { in_sq = true }
+    if c == "=" { ret i }
+    i = i + 1
+  }
+  ret 0 - 1
+}
+
+fn _t_strip_comment(s) -> str {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut in_dq = false
+  let mut in_sq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_dq {
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if in_sq {
+      if char_code(c) == 39 { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if c == "\"" { in_dq = true }
+    if char_code(c) == 39 { in_sq = true }
+    if c == "#" { ret _t_trim(str.slice(s, 0, i)) }
+    i = i + 1
+  }
+  ret s
+}
+
+fn _t_set_nested(root, path, val) {
+  if len(path) == 0 { ret root }
+  if len(path) == 1 {
+    ret map.set(root, path[0], val)
+  }
+  let key = path[0]
+  let rest = drop(path, 1)
+  let existing = #{}
+  if map.has(root, key) {
+    existing = map.get(root, key)
+  }
+  let updated = _t_set_nested(existing, rest, val)
+  ret map.set(root, key, updated)
+}
+
+fn _t_get_nested(root, path) {
+  let mut cur = root
+  for key in path {
+    if map.has(cur, key) == false {
+      let empty = #{}
+      ret empty
+    }
+    cur = map.get(cur, key)
+  }
+  ret cur
+}
+
+fn _t_parse_key(s) -> [str] {
+  let parts = str.split(s, ".")
+  let mut result = []
+  for p in parts {
+    let t = _t_trim(p)
+    let chars = str.chars(t)
+    let n = len(chars)
+    if n >= 2 {
+      if chars[0] == "\"" {
+        if chars[n - 1] == "\"" {
+          result = push(result, str.slice(t, 1, n - 1))
+          continue
+        }
+      }
+    }
+    result = push(result, t)
+  }
+  ret result
+}
+
+fn parse(text) {
+  let lines = str.lines(str.replace(text, "\r", ""))
+  let mut result = #{}
+  let mut current_path = []
+  let n = len(lines)
+  let mut i = 0
+  while i < n {
+    let raw = lines[i]
+    let line = _t_trim(_t_strip_comment(raw))
+    if line == "" {
+      i = i + 1
+      continue
+    }
+    if str.starts_with(line, "[[") {
+      if str.ends_with(line, "]]") {
+        let table_name = _t_trim(str.slice(line, 2, len(line) - 2))
+        let path = _t_parse_key(table_name)
+        current_path = path
+        let existing = _t_get_nested(result, path)
+        let t = type_of(existing)
+        if t == "array" {
+          let new_entry = #{}
+          let updated = push(existing, new_entry)
+          result = _t_set_nested(result, path, updated)
+        } else {
+          let new_entry = #{}
+          let arr = [new_entry]
+          result = _t_set_nested(result, path, arr)
+        }
+        i = i + 1
+        continue
+      }
+    }
+    if str.starts_with(line, "[") {
+      if str.ends_with(line, "]") {
+        let table_name = _t_trim(str.slice(line, 1, len(line) - 1))
+        current_path = _t_parse_key(table_name)
+        let existing = _t_get_nested(result, current_path)
+        let t = type_of(existing)
+        if t != "map" {
+          let empty = #{}
+          result = _t_set_nested(result, current_path, empty)
+        }
+        i = i + 1
+        continue
+      }
+    }
+    let eq_pos = _t_find_eq(line)
+    if eq_pos > 0 {
+      let key_str = _t_trim(str.slice(line, 0, eq_pos))
+      let val_str = _t_trim(str.slice(line, eq_pos + 1, len(line)))
+      let key_parts = _t_parse_key(key_str)
+      let val = _t_parse_value(val_str)
+      if len(current_path) > 0 {
+        let existing = _t_get_nested(result, current_path)
+        let t = type_of(existing)
+        if t == "array" {
+          let arr_len = len(existing)
+          if arr_len > 0 {
+            let last = existing[arr_len - 1]
+            let updated_last = _t_set_nested(last, key_parts, val)
+            let mut new_arr = []
+            let mut j = 0
+            while j < arr_len - 1 {
+              new_arr = push(new_arr, existing[j])
+              j = j + 1
+            }
+            new_arr = push(new_arr, updated_last)
+            result = _t_set_nested(result, current_path, new_arr)
+          }
+        } else {
+          let full_path = []
+          for p in current_path {
+            full_path = push(full_path, p)
+          }
+          for p in key_parts {
+            full_path = push(full_path, p)
+          }
+          result = _t_set_nested(result, full_path, val)
+        }
+      } else {
+        result = _t_set_nested(result, key_parts, val)
+      }
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+; --- Stringify ---
+
+fn _t_needs_quote(s) -> bool {
+  if s == "" { ret true }
+  let chars = str.chars(s)
+  for c in chars {
+    if c == "." { ret true }
+    if c == " " { ret true }
+    if c == "=" { ret true }
+    if c == "#" { ret true }
+    if c == "\{" { ret true }
+    if c == "\}" { ret true }
+    if c == "[" { ret true }
+    if c == "]" { ret true }
+  }
+  ret false
+}
+
+fn _t_quote_key(s) -> str {
+  if _t_needs_quote(s) {
+    ret str.concat("\"", str.concat(s, "\""))
+  }
+  ret s
+}
+
+fn _t_stringify_value(val) -> str {
+  let t = type_of(val)
+  if t == "bool" {
+    if val { ret "true" }
+    ret "false"
+  }
+  if t == "int" { ret to_str(val) }
+  if t == "float" { ret to_str(val) }
+  if t == "str" {
+    ret str.concat("\"", str.concat(str.replace(val, "\"", "\\\""), "\""))
+  }
+  if t == "array" {
+    let mut parts = []
+    for item in val {
+      parts = push(parts, _t_stringify_value(item))
+    }
+    ret str.concat("[", str.concat(str.join(parts, ", "), "]"))
+  }
+  if t == "map" {
+    let keys = map.keys(val)
+    let mut parts = []
+    for k in keys {
+      let v = map.get(val, k)
+      let ks = _t_quote_key(k)
+      let vs = _t_stringify_value(v)
+      parts = push(parts, str.concat(ks, str.concat(" = ", vs)))
+    }
+    ret str.concat("\{", str.concat(str.join(parts, ", "), "\}"))
+  }
+  ret to_str(val)
+}
+
+fn _t_stringify_section(val, prefix, lines) -> [str] {
+  let keys = map.keys(val)
+  let mut simple_keys = []
+  let mut table_keys = []
+  let mut array_keys = []
+  for k in keys {
+    let v = map.get(val, k)
+    let t = type_of(v)
+    if t == "map" {
+      table_keys = push(table_keys, k)
+    } else {
+      if t == "array" {
+        if len(v) > 0 {
+          let first_type = type_of(v[0])
+          if first_type == "map" {
+            array_keys = push(array_keys, k)
+          } else {
+            simple_keys = push(simple_keys, k)
+          }
+        } else {
+          simple_keys = push(simple_keys, k)
+        }
+      } else {
+        simple_keys = push(simple_keys, k)
+      }
+    }
+  }
+  for k in simple_keys {
+    let v = map.get(val, k)
+    let ks = _t_quote_key(k)
+    let vs = _t_stringify_value(v)
+    lines = push(lines, str.concat(ks, str.concat(" = ", vs)))
+  }
+  for k in table_keys {
+    let v = map.get(val, k)
+    let section = k
+    if prefix != "" {
+      section = str.concat(prefix, str.concat(".", k))
+    }
+    lines = push(lines, "")
+    lines = push(lines, str.concat("[", str.concat(section, "]")))
+    lines = _t_stringify_section(v, section, lines)
+  }
+  for k in array_keys {
+    let arr = map.get(val, k)
+    let section = k
+    if prefix != "" {
+      section = str.concat(prefix, str.concat(".", k))
+    }
+    for item in arr {
+      lines = push(lines, "")
+      lines = push(lines, str.concat("[[", str.concat(section, "]]")))
+      lines = _t_stringify_section(item, section, lines)
+    }
+  }
+  ret lines
+}
+
+fn stringify(val) -> str {
+  let mut lines = []
+  lines = _t_stringify_section(val, "", lines)
+  ret str.trim(str.join(lines, "\n"))
+}

@@ -1,0 +1,657 @@
+; std/yaml.a -- YAML 1.2 subset parser and emitter
+; Supports: mappings, sequences, nested structures, scalars (strings,
+; integers, floats, booleans, null), single/double-quoted strings,
+; flow sequences [...], flow mappings {...}, block scalars (| and >),
+; and comments.
+
+fn _sq() -> str {
+  ret from_code(39)
+}
+
+fn _is_sq(c) -> bool {
+  ret char_code(c) == 39
+}
+
+fn _spaces(line) -> int {
+  let chars = str.chars(line)
+  let n = len(chars)
+  let mut i = 0
+  while i < n {
+    if chars[i] != " " { ret i }
+    i = i + 1
+  }
+  ret n
+}
+
+fn _find_colon(s) -> int {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut in_sq = false
+  let mut in_dq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_sq {
+      if _is_sq(c) { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if in_dq {
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if _is_sq(c) {
+      in_sq = true
+      i = i + 1
+      continue
+    }
+    if c == "\"" {
+      in_dq = true
+      i = i + 1
+      continue
+    }
+    if c == ":" {
+      if i + 1 >= n { ret i }
+      if chars[i + 1] == " " { ret i }
+    }
+    i = i + 1
+  }
+  ret 0 - 1
+}
+
+fn _strip_comment(s) -> str {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut in_sq = false
+  let mut in_dq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_sq {
+      if _is_sq(c) { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if in_dq {
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if c == "#" {
+      if i == 0 { ret "" }
+      if chars[i - 1] == " " {
+        ret str.trim(str.slice(s, 0, i))
+      }
+    }
+    if _is_sq(c) { in_sq = true }
+    if c == "\"" { in_dq = true }
+    i = i + 1
+  }
+  ret s
+}
+
+fn _is_int(s) -> bool {
+  let chars = str.chars(s)
+  let n = len(chars)
+  if n == 0 { ret false }
+  let mut start = 0
+  if chars[0] == "-" { start = 1 }
+  if chars[0] == "+" { start = 1 }
+  if start >= n { ret false }
+  let mut i = start
+  while i < n {
+    if is_digit(chars[i]) == false { ret false }
+    i = i + 1
+  }
+  ret true
+}
+
+fn _is_float(s) -> bool {
+  let chars = str.chars(s)
+  let n = len(chars)
+  if n == 0 { ret false }
+  let mut start = 0
+  if chars[0] == "-" { start = 1 }
+  if chars[0] == "+" { start = 1 }
+  if start >= n { ret false }
+  let mut has_dot = false
+  let mut has_dig = false
+  let mut i = start
+  while i < n {
+    let c = chars[i]
+    if c == "." {
+      if has_dot { ret false }
+      has_dot = true
+    } else {
+      if is_digit(c) {
+        has_dig = true
+      } else {
+        ret false
+      }
+    }
+    i = i + 1
+  }
+  if has_dot == false { ret false }
+  ret has_dig
+}
+
+fn _scalar(s) {
+  let t = str.trim(s)
+  if t == "" { ret "" }
+  if t == "true" { ret true }
+  if t == "false" { ret false }
+  if t == "null" { ret "" }
+  if t == from_code(126) { ret "" }
+  let chars = str.chars(t)
+  let n = len(chars)
+  if n >= 2 {
+    if chars[0] == "\"" {
+      if chars[n - 1] == "\"" {
+        ret str.slice(t, 1, n - 1)
+      }
+    }
+    if _is_sq(chars[0]) {
+      if _is_sq(chars[n - 1]) {
+        ret str.slice(t, 1, n - 1)
+      }
+    }
+  }
+  if _is_int(t) { ret int(t) }
+  if _is_float(t) { ret float(t) }
+  ret t
+}
+
+fn _split_flow(s) -> [str] {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut parts = []
+  let mut cur = ""
+  let mut depth = 0
+  let mut in_sq = false
+  let mut in_dq = false
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if in_sq {
+      cur = str.concat(cur, c)
+      if _is_sq(c) { in_sq = false }
+      i = i + 1
+      continue
+    }
+    if in_dq {
+      cur = str.concat(cur, c)
+      if c == "\"" { in_dq = false }
+      i = i + 1
+      continue
+    }
+    if _is_sq(c) {
+      in_sq = true
+      cur = str.concat(cur, c)
+      i = i + 1
+      continue
+    }
+    if c == "\"" {
+      in_dq = true
+      cur = str.concat(cur, c)
+      i = i + 1
+      continue
+    }
+    if c == "[" { depth = depth + 1 }
+    if c == "]" { depth = depth - 1 }
+    if c == "\{" { depth = depth + 1 }
+    if c == "\}" { depth = depth - 1 }
+    if c == "," {
+      if depth == 0 {
+        parts = push(parts, str.trim(cur))
+        cur = ""
+        i = i + 1
+        continue
+      }
+    }
+    cur = str.concat(cur, c)
+    i = i + 1
+  }
+  let t = str.trim(cur)
+  if t != "" {
+    parts = push(parts, t)
+  }
+  ret parts
+}
+
+fn _parse_flow(s) {
+  let t = str.trim(s)
+  let n = len(t)
+  if n < 2 { ret _scalar(t) }
+  let chars = str.chars(t)
+  if chars[0] == "[" {
+    if chars[n - 1] == "]" {
+      let inner = str.slice(t, 1, n - 1)
+      if str.trim(inner) == "" { ret [] }
+      let items = _split_flow(inner)
+      let mut result = []
+      for item in items {
+        result = push(result, _parse_flow(item))
+      }
+      ret result
+    }
+  }
+  if chars[0] == "\{" {
+    if chars[n - 1] == "\}" {
+      let inner = str.slice(t, 1, n - 1)
+      if str.trim(inner) == "" {
+        let empty = #{}
+        ret empty
+      }
+      let items = _split_flow(inner)
+      let mut result = #{}
+      for item in items {
+        let cl = _find_colon(item)
+        if cl > 0 {
+          let k = str.trim(str.slice(item, 0, cl))
+          let v = ""
+          if cl + 1 < len(item) {
+            v = str.trim(str.slice(item, cl + 1, len(item)))
+          }
+          result = map.set(result, k, _parse_flow(v))
+        }
+      }
+      ret result
+    }
+  }
+  ret _scalar(t)
+}
+
+fn _skip_blanks(lines, idx) -> int {
+  let n = len(lines)
+  while idx < n {
+    if str.trim(lines[idx]) != "" { ret idx }
+    idx = idx + 1
+  }
+  ret idx
+}
+
+fn _after(s, pos) -> str {
+  if pos >= len(s) { ret "" }
+  ret str.trim(str.slice(s, pos, len(s)))
+}
+
+fn _parse_block_scalar(lines, idx, style, parent_indent) {
+  let n = len(lines)
+  let mut content = ""
+  let mut block_indent = 0 - 1
+  while idx < n {
+    let line = lines[idx]
+    if str.trim(line) == "" {
+      if block_indent > 0 {
+        content = str.concat(content, "\n")
+      }
+      idx = idx + 1
+      continue
+    }
+    let indent = _spaces(line)
+    if indent <= parent_indent {
+      ret #{"val": content, "next": idx}
+    }
+    if block_indent < 0 { block_indent = indent }
+    if indent < block_indent {
+      ret #{"val": content, "next": idx}
+    }
+    let text = str.slice(line, block_indent, len(line))
+    if style == "|" {
+      content = str.concat(content, str.concat(text, "\n"))
+    } else {
+      if content != "" {
+        let clen = len(content)
+        let clast = str.slice(content, clen - 1, clen)
+        if clast == "\n" {
+          content = str.concat(str.slice(content, 0, clen - 1), " ")
+        } else {
+          content = str.concat(content, " ")
+        }
+      }
+      content = str.concat(content, text)
+    }
+    idx = idx + 1
+  }
+  if style == ">" {
+    if content != "" {
+      content = str.concat(content, "\n")
+    }
+  }
+  ret #{"val": content, "next": idx}
+}
+
+fn _parse_block(lines, idx, min_indent) {
+  let n = len(lines)
+  idx = _skip_blanks(lines, idx)
+  if idx >= n { ret #{"val": "", "next": idx} }
+  let indent = _spaces(lines[idx])
+  if indent < min_indent { ret #{"val": "", "next": idx} }
+  let content = str.trim(lines[idx])
+  if str.starts_with(content, "- ") { ret _parse_seq(lines, idx, indent) }
+  if content == "-" { ret _parse_seq(lines, idx, indent) }
+  let cl = _find_colon(content)
+  if cl > 0 { ret _parse_map(lines, idx, indent) }
+  ret #{"val": _parse_flow(content), "next": idx + 1}
+}
+
+fn _parse_map(lines, idx, base_indent) {
+  let n = len(lines)
+  let mut result = #{}
+  while idx < n {
+    idx = _skip_blanks(lines, idx)
+    if idx >= n { ret #{"val": result, "next": idx} }
+    let indent = _spaces(lines[idx])
+    if indent != base_indent { ret #{"val": result, "next": idx} }
+    let content = str.trim(lines[idx])
+    let cl = _find_colon(content)
+    if cl <= 0 { ret #{"val": result, "next": idx} }
+    let mut key = str.trim(str.slice(content, 0, cl))
+    let kchars = str.chars(key)
+    let kn = len(kchars)
+    if kn >= 2 {
+      if kchars[0] == "\"" {
+        if kchars[kn - 1] == "\"" {
+          key = str.slice(key, 1, kn - 1)
+        }
+      }
+      if _is_sq(kchars[0]) {
+        if _is_sq(kchars[kn - 1]) {
+          key = str.slice(key, 1, kn - 1)
+        }
+      }
+    }
+    let rest = _after(content, cl + 1)
+    if rest == "|" {
+      let r = _parse_block_scalar(lines, idx + 1, "|", base_indent)
+      result = map.set(result, key, r["val"])
+      idx = r["next"]
+    } else {
+      if rest == ">" {
+        let r = _parse_block_scalar(lines, idx + 1, ">", base_indent)
+        result = map.set(result, key, r["val"])
+        idx = r["next"]
+      } else {
+        if rest == "" {
+          let r = _parse_block(lines, idx + 1, base_indent + 1)
+          result = map.set(result, key, r["val"])
+          idx = r["next"]
+        } else {
+          result = map.set(result, key, _parse_flow(rest))
+          idx = idx + 1
+        }
+      }
+    }
+  }
+  ret #{"val": result, "next": idx}
+}
+
+fn _parse_seq(lines, idx, base_indent) {
+  let n = len(lines)
+  let mut result = []
+  while idx < n {
+    idx = _skip_blanks(lines, idx)
+    if idx >= n { ret #{"val": result, "next": idx} }
+    let indent = _spaces(lines[idx])
+    if indent != base_indent { ret #{"val": result, "next": idx} }
+    let content = str.trim(lines[idx])
+    let is_item = false
+    if str.starts_with(content, "- ") { is_item = true }
+    if content == "-" { is_item = true }
+    if is_item == false { ret #{"val": result, "next": idx} }
+    let item_str = ""
+    if content != "-" {
+      item_str = str.trim(str.slice(content, 2, len(content)))
+    }
+    if item_str == "" {
+      let r = _parse_block(lines, idx + 1, base_indent + 1)
+      result = push(result, r["val"])
+      idx = r["next"]
+    } else {
+      if str.starts_with(item_str, "[") {
+        result = push(result, _parse_flow(item_str))
+        idx = idx + 1
+      } else {
+        if str.starts_with(item_str, "\{") {
+          result = push(result, _parse_flow(item_str))
+          idx = idx + 1
+        } else {
+          let cl = _find_colon(item_str)
+          if cl > 0 {
+            let item_indent = base_indent + 2
+            let mut item_map = #{}
+            let mk = str.trim(str.slice(item_str, 0, cl))
+            let mv = _after(item_str, cl + 1)
+            if mv == "" {
+              let r = _parse_block(lines, idx + 1, item_indent + 1)
+              item_map = map.set(item_map, mk, r["val"])
+              idx = r["next"]
+            } else {
+              if mv == "|" {
+                let r = _parse_block_scalar(lines, idx + 1, "|", item_indent)
+                item_map = map.set(item_map, mk, r["val"])
+                idx = r["next"]
+              } else {
+                if mv == ">" {
+                  let r = _parse_block_scalar(lines, idx + 1, ">", item_indent)
+                  item_map = map.set(item_map, mk, r["val"])
+                  idx = r["next"]
+                } else {
+                  item_map = map.set(item_map, mk, _parse_flow(mv))
+                  idx = idx + 1
+                }
+              }
+            }
+            let mut more = true
+            while more {
+              let bi = _skip_blanks(lines, idx)
+              if bi >= n {
+                idx = bi
+                more = false
+              } else {
+                idx = bi
+                let ii = _spaces(lines[idx])
+                if ii != item_indent {
+                  more = false
+                } else {
+                  let cc = str.trim(lines[idx])
+                  let ccl = _find_colon(cc)
+                  if ccl <= 0 {
+                    more = false
+                  } else {
+                    let ck = str.trim(str.slice(cc, 0, ccl))
+                    let cv = _after(cc, ccl + 1)
+                    if cv == "" {
+                      let r = _parse_block(lines, idx + 1, item_indent + 1)
+                      item_map = map.set(item_map, ck, r["val"])
+                      idx = r["next"]
+                    } else {
+                      if cv == "|" {
+                        let r = _parse_block_scalar(lines, idx + 1, "|", item_indent)
+                        item_map = map.set(item_map, ck, r["val"])
+                        idx = r["next"]
+                      } else {
+                        if cv == ">" {
+                          let r = _parse_block_scalar(lines, idx + 1, ">", item_indent)
+                          item_map = map.set(item_map, ck, r["val"])
+                          idx = r["next"]
+                        } else {
+                          item_map = map.set(item_map, ck, _parse_flow(cv))
+                          idx = idx + 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            result = push(result, item_map)
+          } else {
+            result = push(result, _scalar(item_str))
+            idx = idx + 1
+          }
+        }
+      }
+    }
+  }
+  ret #{"val": result, "next": idx}
+}
+
+; --- Stringify ---
+
+fn _repeat_str(s, n) -> str {
+  let mut out = ""
+  let mut i = 0
+  while i < n {
+    out = str.concat(out, s)
+    i = i + 1
+  }
+  ret out
+}
+
+fn _needs_quote(s) -> bool {
+  if s == "" { ret true }
+  if s == "true" { ret true }
+  if s == "false" { ret true }
+  if s == "null" { ret true }
+  if s == from_code(126) { ret true }
+  if str.contains(s, ": ") { ret true }
+  if str.contains(s, "#") { ret true }
+  if str.starts_with(s, "- ") { ret true }
+  if str.starts_with(s, "[") { ret true }
+  if str.starts_with(s, "\{") { ret true }
+  if str.contains(s, "\n") { ret true }
+  if _is_int(s) { ret true }
+  if _is_float(s) { ret true }
+  ret false
+}
+
+fn _quote_str(s) -> str {
+  let sq = _sq()
+  if str.contains(s, "\"") {
+    ret str.concat(sq, str.concat(s, sq))
+  }
+  ret str.concat("\"", str.concat(s, "\""))
+}
+
+fn _stringify_val(val, level) -> str {
+  let t = type_of(val)
+  if t == "bool" {
+    if val { ret "true" }
+    ret "false"
+  }
+  if t == "int" { ret to_str(val) }
+  if t == "float" { ret to_str(val) }
+  if t == "str" {
+    if _needs_quote(val) { ret _quote_str(val) }
+    ret val
+  }
+  let indent = _repeat_str("  ", level)
+  if t == "map" {
+    let keys = map.keys(val)
+    if len(keys) == 0 { ret "\{\}" }
+    let mut out = ""
+    for k in keys {
+      let v = map.get(val, k)
+      let vt = type_of(v)
+      if vt == "map" {
+        let kk = k
+        out = str.concat(out, "{indent}{kk}:\n")
+        out = str.concat(out, _stringify_val(v, level + 1))
+      } else {
+        if vt == "array" {
+          let kk = k
+          out = str.concat(out, "{indent}{kk}:\n")
+          out = str.concat(out, _stringify_val(v, level + 1))
+        } else {
+          let vs = _stringify_val(v, 0)
+          let kk = k
+          out = str.concat(out, "{indent}{kk}: {vs}\n")
+        }
+      }
+    }
+    ret out
+  }
+  if t == "array" {
+    if len(val) == 0 { ret "{indent}[]\n" }
+    let mut out = ""
+    for item in val {
+      let it = type_of(item)
+      if it == "map" {
+        let keys = map.keys(item)
+        let mut first = true
+        for k in keys {
+          let v = map.get(item, k)
+          let vt = type_of(v)
+          let kk = k
+          if first {
+            if vt == "map" {
+              out = str.concat(out, "{indent}- {kk}:\n")
+              out = str.concat(out, _stringify_val(v, level + 2))
+            } else {
+              if vt == "array" {
+                out = str.concat(out, "{indent}- {kk}:\n")
+                out = str.concat(out, _stringify_val(v, level + 2))
+              } else {
+                let vs = _stringify_val(v, 0)
+                out = str.concat(out, "{indent}- {kk}: {vs}\n")
+              }
+            }
+            first = false
+          } else {
+            let si = _repeat_str("  ", level + 1)
+            if vt == "map" {
+              out = str.concat(out, "{si}{kk}:\n")
+              out = str.concat(out, _stringify_val(v, level + 2))
+            } else {
+              if vt == "array" {
+                out = str.concat(out, "{si}{kk}:\n")
+                out = str.concat(out, _stringify_val(v, level + 2))
+              } else {
+                let vs = _stringify_val(v, 0)
+                out = str.concat(out, "{si}{kk}: {vs}\n")
+              }
+            }
+          }
+        }
+      } else {
+        let vs = _stringify_val(item, 0)
+        out = str.concat(out, "{indent}- {vs}\n")
+      }
+    }
+    ret out
+  }
+  ret to_str(val)
+}
+
+fn stringify(val) -> str {
+  ret str.trim(_stringify_val(val, 0))
+}
+
+fn parse(text) {
+  let raw_lines = str.lines(str.replace(text, "\r", ""))
+  let mut lines = []
+  for line in raw_lines {
+    let stripped = _strip_comment(line)
+    lines = push(lines, stripped)
+  }
+  let mut start = 0
+  while start < len(lines) {
+    let trimmed = str.trim(lines[start])
+    if trimmed != "" {
+      if str.starts_with(trimmed, "---") {
+        start = start + 1
+        continue
+      }
+      if str.starts_with(trimmed, "...") {
+        start = start + 1
+        continue
+      }
+      let r = _parse_block(lines, start, 0)
+      ret r["val"]
+    }
+    start = start + 1
+  }
+  ret ""
+}

@@ -107,6 +107,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Database** | `db.open(path)` (or `":memory:"`), `db.exec(db, sql)`, `db.query(db, sql, params)` with `?` binding, `db.close(db)` -- bundled SQLite, zero setup |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
+| **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
 | **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`, `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`, `len` |
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
@@ -131,6 +132,10 @@ use std.datetime              # now, timestamp, format, iso, add_days, diff_ms
 use std.hash                  # sha256, md5, sha256_file, quick
 use std.encoding              # base64_encode, base64_decode, hex, url_encode
 use std.csv                   # parse, parse_records, stringify, escape_field
+use std.yaml                  # parse, stringify -- YAML 1.2 subset (mappings, sequences, scalars)
+use std.toml                  # parse, stringify -- TOML (tables, arrays of tables, all value types)
+use std.html                  # parse, select, text -- HTML DOM tree with CSS selector queries
+use std.url                   # parse, encode, decode, build -- full URL structure parsing
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -220,6 +225,7 @@ fn main() -> void {
 | `examples/site_gen.a` | 100 | static site generator using path, datetime, hash, csv, template, encoding (runs natively) |
 | `examples/api.a` | 20 | **JSON API server** -- HTTP server with routing, JSON responses, echo endpoint |
 | `examples/crud.a` | 40 | **CRUD API** -- HTTP + SQLite with parameterized queries, create/read/delete users |
+| `examples/test_formats.a` | 115 | tests for YAML, TOML, HTML, URL modules -- round-trip, selectors, edge cases |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 | `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |
@@ -241,7 +247,7 @@ fn main() -> void {
 **Language server:** `./a-lsp` is a native LSP server written in "a" itself. It provides:
 
 - **Diagnostics** -- parse errors on every keystroke (red squiggles)
-- **Completion** -- 105+ builtins with signatures, keywords, user functions, stdlib modules
+- **Completion** -- 105+ builtins with signatures, keywords, user functions, 16+ stdlib modules
 - **Hover** -- function signatures for builtins and user-defined functions
 - **Go-to-definition** -- in-file and cross-module (resolves `use` imports to source files)
 

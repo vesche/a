@@ -1,0 +1,442 @@
+; std/html.a -- HTML parser, DOM tree, and CSS selector engine
+; Parses HTML into a tree of tagged maps, queries with CSS selectors.
+; Node: #{ "tag": "div", "attrs": #{ "class": "main" }, "children": [...] }
+; Text: #{ "tag": "#text", "text": "hello" }
+
+fn _h_void_tag(tag) -> bool {
+  if tag == "br" { ret true }
+  if tag == "hr" { ret true }
+  if tag == "img" { ret true }
+  if tag == "input" { ret true }
+  if tag == "meta" { ret true }
+  if tag == "link" { ret true }
+  if tag == "area" { ret true }
+  if tag == "base" { ret true }
+  if tag == "col" { ret true }
+  if tag == "embed" { ret true }
+  if tag == "source" { ret true }
+  if tag == "track" { ret true }
+  if tag == "wbr" { ret true }
+  ret false
+}
+
+fn _h_parse_attrs(s) {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut attrs = #{}
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == " " {
+      i = i + 1
+      continue
+    }
+    if c == "\t" {
+      i = i + 1
+      continue
+    }
+    if c == "\n" {
+      i = i + 1
+      continue
+    }
+    let mut name = ""
+    while i < n {
+      let ch = chars[i]
+      if ch == "=" {
+        i = i + 1
+        break
+      }
+      if ch == " " { break }
+      if ch == ">" { break }
+      if ch == "/" { break }
+      name = str.concat(name, ch)
+      i = i + 1
+    }
+    let name_lower = str.lower(str.trim(name))
+    if name_lower == "" {
+      i = i + 1
+      continue
+    }
+    while i < n {
+      if chars[i] != " " { break }
+      i = i + 1
+    }
+    if i >= n {
+      attrs = map.set(attrs, name_lower, "true")
+      ret attrs
+    }
+    let nc = chars[i]
+    if nc == "\"" {
+      i = i + 1
+      let mut val = ""
+      while i < n {
+        if chars[i] == "\"" {
+          i = i + 1
+          break
+        }
+        val = str.concat(val, chars[i])
+        i = i + 1
+      }
+      attrs = map.set(attrs, name_lower, val)
+    } else {
+      if char_code(nc) == 39 {
+        i = i + 1
+        let mut val = ""
+        while i < n {
+          if char_code(chars[i]) == 39 {
+            i = i + 1
+            break
+          }
+          val = str.concat(val, chars[i])
+          i = i + 1
+        }
+        attrs = map.set(attrs, name_lower, val)
+      } else {
+        if nc == "=" {
+          i = i + 1
+          continue
+        }
+        if nc == " " {
+          attrs = map.set(attrs, name_lower, "true")
+        } else {
+          if nc == ">" {
+            attrs = map.set(attrs, name_lower, "true")
+          } else {
+            let mut val = ""
+            while i < n {
+              if chars[i] == " " { break }
+              if chars[i] == ">" { break }
+              val = str.concat(val, chars[i])
+              i = i + 1
+            }
+            attrs = map.set(attrs, name_lower, val)
+          }
+        }
+      }
+    }
+  }
+  ret attrs
+}
+
+fn parse(html) {
+  let chars = str.chars(html)
+  let n = len(chars)
+  let mut stack = []
+  let root_attrs = #{}
+  let root_children = []
+  let mut root = #{"tag": "#root", "attrs": root_attrs, "children": root_children}
+  stack = push(stack, root)
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == "<" {
+      if i + 1 < n {
+        if chars[i + 1] == "!" {
+          let mut j = i + 2
+          while j < n {
+            if chars[j] == ">" {
+              j = j + 1
+              break
+            }
+            j = j + 1
+          }
+          i = j
+          continue
+        }
+      }
+      if i + 1 < n {
+        if chars[i + 1] == "/" {
+          let mut j = i + 2
+          let mut tag = ""
+          while j < n {
+            if chars[j] == ">" {
+              j = j + 1
+              break
+            }
+            tag = str.concat(tag, chars[j])
+            j = j + 1
+          }
+          let tag_lower = str.lower(str.trim(tag))
+          let slen = len(stack)
+          if slen > 1 {
+            let node = stack[slen - 1]
+            let mut new_stack = []
+            let mut si = 0
+            while si < slen - 1 {
+              new_stack = push(new_stack, stack[si])
+              si = si + 1
+            }
+            stack = new_stack
+            let parent_idx = len(stack) - 1
+            let parent = stack[parent_idx]
+            let pc = parent["children"]
+            let new_pc = push(pc, node)
+            let updated = map.set(parent, "children", new_pc)
+            let mut ns = []
+            let mut si2 = 0
+            while si2 < parent_idx {
+              ns = push(ns, stack[si2])
+              si2 = si2 + 1
+            }
+            ns = push(ns, updated)
+            stack = ns
+          }
+          i = j
+          continue
+        }
+      }
+      let mut j = i + 1
+      let mut tag = ""
+      while j < n {
+        if chars[j] == " " {
+          j = j + 1
+          break
+        }
+        if chars[j] == ">" { break }
+        if chars[j] == "/" { break }
+        if chars[j] == "\n" {
+          j = j + 1
+          break
+        }
+        tag = str.concat(tag, chars[j])
+        j = j + 1
+      }
+      let tag_lower = str.lower(str.trim(tag))
+      let mut attr_str = ""
+      let mut self_close = false
+      while j < n {
+        if chars[j] == ">" {
+          j = j + 1
+          break
+        }
+        if chars[j] == "/" {
+          self_close = true
+          j = j + 1
+          continue
+        }
+        attr_str = str.concat(attr_str, chars[j])
+        j = j + 1
+      }
+      let attrs = _h_parse_attrs(str.trim(attr_str))
+      let empty_children = []
+      let node = #{"tag": tag_lower, "attrs": attrs, "children": empty_children}
+      if self_close {
+        let parent_idx = len(stack) - 1
+        let parent = stack[parent_idx]
+        let pc = parent["children"]
+        let new_pc = push(pc, node)
+        let updated = map.set(parent, "children", new_pc)
+        let mut ns = []
+        let mut si = 0
+        while si < parent_idx {
+          ns = push(ns, stack[si])
+          si = si + 1
+        }
+        ns = push(ns, updated)
+        stack = ns
+      } else {
+        if _h_void_tag(tag_lower) {
+          let parent_idx = len(stack) - 1
+          let parent = stack[parent_idx]
+          let pc = parent["children"]
+          let new_pc = push(pc, node)
+          let updated = map.set(parent, "children", new_pc)
+          let mut ns = []
+          let mut si = 0
+          while si < parent_idx {
+            ns = push(ns, stack[si])
+            si = si + 1
+          }
+          ns = push(ns, updated)
+          stack = ns
+        } else {
+          stack = push(stack, node)
+        }
+      }
+      i = j
+    } else {
+      let mut text = ""
+      while i < n {
+        if chars[i] == "<" { break }
+        text = str.concat(text, chars[i])
+        i = i + 1
+      }
+      let trimmed = str.trim(text)
+      if trimmed != "" {
+        let text_node = #{"tag": "#text", "text": trimmed}
+        let parent_idx = len(stack) - 1
+        let parent = stack[parent_idx]
+        let pc = parent["children"]
+        let new_pc = push(pc, text_node)
+        let updated = map.set(parent, "children", new_pc)
+        let mut ns = []
+        let mut si = 0
+        while si < parent_idx {
+          ns = push(ns, stack[si])
+          si = si + 1
+        }
+        ns = push(ns, updated)
+        stack = ns
+      }
+    }
+  }
+  while len(stack) > 1 {
+    let slen = len(stack)
+    let node = stack[slen - 1]
+    let mut new_stack = []
+    let mut si = 0
+    while si < slen - 1 {
+      new_stack = push(new_stack, stack[si])
+      si = si + 1
+    }
+    stack = new_stack
+    let parent_idx = len(stack) - 1
+    let parent = stack[parent_idx]
+    let pc = parent["children"]
+    let new_pc = push(pc, node)
+    let updated = map.set(parent, "children", new_pc)
+    let mut ns = []
+    let mut si2 = 0
+    while si2 < parent_idx {
+      ns = push(ns, stack[si2])
+      si2 = si2 + 1
+    }
+    ns = push(ns, updated)
+    stack = ns
+  }
+  let root_final = stack[0]
+  let rc = root_final["children"]
+  if len(rc) == 1 { ret rc[0] }
+  ret root_final
+}
+
+; --- Text extraction ---
+
+fn text(node) -> str {
+  let t = type_of(node)
+  if t != "map" { ret "" }
+  let tag = node["tag"]
+  if tag == "#text" { ret node["text"] }
+  let children = node["children"]
+  if type_of(children) != "array" { ret "" }
+  let mut out = ""
+  for child in children {
+    let ct = text(child)
+    if ct != "" {
+      if out != "" {
+        out = str.concat(out, " ")
+      }
+      out = str.concat(out, ct)
+    }
+  }
+  ret out
+}
+
+; --- CSS selector engine ---
+
+fn _h_has_class(node, cls) -> bool {
+  let attrs = node["attrs"]
+  if type_of(attrs) != "map" { ret false }
+  if map.has(attrs, "class") == false { ret false }
+  let classes = str.split(map.get(attrs, "class"), " ")
+  for c in classes {
+    if str.trim(c) == cls { ret true }
+  }
+  ret false
+}
+
+fn _h_has_id(node, id) -> bool {
+  let attrs = node["attrs"]
+  if type_of(attrs) != "map" { ret false }
+  if map.has(attrs, "id") == false { ret false }
+  ret map.get(attrs, "id") == id
+}
+
+fn _h_matches_simple(node, sel) -> bool {
+  if type_of(node) != "map" { ret false }
+  let tag = node["tag"]
+  if tag == "#text" { ret false }
+  if tag == "#root" { ret false }
+  if sel == "*" { ret true }
+  if str.starts_with(sel, ".") {
+    let cls = str.slice(sel, 1, len(sel))
+    ret _h_has_class(node, cls)
+  }
+  if str.starts_with(sel, "#") {
+    let id = str.slice(sel, 1, len(sel))
+    ret _h_has_id(node, id)
+  }
+  if str.contains(sel, ".") {
+    let parts = str.split(sel, ".")
+    if len(parts) >= 2 {
+      let tag_part = parts[0]
+      let cls_part = parts[1]
+      if tag != tag_part { ret false }
+      ret _h_has_class(node, cls_part)
+    }
+  }
+  if str.contains(sel, "#") {
+    let parts = str.split(sel, "#")
+    if len(parts) >= 2 {
+      let tag_part = parts[0]
+      let id_part = parts[1]
+      if tag_part != "" {
+        if tag != tag_part { ret false }
+      }
+      ret _h_has_id(node, id_part)
+    }
+  }
+  ret tag == sel
+}
+
+fn _h_collect(node, sel, results) -> [map] {
+  if type_of(node) != "map" { ret results }
+  if _h_matches_simple(node, sel) {
+    results = push(results, node)
+  }
+  let children = node["children"]
+  if type_of(children) == "array" {
+    for child in children {
+      results = _h_collect(child, sel, results)
+    }
+  }
+  ret results
+}
+
+fn _h_select_descendant(nodes, sels, idx) -> [map] {
+  if idx >= len(sels) { ret nodes }
+  let sel = str.trim(sels[idx])
+  let mut next = []
+  for node in nodes {
+    next = _h_collect(node, sel, next)
+  }
+  ret _h_select_descendant(next, sels, idx + 1)
+}
+
+fn select(node, selector) -> [map] {
+  let groups = str.split(selector, ",")
+  let mut results = []
+  for group in groups {
+    let sel = str.trim(group)
+    if sel == "" { continue }
+    let parts = str.split(sel, " ")
+    let mut clean_parts = []
+    for p in parts {
+      let t = str.trim(p)
+      if t != "" {
+        clean_parts = push(clean_parts, t)
+      }
+    }
+    if len(clean_parts) == 0 { continue }
+    let first_sel = clean_parts[0]
+    let mut matches = _h_collect(node, first_sel, [])
+    if len(clean_parts) > 1 {
+      let rest = drop(clean_parts, 1)
+      matches = _h_select_descendant(matches, rest, 0)
+    }
+    for m in matches {
+      results = push(results, m)
+    }
+  }
+  ret results
+}

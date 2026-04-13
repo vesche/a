@@ -1943,3 +1943,62 @@ Verified with a CRUD API example (`examples/crud.a`):
 | `README.md` | Added Database row to builtins table, crud.a to tools table |
 | `Cargo.toml` | Version bump to 0.54.0 |
 
+---
+
+## v0.55 -- Data Formats
+
+**Goal**: Four new stdlib modules for structured data formats agents encounter constantly: YAML, TOML, HTML, and URL parsing.
+
+**Design**: All four modules are pure "a" implementations -- no C runtime changes, no Rust VM changes. Loaded via `use std.yaml`, `use std.toml`, `use std.html`, `use std.url`.
+
+### Modules
+
+#### `std/yaml.a` -- YAML 1.2 subset
+- **parse(text) -> map/array**: line-by-line parser tracking indent level; supports mappings, sequences, nested structures, scalars (strings, integers, floats, booleans, null), single/double-quoted strings, flow sequences `[...]`, flow mappings `{...}`, block scalars (`|` and `>`), comments
+- **stringify(value) -> str**: recursive emitter with proper indentation
+
+#### `std/toml.a` -- TOML
+- **parse(text) -> map**: line-by-line parser; supports key-value pairs, `[tables]`, `[[arrays of tables]]`, dotted keys, strings (basic/literal), integers, floats, booleans, arrays, inline tables, comments
+- **stringify(value) -> str**: outputs simple keys first, then table sections, then arrays of tables
+
+#### `std/html.a` -- HTML parser + CSS selector engine
+- **parse(html) -> node**: character-by-character lexer with stack-based tree builder; handles open/close/self-closing tags, attributes, text nodes, void elements (br, img, input, etc.)
+- **select(node, selector) -> [node]**: CSS selector subset -- `tag`, `.class`, `#id`, `tag.class`, descendant (space-separated), comma groups
+- **text(node) -> str**: recursive text extraction from DOM tree
+- Node structure: `#{ "tag": "div", "attrs": #{ "class": "main" }, "children": [...] }`
+
+#### `std/url.a` -- URL parsing and building
+- **parse(url) -> map**: sequential scan decomposing URL into scheme, user, password, host, port, path, query, params (parsed), fragment
+- **build(parts) -> str**: reconstruct URL from component map
+- **encode(s) / decode(s)**: delegates to `std.encoding`'s url_encode/url_decode
+
+### Key implementation notes
+
+- Single-quote character (`'`) not supported by the "a" lexer; used `from_code(39)` and `char_code(c) == 39` helpers
+- Tilde (`~`) not in lexer; used `from_code(126)` for YAML null detection
+- Literal `{` and `}` in strings require `\{` / `\}` escapes to prevent interpolation
+- Comments in "a" use `;`, not `;` as statement separator -- multistatement lines like `i = i + 1; break` silently comment out the second statement
+- `type_of()` returns `"str"` not `"string"` for string values
+
+### Verification
+
+All four modules tested on both Rust VM (`cargo run -- run`) and native compiler (`./a build` + run):
+- YAML: simple mappings, nested structures, sequences, sequences of mappings, flow sequences, top-level sequences, quoted strings, floats, comments, block scalars, round-trip
+- TOML: strings, integers, floats, booleans, negatives, tables, arrays, arrays of tables, round-trip
+- HTML: tag parsing, attribute extraction, text extraction, CSS selectors (tag, class, id, compound, descendant), void tags
+- URL: full URL decomposition, build round-trip, encode/decode
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `std/yaml.a` | NEW -- YAML 1.2 subset parser and emitter (~360 lines) |
+| `std/toml.a` | NEW -- TOML parser and emitter (~310 lines) |
+| `std/html.a` | NEW -- HTML parser, DOM tree, CSS selector engine (~310 lines) |
+| `std/url.a` | NEW -- URL parsing, encoding, building (~140 lines) |
+| `examples/test_formats.a` | NEW -- comprehensive tests for all four modules (~115 lines) |
+| `src/lsp.a` | Added `std.yaml`, `std.toml`, `std.html`, `std.url` to `_stdlib_modules()` |
+| `scripts/test_memory.sh` | Added `yaml toml html url` to stdlib module test loop |
+| `README.md` | Added data format modules to stdlib table, Data formats row to builtins domain table, test_formats.a to examples table |
+| `Cargo.toml` | Version bump to 0.55.0 |
+

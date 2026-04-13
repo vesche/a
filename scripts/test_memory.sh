@@ -67,7 +67,7 @@ echo ""
 
 echo "=== Std module compilation ==="
 SPASS=0; SFAIL=0
-for mod in path testing datetime math strings csv re template cli encoding lexer hash; do
+for mod in path testing datetime math strings csv re template cli encoding lexer hash yaml toml html url; do
     echo "use std.$mod" > "$WORK/stdmod.a"
     echo 'fn main() { println("ok") }' >> "$WORK/stdmod.a"
     if "$WORK/ac1" "$WORK/stdmod.a" > "$WORK/stdmod.c" 2>/dev/null && \

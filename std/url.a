@@ -1,0 +1,171 @@
+; std/url.a -- URL parsing, encoding, and building
+; parse("https://user:pass@host:8080/path?q=1&r=2#frag") returns a map
+; with scheme, user, password, host, port, path, query, params, fragment.
+
+use std.encoding
+
+fn _u_find(s, target) -> int {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let tlen = len(target)
+  if tlen == 0 { ret 0 - 1 }
+  let tchars = str.chars(target)
+  let mut i = 0
+  while i <= n - tlen {
+    let mut match_found = true
+    let mut j = 0
+    while j < tlen {
+      if chars[i + j] != tchars[j] {
+        match_found = false
+        break
+      }
+      j = j + 1
+    }
+    if match_found { ret i }
+    i = i + 1
+  }
+  ret 0 - 1
+}
+
+fn _u_find_char(s, ch) -> int {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut i = 0
+  while i < n {
+    if chars[i] == ch { ret i }
+    i = i + 1
+  }
+  ret 0 - 1
+}
+
+fn parse(url_str) {
+  let mut rest = url_str
+  let mut scheme = ""
+  let mut user = ""
+  let mut password = ""
+  let mut host = ""
+  let mut port = 0
+  let mut pth = ""
+  let mut query = ""
+  let mut fragment = ""
+  let mut params = #{}
+  let scheme_idx = _u_find(rest, "://")
+  if scheme_idx >= 0 {
+    scheme = str.slice(rest, 0, scheme_idx)
+    rest = str.slice(rest, scheme_idx + 3, len(rest))
+  }
+  let hash_idx = _u_find_char(rest, "#")
+  if hash_idx >= 0 {
+    fragment = str.slice(rest, hash_idx + 1, len(rest))
+    rest = str.slice(rest, 0, hash_idx)
+  }
+  let q_idx = _u_find_char(rest, "?")
+  if q_idx >= 0 {
+    query = str.slice(rest, q_idx + 1, len(rest))
+    rest = str.slice(rest, 0, q_idx)
+    let pairs = str.split(query, "&")
+    for pair in pairs {
+      let eq_idx = _u_find_char(pair, "=")
+      if eq_idx >= 0 {
+        let pk = encoding.url_decode(str.slice(pair, 0, eq_idx))
+        let pv = encoding.url_decode(str.slice(pair, eq_idx + 1, len(pair)))
+        params = map.set(params, pk, pv)
+      } else {
+        params = map.set(params, pair, "")
+      }
+    }
+  }
+  let slash_idx = _u_find_char(rest, "/")
+  if slash_idx >= 0 {
+    pth = str.slice(rest, slash_idx, len(rest))
+    rest = str.slice(rest, 0, slash_idx)
+  }
+  if scheme != "" {
+    let at_idx = _u_find_char(rest, "@")
+    if at_idx >= 0 {
+      let userinfo = str.slice(rest, 0, at_idx)
+      rest = str.slice(rest, at_idx + 1, len(rest))
+      let colon_idx = _u_find_char(userinfo, ":")
+      if colon_idx >= 0 {
+        user = str.slice(userinfo, 0, colon_idx)
+        password = str.slice(userinfo, colon_idx + 1, len(userinfo))
+      } else {
+        user = userinfo
+      }
+    }
+    let colon_idx = _u_find_char(rest, ":")
+    if colon_idx >= 0 {
+      host = str.slice(rest, 0, colon_idx)
+      let port_str = str.slice(rest, colon_idx + 1, len(rest))
+      if port_str != "" {
+        port = int(port_str)
+      }
+    } else {
+      host = rest
+    }
+  } else {
+    pth = str.concat(rest, pth)
+  }
+  ret #{"scheme": scheme, "user": user, "password": password,
+        "host": host, "port": port, "path": pth,
+        "query": query, "params": params, "fragment": fragment}
+}
+
+fn encode(s) -> str {
+  ret encoding.url_encode(s)
+}
+
+fn decode(s) -> str {
+  ret encoding.url_decode(s)
+}
+
+fn build(parts) -> str {
+  let mut result = ""
+  if map.has(parts, "scheme") {
+    let s = parts["scheme"]
+    if s != "" {
+      result = str.concat(s, "://")
+    }
+  }
+  if map.has(parts, "user") {
+    let u = parts["user"]
+    if u != "" {
+      result = str.concat(result, u)
+      if map.has(parts, "password") {
+        let p = parts["password"]
+        if p != "" {
+          result = str.concat(result, str.concat(":", p))
+        }
+      }
+      result = str.concat(result, "@")
+    }
+  }
+  if map.has(parts, "host") {
+    let h = parts["host"]
+    result = str.concat(result, h)
+  }
+  if map.has(parts, "port") {
+    let p = parts["port"]
+    if p > 0 {
+      let ps = to_str(p)
+      result = str.concat(result, str.concat(":", ps))
+    }
+  }
+  if map.has(parts, "path") {
+    let p = parts["path"]
+    result = str.concat(result, p)
+  }
+  if map.has(parts, "query") {
+    let q = parts["query"]
+    if q != "" {
+      result = str.concat(result, str.concat("?", q))
+    }
+  }
+  if map.has(parts, "fragment") {
+    let f = parts["fragment"]
+    if f != "" {
+      result = str.concat(result, str.concat("#", f))
+    }
+  }
+  ret result
+}

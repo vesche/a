@@ -396,7 +396,8 @@ fn _stdlib_modules() {
     "std.datetime", "std.re", "std.encoding", "std.csv", "std.testing",
     "std.template", "std.meta", "std.compiler.lexer", "std.compiler.parser",
     "std.compiler.ast", "std.compiler.cgen", "std.compiler.emitter",
-    "std.compiler.compiler", "std.compiler.serialize"
+    "std.compiler.compiler", "std.compiler.serialize",
+    "std.yaml", "std.toml", "std.html", "std.url"
   ]
 }
 
