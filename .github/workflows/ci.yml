@@ -33,11 +33,25 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-
 
+      - name: Verify vendored checksums
+        run: ./scripts/vendor_check.sh
+
       - name: Rust VM tests
         run: cargo test
 
       - name: Bootstrap native CLI
         run: ./build.sh
+
+      - name: Verify bootstrap/cli.c is up to date
+        run: |
+          cargo run --quiet -- run std/compiler/cgen.a -- src/cli.a > /tmp/bootstrap_verify.c 2>/dev/null
+          if ! diff -q bootstrap/cli.c /tmp/bootstrap_verify.c > /dev/null 2>&1; then
+            echo "ERROR: bootstrap/cli.c is out of date."
+            echo "Regenerate with: cargo run --quiet -- run std/compiler/cgen.a -- src/cli.a > bootstrap/cli.c"
+            diff bootstrap/cli.c /tmp/bootstrap_verify.c | head -20
+            exit 1
+          fi
+          echo "bootstrap/cli.c is up to date."
 
       - name: Smoke test -- hello
         run: ./a run examples/hello.a

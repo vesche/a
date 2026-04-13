@@ -1125,6 +1125,68 @@ impl VM {
             }
             return Ok(());
         }
+        if name == "compress.deflate" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use flate2::write::DeflateEncoder;
+                use flate2::Compression;
+                use std::io::Write;
+                let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.deflate: {e}"), None))?;
+                let compressed = encoder.finish().map_err(|e| AError::runtime(format!("compress.deflate: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(compressed) };
+                self.stack.push(Value::String(Arc::new(s)));
+            } else {
+                return Err(AError::runtime("compress.deflate: expected string", None));
+            }
+            return Ok(());
+        }
+        if name == "compress.inflate" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use flate2::write::DeflateDecoder;
+                use std::io::Write;
+                let mut decoder = DeflateDecoder::new(Vec::new());
+                decoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.inflate: {e}"), None))?;
+                let decompressed = decoder.finish().map_err(|e| AError::runtime(format!("compress.inflate: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(decompressed) };
+                self.stack.push(Value::String(Arc::new(s)));
+            } else {
+                return Err(AError::runtime("compress.inflate: expected string", None));
+            }
+            return Ok(());
+        }
+        if name == "compress.gzip" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use flate2::write::GzEncoder;
+                use flate2::Compression;
+                use std::io::Write;
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.gzip: {e}"), None))?;
+                let compressed = encoder.finish().map_err(|e| AError::runtime(format!("compress.gzip: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(compressed) };
+                self.stack.push(Value::String(Arc::new(s)));
+            } else {
+                return Err(AError::runtime("compress.gzip: expected string", None));
+            }
+            return Ok(());
+        }
+        if name == "compress.gunzip" && nargs == 1 {
+            let val = self.stack.pop().unwrap_or(Value::Void);
+            if let Value::String(s) = val {
+                use flate2::write::GzDecoder;
+                use std::io::Write;
+                let mut decoder = GzDecoder::new(Vec::new());
+                decoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.gunzip: {e}"), None))?;
+                let decompressed = decoder.finish().map_err(|e| AError::runtime(format!("compress.gunzip: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(decompressed) };
+                self.stack.push(Value::String(Arc::new(s)));
+            } else {
+                return Err(AError::runtime("compress.gunzip: expected string", None));
+            }
+            return Ok(());
+        }
 
         if name == "spawn" && nargs == 1 {
             let closure_val = self.stack.pop().unwrap_or(Value::Void);

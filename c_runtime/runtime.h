@@ -246,6 +246,12 @@ AValue a_db_close(AValue db);
 AValue a_db_exec(AValue db, AValue sql);
 AValue a_db_query(AValue db, AValue sql, AValue params);
 
+/* Compression (miniz) */
+AValue a_compress_deflate(AValue data);
+AValue a_compress_inflate(AValue data);
+AValue a_compress_gzip(AValue data);
+AValue a_compress_gunzip(AValue data);
+
 /* Closures */
 AValue a_closure(AClosureFn fn, AValue env);
 AValue a_closure_call(AValue closure, int argc, ...);

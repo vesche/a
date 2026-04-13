@@ -1,4 +1,5 @@
 #include "runtime.h"
+#include "miniz.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -2372,4 +2373,151 @@ int a_arena_save(AArena* arena) {
 
 void a_arena_restore(AArena* arena, int saved_pos) {
     arena->pos = saved_pos;
+}
+
+/* --- Compression (miniz) --- */
+
+AValue a_compress_deflate(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("compress.deflate: expected string"));
+    if (data.sval->len == 0) {
+        size_t out_len = 0;
+        void* out = tdefl_compress_mem_to_heap("", 0, &out_len, TDEFL_DEFAULT_MAX_PROBES);
+        if (!out) return a_string_len("", 0);
+        AValue result = a_string_len((const char*)out, (int)out_len);
+        mz_free(out);
+        return result;
+    }
+    size_t out_len = 0;
+    void* out = tdefl_compress_mem_to_heap(
+        data.sval->data, (size_t)data.sval->len, &out_len,
+        TDEFL_DEFAULT_MAX_PROBES
+    );
+    if (!out) return a_err(a_string("compress.deflate: compression failed"));
+    AValue result = a_string_len((const char*)out, (int)out_len);
+    mz_free(out);
+    return result;
+}
+
+AValue a_compress_inflate(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("compress.inflate: expected string"));
+    if (data.sval->len == 0) return a_string_len("", 0);
+    size_t out_len = 0;
+    void* out = tinfl_decompress_mem_to_heap(
+        data.sval->data, (size_t)data.sval->len, &out_len, 0
+    );
+    if (!out && out_len == 0) return a_string_len("", 0);
+    if (!out) return a_err(a_string("compress.inflate: decompression failed"));
+    AValue result = a_string_len((const char*)out, (int)out_len);
+    mz_free(out);
+    return result;
+}
+
+AValue a_compress_gzip(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("compress.gzip: expected string"));
+    if (data.sval->len == 0) {
+        size_t dl = 0;
+        void* d = tdefl_compress_mem_to_heap("", 0, &dl, TDEFL_DEFAULT_MAX_PROBES);
+        size_t gz_len = 10 + (d ? dl : 0) + 8;
+        uint8_t* gz = (uint8_t*)malloc(gz_len);
+        gz[0]=0x1f; gz[1]=0x8b; gz[2]=8; gz[3]=0;
+        gz[4]=gz[5]=gz[6]=gz[7]=0; gz[8]=0; gz[9]=0xff;
+        if (d) { memcpy(gz+10, d, dl); mz_free(d); }
+        memset(gz+10+(d?dl:0), 0, 8);
+        AValue result = a_string_len((const char*)gz, (int)gz_len);
+        free(gz);
+        return result;
+    }
+    const uint8_t* src = (const uint8_t*)data.sval->data;
+    size_t src_len = (size_t)data.sval->len;
+
+    size_t deflated_len = 0;
+    void* deflated = tdefl_compress_mem_to_heap(
+        src, src_len, &deflated_len, TDEFL_DEFAULT_MAX_PROBES
+    );
+    if (!deflated) return a_err(a_string("compress.gzip: compression failed"));
+
+    mz_ulong crc = mz_crc32(MZ_CRC32_INIT, src, src_len);
+
+    /* gzip = 10-byte header + raw deflate + 4-byte CRC32 + 4-byte size */
+    size_t gz_len = 10 + deflated_len + 8;
+    uint8_t* gz = (uint8_t*)malloc(gz_len);
+    if (!gz) { mz_free(deflated); return a_err(a_string("compress.gzip: out of memory")); }
+
+    gz[0] = 0x1f; gz[1] = 0x8b;   /* magic */
+    gz[2] = 8;                      /* method: deflate */
+    gz[3] = 0;                      /* flags */
+    gz[4] = gz[5] = gz[6] = gz[7] = 0; /* mtime */
+    gz[8] = 0;                      /* xfl */
+    gz[9] = 0xff;                   /* os: unknown */
+
+    memcpy(gz + 10, deflated, deflated_len);
+    mz_free(deflated);
+
+    gz[10 + deflated_len + 0] = (uint8_t)(crc);
+    gz[10 + deflated_len + 1] = (uint8_t)(crc >> 8);
+    gz[10 + deflated_len + 2] = (uint8_t)(crc >> 16);
+    gz[10 + deflated_len + 3] = (uint8_t)(crc >> 24);
+    gz[10 + deflated_len + 4] = (uint8_t)(src_len);
+    gz[10 + deflated_len + 5] = (uint8_t)(src_len >> 8);
+    gz[10 + deflated_len + 6] = (uint8_t)(src_len >> 16);
+    gz[10 + deflated_len + 7] = (uint8_t)(src_len >> 24);
+
+    AValue result = a_string_len((const char*)gz, (int)gz_len);
+    free(gz);
+    return result;
+}
+
+AValue a_compress_gunzip(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("compress.gunzip: expected string"));
+    const uint8_t* src = (const uint8_t*)data.sval->data;
+    size_t src_len = (size_t)data.sval->len;
+
+    if (src_len < 18 || src[0] != 0x1f || src[1] != 0x8b)
+        return a_err(a_string("compress.gunzip: not gzip data"));
+    if (src[2] != 8)
+        return a_err(a_string("compress.gunzip: unsupported compression method"));
+
+    /* Skip past the 10-byte header + optional extra fields */
+    size_t pos = 10;
+    uint8_t flags = src[3];
+    if (flags & 0x04) { /* FEXTRA */
+        if (pos + 2 > src_len) return a_err(a_string("compress.gunzip: truncated"));
+        size_t xlen = src[pos] | ((size_t)src[pos+1] << 8);
+        pos += 2 + xlen;
+    }
+    if (flags & 0x08) { /* FNAME */
+        while (pos < src_len && src[pos]) pos++;
+        pos++;
+    }
+    if (flags & 0x10) { /* FCOMMENT */
+        while (pos < src_len && src[pos]) pos++;
+        pos++;
+    }
+    if (flags & 0x02) pos += 2; /* FHCRC */
+
+    if (pos >= src_len - 8)
+        return a_err(a_string("compress.gunzip: truncated"));
+
+    size_t deflated_len = src_len - pos - 8;
+    uint32_t expected_crc = (uint32_t)src[src_len-8] | ((uint32_t)src[src_len-7]<<8) |
+                            ((uint32_t)src[src_len-6]<<16) | ((uint32_t)src[src_len-5]<<24);
+    uint32_t expected_size = (uint32_t)src[src_len-4] | ((uint32_t)src[src_len-3]<<8) |
+                             ((uint32_t)src[src_len-2]<<16) | ((uint32_t)src[src_len-1]<<24);
+
+    size_t out_len = 0;
+    void* out = tinfl_decompress_mem_to_heap(
+        src + pos, deflated_len, &out_len, 0
+    );
+    if (!out && out_len != 0) return a_err(a_string("compress.gunzip: decompression failed"));
+
+    uint32_t actual_crc = out ? (uint32_t)mz_crc32(MZ_CRC32_INIT, (const uint8_t*)out, out_len)
+                              : (uint32_t)mz_crc32(MZ_CRC32_INIT, NULL, 0);
+    if (actual_crc != expected_crc || ((uint32_t)out_len != expected_size)) {
+        if (out) mz_free(out);
+        return a_err(a_string("compress.gunzip: CRC or size mismatch"));
+    }
+
+    AValue result = a_string_len(out ? (const char*)out : "", (int)out_len);
+    if (out) mz_free(out);
+    return result;
 }

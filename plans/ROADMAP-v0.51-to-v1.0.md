@@ -1,3 +1,6 @@
+> **DEPRECATED** -- This roadmap covers v0.51 through v0.56. All items through v0.56 are complete.
+> For v0.57 onward, see [ROADMAP-v0.57-to-v1.0.md](ROADMAP-v0.57-to-v1.0.md).
+
 # The Road to Agent Runtime: v0.51 to v1.0
 
 *Making "a" the default runtime for AI agents everywhere.*

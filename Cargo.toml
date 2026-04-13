@@ -1,6 +1,6 @@
 [package]
 name = "a-lang"
-version = "0.56.0"
+version = "0.57.0"
 edition = "2021"
 description = "A programming language by AI, for AI"
 license = "Apache-2.0"
@@ -20,3 +20,4 @@ ureq = "2"
 regex = "1"
 sha2 = "0.10"
 md-5 = "0.10"
+flate2 = "1.1"

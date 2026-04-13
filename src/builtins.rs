@@ -1158,6 +1158,61 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
             }
         }
 
+        "compress.deflate" => {
+            if let Value::String(s) = &args[0] {
+                use flate2::write::DeflateEncoder;
+                use flate2::Compression;
+                use std::io::Write;
+                let mut encoder = DeflateEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.deflate: {e}"), None))?;
+                let compressed = encoder.finish().map_err(|e| AError::runtime(format!("compress.deflate: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(compressed) };
+                Ok(Value::String(std::sync::Arc::new(s)))
+            } else {
+                Err(AError::runtime("compress.deflate: expected string", None))
+            }
+        }
+        "compress.inflate" => {
+            if let Value::String(s) = &args[0] {
+                use flate2::write::DeflateDecoder;
+                use std::io::Write;
+                let mut decoder = DeflateDecoder::new(Vec::new());
+                decoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.inflate: {e}"), None))?;
+                let decompressed = decoder.finish().map_err(|e| AError::runtime(format!("compress.inflate: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(decompressed) };
+                Ok(Value::String(std::sync::Arc::new(s)))
+            } else {
+                Err(AError::runtime("compress.inflate: expected string", None))
+            }
+        }
+        "compress.gzip" => {
+            if let Value::String(s) = &args[0] {
+                use flate2::write::GzEncoder;
+                use flate2::Compression;
+                use std::io::Write;
+                let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+                encoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.gzip: {e}"), None))?;
+                let compressed = encoder.finish().map_err(|e| AError::runtime(format!("compress.gzip: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(compressed) };
+                Ok(Value::String(std::sync::Arc::new(s)))
+            } else {
+                Err(AError::runtime("compress.gzip: expected string", None))
+            }
+        }
+        "compress.gunzip" => {
+            if let Value::String(s) = &args[0] {
+                use flate2::write::GzDecoder;
+                use std::io::Write;
+                let mut decoder = GzDecoder::new(Vec::new());
+                decoder.write_all(s.as_bytes()).map_err(|e| AError::runtime(format!("compress.gunzip: {e}"), None))?;
+                let decompressed = decoder.finish().map_err(|e| AError::runtime(format!("compress.gunzip: {e}"), None))?;
+                let s = unsafe { String::from_utf8_unchecked(decompressed) };
+                Ok(Value::String(std::sync::Arc::new(s)))
+            } else {
+                Err(AError::runtime("compress.gunzip: expected string", None))
+            }
+        }
+
         "__bridge_convert__" => {
             match crate::bridge::value_to_program(&args[0]) {
                 Ok(program) => {
@@ -1375,7 +1430,8 @@ pub fn is_builtin(name: &str) -> bool {
         "regex.is_match" | "regex.find" | "regex.find_all" |
         "regex.replace" | "regex.replace_all" | "regex.split" | "regex.captures" |
         "spawn" | "await" | "await_all" | "parallel_map" | "parallel_each" | "timeout" |
-        "time.now" | "time.sleep" | "hash.sha256" | "hash.md5"
+        "time.now" | "time.sleep" | "hash.sha256" | "hash.md5" |
+        "compress.deflate" | "compress.inflate" | "compress.gzip" | "compress.gunzip"
     )
 }
 

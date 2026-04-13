@@ -2067,3 +2067,61 @@ The Rust parser's `expect_ident()` did not accept `post` after `.` because `post
 | `README.md` | Added `use std.llm` to stdlib table, LLM client row to builtins domain, examples to table |
 | `Cargo.toml` | Version bump to 0.56.0 |
 
+---
+
+## v0.57 -- Bootstrap Independence + Vendoring + Compression
+
+The native binary becomes truly self-contained. A clean checkout can build the language with just `gcc` -- no Rust or cargo required. Vendored library management is formalized. Compression builtins are added.
+
+### Bootstrap independence
+
+The pre-generated C output of the self-hosted compiler is now committed to the repo as `bootstrap/cli.c`. A standalone `bootstrap/build.sh` script builds the native binary from pure C:
+
+```bash
+./bootstrap/build.sh   # gcc only -- no Rust, no cargo
+```
+
+CI verifies that `bootstrap/cli.c` stays in sync: after every build, the C is regenerated and diffed against the committed version. If it drifts, the build fails.
+
+### Vendor infrastructure
+
+- `c_runtime/VENDORS.md` documents all vendored libraries with versions, checksums, licenses, and update procedures.
+- `scripts/vendor_check.sh` verifies SHA-256 checksums against the manifest. Runs in CI on every push.
+
+### miniz (compression library)
+
+Vendored miniz 3.1.1 (MIT, ~9k lines) provides zlib-compatible compression. Four new builtins:
+
+| Builtin | Description |
+|---------|-------------|
+| `compress.deflate(data)` | Raw deflate compression |
+| `compress.inflate(data)` | Raw deflate decompression |
+| `compress.gzip(data)` | Gzip format compression (header + deflate + CRC-32 + trailer) |
+| `compress.gunzip(data)` | Gzip format decompression with CRC-32 verification |
+
+All four builtins work in both the Rust VM (via `flate2` crate) and the native binary (via vendored miniz). Roundtrip tested for both empty and large inputs.
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `bootstrap/cli.c` | NEW -- pre-generated C from `./a cc src/cli.a` (~7,944 lines) |
+| `bootstrap/build.sh` | NEW -- C-only build script (no Rust required) |
+| `c_runtime/miniz.c` | NEW -- vendored miniz 3.1.1 compression library |
+| `c_runtime/miniz.h` | NEW -- vendored miniz 3.1.1 header |
+| `c_runtime/runtime.c` | Added `compress.deflate/inflate/gzip/gunzip` implementations via miniz |
+| `c_runtime/runtime.h` | Added compression function declarations |
+| `c_runtime/VENDORS.md` | Added miniz 3.1.1 entry with checksums |
+| `scripts/vendor_check.sh` | NEW -- SHA-256 checksum verification for vendored libraries |
+| `tests/native/test_compress.a` | NEW -- compression roundtrip tests |
+| `src/builtins.rs` | Added `compress.*` builtins via `flate2` crate |
+| `src/vm.rs` | Added `compress.*` fast paths in `do_call` |
+| `std/compiler/cgen.a` | Added `compress.*` to `_builtin_map()` |
+| `src/cli.a` | Added `miniz.c` to gcc link commands |
+| `src/lsp.a` | Added `compress.*` to builtin signatures |
+| `build.sh` | Added `miniz.c` to gcc link commands |
+| `scripts/test_memory.sh` | Added `miniz.c` to gcc link commands |
+| `.github/workflows/ci.yml` | Added vendor checksum verification and bootstrap sync check |
+| `Cargo.toml` | Added `flate2` dependency, version bump to 0.57.0 |
+| `README.md` | Added bootstrap section, compression builtins, updated stats |
+

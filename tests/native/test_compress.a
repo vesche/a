@@ -1,0 +1,41 @@
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  let original = "Hello, compression! This is a test of the deflate and gzip builtins in the a language."
+
+  ; deflate/inflate roundtrip
+  let deflated = compress.deflate(original)
+  assert(len(deflated) > 0, "deflate produced empty output")
+  let inflated = compress.inflate(deflated)
+  assert(inflated == original, "inflate(deflate(x)) should equal x")
+
+  ; gzip/gunzip roundtrip
+  let gzipped = compress.gzip(original)
+  assert(len(gzipped) > 0, "gzip produced empty output")
+  let ungzipped = compress.gunzip(gzipped)
+  assert(ungzipped == original, "gunzip(gzip(x)) should equal x")
+
+  ; empty string roundtrip
+  let empty_d = compress.deflate("")
+  let empty_i = compress.inflate(empty_d)
+  assert(empty_i == "", "empty deflate/inflate roundtrip failed")
+
+  let empty_g = compress.gzip("")
+  let empty_u = compress.gunzip(empty_g)
+  assert(empty_u == "", "empty gzip/gunzip roundtrip failed")
+
+  ; repeated data compresses well
+  let mut repeated = ""
+  let mut i = 0
+  while i < 100 {
+    repeated = str.concat(repeated, "aaaaaaaaaa")
+    i = i + 1
+  }
+  let comp = compress.deflate(repeated)
+  assert(len(comp) < len(repeated) / 10, "repeated data should compress very well")
+  assert(compress.inflate(comp) == repeated, "repeated data roundtrip failed")
+
+  println("all compress tests passed")
+}

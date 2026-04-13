@@ -4,9 +4,10 @@ version = 4
 
 [[package]]
 name = "a-lang"
-version = "0.56.0"
+version = "0.57.0"
 dependencies = [
  "clap",
+ "flate2",
  "md-5",
  "regex",
  "serde",

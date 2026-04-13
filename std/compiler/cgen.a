@@ -59,7 +59,9 @@ fn _builtin_map() -> map {
     "enumerate": "a_enumerate", "zip": "a_zip",
     "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk",
     "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null",
-    "argv0": "a_argv0"
+    "argv0": "a_argv0",
+    "compress.deflate": "a_compress_deflate", "compress.inflate": "a_compress_inflate",
+    "compress.gzip": "a_compress_gzip", "compress.gunzip": "a_compress_gunzip"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }
