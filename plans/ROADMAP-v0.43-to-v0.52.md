@@ -1,3 +1,6 @@
+> **Deprecated.** This roadmap covered v0.43 through v0.50 (all completed).
+> The forward-looking roadmap is [ROADMAP-v0.51-to-v1.0.md](ROADMAP-v0.51-to-v1.0.md).
+
 # The Road to Independence: v0.43 → v0.52
 
 *A ten-version plan for making "a" a fully self-sufficient language.*

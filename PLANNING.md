@@ -1773,3 +1773,44 @@ JSON-RPC 2.0 over stdio with `Content-Length` framing. Two new runtime builtins:
 
 LSP: ~720 lines. Native binary: ~318 KB. Response time: <1ms per request.
 
+---
+
+## v0.51 -- Cross-Platform
+
+### Goal
+
+Make "a" build and run on Linux (x86_64 and arm64) in addition to macOS arm64.
+
+### Problem
+
+Three places hardcoded the macOS-only linker flag `-Wl,-stack_size,0x10000000`:
+- `build.sh` (two gcc invocations)
+- `src/cli.a` `_gcc_flags()`
+- `scripts/test_memory.sh`
+
+Linux GNU `ld` uses `-Wl,-z,stacksize=N` instead.
+
+### Approach
+
+Runtime OS detection via `uname -s`:
+- **`src/cli.a`**: `_gcc_flags()` calls `exec("uname -s")` and returns Darwin or Linux linker flags accordingly.
+- **`build.sh`**: Sets `$STACK_FLAGS` based on `uname -s`, used by both the CLI and LSP gcc invocations.
+- **`scripts/test_memory.sh`**: Same pattern for `$SFLAGS`.
+
+### CI / CD
+
+- **`.github/workflows/ci.yml`**: Matrix build on `ubuntu-latest` + `macos-latest`. Runs `cargo test`, `./build.sh`, `./a run examples/hello.a`, `./a test tests/native/`.
+- **`.github/workflows/release.yml`**: Triggered on `v*` tags. Builds pre-built binaries for linux-x86_64, linux-arm64, darwin-arm64 and uploads them as GitHub Release assets.
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/cli.a` | `_gcc_flags()` now detects OS via `uname -s` |
+| `build.sh` | Platform-aware `$STACK_FLAGS` variable |
+| `scripts/test_memory.sh` | Platform-aware `$SFLAGS` variable |
+| `.github/workflows/ci.yml` | NEW -- CI on Ubuntu + macOS |
+| `.github/workflows/release.yml` | NEW -- release binaries on tag push |
+| `README.md` | Added platform requirements and releases note |
+| `Cargo.toml` | Version bump to 0.51.0 |
+

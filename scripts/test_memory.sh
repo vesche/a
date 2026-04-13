@@ -10,7 +10,12 @@ A="cargo run --quiet -- run"
 CGEN="std/compiler/cgen.a"
 RUNTIME="c_runtime/runtime.c"
 WORK=$(mktemp -d)
-SFLAGS="-Wl,-stack_size,0x8000000"
+OS=$(uname -s)
+if [ "$OS" = "Darwin" ]; then
+    SFLAGS="-Wl,-stack_size,0x8000000"
+else
+    SFLAGS="-Wl,-z,stacksize=134217728"
+fi
 trap "rm -rf $WORK" EXIT
 
 echo "=== v0.48 Test Suite ==="

@@ -1,0 +1,90 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: linux-x86_64
+            gcc: gcc
+          - os: ubuntu-latest
+            target: linux-arm64
+            gcc: aarch64-linux-gnu-gcc
+            cross: true
+          - os: macos-latest
+            target: darwin-arm64
+            gcc: gcc
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cross-compiler (Linux arm64)
+        if: matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux' && !matrix.cross
+        run: sudo apt-get update && sudo apt-get install -y gcc curl
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Generate C sources via VM
+        run: |
+          CGEN="std/compiler/cgen.a"
+          cargo run --quiet -- run "$CGEN" -- src/cli.a > /tmp/cli.c 2>/dev/null
+          cargo run --quiet -- run "$CGEN" -- src/lsp.a > /tmp/lsp.c 2>/dev/null
+
+      - name: Detect stack flags
+        id: flags
+        run: |
+          OS=$(uname -s)
+          if [ "$OS" = "Darwin" ]; then
+            echo "stack=-Wl,-stack_size,0x10000000" >> "$GITHUB_OUTPUT"
+          else
+            echo "stack=-Wl,-z,stacksize=268435456" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build native binaries
+        run: |
+          CC=${{ matrix.gcc }}
+          STACK="${{ steps.flags.outputs.stack }}"
+          $CC /tmp/cli.c c_runtime/runtime.c -o a -I c_runtime -lm -O2 $STACK
+          $CC /tmp/lsp.c c_runtime/runtime.c -o a-lsp -I c_runtime -lm -O2 $STACK
+
+      - name: Package release tarball
+        run: |
+          VERSION=${GITHUB_REF_NAME}
+          ARCHIVE="a-${VERSION}-${{ matrix.target }}.tar.gz"
+          tar czf "$ARCHIVE" a a-lsp README.md
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "*.tar.gz"
+          generate_release_notes: true

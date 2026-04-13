@@ -33,7 +33,12 @@ fn _generate_c(source_path) -> str {
 }
 
 fn _gcc_flags() -> str {
-  ret "-lm -O2 -Wl,-stack_size,0x10000000"
+  let uname_result = exec("uname -s")
+  let os = str.trim(uname_result["stdout"])
+  if os == "Darwin" {
+    ret "-lm -O2 -Wl,-stack_size,0x10000000"
+  }
+  ret "-lm -O2 -Wl,-z,stacksize=268435456"
 }
 
 fn _gcc(c_path, out_path, runtime_dir) {

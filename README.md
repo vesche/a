@@ -17,6 +17,10 @@ Every design choice -- grammar, keywords, type system, builtins -- optimizes for
 
 ## Build
 
+**Requirements:** gcc (or any C99 compiler), curl (for HTTP builtins). Supported platforms: Linux x86_64, Linux arm64, macOS arm64.
+
+Pre-built binaries are available on the [Releases](../../releases) page.
+
 ```bash
 # Option 1: Native CLI (recommended)
 ./build.sh                  # builds ./a from source via the VM
