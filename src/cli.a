@@ -1,0 +1,247 @@
+use std.compiler.cgen
+use std.compiler.parser
+use std.path
+use std.cli
+
+fn _die(msg) {
+  eprintln(cli.red(str.concat("error: ", msg)))
+  exit(1)
+}
+
+fn _find_runtime_dir() -> str {
+  let candidates = ["c_runtime", "../c_runtime"]
+  for dir in candidates {
+    if fs.exists(str.concat(dir, "/runtime.c")) { ret dir }
+  }
+  _die("cannot find c_runtime/ directory (runtime.c + runtime.h). Run from the project root.")
+  ret ""
+}
+
+fn _generate_c(source_path) -> str {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    _die(str.concat("cannot read file: ", source_path))
+  }
+  let prog_ast = parser.parse(source)
+  if type_of(prog_ast) == "map" && map.has(prog_ast, "tag") {
+    if prog_ast["tag"] == "ParseError" {
+      _die(str.concat("parse error: ", str.concat(prog_ast["msg"], str.concat(" at token ", to_str(prog_ast["pos"])))))
+    }
+  }
+  let bm = cgen._builtin_map()
+  ret cgen.emit_program(prog_ast, bm)
+}
+
+fn _gcc_flags() -> str {
+  ret "-lm -O2 -Wl,-stack_size,0x10000000"
+}
+
+fn _gcc(c_path, out_path, runtime_dir) {
+  let runtime_c = str.concat(runtime_dir, "/runtime.c")
+  let include_flag = str.concat("-I ", runtime_dir)
+  let cmd = str.join([
+    "gcc", c_path, runtime_c,
+    "-o", out_path,
+    include_flag,
+    _gcc_flags()
+  ], " ")
+  let result = exec(cmd)
+  if result["code"] != 0 {
+    eprintln(cli.red("gcc compilation failed:"))
+    if len(result["stdout"]) > 0 { eprintln(result["stdout"]) }
+    if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+    exit(1)
+  }
+}
+
+fn _tmp_path(suffix) -> str {
+  let ts = to_str(time.now())
+  ret str.concat("/tmp/a_cli_", str.concat(ts, suffix))
+}
+
+fn cmd_cc(source_path, out_file) {
+  let c_code = _generate_c(source_path)
+  if len(out_file) > 0 {
+    io.write_file(out_file, c_code)
+  } else {
+    print(c_code)
+  }
+}
+
+fn _codegen_subprocess(source_path, c_path) {
+  let self = argv0()
+  let cmd = str.join([self, "cc", source_path, "-o", c_path], " ")
+  let mut attempts = 0
+  let max_attempts = 5
+  while attempts < max_attempts {
+    let result = exec(cmd)
+    if result["code"] == 0 { ret }
+    attempts = attempts + 1
+    if attempts == max_attempts {
+      eprintln(cli.red(str.concat("codegen failed after ", str.concat(to_str(max_attempts), " attempts"))))
+      if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+      exit(1)
+    }
+  }
+}
+
+fn cmd_build(source_path, out_path) {
+  let runtime_dir = _find_runtime_dir()
+  let c_path = _tmp_path(".c")
+  _codegen_subprocess(source_path, c_path)
+  _gcc(c_path, out_path, runtime_dir)
+  fs.rm(c_path)
+  eprintln(str.concat(cli.green("built"), str.concat(" ", out_path)))
+}
+
+fn cmd_run(source_path, extra_args) {
+  let runtime_dir = _find_runtime_dir()
+  let c_path = _tmp_path(".c")
+  let bin_path = _tmp_path("")
+  _codegen_subprocess(source_path, c_path)
+  _gcc(c_path, bin_path, runtime_dir)
+  fs.rm(c_path)
+
+  let mut run_cmd = bin_path
+  if len(extra_args) > 0 {
+    run_cmd = str.concat(bin_path, str.concat(" ", str.join(extra_args, " ")))
+  }
+  let result = exec(run_cmd)
+  if len(result["stdout"]) > 0 { print(result["stdout"]) }
+  if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+  fs.rm(bin_path)
+  if result["code"] != 0 { exit(result["code"]) }
+}
+
+fn cmd_test(test_dir) {
+  let runtime_dir = _find_runtime_dir()
+  let self = argv0()
+  let entries = fs.ls(test_dir)
+  let mut test_files = []
+  for entry in entries {
+    let name = entry["name"]
+    if str.starts_with(name, "test_") && str.ends_with(name, ".a") {
+      test_files = push(test_files, path.join(test_dir, name))
+    }
+  }
+
+  if len(test_files) == 0 {
+    eprintln(str.concat("no test_*.a files found in ", test_dir))
+    exit(1)
+  }
+
+  test_files = sort(test_files)
+  let mut passed = 0
+  let mut failed = 0
+  let flags = _gcc_flags()
+
+  for src in test_files {
+    let name = path.basename(src)
+    let c_path = _tmp_path(".c")
+    let bin_path = _tmp_path("")
+
+    let c_code = _generate_c(src)
+    io.write_file(c_path, c_code)
+
+    let gcc_result = exec(str.join([
+      "gcc", c_path, str.concat(runtime_dir, "/runtime.c"),
+      "-o", bin_path,
+      str.concat("-I ", runtime_dir),
+      flags
+    ], " "))
+
+    fs.rm(c_path)
+
+    if gcc_result["code"] != 0 {
+      println(str.concat("  ", str.concat(cli.red("FAIL"), str.concat(" ", str.concat(name, " (compile error)")))))
+      failed = failed + 1
+    } else {
+      let run_result = exec(bin_path)
+      fs.rm(bin_path)
+      if run_result["code"] == 0 {
+        println(str.concat("  ", str.concat(cli.green("PASS"), str.concat(" ", name))))
+        passed = passed + 1
+      } else {
+        println(str.concat("  ", str.concat(cli.red("FAIL"), str.concat(" ", str.concat(name, str.concat(" (exit ", str.concat(to_str(run_result["code"]), ")")))))))
+        if len(run_result["stdout"]) > 0 { println(run_result["stdout"]) }
+        failed = failed + 1
+      }
+    }
+  }
+
+  println("")
+  println(str.concat(to_str(passed), str.concat(" passed, ", str.concat(to_str(failed), " failed"))))
+  if failed > 0 { exit(1) }
+}
+
+fn _usage() {
+  eprintln("a -- the a language native toolchain")
+  eprintln("")
+  eprintln("usage:")
+  eprintln("  a run <file.a> [args...]    compile and run a program")
+  eprintln("  a build <file.a> [-o out]   compile to native binary")
+  eprintln("  a cc <file.a>              emit C to stdout")
+  eprintln("  a test <dir/>              run test_*.a files in directory")
+  eprintln("")
+  eprintln("  a run and a build expect c_runtime/ in the current directory.")
+}
+
+fn main() {
+  let argv = args()
+  if len(argv) == 0 {
+    _usage()
+    exit(1)
+  }
+
+  let subcmd = argv[0]
+
+  if subcmd == "cc" {
+    if len(argv) < 2 { _die("cc requires a source file") }
+    let mut cc_out = ""
+    if len(argv) >= 4 && argv[2] == "-o" {
+      cc_out = argv[3]
+    }
+    cmd_cc(argv[1], cc_out)
+    ret
+  }
+
+  if subcmd == "build" {
+    if len(argv) < 2 { _die("build requires a source file") }
+    let source = argv[1]
+    let mut out = path.stem(source)
+    let mut i = 2
+    while i < len(argv) {
+      if argv[i] == "-o" && i + 1 < len(argv) {
+        out = argv[i + 1]
+        i = i + 2
+      } else {
+        i = i + 1
+      }
+    }
+    cmd_build(source, out)
+    ret
+  }
+
+  if subcmd == "run" {
+    if len(argv) < 2 { _die("run requires a source file") }
+    let source = argv[1]
+    let mut extra = []
+    if len(argv) > 2 {
+      let mut i = 2
+      while i < len(argv) {
+        extra = push(extra, argv[i])
+        i = i + 1
+      }
+    }
+    cmd_run(source, extra)
+    ret
+  }
+
+  if subcmd == "test" {
+    if len(argv) < 2 { _die("test requires a directory") }
+    cmd_test(argv[1])
+    ret
+  }
+
+  _die(str.concat("unknown command: ", subcmd))
+}

@@ -1005,6 +1005,11 @@ AValue a_args(void) {
     return (AValue){.tag = TAG_ARRAY, .aval = arr};
 }
 
+AValue a_argv0(void) {
+    if (g_argc > 0 && g_argv[0]) return a_string(g_argv[0]);
+    return a_string("a");
+}
+
 void a_fail(AValue v) {
     fprintf(stderr, "runtime error: ");
     a_eprintln(v);

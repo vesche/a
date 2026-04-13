@@ -1,6 +1,11 @@
 # Rust build artifacts
 /target/
 
+# Native CLI binary (built via ./build.sh)
+/a
+/a2
+/a3
+
 # Precompiled bytecode cache (regenerated at runtime)
 *.ac
 

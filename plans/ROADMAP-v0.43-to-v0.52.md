@@ -4,14 +4,14 @@
 
 ## Where We Are
 
-At v0.48, the native path has complete surface coverage -- every std module compiles natively:
+At v0.49, the language has a native CLI that makes it actually usable:
 
 1. **VM path** (Rust-hosted): Full language -- closures, HOFs, pattern matching, destructuring, try/catch, concurrency, eval, metaprogramming, 100+ builtins, 20 stdlib modules, 498 tests.
-2. **Native path** (C codegen): Most language features + FFI + memory management + complete builtin surface -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn`, `ptr` type, RC ownership, arena, GC, goto-based cleanup (44% code reduction), 105+ builtins, SHA-256/MD5 hashing, JSON stringify/pretty, HTTP client, POSIX time/fs/env, self-hosting bootstrap (7,004 lines C, three-stage fixed point verified), 12 std modules compiling natively, 15 example programs.
+2. **Native path** (C codegen): Most language features + FFI + memory management + complete builtin surface + native CLI -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn`, `ptr` type, RC ownership, arena, GC, goto-based cleanup (44% code reduction), 105+ builtins, SHA-256/MD5 hashing, JSON stringify/pretty, HTTP client, POSIX time/fs/env, self-hosting bootstrap (7,755 lines C, three-stage fixed point verified), 12 std modules compiling natively, 15 example programs, `./a run|build|cc|test` CLI.
 
-**What's done** (v0.43-v0.48): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing/stringify, module imports, else-if codegen, index assignment, map iteration, test harness, C FFI, RC ownership, arena, GC, goto cleanup optimization, try block return fix, math/time/hash/http/fs/env builtins, full std module native compilation.
+**What's done** (v0.43-v0.49): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing/stringify, module imports, else-if codegen, index assignment, map iteration, test harness, C FFI, RC ownership, arena, GC, goto cleanup optimization, try block return fix, math/time/hash/http/fs/env builtins, full std module native compilation, native CLI driver with run/build/cc/test subcommands, self-hosting CLI, site_gen.a end-to-end proof.
 
-**What remains**: package manager (v0.49), and everything beyond.
+**What remains**: package manager (v0.50), and everything beyond.
 
 ---
 
@@ -268,7 +268,47 @@ After v0.48, the native `ac` binary is fully self-contained. It can compile "a" 
 
 ---
 
-## v0.49 -- Package Manager
+## v0.49 -- The Native CLI ✅
+
+**One command. No flags to remember.** A native CLI driver written in "a" that makes the language actually usable: `./a run`, `./a build`, `./a cc`, `./a test`. Self-hosting -- the CLI compiles its own source code. End-to-end proof: `./a run examples/site_gen.a` generates a static site using 6 stdlib modules.
+
+### What Was Delivered
+
+1. **CLI driver** (`src/cli.a`, ~170 lines): Parses subcommands from `args()`, orchestrates compile-to-C + gcc + execute pipeline, handles errors with colored output.
+2. **Subcommands**: `run` (compile & execute), `build` (compile to binary), `cc` (emit C), `test` (scan test_*.a, compile, run, report pass/fail).
+3. **Subprocess codegen**: `build`/`run` shell out to themselves (`./a cc file.a -o tmp.c`) for code generation, so cgen runs in a child process with fresh stack. Retries up to 5 times for ARM64 ASLR resilience.
+4. **Self-hosting**: `./a build src/cli.a -o a2` produces a working binary. Full chain: a → a2 → a3.
+5. **End-to-end proof**: `./a run examples/site_gen.a` generates 3 HTML pages with template rendering, CSV parsing, SHA-256 checksums, base64 encoding, and a JSON manifest.
+6. **Bootstrap script**: `./build.sh` bootstraps the native CLI from the VM in two steps.
+7. **Test suite**: 4 native tests (basics, closures, results, I/O) all passing via `./a test tests/native/`.
+8. **New builtins**: `argv0()` for executable path discovery.
+9. **Template module refactor**: Flattened deep if/else nesting in `_tokenize` and `_eval_tokens` to reduce generated C stack pressure.
+
+### Verification
+
+- `./a run examples/hello.a` -- "hello from a — by AI, for AI"
+- `./a run examples/fibonacci.a` -- correct Fibonacci sequence
+- `./a run examples/site_gen.a` -- 3 pages, checksums, base64 manifest
+- `./a build src/cli.a -o a2` + `./a2 build src/cli.a -o a3` -- self-hosting chain
+- `./a test tests/native/` -- 4/4 pass
+- `./build.sh` -- clean bootstrap in ~45 seconds
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/cli.a` | NEW -- native CLI driver (~170 lines) |
+| `build.sh` | NEW -- bootstrap script |
+| `tests/native/` | NEW -- 4 native test files |
+| `c_runtime/runtime.c` | Added `a_argv0()` |
+| `c_runtime/runtime.h` | Added `a_argv0()` declaration |
+| `std/compiler/cgen.a` | Added `argv0` to builtin map (in m4) |
+| `std/template.a` | Refactored `_tokenize` and `_eval_tokens` to reduce nesting depth |
+| `examples/site_gen.a` | Refactored to avoid `{{` in string literals (triggers interpolation parser) |
+
+---
+
+## v0.50 -- Package Manager
 
 **Reusable code, dependency management.** The language needs a way to share and consume libraries beyond the standard library.
 
@@ -420,10 +460,11 @@ This is the destination. Everything from v0.43 to v0.51 is the road.
 | **v0.46** ✅ | C FFI | `extern fn`, ptr type, type marshalling, shim gen | Access entire C ecosystem |
 | **v0.47** ✅ | Memory Architecture | RC ownership, arenas, GC | Production-grade native runtime |
 | **v0.48** ✅ | Stabilize + Native Surface | Goto cleanup, try fix, 30+ builtins, HTTP, hash | Every std module compiles natively |
-| **v0.49** | Package Manager | deps, registry, lockfile | Reusable libraries |
-| **v0.50** | Language Server | LSP in "a" | IDE intelligence |
-| **v0.51** | WebAssembly Target | Compile to WASM | Run in browsers/edge |
-| **v0.52** | Final Bootstrap | Full toolchain in "a" | Complete independence |
+| **v0.49** ✅ | The Native CLI | `./a run\|build\|cc\|test`, self-hosting, site_gen proof | Language is actually usable |
+| **v0.50** | Package Manager | deps, registry, lockfile | Reusable libraries |
+| **v0.51** | Language Server | LSP in "a" | IDE intelligence |
+| **v0.52** | WebAssembly Target | Compile to WASM | Run in browsers/edge |
+| **v0.53** | Final Bootstrap | Full toolchain in "a" | Complete independence |
 
 ---
 

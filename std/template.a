@@ -47,6 +47,21 @@ fn _find_else(tokens, start: int, end_idx: int, open_tag: str, close_tag: str) -
   ret -1
 }
 
+fn _classify_tag(tag_content) {
+  if str.starts_with(tag_content, "#if ") {
+    let key = str.trim(str.slice(tag_content, 4, len(tag_content)))
+    ret #{"tag": "if", "key": key}
+  }
+  if str.starts_with(tag_content, "#each ") {
+    let key = str.trim(str.slice(tag_content, 6, len(tag_content)))
+    ret #{"tag": "each", "key": key}
+  }
+  if tag_content == "/if" { ret #{"tag": "endif"} }
+  if tag_content == "/each" { ret #{"tag": "endeach"} }
+  if tag_content == "#else" { ret #{"tag": "else"} }
+  ret #{"tag": "var", "key": tag_content}
+}
+
 fn _tokenize(tmpl: str) -> [any] {
   let lb = _lbrace()
   let rb = _rbrace()
@@ -57,50 +72,23 @@ fn _tokenize(tmpl: str) -> [any] {
   let mut text = ""
   while i < n {
     if i + 1 < n {
-      if chars[i] == lb {
-        if chars[i + 1] == lb {
-          if text != "" {
-            tokens = push(tokens, text)
-            text = ""
-          }
-          i = i + 2
-          let mut tag_content = ""
-          while i + 1 < n {
-            if chars[i] == rb {
-              if chars[i + 1] == rb {
-                i = i + 2
-                break
-              }
-            }
-            tag_content = str.concat(tag_content, chars[i])
-            i = i + 1
-          }
-          tag_content = str.trim(tag_content)
-          if str.starts_with(tag_content, "#if ") {
-            let key = str.trim(str.slice(tag_content, 4, len(tag_content)))
-            tokens = push(tokens, #{"tag": "if", "key": key})
-          } else {
-            if str.starts_with(tag_content, "#each ") {
-              let key = str.trim(str.slice(tag_content, 6, len(tag_content)))
-              tokens = push(tokens, #{"tag": "each", "key": key})
-            } else {
-              if tag_content == "/if" {
-                tokens = push(tokens, #{"tag": "endif"})
-              } else {
-                if tag_content == "/each" {
-                  tokens = push(tokens, #{"tag": "endeach"})
-                } else {
-                  if tag_content == "#else" {
-                    tokens = push(tokens, #{"tag": "else"})
-                  } else {
-                    tokens = push(tokens, #{"tag": "var", "key": tag_content})
-                  }
-                }
-              }
-            }
-          }
-          continue
+      if chars[i] == lb && chars[i + 1] == lb {
+        if text != "" {
+          tokens = push(tokens, text)
+          text = ""
         }
+        i = i + 2
+        let mut tag_content = ""
+        while i + 1 < n {
+          if chars[i] == rb && chars[i + 1] == rb {
+            i = i + 2
+            break
+          }
+          tag_content = str.concat(tag_content, chars[i])
+          i = i + 1
+        }
+        tokens = push(tokens, _classify_tag(str.trim(tag_content)))
+        continue
       }
     }
     text = str.concat(text, chars[i])
@@ -110,6 +98,62 @@ fn _tokenize(tmpl: str) -> [any] {
     tokens = push(tokens, text)
   }
   ret tokens
+}
+
+fn _resolve_var(vars, key) -> str {
+  if key == "." && map.has(vars, "__dot__") { ret to_str(vars["__dot__"]) }
+  if key == "@index" && map.has(vars, "__index__") { ret to_str(vars["__index__"]) }
+  if map.has(vars, key) { ret to_str(map.get(vars, key)) }
+  ret ""
+}
+
+fn _eval_if(tokens, i, vars) -> [any] {
+  let t = tokens[i]
+  let close_idx = _find_close(tokens, i + 1, "if", "endif")
+  let else_idx = _find_else(tokens, i + 1, close_idx, "if", "endif")
+  let val = map.get(vars, t["key"])
+  let mut result = ""
+  if _is_truthy(val) {
+    let body_end = close_idx
+    if else_idx >= 0 { body_end = else_idx }
+    result = _eval_tokens(tokens, i + 1, body_end, vars)
+  } else {
+    if else_idx >= 0 {
+      result = _eval_tokens(tokens, else_idx + 1, close_idx, vars)
+    }
+  }
+  ret [result, close_idx + 1]
+}
+
+fn _eval_each(tokens, i, vars) -> [any] {
+  let t = tokens[i]
+  let close_idx = _find_close(tokens, i + 1, "each", "endeach")
+  let else_idx = _find_else(tokens, i + 1, close_idx, "each", "endeach")
+  let arr = map.get(vars, t["key"])
+  let mut result = ""
+  if type_of(arr) != "array" || len(arr) == 0 {
+    if type_of(arr) == "array" && len(arr) == 0 && else_idx >= 0 {
+      result = _eval_tokens(tokens, else_idx + 1, close_idx, vars)
+    }
+    if type_of(arr) != "array" && else_idx >= 0 {
+      result = _eval_tokens(tokens, else_idx + 1, close_idx, vars)
+    }
+    ret [result, close_idx + 1]
+  }
+  let body_end = close_idx
+  if else_idx >= 0 { body_end = else_idx }
+  let mut idx = 0
+  for item in arr {
+    let mut iv = map.set(map.set(vars, "__dot__", item), "__index__", idx)
+    if type_of(item) == "map" {
+      for k in map.keys(item) {
+        iv = map.set(iv, k, map.get(item, k))
+      }
+    }
+    result = str.concat(result, _eval_tokens(tokens, i + 1, body_end, iv))
+    idx = idx + 1
+  }
+  ret [result, close_idx + 1]
 }
 
 fn _eval_tokens(tokens, start: int, end_idx: int, vars) -> str {
@@ -124,78 +168,23 @@ fn _eval_tokens(tokens, start: int, end_idx: int, vars) -> str {
     }
     let tag = t["tag"]
     if tag == "var" {
-      let key = t["key"]
-      if key == "." {
-        if map.has(vars, "__dot__") {
-          out = str.concat(out, to_str(vars["__dot__"]))
-        }
-      } else {
-        if key == "@index" {
-          if map.has(vars, "__index__") {
-            out = str.concat(out, to_str(vars["__index__"]))
-          }
-        } else {
-          if map.has(vars, key) {
-            out = str.concat(out, to_str(map.get(vars, key)))
-          }
-        }
-      }
+      out = str.concat(out, _resolve_var(vars, t["key"]))
       i = i + 1
-    } else {
-      if tag == "if" {
-        let close_idx = _find_close(tokens, i + 1, "if", "endif")
-        let else_idx = _find_else(tokens, i + 1, close_idx, "if", "endif")
-        let key = t["key"]
-        let val = map.get(vars, key)
-        if _is_truthy(val) {
-          let body_end = close_idx
-          if else_idx >= 0 { body_end = else_idx }
-          out = str.concat(out, _eval_tokens(tokens, i + 1, body_end, vars))
-        } else {
-          if else_idx >= 0 {
-            out = str.concat(out, _eval_tokens(tokens, else_idx + 1, close_idx, vars))
-          }
-        }
-        i = close_idx + 1
-      } else {
-        if tag == "each" {
-          let close_idx = _find_close(tokens, i + 1, "each", "endeach")
-          let else_idx = _find_else(tokens, i + 1, close_idx, "each", "endeach")
-          let key = t["key"]
-          let arr = map.get(vars, key)
-          if type_of(arr) == "array" {
-            if len(arr) == 0 {
-              if else_idx >= 0 {
-                out = str.concat(out, _eval_tokens(tokens, else_idx + 1, close_idx, vars))
-              }
-            } else {
-              let body_end = close_idx
-              if else_idx >= 0 { body_end = else_idx }
-              let mut idx = 0
-              for item in arr {
-                let mut inner_vars = vars
-                inner_vars = map.set(inner_vars, "__dot__", item)
-                inner_vars = map.set(inner_vars, "__index__", idx)
-                if type_of(item) == "map" {
-                  for k in map.keys(item) {
-                    inner_vars = map.set(inner_vars, k, map.get(item, k))
-                  }
-                }
-                out = str.concat(out, _eval_tokens(tokens, i + 1, body_end, inner_vars))
-                idx = idx + 1
-              }
-            }
-          } else {
-            if else_idx >= 0 {
-              out = str.concat(out, _eval_tokens(tokens, else_idx + 1, close_idx, vars))
-            }
-          }
-          i = close_idx + 1
-        } else {
-          i = i + 1
-        }
-      }
+      continue
     }
+    if tag == "if" {
+      let r = _eval_if(tokens, i, vars)
+      out = str.concat(out, r[0])
+      i = int(r[1])
+      continue
+    }
+    if tag == "each" {
+      let r = _eval_each(tokens, i, vars)
+      out = str.concat(out, r[0])
+      i = int(r[1])
+      continue
+    }
+    i = i + 1
   }
   ret out
 }

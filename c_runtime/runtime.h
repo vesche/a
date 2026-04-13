@@ -180,6 +180,7 @@ AValue a_expect(AValue v, AValue msg);
 /* Utility */
 AValue a_type_of(AValue v);
 AValue a_args(void);
+AValue a_argv0(void);
 void a_fail(AValue v);
 AValue a_to_int(AValue v);
 AValue a_to_float(AValue v);

@@ -4,26 +4,42 @@ A programming language by AI, for AI.
 
 Every design choice -- grammar, keywords, type system, builtins -- optimizes for what matters when AI writes and reads code: zero ambiguity, explicit data flow, token efficiency, and batteries included.
 
+## Quick Start
+
+```bash
+./build.sh                  # bootstrap the native CLI from source
+./a run program.a           # compile and run in one step
+./a build program.a -o out  # compile to native binary
+./a test tests/native/      # run test suite
+./a cc program.a            # emit C to stdout
+```
+
 ## Build
 
-```
+```bash
+# Option 1: Native CLI (recommended)
+./build.sh                  # builds ./a from source via the VM
+
+# Option 2: Rust VM only
 cargo build --release
 ```
 
 ## Usage
 
 ```
-a run program.a          # execute (bytecode VM, fast)
-a test tests/test_re.a   # run test_* functions with pass/fail reporting
-a interp program.a       # execute (tree-walking interpreter, legacy)
-a check program.a        # type check
-a fmt program.a          # format
-a ast program.a          # dump AST as JSON
+# Native CLI (fast, self-contained)
+./a run program.a           # compile to C, build, execute, clean up
+./a build program.a         # compile to native binary
+./a build program.a -o out  # compile to native binary with custom name
+./a cc program.a            # emit C to stdout
+./a test tests/native/      # find test_*.a files, compile, run, report
 
-# Compile to native via C
-a run std/compiler/cgen.a -- program.a > program.c
-gcc program.c c_runtime/runtime.c -o program -I c_runtime -lm -O2
-./program
+# Rust VM
+a run program.a             # execute (bytecode VM)
+a test tests/test_re.a      # run test_* functions with pass/fail reporting
+a check program.a           # type check
+a fmt program.a             # format
+a ast program.a             # dump AST as JSON
 ```
 
 ## The language in 60 seconds
@@ -114,13 +130,16 @@ use std.lexer                 # legacy tokenizer
 
 ## Self-hosting
 
-The "a" compiler is fully self-hosting through native compilation with **automatic memory management** and **complete builtin coverage**. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,000 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 105+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. The native binary reads source files from disk, compiles them, and produces identical output across a three-stage bootstrap. All 12 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The "a" compiler and CLI are fully self-hosting. The native `./a` binary compiles its own source code to produce a working copy of itself:
 
+```bash
+./build.sh                            # bootstrap: VM -> C -> native ./a
+./a build src/cli.a -o a2             # self-hosting: ./a compiles itself
+./a2 build src/cli.a -o a3            # a2 compiles itself too
+./a3 run examples/hello.a            # a3 works
 ```
-a run std/compiler/cgen.a -- std/compiler/cgen.a > ac.c     # "a" compiles itself to C
-gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O1 -Wl,-stack_size,0x8000000
-./ac program.a > program.c                                     # native compiler works
-```
+
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,700 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 105+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. All 12 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -184,8 +203,9 @@ fn main() -> void {
 | `examples/resilient.a` | 91 | error-resilient HTTP workflow with retries |
 | `examples/api_workflow.a` | 61 | multi-step API orchestration |
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
-| `examples/site_gen.a` | 99 | static site generator using path, datetime, hash, csv, template, encoding |
+| `examples/site_gen.a` | 100 | static site generator using path, datetime, hash, csv, template, encoding (runs natively) |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
+| `src/cli.a` | ~170 | **native CLI driver** -- `run`, `build`, `cc`, `test` subcommands; self-hosting (compiles itself) |
 | `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
 
 ## Stats

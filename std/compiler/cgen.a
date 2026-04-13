@@ -55,7 +55,8 @@ fn _builtin_map() -> map {
     "min_by": "a_hof_min_by", "max_by": "a_hof_max_by",
     "enumerate": "a_enumerate", "zip": "a_zip",
     "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk",
-    "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null"
+    "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null",
+    "argv0": "a_argv0"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }

@@ -1,0 +1,28 @@
+fn main() {
+  ; Arithmetic
+  if 2 + 3 != 5 { fail("2 + 3 should be 5") }
+  if 10 - 3 != 7 { fail("10 - 3 should be 7") }
+  if 4 * 5 != 20 { fail("4 * 5 should be 20") }
+
+  ; Strings
+  if str.concat("hello", " world") != "hello world" { fail("concat failed") }
+  if len("abc") != 3 { fail("len failed") }
+  if str.upper("abc") != "ABC" { fail("upper failed") }
+  if str.trim("  hi  ") != "hi" { fail("trim failed") }
+
+  ; Arrays
+  let arr = [1, 2, 3]
+  if len(arr) != 3 { fail("array len failed") }
+  if arr[0] != 1 { fail("array index failed") }
+  let arr2 = push(arr, 4)
+  if len(arr2) != 4 { fail("push failed") }
+
+  ; Maps
+  let m = #{"a": 1, "b": 2}
+  if m["a"] != 1 { fail("map index failed") }
+  if map.has(m, "c") { fail("map.has false positive") }
+  let m2 = map.set(m, "c", 3)
+  if m2["c"] != 3 { fail("map.set failed") }
+
+  println("all basics passed")
+}

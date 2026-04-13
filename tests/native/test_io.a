@@ -1,0 +1,11 @@
+fn main() {
+  let tmp = "/tmp/a_test_io_file.txt"
+  io.write_file(tmp, "hello from test_io")
+  let content = io.read_file(tmp)
+  if content != "hello from test_io" { fail("read/write mismatch") }
+  if !fs.exists(tmp) { fail("file should exist") }
+  if fs.is_dir(tmp) { fail("file is not a dir") }
+  fs.rm(tmp)
+  if fs.exists(tmp) { fail("file should be deleted") }
+  println("all io tests passed")
+}

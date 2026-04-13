@@ -8,15 +8,49 @@ use std.csv
 use std.template
 use std.encoding
 
+fn _lb() -> str { ret from_code(123) }
+fn _rb() -> str { ret from_code(125) }
+
+; Build a template tag like {{key}} without literal braces in source
+fn _tag(key) -> str {
+  ret str.concat(_lb(), str.concat(_lb(), str.concat(key, str.concat(_rb(), _rb()))))
+}
+
+fn make_template() -> str {
+  ret str.join([
+    "<html>",
+    str.concat("<head><title>", str.concat(_tag("title"), "</title></head>")),
+    "<body>",
+    str.concat("<nav>", str.concat(_tag("nav"), "</nav>")),
+    str.concat("<h1>", str.concat(_tag("title"), "</h1>")),
+    str.concat("<p>", str.concat(_tag("body"), "</p>")),
+    "<footer>",
+    str.concat("<p>Generated: ", str.concat(_tag("generated"), "</p>")),
+    str.concat("<p>Checksum: ", str.concat(_tag("checksum"), "</p>")),
+    "</footer>",
+    "</body>",
+    "</html>"
+  ], "\n")
+}
+
+fn make_vars(page, nav_html, build_time) {
+  let body_hash = hash.quick(page["body"])
+  let mut v = #{}
+  v = map.set(v, "title", page["title"])
+  v = map.set(v, "body", page["body"])
+  v = map.set(v, "nav", nav_html)
+  v = map.set(v, "generated", build_time)
+  v = map.set(v, "checksum", body_hash)
+  ret v
+}
+
 fn main() -> void effects [io] {
   let site_dir = "/tmp/a_site_gen"
   let build_dir = path.join(site_dir, "build")
 
-  ; Setup: create site directory structure
   fs.mkdir(site_dir)
   fs.mkdir(build_dir)
 
-  ; Create a CSV data file listing pages
   let pages_csv = csv.stringify([
     ["slug", "title", "body"],
     ["index", "Home", "Welcome to my site built with the a language."],
@@ -25,75 +59,45 @@ fn main() -> void effects [io] {
   ])
   io.write_file(path.join(site_dir, "pages.csv"), pages_csv)
 
-  ; Create an HTML template (use raw strings for {{ }} delimiters)
-  let tmpl = str.join([
-    "<html>",
-    r#"<head><title>{{title}}</title></head>"#,
-    "<body>",
-    r#"<nav>{{nav}}</nav>"#,
-    r#"<h1>{{title}}</h1>"#,
-    r#"<p>{{body}}</p>"#,
-    "<footer>",
-    r#"<p>Generated: {{generated}}</p>"#,
-    r#"<p>Checksum: {{checksum}}</p>"#,
-    "</footer>",
-    "</body>",
-    "</html>"
-  ], "\n")
+  let tmpl = make_template()
   io.write_file(path.join(site_dir, "template.html"), tmpl)
 
-  ; Load and parse pages
   let pages_text = io.read_file(path.join(site_dir, "pages.csv"))
   let pages = csv.parse_records(pages_text)
 
-  ; Build navigation
   let mut nav_parts = []
   for page in pages {
-    let link = str.concat(str.concat("<a href=\"", str.concat(page["slug"], ".html")), str.concat("\">", str.concat(page["title"], "</a>")))
+    let link = str.concat("<a href=\"", str.concat(page["slug"], str.concat(".html\">", str.concat(page["title"], "</a>"))))
     nav_parts = push(nav_parts, link)
   }
   let nav_html = str.join(nav_parts, " | ")
 
-  ; Load template from file
   let tmpl_content = io.read_file(path.join(site_dir, "template.html"))
 
-  ; Generate each page
   let build_time = datetime.iso(datetime.now())
-  let mut generated = 0
+  let mut generated_count = 0
   for page in pages {
-    let body_hash = hash.quick(page["body"])
-    let vars = #{
-      "title": page["title"],
-      "body": page["body"],
-      "nav": nav_html,
-      "generated": build_time,
-      "checksum": body_hash
-    }
+    let vars = make_vars(page, nav_html, build_time)
     let html = template.render(tmpl_content, vars)
     let out_path = path.join(build_dir, path.with_extension(page["slug"], "html"))
     io.write_file(out_path, html)
-    generated = generated + 1
+    generated_count = generated_count + 1
     let size = len(html)
-    println("  wrote {out_path} ({size} bytes, checksum {body_hash})")
+    println(str.concat("  wrote ", str.concat(out_path, str.concat(" (", str.concat(to_str(size), str.concat(" bytes, checksum ", str.concat(vars["checksum"], ")")))))))
   }
 
-  ; Generate a build manifest
-  let manifest = #{
-    "pages": generated,
-    "timestamp": build_time,
-    "generator": "a-lang site_gen v0.40"
-  }
+  let mut manifest = #{}
+  manifest = map.set(manifest, "pages", generated_count)
+  manifest = map.set(manifest, "timestamp", build_time)
+  manifest = map.set(manifest, "generator", "a-lang site_gen v0.49")
   io.write_file(path.join(build_dir, "manifest.json"), json.pretty(manifest))
 
-  ; Summary
   println("")
-  println("Built {generated} pages to {build_dir}")
-  println("Build time: {build_time}")
+  println(str.concat("Built ", str.concat(to_str(generated_count), str.concat(" pages to ", build_dir))))
+  println(str.concat("Build time: ", build_time))
 
-  ; Demonstrate encoding: base64-encode the manifest
   let b64 = encoding.base64_encode(json.stringify(manifest))
-  println("Manifest (base64): {b64}")
+  println(str.concat("Manifest (base64): ", b64))
 
-  ; Cleanup
   fs.rm(site_dir)
 }

@@ -1,0 +1,17 @@
+fn apply(f, x) { ret f(x) }
+
+fn main() {
+  let double = fn(x) { ret x * 2 }
+  if apply(double, 5) != 10 { fail("closure apply") }
+
+  let adder = fn(a) { ret fn(b) { ret a + b } }
+  let add5 = adder(5)
+  if add5(3) != 8 { fail("curried closure") }
+  if add5(10) != 15 { fail("curried closure 2") }
+
+  let greeter = fn(prefix) { ret fn(name) { ret str.concat(prefix, str.concat(" ", name)) } }
+  let hello = greeter("Hello")
+  if hello("World") != "Hello World" { fail("string closure") }
+
+  println("all closure tests passed")
+}

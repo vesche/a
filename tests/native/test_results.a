@@ -1,0 +1,19 @@
+fn safe_div(a, b) {
+  if b == 0 { ret Err("division by zero") }
+  ret Ok(a / b)
+}
+
+fn main() {
+  let r1 = safe_div(10, 2)
+  if !is_ok(r1) { fail("should be ok") }
+  if unwrap(r1) != 5 { fail("unwrap failed") }
+
+  let r2 = safe_div(10, 0)
+  if !is_err(r2) { fail("should be err") }
+  if unwrap_or(r2, -1) != -1 { fail("unwrap_or failed") }
+
+  let r3 = try { Ok(42)? }
+  if unwrap(r3) != 42 { fail("try block failed") }
+
+  println("all result tests passed")
+}

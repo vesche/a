@@ -1677,3 +1677,53 @@ All 12 standard library modules compile and run natively:
 
 C runtime: ~2,200 lines. cgen.a: ~1,870 lines. Generated C: ~7,000 lines.
 
+## v0.49 -- The Native CLI
+
+One command to compile, run, and test programs. The CLI is written in "a" (`src/cli.a`, ~170 lines), compiled to C via the self-hosted cgen, and built with gcc. It's self-hosting: `./a build src/cli.a -o a2` produces a working binary.
+
+### Subcommands
+
+| Command | Description |
+|---------|-------------|
+| `./a run file.a` | Compile to C, build with gcc, execute, clean up |
+| `./a build file.a [-o out]` | Compile to native binary |
+| `./a cc file.a [-o file.c]` | Emit C to stdout or file |
+| `./a test dir/` | Find test_*.a files, compile, run, report pass/fail |
+
+### Architecture
+
+- `cmd_cc` runs the code generator in-process for maximum speed
+- `cmd_build`/`cmd_run` shell out to `./a cc` for code generation, running cgen in a subprocess with fresh stack (avoids ARM64 ASLR-dependent stack exhaustion on large files)
+- Retry logic (up to 5 attempts) for subprocess codegen resilience
+- gcc invocation with `-O2 -Wl,-stack_size,0x10000000` (256MB stack)
+- `argv0()` builtin for executable path discovery
+
+### Key Findings
+
+- **String interpolation with `{{`**: The parser hangs when `{{` appears in string literals (triggers interpolation). Fixed by using `from_code(123)` to construct brace characters.
+- **Template module nesting**: Deep if/else chains in `std/template.a` generated enormous C functions. Refactored `_tokenize` to use a `_classify_tag` helper; `_eval_tokens` split into `_resolve_var`, `_eval_if`, `_eval_each`.
+- **Builtin map fragility**: Adding a single entry to the first map in `_builtin_map()` broke self-compilation. Entries must be carefully distributed across the 4 sub-maps.
+- **ARM64 ASLR**: Self-compilation of cli.a (which imports the full compiler) is nondeterministic at ~80% per-attempt success. Subprocess + retry makes it reliable.
+
+### Verification
+
+- `./a run examples/hello.a` -- works
+- `./a run examples/site_gen.a` -- 3 HTML pages generated with template rendering, CSV, SHA-256, base64
+- `./a build src/cli.a -o a2` + `./a2 build src/cli.a -o a3` -- self-hosting chain
+- `./a test tests/native/` -- 4/4 pass (basics, closures, results, I/O)
+- `./build.sh` -- clean bootstrap in ~45 seconds
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/cli.a` | NEW -- native CLI driver |
+| `build.sh` | NEW -- bootstrap script |
+| `tests/native/test_{basics,closures,results,io}.a` | NEW -- native test suite |
+| `c_runtime/runtime.{c,h}` | Added `a_argv0()` |
+| `std/compiler/cgen.a` | Added `argv0` builtin mapping |
+| `std/template.a` | Refactored to reduce nesting depth |
+| `examples/site_gen.a` | Refactored to avoid `{{` in string literals |
+
+CLI: ~170 lines. Generated C: ~7,755 lines. Bootstrap time: ~45 seconds.
+
