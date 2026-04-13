@@ -270,6 +270,16 @@ impl Checker {
                 effects: vec!["io".into()],
             });
         }
+        self.fn_sigs.insert("http.serve".into(), FnSig {
+            params: vec![("port".into(), Type::I64), ("handler".into(), Type::Unknown)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("http.serve_static".into(), FnSig {
+            params: vec![("port".into(), Type::I64), ("dir".into(), Type::Str)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
         for name in &["fs.exists", "fs.is_dir", "fs.is_file"] {
             self.fn_sigs.insert((*name).into(), FnSig {
                 params: vec![("path".into(), Type::Str)],

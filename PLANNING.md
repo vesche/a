@@ -1853,3 +1853,44 @@ Files with shebangs work as both `./a run script.a` and `./script.a` (when `chmo
 | `README.md` | Updated usage with eval, cache clean, shebang |
 | `Cargo.toml` | Version bump to 0.52.0 |
 
+---
+
+## v0.53 -- HTTP Server
+
+### Goal
+
+Add `http.serve(port, handler)` and `http.serve_static(port, dir)` to the C runtime, enabling "a" programs to serve HTTP APIs using POSIX sockets.
+
+### Implementation
+
+Single-threaded HTTP/1.1 server using `socket`/`bind`/`listen`/`accept`:
+
+- **Request parsing**: reads headers until `\r\n\r\n`, parses method/path/headers/body
+- **Handler closure**: called via `a_closure_call(handler, 1, req_map)` where req is `#{ method, path, headers, body }`
+- **Response format**: handler returns `#{ status, headers, body }` with sensible defaults (200, empty headers, empty body)
+- **Static file server**: `http.serve_static(port, dir)` serves files with Content-Type detection for common extensions
+- Both builtins block forever (added to `_void_builtins`)
+- `signal(SIGPIPE, SIG_IGN)` prevents crashes on client disconnect
+- `SO_REUSEADDR` allows quick server restarts
+
+### Testing
+
+Verified with curl:
+- `GET /users` returns JSON array: `[{"id":1,"name":"alice"},{"id":2,"name":"bob"}]`
+- `POST /echo` echoes request body: `{"hello":"world"}`
+- Unknown paths return 404 with `not found`
+- Response headers (Content-Type, Content-Length, Connection) sent correctly
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Added `a_http_serve`, `a_http_serve_static`, HTTP parsing helpers, content-type detection |
+| `c_runtime/runtime.h` | Added declarations for `a_http_serve`, `a_http_serve_static` |
+| `std/compiler/cgen.a` | Added `http.serve`, `http.serve_static` to builtin map and void builtins |
+| `src/builtins.rs` | Added `http.serve`, `http.serve_static` to `is_builtin` with native-only stub |
+| `src/checker.rs` | Added `http.serve`, `http.serve_static` type signatures |
+| `examples/api.a` | NEW -- JSON API server in 20 lines |
+| `README.md` | Added HTTP server to builtins table, api.a to tools table |
+| `Cargo.toml` | Version bump to 0.53.0 |
+

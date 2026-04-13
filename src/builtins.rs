@@ -769,6 +769,9 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
                 Err(AError::runtime("http.delete: expected string url", None))
             }
         }
+        "http.serve" | "http.serve_static" => {
+            Err(AError::runtime("http.serve is only available in the native CLI (./a build/run). Use ./build.sh first.", None))
+        }
 
         // --- Filesystem ---
         "fs.exists" => {
@@ -1358,6 +1361,7 @@ pub fn is_builtin(name: &str) -> bool {
         "env.get" | "env.set" | "env.all" |
         "type_of" | "int" | "float" |
         "http.get" | "http.post" | "http.put" | "http.patch" | "http.delete" |
+        "http.serve" | "http.serve_static" |
         "fs.exists" | "fs.is_dir" | "fs.is_file" | "fs.ls" | "fs.mkdir" |
         "fs.rm" | "fs.mv" | "fs.cp" | "fs.cwd" | "fs.abs" | "fs.glob" |
         "unwrap" | "unwrap_or" | "is_ok" | "is_err" | "expect" |

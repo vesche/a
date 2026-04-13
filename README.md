@@ -102,7 +102,8 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | Domain | Operations |
 |--------|-----------|
 | **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `io.read_file`, `io.write_file` |
-| **HTTP** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) |
+| **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) |
+| **HTTP server** | `http.serve(port, handler)` -- POSIX sockets, closure handler receives `{method, path, headers, body}`, returns `{status, headers, body}`; `http.serve_static(port, dir)` for file serving |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
@@ -216,6 +217,7 @@ fn main() -> void {
 | `examples/api_workflow.a` | 61 | multi-step API orchestration |
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 100 | static site generator using path, datetime, hash, csv, template, encoding (runs natively) |
+| `examples/api.a` | 20 | **JSON API server** -- HTTP server with routing, JSON responses, echo endpoint |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 | `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |

@@ -1599,6 +1599,316 @@ AValue a_http_post(AValue url, AValue body, AValue headers) {
     return http_request("POST", url.sval->data, b, headers);
 }
 
+/* --- HTTP server (POSIX sockets) --- */
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <signal.h>
+
+static int http_recv_all(int fd, char* buf, int cap) {
+    int total = 0;
+    while (total < cap - 1) {
+        int n = (int)recv(fd, buf + total, cap - 1 - total, 0);
+        if (n <= 0) break;
+        total += n;
+        buf[total] = '\0';
+        if (strstr(buf, "\r\n\r\n")) break;
+    }
+    return total;
+}
+
+static AValue http_parse_request(const char* raw, int raw_len, int fd) {
+    AValue req = a_map_new(0);
+    const char* end_of_line = strstr(raw, "\r\n");
+    if (!end_of_line) {
+        req = a_map_set(req, a_string("method"), a_string(""));
+        req = a_map_set(req, a_string("path"), a_string(""));
+        req = a_map_set(req, a_string("headers"), a_map_new(0));
+        req = a_map_set(req, a_string("body"), a_string(""));
+        return req;
+    }
+
+    char first_line[2048];
+    int fl_len = (int)(end_of_line - raw);
+    if (fl_len >= (int)sizeof(first_line)) fl_len = (int)sizeof(first_line) - 1;
+    memcpy(first_line, raw, fl_len);
+    first_line[fl_len] = '\0';
+
+    char method[16] = "", path[2048] = "";
+    sscanf(first_line, "%15s %2047s", method, path);
+    req = a_map_set(req, a_string("method"), a_string(method));
+    req = a_map_set(req, a_string("path"), a_string(path));
+
+    AValue hdrs = a_map_new(0);
+    int content_length = 0;
+    const char* line = end_of_line + 2;
+    while (line < raw + raw_len) {
+        const char* next = strstr(line, "\r\n");
+        if (!next || next == line) break;
+        int llen = (int)(next - line);
+        char hline[4096];
+        if (llen >= (int)sizeof(hline)) llen = (int)sizeof(hline) - 1;
+        memcpy(hline, line, llen);
+        hline[llen] = '\0';
+
+        char* colon = strchr(hline, ':');
+        if (colon) {
+            *colon = '\0';
+            char* val = colon + 1;
+            while (*val == ' ') val++;
+            for (char* p = hline; *p; p++) *p = (char)tolower((unsigned char)*p);
+            hdrs = a_map_set(hdrs, a_string(hline), a_string(val));
+            if (strcmp(hline, "content-length") == 0)
+                content_length = atoi(val);
+        }
+        line = next + 2;
+    }
+    req = a_map_set(req, a_string("headers"), hdrs);
+
+    const char* body_start = strstr(raw, "\r\n\r\n");
+    AValue body = a_string("");
+    if (body_start && content_length > 0) {
+        body_start += 4;
+        int already = raw_len - (int)(body_start - raw);
+        if (already >= content_length) {
+            body = a_string_len(body_start, content_length);
+        } else {
+            char* bbuf = malloc(content_length + 1);
+            memcpy(bbuf, body_start, already);
+            int got = already;
+            while (got < content_length) {
+                int n = (int)recv(fd, bbuf + got, content_length - got, 0);
+                if (n <= 0) break;
+                got += n;
+            }
+            bbuf[got] = '\0';
+            body = a_string_len(bbuf, got);
+            free(bbuf);
+        }
+    }
+    req = a_map_set(req, a_string("body"), body);
+    return req;
+}
+
+static void http_send_response(int fd, AValue resp) {
+    int status = 200;
+    const char* resp_body = "";
+    int body_len = 0;
+
+    if (resp.tag == TAG_MAP) {
+        AValue s = a_map_get(resp, a_string("status"));
+        if (s.tag == TAG_INT) status = (int)s.ival;
+        AValue b = a_map_get(resp, a_string("body"));
+        if (b.tag == TAG_STRING) {
+            resp_body = b.sval->data;
+            body_len = b.sval->len;
+        }
+    }
+
+    const char* reason = "OK";
+    if (status == 201) reason = "Created";
+    else if (status == 204) reason = "No Content";
+    else if (status == 301) reason = "Moved Permanently";
+    else if (status == 302) reason = "Found";
+    else if (status == 304) reason = "Not Modified";
+    else if (status == 400) reason = "Bad Request";
+    else if (status == 401) reason = "Unauthorized";
+    else if (status == 403) reason = "Forbidden";
+    else if (status == 404) reason = "Not Found";
+    else if (status == 405) reason = "Method Not Allowed";
+    else if (status == 500) reason = "Internal Server Error";
+
+    char header[4096];
+    int hlen = snprintf(header, sizeof(header),
+        "HTTP/1.1 %d %s\r\nContent-Length: %d\r\nConnection: close\r\n",
+        status, reason, body_len);
+
+    if (resp.tag == TAG_MAP) {
+        AValue rh = a_map_get(resp, a_string("headers"));
+        if (rh.tag == TAG_MAP) {
+            for (int i = 0; i < rh.mval->len && hlen < (int)sizeof(header) - 256; i++) {
+                hlen += snprintf(header + hlen, sizeof(header) - hlen,
+                    "%s: %s\r\n", rh.mval->keys[i], rh.mval->vals[i].sval->data);
+            }
+        }
+    }
+    hlen += snprintf(header + hlen, sizeof(header) - hlen, "\r\n");
+
+    send(fd, header, hlen, 0);
+    if (body_len > 0) send(fd, resp_body, body_len, 0);
+}
+
+AValue a_http_serve(AValue port, AValue handler) {
+    if (port.tag != TAG_INT) return a_err(a_string("http.serve: port must be int"));
+    if (handler.tag != TAG_CLOSURE) return a_err(a_string("http.serve: handler must be a function"));
+
+    signal(SIGPIPE, SIG_IGN);
+
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) return a_err(a_string("http.serve: socket failed"));
+
+    int opt = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons((uint16_t)port.ival);
+
+    if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(srv);
+        return a_err(a_string("http.serve: bind failed"));
+    }
+    if (listen(srv, 64) < 0) {
+        close(srv);
+        return a_err(a_string("http.serve: listen failed"));
+    }
+
+    fprintf(stderr, "listening on http://0.0.0.0:%d\n", (int)port.ival);
+
+    for (;;) {
+        struct sockaddr_in client;
+        socklen_t clen = sizeof(client);
+        int fd = accept(srv, (struct sockaddr*)&client, &clen);
+        if (fd < 0) continue;
+
+        char buf[65536];
+        int n = http_recv_all(fd, buf, sizeof(buf));
+        if (n <= 0) { close(fd); continue; }
+
+        AValue req = http_parse_request(buf, n, fd);
+        AValue resp = a_closure_call(handler, 1, req);
+
+        if (resp.tag != TAG_MAP) {
+            AValue err_resp = a_map_new(0);
+            err_resp = a_map_set(err_resp, a_string("status"), a_int(500));
+            err_resp = a_map_set(err_resp, a_string("body"), a_string("Internal Server Error"));
+            http_send_response(fd, err_resp);
+        } else {
+            http_send_response(fd, resp);
+        }
+
+        close(fd);
+        a_release(req);
+        a_release(resp);
+    }
+
+    close(srv);
+    return a_void();
+}
+
+/* --- HTTP static file server --- */
+
+static const char* http_content_type(const char* path) {
+    const char* dot = strrchr(path, '.');
+    if (!dot) return "application/octet-stream";
+    if (strcmp(dot, ".html") == 0 || strcmp(dot, ".htm") == 0) return "text/html";
+    if (strcmp(dot, ".css") == 0) return "text/css";
+    if (strcmp(dot, ".js") == 0) return "application/javascript";
+    if (strcmp(dot, ".json") == 0) return "application/json";
+    if (strcmp(dot, ".txt") == 0) return "text/plain";
+    if (strcmp(dot, ".xml") == 0) return "application/xml";
+    if (strcmp(dot, ".png") == 0) return "image/png";
+    if (strcmp(dot, ".jpg") == 0 || strcmp(dot, ".jpeg") == 0) return "image/jpeg";
+    if (strcmp(dot, ".gif") == 0) return "image/gif";
+    if (strcmp(dot, ".svg") == 0) return "image/svg+xml";
+    if (strcmp(dot, ".ico") == 0) return "image/x-icon";
+    if (strcmp(dot, ".wasm") == 0) return "application/wasm";
+    return "application/octet-stream";
+}
+
+AValue a_http_serve_static(AValue port, AValue dir) {
+    if (port.tag != TAG_INT) return a_err(a_string("http.serve_static: port must be int"));
+    if (dir.tag != TAG_STRING) return a_err(a_string("http.serve_static: dir must be string"));
+
+    signal(SIGPIPE, SIG_IGN);
+
+    int srv = socket(AF_INET, SOCK_STREAM, 0);
+    if (srv < 0) return a_err(a_string("http.serve_static: socket failed"));
+
+    int opt = 1;
+    setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons((uint16_t)port.ival);
+
+    if (bind(srv, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+        close(srv);
+        return a_err(a_string("http.serve_static: bind failed"));
+    }
+    if (listen(srv, 64) < 0) {
+        close(srv);
+        return a_err(a_string("http.serve_static: listen failed"));
+    }
+
+    fprintf(stderr, "serving %s on http://0.0.0.0:%d\n", dir.sval->data, (int)port.ival);
+
+    for (;;) {
+        struct sockaddr_in client;
+        socklen_t clen = sizeof(client);
+        int fd = accept(srv, (struct sockaddr*)&client, &clen);
+        if (fd < 0) continue;
+
+        char buf[65536];
+        int n = http_recv_all(fd, buf, sizeof(buf));
+        if (n <= 0) { close(fd); continue; }
+
+        char method[16] = "", req_path[2048] = "";
+        sscanf(buf, "%15s %2047s", method, req_path);
+
+        if (strstr(req_path, "..")) {
+            const char* r = "HTTP/1.1 403 Forbidden\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden";
+            send(fd, r, strlen(r), 0);
+            close(fd);
+            continue;
+        }
+
+        char filepath[4096];
+        const char* p = req_path;
+        if (*p == '/') p++;
+        if (*p == '\0') p = "index.html";
+        snprintf(filepath, sizeof(filepath), "%s/%s", dir.sval->data, p);
+
+        int plen = (int)strlen(filepath);
+        if (plen > 0 && filepath[plen - 1] == '/') {
+            snprintf(filepath + plen, sizeof(filepath) - plen, "index.html");
+        }
+
+        FILE* f = fopen(filepath, "rb");
+        if (!f) {
+            const char* r = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\nConnection: close\r\n\r\nNot Found";
+            send(fd, r, strlen(r), 0);
+            close(fd);
+            continue;
+        }
+
+        fseek(f, 0, SEEK_END);
+        long fsz = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        char* fbuf = malloc(fsz);
+        size_t fread_n = fread(fbuf, 1, fsz, f);
+        fclose(f);
+
+        const char* ctype = http_content_type(filepath);
+        char hdr[512];
+        int hlen = snprintf(hdr, sizeof(hdr),
+            "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %ld\r\nConnection: close\r\n\r\n",
+            ctype, (long)fread_n);
+        send(fd, hdr, hlen, 0);
+        send(fd, fbuf, fread_n, 0);
+        free(fbuf);
+        close(fd);
+    }
+
+    close(srv);
+    return a_void();
+}
+
 /* --- Closures --- */
 
 AValue a_closure(AClosureFn fn, AValue env) {

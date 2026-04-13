@@ -1,0 +1,24 @@
+fn main() {
+  let data = [
+    #{ "id": 1, "name": "alice" },
+    #{ "id": 2, "name": "bob" }
+  ]
+
+  http.serve(8080, fn(req) {
+    let m = req["method"]
+    let p = req["path"]
+    if m == "GET" {
+      if p == "/users" {
+        let h = #{ "Content-Type": "application/json" }
+        ret #{ "status": 200, "body": json.stringify(data), "headers": h }
+      }
+    }
+    if m == "POST" {
+      if p == "/echo" {
+        let h = #{ "Content-Type": "application/json" }
+        ret #{ "status": 200, "body": req["body"], "headers": h }
+      }
+    }
+    ret #{ "status": 404, "body": "not found" }
+  })
+}
