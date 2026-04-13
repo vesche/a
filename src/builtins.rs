@@ -365,6 +365,29 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
                 Err(e) => Ok(Value::Result(Err(Box::new(Value::string(e.to_string()))))),
             }
         }
+        "io.read_bytes" => {
+            let n = match &args[0] {
+                Value::Int(i) => *i as usize,
+                _ => 0,
+            };
+            let mut buf = vec![0u8; n];
+            use std::io::Read;
+            let mut total = 0;
+            while total < n {
+                match std::io::stdin().read(&mut buf[total..]) {
+                    Ok(0) => break,
+                    Ok(got) => total += got,
+                    Err(_) => break,
+                }
+            }
+            buf.truncate(total);
+            Ok(Value::string(String::from_utf8_lossy(&buf).to_string()))
+        }
+        "io.flush" => {
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+            Ok(Value::Void)
+        }
         "str.concat" => {
             let mut result = String::new();
             for a in args {
@@ -1326,7 +1349,7 @@ pub fn is_builtin(name: &str) -> bool {
         "zip" | "enumerate" | "take" | "drop" | "chunk" | "unique" |
         "map.get" | "map.set" | "map.keys" | "map.values" | "map.has" |
         "map.delete" | "map.merge" | "map.entries" | "map.from_entries" |
-        "io.write" | "io.read_file" | "io.write_file" | "io.read_stdin" | "io.read_line" |
+        "io.write" | "io.read_file" | "io.write_file" | "io.read_stdin" | "io.read_line" | "io.read_bytes" | "io.flush" |
         "str.concat" | "str.split" | "str.contains" | "str.starts_with" | "str.ends_with" |
         "str.replace" | "str.trim" | "str.upper" | "str.lower" |
         "str.join" | "str.chars" | "str.slice" | "str.lines" | "str.find" | "str.count" |

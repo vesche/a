@@ -31,9 +31,21 @@ gcc "$TMP_C" "$RUNTIME_DIR/runtime.c" -o "$OUTPUT" \
 rm "$TMP_C"
 echo "  built $OUTPUT ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
 
+LSP_SRC="src/lsp.a"
+if [ -f "$LSP_SRC" ]; then
+    echo "Step 3: Build language server..."
+    TMP_LSP_C=$(mktemp /tmp/a_lsp_XXXXXX.c)
+    cargo run --quiet -- run "$CGEN" -- "$LSP_SRC" > "$TMP_LSP_C" 2>/dev/null
+    gcc "$TMP_LSP_C" "$RUNTIME_DIR/runtime.c" -o "./a-lsp" \
+        -I "$RUNTIME_DIR" -lm -O2 -Wl,-stack_size,0x10000000
+    rm "$TMP_LSP_C"
+    echo "  built ./a-lsp ($(wc -c < "./a-lsp" | tr -d ' ') bytes)"
+fi
+
 echo ""
 echo "Done. Try:"
 echo "  ./a run examples/hello.a"
 echo "  ./a build examples/hello.a -o hello"
 echo "  ./a test tests/native/"
 echo "  ./a cc examples/hello.a"
+echo "  ./a-lsp                        (language server for editors)"

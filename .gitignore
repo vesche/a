@@ -5,6 +5,7 @@
 /a
 /a2
 /a3
+/a-lsp
 
 # Precompiled bytecode cache (regenerated at runtime)
 *.ac

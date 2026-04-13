@@ -206,6 +206,8 @@ AValue a_str_lines(AValue s);
 /* I/O (extras) */
 AValue a_io_read_stdin(void);
 AValue a_io_read_line(void);
+AValue a_io_read_bytes(AValue n);
+AValue a_io_flush(void);
 
 /* Environment (extras) */
 AValue a_env_set(AValue key, AValue val);

@@ -1170,6 +1170,27 @@ AValue a_io_read_line(void) {
     return result;
 }
 
+AValue a_io_read_bytes(AValue n) {
+    int count = (int)n.ival;
+    if (count <= 0) return a_string("");
+    char* buf = malloc(count + 1);
+    size_t total = 0;
+    while ((int)total < count) {
+        size_t got = fread(buf + total, 1, count - total, stdin);
+        if (got == 0) break;
+        total += got;
+    }
+    buf[total] = '\0';
+    AValue result = a_string_len(buf, (int)total);
+    free(buf);
+    return result;
+}
+
+AValue a_io_flush(void) {
+    fflush(stdout);
+    return a_void();
+}
+
 /* --- Environment extras --- */
 
 extern char** environ;

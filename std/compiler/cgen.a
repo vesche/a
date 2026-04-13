@@ -33,6 +33,7 @@ fn _builtin_map() -> map {
   let m3 = #{
     "io.read_file": "a_io_read_file", "io.write_file": "a_io_write_file",
     "io.read_stdin": "a_io_read_stdin", "io.read_line": "a_io_read_line",
+    "io.read_bytes": "a_io_read_bytes", "io.flush": "a_io_flush",
     "fs.ls": "a_fs_ls", "fs.mkdir": "a_fs_mkdir", "fs.cwd": "a_fs_cwd",
     "fs.exists": "a_fs_exists", "fs.is_dir": "a_fs_is_dir",
     "fs.rm": "a_fs_rm", "fs.mv": "a_fs_mv", "fs.cp": "a_fs_cp",
@@ -62,7 +63,7 @@ fn _builtin_map() -> map {
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep"]
+  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep", "io.flush"]
 }
 
 fn _c_keywords() -> [str] {

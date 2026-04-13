@@ -7,11 +7,12 @@ Every design choice -- grammar, keywords, type system, builtins -- optimizes for
 ## Quick Start
 
 ```bash
-./build.sh                  # bootstrap the native CLI from source
+./build.sh                  # bootstrap the native CLI + language server
 ./a run program.a           # compile and run in one step
 ./a build program.a -o out  # compile to native binary
 ./a test tests/native/      # run test suite
 ./a cc program.a            # emit C to stdout
+./a-lsp                     # language server (JSON-RPC over stdio)
 ```
 
 ## Build
@@ -33,6 +34,8 @@ cargo build --release
 ./a build program.a -o out  # compile to native binary with custom name
 ./a cc program.a            # emit C to stdout
 ./a test tests/native/      # find test_*.a files, compile, run, report
+./a lsp                     # build the language server binary (./a-lsp)
+./a-lsp                     # start language server (stdio, for editors)
 
 # Rust VM
 a run program.a             # execute (bytecode VM)
@@ -99,7 +102,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Error handling** | `try { }`, `?` operator, `Ok`/`Err` constructors, `unwrap`, `unwrap_or`, `is_ok`, `is_err`, `expect`, pattern matching on Results |
 | **Concurrency** | `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout` |
 | **Process** | `args()`, `exit(code)`, `eprintln()` |
-| **Stdin** | `io.read_stdin()`, `io.read_line()` (pipeline support) |
+| **Stdin** | `io.read_stdin()`, `io.read_line()`, `io.read_bytes(n)`, `io.flush()` |
 | **Environment** | `env.get`, `env.set`, `env.all` |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
@@ -205,7 +208,8 @@ fn main() -> void {
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 100 | static site generator using path, datetime, hash, csv, template, encoding (runs natively) |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
-| `src/cli.a` | ~170 | **native CLI driver** -- `run`, `build`, `cc`, `test` subcommands; self-hosting (compiles itself) |
+| `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
+| `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |
 | `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
 
 ## Stats
@@ -220,5 +224,14 @@ fn main() -> void {
 | **Examples & tools** | 35 programs, ~6,100 lines |
 
 ## Editor support
+
+**Language server:** `./a-lsp` is a native LSP server written in "a" itself. It provides:
+
+- **Diagnostics** -- parse errors on every keystroke (red squiggles)
+- **Completion** -- 105+ builtins with signatures, keywords, user functions, stdlib modules
+- **Hover** -- function signatures for builtins and user-defined functions
+- **Go-to-definition** -- in-file and cross-module (resolves `use` imports to source files)
+
+Build with `./build.sh` or `./a lsp`, then configure your editor to run `./a-lsp` as the language server for `*.a` files.
 
 Syntax highlighting for VS Code / Cursor is included in [`editors/vscode`](editors/vscode). See [REFERENCE.md](REFERENCE.md) for the complete language reference.

@@ -196,6 +196,16 @@ impl Checker {
             ret: Type::Str,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("io.read_bytes".into(), FnSig {
+            params: vec![("n".into(), Type::I64)],
+            ret: Type::Str,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("io.flush".into(), FnSig {
+            params: vec![],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
         self.fn_sigs.insert("exec".into(), FnSig {
             params: vec![("cmd".into(), Type::Str)],
             ret: Type::Unknown,

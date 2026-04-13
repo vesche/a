@@ -174,6 +174,16 @@ fn cmd_test(test_dir) {
   if failed > 0 { exit(1) }
 }
 
+fn cmd_lsp() {
+  let runtime_dir = _find_runtime_dir()
+  let lsp_source = "src/lsp.a"
+  if !fs.exists(lsp_source) {
+    _die("cannot find src/lsp.a -- run from the project root")
+  }
+  cmd_build(lsp_source, "a-lsp")
+  eprintln("configure your editor to run ./a-lsp as the language server for *.a files")
+}
+
 fn _usage() {
   eprintln("a -- the a language native toolchain")
   eprintln("")
@@ -182,6 +192,7 @@ fn _usage() {
   eprintln("  a build <file.a> [-o out]   compile to native binary")
   eprintln("  a cc <file.a>              emit C to stdout")
   eprintln("  a test <dir/>              run test_*.a files in directory")
+  eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("")
   eprintln("  a run and a build expect c_runtime/ in the current directory.")
 }
@@ -240,6 +251,11 @@ fn main() {
   if subcmd == "test" {
     if len(argv) < 2 { _die("test requires a directory") }
     cmd_test(argv[1])
+    ret
+  }
+
+  if subcmd == "lsp" {
+    cmd_lsp()
     ret
   }
 

@@ -1727,3 +1727,49 @@ One command to compile, run, and test programs. The CLI is written in "a" (`src/
 
 CLI: ~170 lines. Generated C: ~7,755 lines. Bootstrap time: ~45 seconds.
 
+## v0.50 -- Language Server Protocol
+
+A native LSP server written entirely in "a" (`src/lsp.a`, ~720 lines). Provides real-time feedback in any editor that speaks LSP. Self-hosted: the parser that analyzes user code is the same self-hosted parser that compiles the language itself.
+
+### Capabilities
+
+| Feature | Implementation |
+|---------|---------------|
+| **Diagnostics** | Re-parse on every keystroke via `std.compiler.parser`; recursive AST walk to find nested `ParseError` nodes; push severity=Error diagnostics with token-to-line/column mapping |
+| **Completion** | 105+ builtins with full signatures, 25 keywords, user-defined functions from AST, 19 stdlib module names |
+| **Hover** | Signature lookup: hardcoded registry for builtins, AST walk for user functions |
+| **Go-to-definition** | In-file: walk `FnDecl` nodes; cross-module: resolve `use` imports to file paths, grep for `fn name(` |
+
+### Wire Protocol
+
+JSON-RPC 2.0 over stdio with `Content-Length` framing. Two new runtime builtins: `io.read_bytes(n)` for exact-count stdin reads, `io.flush()` for output flushing.
+
+### Architecture
+
+- Document store: in-memory map of URI to content + AST + version
+- On `didOpen`/`didChange`: re-parse, collect errors recursively, push diagnostics
+- Position mapping: token index to line/character via source-walking offset table
+- Cross-module definition: resolve `use std.foo` to `std/foo.a`, parse, find function
+
+### Key Findings
+
+- **Bare `ret` not supported by Rust parser**: `ret` without a value causes "expected expression" error. All early returns must use `ret ""` or similar.
+- **`#{}` ambiguity in if blocks**: Empty map literal `#{}` inside function arguments within if blocks is misparsed (the `}` closes the if block). Workaround: assign to a variable first.
+- **Self-hosted parser embeds errors**: Unlike the Rust parser which returns a top-level ParseError, the self-hosted parser wraps errors inside the AST structure (e.g., inside FnDecl bodies). Diagnostics require recursive AST walks to find all nested ParseError nodes.
+- **Native codegen too fragile for lsp.a**: The `./a cc src/lsp.a` subprocess crashes (parser+lexer imports are heavy). Bootstrap via VM codegen instead.
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/lsp.a` | NEW -- LSP server (~720 lines) |
+| `src/cli.a` | Added `lsp` subcommand |
+| `build.sh` | Added Step 3: build `./a-lsp` |
+| `c_runtime/runtime.{c,h}` | Added `a_io_read_bytes`, `a_io_flush` |
+| `std/compiler/cgen.a` | Added `io.read_bytes`, `io.flush` to builtin map |
+| `src/builtins.rs` | Added `io.read_bytes`, `io.flush` to VM |
+| `src/checker.rs` | Added `io.read_bytes`, `io.flush` signatures |
+| `.vscode/settings.json` | NEW -- file association for *.a |
+
+LSP: ~720 lines. Native binary: ~318 KB. Response time: <1ms per request.
+

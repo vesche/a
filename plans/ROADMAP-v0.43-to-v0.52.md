@@ -4,14 +4,14 @@
 
 ## Where We Are
 
-At v0.49, the language has a native CLI that makes it actually usable:
+At v0.50, the language has a native CLI and a language server -- both written in "a":
 
 1. **VM path** (Rust-hosted): Full language -- closures, HOFs, pattern matching, destructuring, try/catch, concurrency, eval, metaprogramming, 100+ builtins, 20 stdlib modules, 498 tests.
-2. **Native path** (C codegen): Most language features + FFI + memory management + complete builtin surface + native CLI -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn`, `ptr` type, RC ownership, arena, GC, goto-based cleanup (44% code reduction), 105+ builtins, SHA-256/MD5 hashing, JSON stringify/pretty, HTTP client, POSIX time/fs/env, self-hosting bootstrap (7,755 lines C, three-stage fixed point verified), 12 std modules compiling natively, 15 example programs, `./a run|build|cc|test` CLI.
+2. **Native path** (C codegen): Most language features + FFI + memory management + complete builtin surface + native CLI + LSP -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn`, `ptr` type, RC ownership, arena, GC, goto-based cleanup (44% code reduction), 107+ builtins, SHA-256/MD5 hashing, JSON stringify/pretty, HTTP client, POSIX time/fs/env, self-hosting bootstrap (7,784 lines C, three-stage fixed point verified), 12 std modules compiling natively, 15 example programs, `./a run|build|cc|test|lsp` CLI, `./a-lsp` language server with diagnostics/completion/hover/go-to-definition.
 
-**What's done** (v0.43-v0.49): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing/stringify, module imports, else-if codegen, index assignment, map iteration, test harness, C FFI, RC ownership, arena, GC, goto cleanup optimization, try block return fix, math/time/hash/http/fs/env builtins, full std module native compilation, native CLI driver with run/build/cc/test subcommands, self-hosting CLI, site_gen.a end-to-end proof.
+**What's done** (v0.43-v0.50): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing/stringify, module imports, else-if codegen, index assignment, map iteration, test harness, C FFI, RC ownership, arena, GC, goto cleanup optimization, try block return fix, math/time/hash/http/fs/env builtins, full std module native compilation, native CLI driver with run/build/cc/test/lsp subcommands, self-hosting CLI, site_gen.a end-to-end proof, LSP server with parse diagnostics/completion/hover/go-to-definition.
 
-**What remains**: package manager (v0.50), and everything beyond.
+**What remains**: package manager (v0.51), and everything beyond.
 
 ---
 
@@ -308,19 +308,52 @@ After v0.48, the native `ac` binary is fully self-contained. It can compile "a" 
 
 ---
 
-## v0.50 -- Package Manager
+## v0.50 -- Language Server Protocol ✅
+
+**IDE intelligence, written in "a".** A native LSP server (`src/lsp.a`, ~720 lines) that provides real-time diagnostics, completion, hover, and go-to-definition for every editor that speaks LSP.
+
+### What Was Delivered
+
+1. **Diagnostics**: Re-parse on every keystroke via `std.compiler.parser`. Recursive AST walk finds all nested `ParseError` nodes. Token-to-line/column position mapping. Instant red squiggles.
+2. **Completion**: 105+ builtins with full signatures, 25 keywords, user-defined functions extracted from the current file's AST, 19 stdlib module names.
+3. **Hover**: Hardcoded signature registry for all builtins. AST walk for user-defined function signatures.
+4. **Go-to-definition**: In-file function lookup via AST walk. Cross-module: resolves `use std.foo` imports to file paths, finds function declaration by line scanning.
+5. **Wire protocol**: JSON-RPC 2.0 over stdio with `Content-Length` framing. New runtime builtins `io.read_bytes(n)` and `io.flush()`.
+6. **Document store**: In-memory map of URI → content + AST + version, updated on `didOpen`/`didChange`/`didClose`.
+
+### Verification
+
+- Initialize → capabilities returned (textDocumentSync, completion, hover, definition)
+- Open valid file → empty diagnostics
+- Open broken file → parse error diagnostic with correct line/column
+- Fix error → diagnostics cleared
+- Hover on `println` → `fn println(value) -> void`
+- Hover on user function → reconstructed signature from AST
+- Go-to-definition on local function → correct line in same file
+- Go-to-definition on `path.join` → resolves to `std/path.a` line 2
+- Completion → 105+ builtins + keywords + user functions + module names
+- Shutdown/exit → clean lifecycle
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/lsp.a` | NEW -- LSP server (~720 lines) |
+| `src/cli.a` | Added `lsp` subcommand |
+| `build.sh` | Added Step 3: build `./a-lsp` |
+| `c_runtime/runtime.{c,h}` | Added `a_io_read_bytes`, `a_io_flush` |
+| `std/compiler/cgen.a` | Added `io.read_bytes`, `io.flush` to builtin map |
+| `src/builtins.rs` | Added `io.read_bytes`, `io.flush` to VM |
+| `src/checker.rs` | Added signatures for new builtins |
+| `.vscode/settings.json` | NEW -- file association |
+
+---
+
+## v0.51 -- Package Manager
 
 **Reusable code, dependency management.** The language needs a way to share and consume libraries beyond the standard library.
 
 ### Design
-
-```a
-; pkg.a -- package manifest
-#{"name": "my-tool", "version": "1.0.0", "deps": #{
-  "http-router": "^2.0",
-  "db-sqlite": "^1.3"
-}}
-```
 
 - `a pkg init` -- create a new package
 - `a pkg add <name>` -- add a dependency
@@ -336,37 +369,7 @@ After v0.48, the native `ac` binary is fully self-contained. It can compile "a" 
 
 ### Written in "a"
 
-The package manager itself is written in "a", compiled to native. It uses the networking (v0.48), filesystem, JSON parsing, and hashing capabilities. This is the first major tool built on the self-sufficient native stack.
-
----
-
-## v0.50 -- Language Server Protocol
-
-**IDE intelligence, written in "a".** A full LSP implementation that provides diagnostics, completion, go-to-definition, hover, rename, and code actions for every editor that speaks LSP.
-
-### Features
-
-- **Diagnostics**: Parse errors, type mismatches, unused variables, unreachable code
-- **Completion**: Function names, variable names, module members, builtin names
-- **Go to definition**: Jump to function/type declarations across files
-- **Hover**: Show function signatures, type information, documentation
-- **Rename**: Safe rename of variables and functions across all files
-- **Code actions**: Auto-fix suggestions (e.g., add missing import, convert to pipe chain)
-- **Formatting**: On-save formatting using the existing formatter
-
-### Architecture
-
-The LSP is a persistent process compiled to native. It maintains an in-memory representation of the project:
-- File → Token array (via `std.compiler.lexer`)
-- File → AST (via `std.compiler.parser`)
-- Project → Symbol table (function names, types, imports across all files)
-- Project → Call graph (via `std.meta.call_graph`)
-
-Incremental updates: when a file changes, only that file is re-parsed. Cross-file analysis is updated lazily.
-
-### Why This Matters for AI
-
-An AI agent using "a" gets real-time feedback on every edit: type errors, undefined variables, import suggestions. The feedback loop tightens from "run and see what happens" to "know before you run." And the LSP is written in "a" itself -- if I need a new code action or diagnostic, I modify "a" code, not Rust or TypeScript.
+The package manager itself is written in "a", compiled to native. It uses the networking (v0.48), filesystem, JSON parsing, and hashing capabilities.
 
 ---
 
@@ -461,8 +464,8 @@ This is the destination. Everything from v0.43 to v0.51 is the road.
 | **v0.47** ✅ | Memory Architecture | RC ownership, arenas, GC | Production-grade native runtime |
 | **v0.48** ✅ | Stabilize + Native Surface | Goto cleanup, try fix, 30+ builtins, HTTP, hash | Every std module compiles natively |
 | **v0.49** ✅ | The Native CLI | `./a run\|build\|cc\|test`, self-hosting, site_gen proof | Language is actually usable |
-| **v0.50** | Package Manager | deps, registry, lockfile | Reusable libraries |
-| **v0.51** | Language Server | LSP in "a" | IDE intelligence |
+| **v0.50** ✅ | Language Server | LSP in "a": diagnostics, completion, hover, go-to-definition | Real-time feedback in editors |
+| **v0.51** | Package Manager | deps, registry, lockfile | Reusable libraries |
 | **v0.52** | WebAssembly Target | Compile to WASM | Run in browsers/edge |
 | **v0.53** | Final Bootstrap | Full toolchain in "a" | Complete independence |
 
