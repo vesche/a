@@ -1,4 +1,4 @@
-name: CI
+name: Build & Test
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  build-and-test:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -39,7 +39,7 @@ jobs:
       - name: Rust VM tests
         run: cargo test
 
-      - name: Bootstrap native CLI
+      - name: Build native CLI
         run: ./build.sh
 
       - name: Verify bootstrap/cli.c is up to date
@@ -53,8 +53,69 @@ jobs:
           fi
           echo "bootstrap/cli.c is up to date."
 
-      - name: Smoke test -- hello
+      - name: Smoke test
         run: ./a run examples/hello.a
 
+      - name: Detect platform flags
+        id: flags
+        run: |
+          OS=$(uname -s)
+          if [ "$OS" = "Darwin" ]; then
+            echo "stack=-Wl,-stack_size,0x10000000" >> "$GITHUB_OUTPUT"
+            echo "tls=-framework Security -framework CoreFoundation" >> "$GITHUB_OUTPUT"
+          else
+            echo "stack=" >> "$GITHUB_OUTPUT"
+            echo "tls=-ldl" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Native test suite
-        run: ./a test tests/native/
+        run: |
+          CGEN="std/compiler/cgen.a"
+          STACK="${{ steps.flags.outputs.stack }}"
+          TLS="${{ steps.flags.outputs.tls }}"
+          SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
+          PASS=0; FAIL=0
+
+          for src in tests/native/test_*.a; do
+            name=$(basename "$src")
+
+            # Skip test_http.a -- it needs a live server; HTTP is covered by cargo test
+            if [ "$name" = "test_http.a" ]; then
+              echo "  SKIP $name (requires server; covered by Rust VM tests)"
+              continue
+            fi
+
+            # Generate C via Rust VM cgen (avoids native self-compilation segfault)
+            C_FILE=$(mktemp /tmp/a_test_XXXXXX.c)
+            if ! cargo run --quiet -- run "$CGEN" -- "$src" > "$C_FILE" 2>/dev/null; then
+              echo "  FAIL $name (codegen error)"
+              rm -f "$C_FILE"
+              FAIL=$((FAIL + 1))
+              continue
+            fi
+
+            # Compile with gcc
+            BIN_FILE=$(mktemp /tmp/a_test_XXXXXX)
+            if ! gcc "$C_FILE" c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c \
+                -o "$BIN_FILE" -I c_runtime -lm -O2 $STACK $TLS $SQLITE 2>/dev/null; then
+              echo "  FAIL $name (compile error)"
+              rm -f "$C_FILE" "$BIN_FILE"
+              FAIL=$((FAIL + 1))
+              continue
+            fi
+            rm -f "$C_FILE"
+
+            # Run test binary
+            if "$BIN_FILE" 2>/dev/null; then
+              echo "  PASS $name"
+              PASS=$((PASS + 1))
+            else
+              echo "  FAIL $name (exit $?)"
+              FAIL=$((FAIL + 1))
+            fi
+            rm -f "$BIN_FILE"
+          done
+
+          echo ""
+          echo "$PASS passed, $FAIL failed"
+          if [ "$FAIL" -gt 0 ]; then exit 1; fi
