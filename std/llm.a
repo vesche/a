@@ -1,0 +1,319 @@
+; std/llm.a -- Unified LLM client for OpenAI, Anthropic, and Google AI
+; Pure "a" implementation using http.post, json.parse/stringify, env.get.
+
+fn _get_key(provider, opts) -> str {
+  if map.has(opts, "api_key") {
+    ret opts["api_key"]
+  }
+  let mut val = ""
+  if provider == "openai" { val = env.get("OPENAI_API_KEY") }
+  if provider == "anthropic" { val = env.get("ANTHROPIC_API_KEY") }
+  if provider == "google" { val = env.get("GOOGLE_AI_KEY") }
+  if type_of(val) == "str" {
+    if len(val) > 0 { ret val }
+  }
+  ret ""
+}
+
+fn _opt_int(opts, key, default_val) -> int {
+  if map.has(opts, key) { ret opts[key] }
+  ret default_val
+}
+
+fn _opt_float(opts, key, default_val) -> float {
+  if map.has(opts, key) { ret opts[key] }
+  ret default_val
+}
+
+fn _opt_str(opts, key, default_val) -> str {
+  if map.has(opts, key) { ret opts[key] }
+  ret default_val
+}
+
+; --- OpenAI ---
+
+fn _build_openai(model, messages, opts) {
+  let mut body = #{"model": model, "messages": messages}
+  if map.has(opts, "temperature") {
+    body = map.set(body, "temperature", opts["temperature"])
+  }
+  if map.has(opts, "max_tokens") {
+    body = map.set(body, "max_tokens", opts["max_tokens"])
+  }
+  if map.has(opts, "tools") {
+    body = map.set(body, "tools", opts["tools"])
+  }
+  if map.has(opts, "response_format") {
+    let fmt = opts["response_format"]
+    if fmt == "json" {
+      let rf = #{"type": "json_object"}
+      body = map.set(body, "response_format", rf)
+    }
+  }
+  ret body
+}
+
+fn _parse_openai(data) {
+  let choices = data["choices"]
+  if len(choices) == 0 { ret #{"content": "", "role": "assistant", "model": "", "usage": #{}, "tool_calls": [], "stop_reason": "error"} }
+  let msg = choices[0]["message"]
+  let mut content = ""
+  if map.has(msg, "content") {
+    if msg["content"] != "" {
+      content = msg["content"]
+    }
+  }
+  let mut tool_calls = []
+  if map.has(msg, "tool_calls") {
+    let raw_tc = msg["tool_calls"]
+    let mut i = 0
+    while i < len(raw_tc) {
+      let tc = raw_tc[i]
+      let func = tc["function"]
+      let args_str = func["arguments"]
+      let parsed_args = json.parse(args_str)
+      let normalized = #{"id": tc["id"], "name": func["name"], "arguments": parsed_args}
+      tool_calls = push(tool_calls, normalized)
+      i = i + 1
+    }
+  }
+  let usage_raw = data["usage"]
+  let usage = #{"input_tokens": usage_raw["prompt_tokens"], "output_tokens": usage_raw["completion_tokens"]}
+  let mut model = ""
+  if map.has(data, "model") { model = data["model"] }
+  let mut stop = "end_turn"
+  if map.has(choices[0], "finish_reason") { stop = choices[0]["finish_reason"] }
+  ret #{"content": content, "role": "assistant", "model": model, "usage": usage, "tool_calls": tool_calls, "stop_reason": stop}
+}
+
+; --- Anthropic ---
+
+fn _build_anthropic(model, messages, opts) {
+  let mut sys_text = ""
+  let mut filtered = []
+  for msg in messages {
+    if msg["role"] == "system" {
+      sys_text = msg["content"]
+    } else {
+      filtered = push(filtered, msg)
+    }
+  }
+  let max_tok = _opt_int(opts, "max_tokens", 4096)
+  let mut body = #{"model": model, "messages": filtered, "max_tokens": max_tok}
+  if sys_text != "" {
+    body = map.set(body, "system", sys_text)
+  }
+  if map.has(opts, "temperature") {
+    body = map.set(body, "temperature", opts["temperature"])
+  }
+  if map.has(opts, "tools") {
+    body = map.set(body, "tools", opts["tools"])
+  }
+  ret body
+}
+
+fn _parse_anthropic(data) {
+  let content_blocks = data["content"]
+  let mut text = ""
+  let mut tool_calls = []
+  if type_of(content_blocks) == "array" {
+    let mut i = 0
+    while i < len(content_blocks) {
+      let block = content_blocks[i]
+      if map.has(block, "type") {
+        if block["type"] == "text" {
+          text = block["text"]
+        }
+        if block["type"] == "tool_use" {
+          let tc = #{"id": block["id"], "name": block["name"], "arguments": block["input"]}
+          tool_calls = push(tool_calls, tc)
+        }
+      }
+      i = i + 1
+    }
+  }
+  let mut usage = #{"input_tokens": 0, "output_tokens": 0}
+  if map.has(data, "usage") {
+    let u = data["usage"]
+    usage = #{"input_tokens": u["input_tokens"], "output_tokens": u["output_tokens"]}
+  }
+  let mut model = ""
+  if map.has(data, "model") { model = data["model"] }
+  let mut stop = "end_turn"
+  if map.has(data, "stop_reason") { stop = data["stop_reason"] }
+  ret #{"content": text, "role": "assistant", "model": model, "usage": usage, "tool_calls": tool_calls, "stop_reason": stop}
+}
+
+; --- Google AI ---
+
+fn _build_google(model, messages, opts) {
+  let mut contents = []
+  for msg in messages {
+    let mut role = msg["role"]
+    if role == "system" {
+      role = "user"
+    }
+    if role == "assistant" {
+      role = "model"
+    }
+    let part = #{"text": msg["content"]}
+    let entry = #{"role": role, "parts": [part]}
+    contents = push(contents, entry)
+  }
+  let mut body = #{"contents": contents}
+  let mut gen_config = #{}
+  if map.has(opts, "temperature") {
+    gen_config = map.set(gen_config, "temperature", opts["temperature"])
+  }
+  if map.has(opts, "max_tokens") {
+    gen_config = map.set(gen_config, "maxOutputTokens", opts["max_tokens"])
+  }
+  if len(map.keys(gen_config)) > 0 {
+    body = map.set(body, "generationConfig", gen_config)
+  }
+  ret body
+}
+
+fn _parse_google(data) {
+  let mut text = ""
+  if map.has(data, "candidates") {
+    let cands = data["candidates"]
+    if len(cands) > 0 {
+      let c = cands[0]
+      if map.has(c, "content") {
+        let parts = c["content"]["parts"]
+        if len(parts) > 0 {
+          text = parts[0]["text"]
+        }
+      }
+    }
+  }
+  let mut usage = #{"input_tokens": 0, "output_tokens": 0}
+  if map.has(data, "usageMetadata") {
+    let u = data["usageMetadata"]
+    let mut in_tok = 0
+    let mut out_tok = 0
+    if map.has(u, "promptTokenCount") { in_tok = u["promptTokenCount"] }
+    if map.has(u, "candidatesTokenCount") { out_tok = u["candidatesTokenCount"] }
+    usage = #{"input_tokens": in_tok, "output_tokens": out_tok}
+  }
+  let mut model = ""
+  if map.has(data, "modelVersion") { model = data["modelVersion"] }
+  ret #{"content": text, "role": "assistant", "model": model, "usage": usage, "tool_calls": [], "stop_reason": "end_turn"}
+}
+
+; --- Core chat function ---
+
+fn chat(provider, model, messages, opts) {
+  let key = _get_key(provider, opts)
+  if key == "" {
+    ret Err("llm.chat: missing API key for provider: {provider}")
+  }
+  let max_retries = _opt_int(opts, "max_retries", 3)
+  let retry_delay = _opt_int(opts, "retry_delay_ms", 1000)
+  let mut url = ""
+  let mut headers = #{"Content-Type": "application/json"}
+  let mut body_map = #{}
+
+  if provider == "openai" {
+    url = _opt_str(opts, "base_url", "https://api.openai.com/v1/chat/completions")
+    let auth = str.concat("Bearer ", key)
+    headers = map.set(headers, "Authorization", auth)
+    body_map = _build_openai(model, messages, opts)
+  }
+  if provider == "anthropic" {
+    url = _opt_str(opts, "base_url", "https://api.anthropic.com/v1/messages")
+    headers = map.set(headers, "x-api-key", key)
+    headers = map.set(headers, "anthropic-version", "2023-06-01")
+    body_map = _build_anthropic(model, messages, opts)
+  }
+  if provider == "google" {
+    let base = _opt_str(opts, "base_url", "https://generativelanguage.googleapis.com/v1beta/models")
+    url = str.concat(base, "/{model}:generateContent?key={key}")
+    body_map = _build_google(model, messages, opts)
+  }
+  if url == "" {
+    ret Err("llm.chat: unknown provider: {provider}")
+  }
+
+  let body_str = json.stringify(body_map)
+  let mut attempt = 0
+  let mut last_err = ""
+
+  while attempt < max_retries {
+    let resp = http.post(url, body_str, headers)
+    let status = resp.status
+    if status >= 200 {
+      if status < 300 {
+        let data = json.parse(resp.body)
+        if map.has(data, "error") {
+          let err = data["error"]
+          let mut err_msg = ""
+          if type_of(err) == "map" {
+            if map.has(err, "message") {
+              err_msg = err["message"]
+            }
+          }
+          if type_of(err) == "str" {
+            err_msg = err
+          }
+          ret Err("llm.chat: API error: {err_msg}")
+        }
+        if provider == "openai" { ret _parse_openai(data) }
+        if provider == "anthropic" { ret _parse_anthropic(data) }
+        if provider == "google" { ret _parse_google(data) }
+      }
+    }
+    if status == 429 {
+      let delay = retry_delay * (attempt + 1)
+      time.sleep(delay)
+      attempt = attempt + 1
+      last_err = "rate limited (429)"
+      continue
+    }
+    if status >= 500 {
+      let delay = retry_delay * (attempt + 1)
+      time.sleep(delay)
+      attempt = attempt + 1
+      last_err = "server error ({status})"
+      continue
+    }
+    let mut err_msg = "HTTP {status}"
+    let err_body = resp.body
+    if type_of(err_body) == "str" {
+      if len(err_body) > 0 {
+        let err_data = json.parse(err_body)
+        if type_of(err_data) == "map" {
+          if map.has(err_data, "error") {
+            let e = err_data["error"]
+            if type_of(e) == "map" {
+              if map.has(e, "message") {
+                err_msg = e["message"]
+              }
+            }
+            if type_of(e) == "str" {
+              err_msg = e
+            }
+          }
+        }
+      }
+    }
+    ret Err("llm.chat: {err_msg}")
+  }
+  ret Err("llm.chat: max retries exceeded: {last_err}")
+}
+
+; --- Convenience ---
+
+fn models(provider) -> [str] {
+  if provider == "openai" {
+    ret ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-3.5-turbo", "o1", "o1-mini", "o3-mini"]
+  }
+  if provider == "anthropic" {
+    ret ["claude-sonnet-4-20250514", "claude-haiku-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"]
+  }
+  if provider == "google" {
+    ret ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"]
+  }
+  ret []
+}

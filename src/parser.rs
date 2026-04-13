@@ -1016,7 +1016,10 @@ impl Parser {
                 }
                 TokenKind::Dot => {
                     self.advance();
-                    let field = self.expect_ident()?;
+                    let field = match self.peek_kind().clone() {
+                        TokenKind::Post => { self.advance(); "post".to_string() }
+                        _ => self.expect_ident()?,
+                    };
                     expr = Expr {
                         span: expr.span.clone(),
                         kind: ExprKind::FieldAccess { expr: Box::new(expr), field },

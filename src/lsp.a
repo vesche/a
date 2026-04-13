@@ -397,7 +397,8 @@ fn _stdlib_modules() {
     "std.template", "std.meta", "std.compiler.lexer", "std.compiler.parser",
     "std.compiler.ast", "std.compiler.cgen", "std.compiler.emitter",
     "std.compiler.compiler", "std.compiler.serialize",
-    "std.yaml", "std.toml", "std.html", "std.url"
+    "std.yaml", "std.toml", "std.html", "std.url",
+    "std.llm"
   ]
 }
 

@@ -108,6 +108,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
+| **LLM client** | `llm.chat(provider, model, messages, options)` -- unified API for OpenAI, Anthropic, Google AI with retry, tool use, normalized responses (via stdlib) |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
 | **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`, `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`, `len` |
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
@@ -136,6 +137,7 @@ use std.yaml                  # parse, stringify -- YAML 1.2 subset (mappings, s
 use std.toml                  # parse, stringify -- TOML (tables, arrays of tables, all value types)
 use std.html                  # parse, select, text -- HTML DOM tree with CSS selector queries
 use std.url                   # parse, encode, decode, build -- full URL structure parsing
+use std.llm                   # chat(provider, model, msgs, opts) -- unified LLM client (OpenAI, Anthropic, Google)
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -158,7 +160,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,700 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 105+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. All 12 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,700 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 105+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. All 17 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -226,6 +228,9 @@ fn main() -> void {
 | `examples/api.a` | 20 | **JSON API server** -- HTTP server with routing, JSON responses, echo endpoint |
 | `examples/crud.a` | 40 | **CRUD API** -- HTTP + SQLite with parameterized queries, create/read/delete users |
 | `examples/test_formats.a` | 115 | tests for YAML, TOML, HTML, URL modules -- round-trip, selectors, edge cases |
+| `examples/chat.a` | 20 | **LLM chat** -- one-shot conversation with any provider in ~15 lines |
+| `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
+| `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 | `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |

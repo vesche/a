@@ -2002,3 +2002,68 @@ All four modules tested on both Rust VM (`cargo run -- run`) and native compiler
 | `README.md` | Added data format modules to stdlib table, Data formats row to builtins domain table, test_formats.a to examples table |
 | `Cargo.toml` | Version bump to 0.55.0 |
 
+---
+
+## v0.56 -- LLM Client
+
+Pure "a" stdlib module providing a unified LLM client across OpenAI, Anthropic, and Google AI. Zero C runtime changes. Composes existing `http.post`, `json.parse/stringify`, and `env.get` builtins.
+
+### What was built
+
+**`std/llm.a`** -- unified LLM client with two public functions:
+- `chat(provider, model, messages, options)` -- send a chat completion request and get a normalized response
+- `models(provider)` -- list common model names per provider
+
+**Supported providers:**
+- `"openai"` -- OpenAI (GPT-4o, o1, etc.)
+- `"anthropic"` -- Anthropic (Claude Sonnet, Haiku, Opus)
+- `"google"` -- Google AI (Gemini 2.0 Flash, 1.5 Pro, etc.)
+
+**Normalized response format** (identical structure regardless of provider):
+```
+#{ "content": "...", "role": "assistant", "model": "...",
+   "usage": #{ "input_tokens": N, "output_tokens": N },
+   "tool_calls": [...], "stop_reason": "..." }
+```
+
+**Features:**
+- Provider-specific request building (system message extraction for Anthropic, role mapping for Google, JSON mode for OpenAI)
+- Tool call parsing for both OpenAI (`tool_calls` in message) and Anthropic (`tool_use` content blocks)
+- Retry with exponential backoff on 429/5xx (configurable `max_retries`, `retry_delay_ms`)
+- Error handling via `Err()` returns (catchable with `is_err()` or `try/?`)
+- Options: `temperature`, `max_tokens`, `tools`, `response_format`, `api_key` override, `base_url` override
+
+### Parser fix
+
+The Rust parser's `expect_ident()` did not accept `post` after `.` because `post` is a keyword (for function postconditions). Added a special case in the dot-access postfix parsing to recognize `TokenKind::Post` as a valid field name, enabling `http.post(...)` calls in stdlib modules.
+
+### Implementation notes
+
+- `http.post` returns a `record` type -- fields accessed with `.status`, `.body` (not `["status"]`, `["body"]`)
+- `env.get()` returns `void` (not `""`) when the variable is unset -- `_get_key()` checks `type_of(val) == "str"` before comparing length
+- `fail()` is uncatchable (always aborts); all errors use `ret Err("message")` for user-facing error handling
+- Map literals `#{ "key": val }` work throughout; no string-escape issues since no JSON strings are embedded
+
+### Verification
+
+38 tests in `examples/test_llm.a` covering all three providers:
+- OpenAI: request building, response parsing, tool call parsing, JSON mode
+- Anthropic: system message extraction, response parsing, tool_use parsing, custom max_tokens
+- Google: role mapping, generationConfig, response parsing, usage metadata
+- Error handling: missing API key, unknown provider
+- models(): all providers return non-empty lists, unknown returns empty
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `std/llm.a` | NEW -- unified LLM client for OpenAI, Anthropic, Google AI (~315 lines) |
+| `examples/chat.a` | NEW -- simple one-shot LLM chat (~20 lines) |
+| `examples/agent.a` | NEW -- tool-using agentic loop with file tools (~60 lines) |
+| `examples/test_llm.a` | NEW -- 38 tests for request building, response parsing, error handling (~130 lines) |
+| `src/parser.rs` | Accept `post` keyword as field name after `.` for `http.post` support |
+| `src/lsp.a` | Added `"std.llm"` to `_stdlib_modules()` |
+| `scripts/test_memory.sh` | Added `llm` to stdlib module test loop |
+| `README.md` | Added `use std.llm` to stdlib table, LLM client row to builtins domain, examples to table |
+| `Cargo.toml` | Version bump to 0.56.0 |
+

@@ -1,0 +1,61 @@
+; agent.a -- Tool-using agentic loop
+; Demonstrates the LLM tool-call pattern: send tools, handle calls, loop.
+; Requires ANTHROPIC_API_KEY env var (or swap provider/model)
+
+use std.llm
+
+fn run_tool(name, args) {
+  if name == "list_files" {
+    let dir = args["directory"]
+    let files = fs.ls(dir)
+    ret str.join(files, "\n")
+  }
+  if name == "read_file" {
+    ret io.read_file(args["path"])
+  }
+  if name == "count_lines" {
+    let content = io.read_file(args["path"])
+    let lines = str.lines(content)
+    ret to_str(len(lines))
+  }
+  ret "unknown tool: {name}"
+}
+
+fn main() {
+  let tools = [
+    #{"name": "list_files", "description": "List files in a directory",
+      "input_schema": #{"type": "object", "properties": #{"directory": #{"type": "string"}}, "required": ["directory"]}},
+    #{"name": "read_file", "description": "Read a file and return its contents",
+      "input_schema": #{"type": "object", "properties": #{"path": #{"type": "string"}}, "required": ["path"]}},
+    #{"name": "count_lines", "description": "Count lines in a file",
+      "input_schema": #{"type": "object", "properties": #{"path": #{"type": "string"}}, "required": ["path"]}}
+  ]
+  let opts = #{"max_tokens": 1024, "tools": tools}
+  let mut msgs = [
+    #{"role": "user", "content": "List the .a files in the examples/ directory and count lines in the shortest-named one."}
+  ]
+
+  let mut turns = 0
+  while turns < 10 {
+    let r = llm.chat("anthropic", "claude-sonnet-4-20250514", msgs, opts)
+    if is_err(r) {
+      eprintln("error: {r}")
+      break
+    }
+    let tc = r["tool_calls"]
+    if len(tc) == 0 {
+      println(r["content"])
+      break
+    }
+    msgs = push(msgs, #{"role": "assistant", "content": r["content"], "tool_calls": tc})
+    let mut i = 0
+    while i < len(tc) {
+      let call = tc[i]
+      println("[tool] {call["name"]}({json.stringify(call["arguments"])})")
+      let result = run_tool(call["name"], call["arguments"])
+      msgs = push(msgs, #{"role": "tool", "tool_call_id": call["id"], "content": result})
+      i = i + 1
+    }
+    turns = turns + 1
+  }
+}

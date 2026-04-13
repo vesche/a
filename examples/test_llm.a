@@ -1,0 +1,153 @@
+; test_llm.a -- Tests LLM module internals with mock data (no API calls)
+
+use std.llm
+
+fn check(label, got, want) {
+  if to_str(got) == to_str(want) {
+    println("  PASS  {label}")
+  } else {
+    println("  FAIL  {label}: got={got} want={want}")
+  }
+}
+
+fn test_openai_request() {
+  println("=== OpenAI request ===")
+  let msgs = [#{"role": "user", "content": "Hi"}]
+  let r = llm._build_openai("gpt-4o", msgs, #{"temperature": 0.5, "max_tokens": 100})
+  check("model", r["model"], "gpt-4o")
+  check("msgs", len(r["messages"]), 1)
+  check("temp", r["temperature"], 0.5)
+  check("max_tokens", r["max_tokens"], 100)
+
+  let r2 = llm._build_openai("gpt-4o", msgs, #{"response_format": "json"})
+  check("json_mode", r2["response_format"]["type"], "json_object")
+}
+
+fn test_openai_response() {
+  println("=== OpenAI response ===")
+  let msg = #{"content": "Paris", "role": "assistant"}
+  let choice = #{"message": msg, "finish_reason": "stop"}
+  let resp = #{"choices": [choice], "model": "gpt-4o", "usage": #{"prompt_tokens": 10, "completion_tokens": 5}}
+  let r = llm._parse_openai(resp)
+  check("content", r["content"], "Paris")
+  check("model", r["model"], "gpt-4o")
+  check("in_tokens", r["usage"]["input_tokens"], 10)
+  check("out_tokens", r["usage"]["output_tokens"], 5)
+  check("stop", r["stop_reason"], "stop")
+  check("tool_calls", len(r["tool_calls"]), 0)
+}
+
+fn test_openai_tools() {
+  println("=== OpenAI tool calls ===")
+  let args = #{"city": "Paris"}
+  let func = #{"name": "weather", "arguments": json.stringify(args)}
+  let tc = #{"id": "call_1", "function": func}
+  let msg = #{"content": "", "tool_calls": [tc]}
+  let choice = #{"message": msg, "finish_reason": "tool_calls"}
+  let resp = #{"choices": [choice], "model": "gpt-4o", "usage": #{"prompt_tokens": 20, "completion_tokens": 10}}
+  let r = llm._parse_openai(resp)
+  check("tc_count", len(r["tool_calls"]), 1)
+  check("tc_name", r["tool_calls"][0]["name"], "weather")
+  check("tc_id", r["tool_calls"][0]["id"], "call_1")
+  check("tc_arg", r["tool_calls"][0]["arguments"]["city"], "Paris")
+}
+
+fn test_anthropic_request() {
+  println("=== Anthropic request ===")
+  let msgs = [
+    #{"role": "system", "content": "Be brief"},
+    #{"role": "user", "content": "Hi"}
+  ]
+  let r = llm._build_anthropic("claude-sonnet-4-20250514", msgs, #{"temperature": 0.3})
+  check("system", r["system"], "Be brief")
+  check("msgs", len(r["messages"]), 1)
+  check("msg_role", r["messages"][0]["role"], "user")
+  check("max_tokens", r["max_tokens"], 4096)
+
+  let r2 = llm._build_anthropic("claude-sonnet-4-20250514", msgs, #{"max_tokens": 512})
+  check("custom_max", r2["max_tokens"], 512)
+}
+
+fn test_anthropic_response() {
+  println("=== Anthropic response ===")
+  let block = #{"type": "text", "text": "Hello!"}
+  let resp = #{"content": [block], "model": "claude-sonnet-4-20250514", "usage": #{"input_tokens": 8, "output_tokens": 3}, "stop_reason": "end_turn"}
+  let r = llm._parse_anthropic(resp)
+  check("content", r["content"], "Hello!")
+  check("model", r["model"], "claude-sonnet-4-20250514")
+  check("stop", r["stop_reason"], "end_turn")
+  check("in", r["usage"]["input_tokens"], 8)
+  check("out", r["usage"]["output_tokens"], 3)
+}
+
+fn test_anthropic_tool_use() {
+  println("=== Anthropic tool_use ===")
+  let tu = #{"type": "tool_use", "id": "tu_1", "name": "search", "input": #{"q": "test"}}
+  let resp = #{"content": [tu], "model": "claude-sonnet-4-20250514", "usage": #{"input_tokens": 5, "output_tokens": 10}, "stop_reason": "tool_use"}
+  let r = llm._parse_anthropic(resp)
+  check("tc_count", len(r["tool_calls"]), 1)
+  check("tc_name", r["tool_calls"][0]["name"], "search")
+  check("tc_id", r["tool_calls"][0]["id"], "tu_1")
+  check("tc_arg", r["tool_calls"][0]["arguments"]["q"], "test")
+  check("stop", r["stop_reason"], "tool_use")
+}
+
+fn test_google_request() {
+  println("=== Google request ===")
+  let msgs = [
+    #{"role": "user", "content": "Hi"},
+    #{"role": "assistant", "content": "Hey"},
+    #{"role": "user", "content": "Bye"}
+  ]
+  let r = llm._build_google("gemini-2.0-flash", msgs, #{"temperature": 0.8, "max_tokens": 200})
+  check("parts", len(r["contents"]), 3)
+  check("role0", r["contents"][0]["role"], "user")
+  check("role1", r["contents"][1]["role"], "model")
+  check("gen_temp", r["generationConfig"]["temperature"], 0.8)
+  check("gen_max", r["generationConfig"]["maxOutputTokens"], 200)
+}
+
+fn test_google_response() {
+  println("=== Google response ===")
+  let part = #{"text": "Hi there"}
+  let content = #{"parts": [part]}
+  let cand = #{"content": content}
+  let meta = #{"promptTokenCount": 4, "candidatesTokenCount": 2}
+  let resp = #{"candidates": [cand], "usageMetadata": meta, "modelVersion": "gemini-2.0-flash"}
+  let r = llm._parse_google(resp)
+  check("content", r["content"], "Hi there")
+  check("model", r["model"], "gemini-2.0-flash")
+  check("in", r["usage"]["input_tokens"], 4)
+  check("out", r["usage"]["output_tokens"], 2)
+}
+
+fn test_models() {
+  println("=== models() ===")
+  check("openai", len(llm.models("openai")) > 0, true)
+  check("anthropic", len(llm.models("anthropic")) > 0, true)
+  check("google", len(llm.models("google")) > 0, true)
+  check("unknown", len(llm.models("unknown")), 0)
+}
+
+fn test_errors() {
+  println("=== error handling ===")
+  let r1 = llm.chat("anthropic", "claude-sonnet-4-20250514", [], #{})
+  check("missing_key", is_err(r1), true)
+  let r2 = llm.chat("unknown", "m", [], #{"api_key": "test"})
+  check("bad_provider", is_err(r2), true)
+}
+
+fn main() {
+  test_openai_request()
+  test_openai_response()
+  test_openai_tools()
+  test_anthropic_request()
+  test_anthropic_response()
+  test_anthropic_tool_use()
+  test_google_request()
+  test_google_response()
+  test_models()
+  test_errors()
+  println("")
+  println("=== ALL LLM TESTS PASSED ===")
+}
