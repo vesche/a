@@ -5,7 +5,7 @@ OS=$(uname -s)
 if [ "$OS" = "Darwin" ]; then
     STACK_FLAGS="-Wl,-stack_size,0x10000000"
 else
-    STACK_FLAGS="-Wl,-z,stacksize=268435456"
+    STACK_FLAGS=""
 fi
 
 echo "=== Building the 'a' language native CLI ==="

@@ -18,9 +18,13 @@ fn _find_runtime_dir() -> str {
 }
 
 fn _generate_c(source_path) -> str {
-  let source = io.read_file(source_path)
+  let mut source = io.read_file(source_path)
   if type_of(source) == "void" || len(source) == 0 {
     _die(str.concat("cannot read file: ", source_path))
+  }
+  if str.starts_with(source, "#!") {
+    let lines = str.lines(source)
+    source = str.join(drop(lines, 1), "\n")
   }
   let prog_ast = parser.parse(source)
   if type_of(prog_ast) == "map" && map.has(prog_ast, "tag") {
@@ -38,7 +42,7 @@ fn _gcc_flags() -> str {
   if os == "Darwin" {
     ret "-lm -O2 -Wl,-stack_size,0x10000000"
   }
-  ret "-lm -O2 -Wl,-z,stacksize=268435456"
+  ret "-lm -O2"
 }
 
 fn _gcc(c_path, out_path, runtime_dir) {
@@ -99,13 +103,63 @@ fn cmd_build(source_path, out_path) {
   eprintln(str.concat(cli.green("built"), str.concat(" ", out_path)))
 }
 
+fn _cache_dir() -> str {
+  ret ".a_cache"
+}
+
+fn _ensure_cache_dir() {
+  let dir = _cache_dir()
+  if !fs.exists(dir) {
+    fs.mkdir(dir)
+  }
+}
+
+fn _cached_bin(source_path) -> str {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    ret ""
+  }
+  let h = hash.sha256(source)
+  let cache_path = str.concat(_cache_dir(), str.concat("/", h))
+  if fs.exists(cache_path) {
+    ret cache_path
+  }
+  ret ""
+}
+
+fn _store_cache(source_path, bin_path) {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 { ret "" }
+  _ensure_cache_dir()
+  let h = hash.sha256(source)
+  let cache_path = str.concat(_cache_dir(), str.concat("/", h))
+  fs.cp(bin_path, cache_path)
+  exec(str.concat("chmod +x ", cache_path))
+  ret ""
+}
+
 fn cmd_run(source_path, extra_args) {
+  let cached = _cached_bin(source_path)
+  if len(cached) > 0 {
+    let mut run_cmd = cached
+    if len(extra_args) > 0 {
+      run_cmd = str.concat(cached, str.concat(" ", str.join(extra_args, " ")))
+    }
+    let result = exec(run_cmd)
+    if len(result["stdout"]) > 0 { print(result["stdout"]) }
+    if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+    if result["code"] != 0 { exit(result["code"]) }
+    ret ""
+  }
+
   let runtime_dir = _find_runtime_dir()
   let c_path = _tmp_path(".c")
   let bin_path = _tmp_path("")
   _codegen_subprocess(source_path, c_path)
   _gcc(c_path, bin_path, runtime_dir)
   fs.rm(c_path)
+
+  _store_cache(source_path, bin_path)
 
   let mut run_cmd = bin_path
   if len(extra_args) > 0 {
@@ -179,6 +233,24 @@ fn cmd_test(test_dir) {
   if failed > 0 { exit(1) }
 }
 
+fn cmd_cache_clean() {
+  let dir = _cache_dir()
+  if fs.exists(dir) {
+    exec(str.concat("rm -rf ", dir))
+    eprintln(cli.green("cache cleared"))
+  } else {
+    eprintln("no cache to clean")
+  }
+}
+
+fn cmd_eval(expr, extra_args) {
+  let wrapped = str.concat("fn main() \{\n  println(", str.concat(expr, ")\n\}"))
+  let tmp = _tmp_path("_eval.a")
+  io.write_file(tmp, wrapped)
+  cmd_run(tmp, extra_args)
+  fs.rm(tmp)
+}
+
 fn cmd_lsp() {
   let runtime_dir = _find_runtime_dir()
   let lsp_source = "src/lsp.a"
@@ -193,13 +265,16 @@ fn _usage() {
   eprintln("a -- the a language native toolchain")
   eprintln("")
   eprintln("usage:")
-  eprintln("  a run <file.a> [args...]    compile and run a program")
+  eprintln("  a run <file.a> [args...]    compile and run (cached)")
   eprintln("  a build <file.a> [-o out]   compile to native binary")
+  eprintln("  a eval <expr>              evaluate an expression")
   eprintln("  a cc <file.a>              emit C to stdout")
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
+  eprintln("  a cache clean              clear the compilation cache")
   eprintln("")
   eprintln("  a run and a build expect c_runtime/ in the current directory.")
+  eprintln("  shebang: #!/usr/bin/env a run")
 }
 
 fn main() {
@@ -256,6 +331,29 @@ fn main() {
   if subcmd == "test" {
     if len(argv) < 2 { _die("test requires a directory") }
     cmd_test(argv[1])
+    ret
+  }
+
+  if subcmd == "eval" {
+    if len(argv) < 2 { _die("eval requires an expression") }
+    let mut extra = []
+    if len(argv) > 2 {
+      let mut i = 2
+      while i < len(argv) {
+        extra = push(extra, argv[i])
+        i = i + 1
+      }
+    }
+    cmd_eval(argv[1], extra)
+    ret
+  }
+
+  if subcmd == "cache" {
+    if len(argv) >= 2 && argv[1] == "clean" {
+      cmd_cache_clean()
+      ret
+    }
+    _die("usage: a cache clean")
     ret
   }
 

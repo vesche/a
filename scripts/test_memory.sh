@@ -14,7 +14,7 @@ OS=$(uname -s)
 if [ "$OS" = "Darwin" ]; then
     SFLAGS="-Wl,-stack_size,0x8000000"
 else
-    SFLAGS="-Wl,-z,stacksize=134217728"
+    SFLAGS=""
 fi
 trap "rm -rf $WORK" EXIT
 

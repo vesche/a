@@ -10,6 +10,9 @@
 # Precompiled bytecode cache (regenerated at runtime)
 *.ac
 
+# Compilation cache (./a run)
+.a_cache/
+
 # OS junk
 .DS_Store
 Thumbs.db

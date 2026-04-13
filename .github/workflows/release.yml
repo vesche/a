@@ -51,7 +51,7 @@ jobs:
           if [ "$OS" = "Darwin" ]; then
             echo "stack=-Wl,-stack_size,0x10000000" >> "$GITHUB_OUTPUT"
           else
-            echo "stack=-Wl,-z,stacksize=268435456" >> "$GITHUB_OUTPUT"
+            echo "stack=" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build native binaries

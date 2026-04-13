@@ -1814,3 +1814,42 @@ Runtime OS detection via `uname -s`:
 | `README.md` | Added platform requirements and releases note |
 | `Cargo.toml` | Version bump to 0.51.0 |
 
+---
+
+## v0.52 -- Fast Iteration
+
+### Goal
+
+Make repeated `./a run` near-instant via compilation caching, add one-shot expression evaluation, and support shebang scripts.
+
+### Compilation cache
+
+`cmd_run` now checks `.a_cache/{sha256(source)}` before compiling. On cache hit, the pre-built binary is executed directly (skip codegen + gcc). On miss, the binary is compiled normally and cached for next time.
+
+- **Cold run:** ~1.1s (codegen subprocess + gcc + execute)
+- **Warm run:** ~0.14s (just execute cached binary) -- **8x speedup**
+
+Cache key is SHA-256 of the main source file content. `a cache clean` removes `.a_cache/` entirely.
+
+### `a eval`
+
+`a eval "expr"` wraps the expression in `fn main() { println(expr) }`, writes to a temp file, and runs it through the normal `cmd_run` pipeline (benefiting from the cache on repeat evaluations).
+
+### Shebang support
+
+`_generate_c()` strips `#!` lines before parsing, enabling:
+```
+#!/usr/bin/env a run
+fn main() { println("hello") }
+```
+Files with shebangs work as both `./a run script.a` and `./script.a` (when `chmod +x`).
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `src/cli.a` | Added cache infrastructure, `cmd_run` cache check/store, `cmd_eval`, `cmd_cache_clean`, shebang stripping in `_generate_c`, updated usage/dispatch |
+| `.gitignore` | Added `.a_cache/` |
+| `README.md` | Updated usage with eval, cache clean, shebang |
+| `Cargo.toml` | Version bump to 0.52.0 |
+

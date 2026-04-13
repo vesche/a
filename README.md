@@ -33,13 +33,18 @@ cargo build --release
 
 ```
 # Native CLI (fast, self-contained)
-./a run program.a           # compile to C, build, execute, clean up
+./a run program.a           # compile and run (cached -- instant on repeat)
 ./a build program.a         # compile to native binary
 ./a build program.a -o out  # compile to native binary with custom name
+./a eval "2 + 3"            # evaluate an expression
 ./a cc program.a            # emit C to stdout
 ./a test tests/native/      # find test_*.a files, compile, run, report
 ./a lsp                     # build the language server binary (./a-lsp)
+./a cache clean             # clear the compilation cache
 ./a-lsp                     # start language server (stdio, for editors)
+
+# Shebang support
+#!/usr/bin/env a run        # add to top of .a file, chmod +x, run directly
 
 # Rust VM
 a run program.a             # execute (bytecode VM)

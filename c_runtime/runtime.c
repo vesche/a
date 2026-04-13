@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <time.h>
 
 int g_argc = 0;
 char** g_argv = NULL;
@@ -728,8 +729,8 @@ AValue a_io_read_file(AValue path) {
     long sz = ftell(f);
     fseek(f, 0, SEEK_SET);
     char* buf = malloc(sz + 1);
-    fread(buf, 1, sz, f);
-    buf[sz] = '\0';
+    size_t n = fread(buf, 1, sz, f);
+    buf[n] = '\0';
     fclose(f);
     AValue result = a_string_len(buf, (int)sz);
     free(buf);
