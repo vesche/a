@@ -1,0 +1,45 @@
+fn main() {
+  ; Math builtins
+  println(math.sqrt(16.0))
+  println(math.abs(-42))
+  println(math.floor(3.7))
+  println(math.ceil(3.2))
+  println(math.round(3.5))
+  println(math.pow(2, 10))
+  println(math.min(5, 3))
+  println(math.max(5, 3))
+
+  ; String extras
+  let lines = str.lines("hello\nworld\nfoo")
+  println(len(lines))
+  println(lines[0])
+  println(lines[2])
+
+  ; Result extras
+  let ok_val = Ok(42)
+  let err_val = Err("nope")
+  println(unwrap_or(ok_val, 0))
+  println(unwrap_or(err_val, 99))
+
+  ; JSON stringify
+  let data = #{ "name": "test", "nums": [1, 2, 3], "ok": true }
+  let j = json.stringify(data)
+  println(j)
+
+  ; Hash functions
+  println(hash.sha256("hello"))
+  println(hash.md5("hello"))
+
+  ; Time (just verify it returns a number)
+  let t = time.now()
+  println(t > 0)
+
+  ; Env
+  env.set("MY_TEST_VAR", "hello_from_a")
+  println(env.get("MY_TEST_VAR"))
+
+  ; FS operations
+  let cwd = fs.cwd()
+  println(fs.exists(cwd))
+  println(fs.is_dir(cwd))
+}

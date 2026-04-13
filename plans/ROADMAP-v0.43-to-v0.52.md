@@ -4,14 +4,14 @@
 
 ## Where We Are
 
-At v0.47, the native path has memory management -- the runtime is production-grade:
+At v0.48, the native path has complete surface coverage -- every std module compiles natively:
 
 1. **VM path** (Rust-hosted): Full language -- closures, HOFs, pattern matching, destructuring, try/catch, concurrency, eval, metaprogramming, 100+ builtins, 20 stdlib modules, 498 tests.
-2. **Native path** (C codegen): Most language features + FFI + memory management -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn` declarations, `ptr` type, reference counting with ownership semantics, arena allocator, mark-and-sweep GC, 75+ builtins, self-hosting bootstrap (12,300 lines C, three-stage fixed point verified), 15 example programs, 4 memory-specific test programs.
+2. **Native path** (C codegen): Most language features + FFI + memory management + complete builtin surface -- functions, control flow, closures, HOFs, pipes, pattern matching, try/catch/?, destructuring, spread, else-if chains, module imports, `extern fn`, `ptr` type, RC ownership, arena, GC, goto-based cleanup (44% code reduction), 105+ builtins, SHA-256/MD5 hashing, JSON stringify/pretty, HTTP client, POSIX time/fs/env, self-hosting bootstrap (7,004 lines C, three-stage fixed point verified), 12 std modules compiling natively, 15 example programs.
 
-**What's done** (v0.43-v0.47): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing, module import aliases, else-if codegen, index assignment, map iteration, test harness, C FFI with `extern fn` and automatic AValue shim generation, reference counting ownership model, arena allocator, mark-and-sweep GC.
+**What's done** (v0.43-v0.48): closures, lambda lifting, HOF builtins, pipe operator, pattern matching, try/catch/?, let/for destructuring, array spread, native I/O, JSON parsing/stringify, module imports, else-if codegen, index assignment, map iteration, test harness, C FFI, RC ownership, arena, GC, goto cleanup optimization, try block return fix, math/time/hash/http/fs/env builtins, full std module native compilation.
 
-**What remains**: native stdlib (v0.48), and everything beyond.
+**What remains**: package manager (v0.49), and everything beyond.
 
 ---
 
@@ -419,7 +419,7 @@ This is the destination. Everything from v0.43 to v0.51 is the road.
 | **v0.45.3** ✅ | Test Hardening | 113 native tests, 6 bugs fixed, bootstrap verified | Confidence before FFI |
 | **v0.46** ✅ | C FFI | `extern fn`, ptr type, type marshalling, shim gen | Access entire C ecosystem |
 | **v0.47** ✅ | Memory Architecture | RC ownership, arenas, GC | Production-grade native runtime |
-| **v0.48** | Native Stdlib | POSIX I/O, HTTP, JSON, hash | No Rust dependency in stdlib |
+| **v0.48** ✅ | Stabilize + Native Surface | Goto cleanup, try fix, 30+ builtins, HTTP, hash | Every std module compiles natively |
 | **v0.49** | Package Manager | deps, registry, lockfile | Reusable libraries |
 | **v0.50** | Language Server | LSP in "a" | IDE intelligence |
 | **v0.51** | WebAssembly Target | Compile to WASM | Run in browsers/edge |

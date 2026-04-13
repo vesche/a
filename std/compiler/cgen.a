@@ -8,30 +8,47 @@ use std.compiler.ast
 
 ; Builtin name -> C function name mapping
 fn _builtin_map() -> map {
-  ret #{
+  let m = #{
     "println": "a_println", "print": "a_print", "eprintln": "a_eprintln",
     "len": "a_len", "push": "a_array_push", "to_str": "a_to_str",
-    "type_of": "a_type_of", "int": "a_to_int", "float": "a_to_float",
+    "fail": "a_fail", "type_of": "a_type_of", "int": "a_to_int", "float": "a_to_float",
     "sort": "a_sort", "contains": "a_contains", "reverse_arr": "a_reverse_arr",
     "concat_arr": "a_concat_arr", "args": "a_args", "slice": "a_array_slice",
     "char_code": "a_char_code", "from_code": "a_from_code",
     "is_alpha": "a_is_alpha", "is_digit": "a_is_digit", "is_alnum": "a_is_alnum",
     "Ok": "a_ok", "Err": "a_err", "unwrap": "a_unwrap",
-    "is_ok": "a_is_ok", "is_err": "a_is_err",
+    "is_ok": "a_is_ok", "is_err": "a_is_err", "unwrap_or": "a_unwrap_or"
+  }
+  let m2 = #{
     "str.concat": "a_str_concat", "str.split": "a_str_split",
     "str.contains": "a_str_contains", "str.replace": "a_str_replace",
     "str.trim": "a_str_trim", "str.upper": "a_str_upper", "str.lower": "a_str_lower",
     "str.join": "a_str_join", "str.chars": "a_str_chars", "str.slice": "a_str_slice",
     "str.starts_with": "a_str_starts_with", "str.ends_with": "a_str_ends_with",
-    "str.find": "a_str_find", "str.count": "a_str_count",
+    "str.find": "a_str_find", "str.count": "a_str_count", "str.lines": "a_str_lines",
     "map.get": "a_map_get", "map.set": "a_map_set", "map.has": "a_map_has",
     "map.keys": "a_map_keys", "map.values": "a_map_values", "map.merge": "a_map_merge",
-    "map.delete": "a_map_delete", "map.entries": "a_map_entries", "map.from_entries": "a_map_from_entries",
+    "map.delete": "a_map_delete", "map.entries": "a_map_entries", "map.from_entries": "a_map_from_entries"
+  }
+  let m3 = #{
     "io.read_file": "a_io_read_file", "io.write_file": "a_io_write_file",
+    "io.read_stdin": "a_io_read_stdin", "io.read_line": "a_io_read_line",
     "fs.ls": "a_fs_ls", "fs.mkdir": "a_fs_mkdir", "fs.cwd": "a_fs_cwd",
     "fs.exists": "a_fs_exists", "fs.is_dir": "a_fs_is_dir",
+    "fs.rm": "a_fs_rm", "fs.mv": "a_fs_mv", "fs.cp": "a_fs_cp",
+    "fs.abs": "a_fs_abs", "fs.is_file": "a_fs_is_file",
     "exec": "a_exec", "env.get": "a_env_get",
-    "json.parse": "a_json_parse", "json.stringify": "a_to_str", "json.pretty": "a_to_str",
+    "env.set": "a_env_set", "env.all": "a_env_all",
+    "json.parse": "a_json_parse",
+    "json.stringify": "a_json_stringify", "json.pretty": "a_json_pretty"
+  }
+  let m4 = #{
+    "math.sqrt": "a_math_sqrt", "math.abs": "a_math_abs",
+    "math.floor": "a_math_floor", "math.ceil": "a_math_ceil", "math.round": "a_math_round",
+    "math.pow": "a_math_pow", "math.min": "a_math_min", "math.max": "a_math_max",
+    "time.now": "a_time_now", "time.sleep": "a_time_sleep",
+    "hash.sha256": "a_hash_sha256", "hash.md5": "a_hash_md5",
+    "http.get": "a_http_get", "http.post": "a_http_post",
     "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",
     "each": "a_hof_each", "sort_by": "a_hof_sort_by", "find": "a_hof_find",
     "any": "a_hof_any", "all": "a_hof_all", "flat_map": "a_hof_flat_map",
@@ -40,10 +57,11 @@ fn _builtin_map() -> map {
     "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk",
     "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null"
   }
+  ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail", "each"]
+  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep"]
 }
 
 fn _c_keywords() -> [str] {
@@ -683,6 +701,7 @@ fn emit_expr(node, bm, ctx, li) {
       for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
       lambda_cleanup = concat_arr(lambda_cleanup, decl_vars)
       lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
+      lambda_ctx = map.set(lambda_ctx, "goto_cleanup", false)
 
       ; Emit body, making the last ExprStmt an implicit return
       let mut has_return = false
@@ -716,6 +735,7 @@ fn emit_expr(node, bm, ctx, li) {
       let mut lambda_cleanup = []
       for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
       lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
+      lambda_ctx = map.set(lambda_ctx, "goto_cleanup", false)
       let er = emit_expr(body, bm, lambda_ctx, next_li)
       let cleanup = _emit_cleanup(lambda_cleanup, 1)
       fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(er[0], str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
@@ -766,15 +786,35 @@ fn emit_expr(node, bm, ctx, li) {
     code = str.concat(code, str.concat("        if (setjmp(a_try_stack[a_try_depth - 1]) == 0) \{", nl))
 
     let mut lifted = []
-    for s in stmts {
-      let sr = emit_stmt(s, 3, bm, ctx, li)
-      code = str.concat(code, str.concat(sr[0], nl))
-      li = sr[1]
-      lifted = concat_arr(lifted, sr[2])
+    let nstmts = len(stmts)
+    let has_tail = nstmts > 0 && stmts[nstmts - 1]["tag"] == "ExprStmt"
+    if has_tail {
+      code = str.concat(code, str.concat("        AValue __try_tail = a_void();", nl))
+    }
+    let mut si = 0
+    while si < nstmts {
+      let s = stmts[si]
+      let is_last = si == nstmts - 1
+      if is_last && has_tail {
+        let er = emit_expr(s["expr"], bm, ctx, li)
+        code = str.concat(code, str.concat("            __try_tail = ", str.concat(er[0], str.concat(";", nl))))
+        li = er[1]
+        lifted = concat_arr(lifted, er[2])
+      } else {
+        let sr = emit_stmt(s, 3, bm, ctx, li)
+        code = str.concat(code, str.concat(sr[0], nl))
+        li = sr[1]
+        lifted = concat_arr(lifted, sr[2])
+      }
+      si = si + 1
     }
 
     code = str.concat(code, str.concat("            a_try_depth--;", nl))
-    code = str.concat(code, str.concat("            __try_result = a_ok(a_void());", nl))
+    if has_tail {
+      code = str.concat(code, str.concat("            __try_result = a_ok(__try_tail);", nl))
+    } else {
+      code = str.concat(code, str.concat("            __try_result = a_ok(a_void());", nl))
+    }
     code = str.concat(code, str.concat("        \} else \{", nl))
     code = str.concat(code, str.concat("            a_try_depth--;", nl))
     code = str.concat(code, str.concat("            __try_result = a_err(a_try_err);", nl))
@@ -1210,9 +1250,13 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
   }
 
   if tag == "Return" {
+    let use_goto = type_of(ctx["goto_cleanup"]) == "bool" && ctx["goto_cleanup"]
     let cleanup_vars = ctx["cleanup_vars"]
     let has_cleanup = type_of(cleanup_vars) == "array" && len(cleanup_vars) > 0
     if type_of(node["expr"]) == "void" {
+      if use_goto {
+        ret _R(str.concat(ind, "goto __fn_cleanup;"), li)
+      }
       if has_cleanup {
         let cleanup = _emit_cleanup(cleanup_vars, depth)
         ret _R(str.concat(ind, str.concat("\{", str.concat(cleanup, str.concat("\n", str.concat(ind, "return a_void(); \}"))))), li)
@@ -1220,6 +1264,13 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
       ret _R(str.concat(ind, "return a_void();"), li)
     }
     let vr = emit_expr(node["expr"], bm, ctx, li)
+    if use_goto {
+      let val_expr = vr[0]
+      if _is_ident(node["expr"]) {
+        val_expr = str.concat("a_retain(", str.concat(vr[0], ")"))
+      }
+      ret _RL(str.concat(ind, str.concat("__ret = ", str.concat(val_expr, "; goto __fn_cleanup;"))), vr[1], vr[2])
+    }
     if has_cleanup {
       let val_expr = vr[0]
       let ret_expr = val_expr
@@ -1492,6 +1543,7 @@ fn emit_fn(node, bm, ctx, li) {
     for v in decl_vars { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
     out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(init_parts, ", "), ";")))
   }
+  out = str.concat(out, "\n    AValue __ret = a_void();")
 
   let all_cleanup_vars = decl_vars
 
@@ -1501,6 +1553,7 @@ fn emit_fn(node, bm, ctx, li) {
   for v in all_vars { if !contains(enc_vars, _mangle(v)) { enc_vars = push(enc_vars, v) } }
   let fn_ctx = map.set(ctx, "enclosing_vars", enc_vars)
   fn_ctx = map.set(fn_ctx, "cleanup_vars", all_cleanup_vars)
+  fn_ctx = map.set(fn_ctx, "goto_cleanup", true)
 
   ; Escape analysis result stored in context for Phase 4 arena allocation
   fn_ctx = map.set(fn_ctx, "escaping_vars", [])
@@ -1514,15 +1567,9 @@ fn emit_fn(node, bm, ctx, li) {
     lifted = concat_arr(lifted, sr[2])
   }
 
-  let has_return = false
-  if len(stmts) > 0 {
-    let last = stmts[len(stmts) - 1]
-    if last["tag"] == "Return" { has_return = true }
-  }
-  if !has_return {
-    let cleanup = _emit_cleanup(all_cleanup_vars, 1)
-    out = str.concat(out, str.concat(cleanup, "\n    return a_void();"))
-  }
+  out = str.concat(out, "\n__fn_cleanup:")
+  let cleanup = _emit_cleanup(all_cleanup_vars, 1)
+  out = str.concat(out, str.concat(cleanup, "\n    return __ret;"))
 
   out = str.concat(out, "\n\}\n")
   ret _RL(out, li, lifted)

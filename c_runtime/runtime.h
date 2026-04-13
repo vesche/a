@@ -173,6 +173,10 @@ AValue a_is_ok(AValue v);
 AValue a_is_err(AValue v);
 AValue a_unwrap(AValue v);
 
+/* Result extras */
+AValue a_unwrap_or(AValue v, AValue def);
+AValue a_expect(AValue v, AValue msg);
+
 /* Utility */
 AValue a_type_of(AValue v);
 AValue a_args(void);
@@ -184,6 +188,50 @@ AValue a_from_code(AValue v);
 AValue a_is_alpha(AValue v);
 AValue a_is_digit(AValue v);
 AValue a_is_alnum(AValue v);
+
+/* Math */
+AValue a_math_sqrt(AValue v);
+AValue a_math_abs(AValue v);
+AValue a_math_floor(AValue v);
+AValue a_math_ceil(AValue v);
+AValue a_math_round(AValue v);
+AValue a_math_pow(AValue base, AValue exp);
+AValue a_math_min(AValue a, AValue b);
+AValue a_math_max(AValue a, AValue b);
+
+/* Strings (extras) */
+AValue a_str_lines(AValue s);
+
+/* I/O (extras) */
+AValue a_io_read_stdin(void);
+AValue a_io_read_line(void);
+
+/* Environment (extras) */
+AValue a_env_set(AValue key, AValue val);
+AValue a_env_all(void);
+
+/* Filesystem (extras) */
+AValue a_fs_rm(AValue path);
+AValue a_fs_mv(AValue src, AValue dst);
+AValue a_fs_cp(AValue src, AValue dst);
+AValue a_fs_abs(AValue path);
+AValue a_fs_is_file(AValue path);
+
+/* Time */
+AValue a_time_now(void);
+AValue a_time_sleep(AValue ms);
+
+/* Hashing */
+AValue a_hash_sha256(AValue data);
+AValue a_hash_md5(AValue data);
+
+/* JSON (extras) */
+AValue a_json_stringify(AValue v);
+AValue a_json_pretty(AValue v);
+
+/* HTTP client */
+AValue a_http_get(AValue url, AValue headers);
+AValue a_http_post(AValue url, AValue body, AValue headers);
 
 /* Closures */
 AValue a_closure(AClosureFn fn, AValue env);

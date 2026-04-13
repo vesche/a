@@ -1605,3 +1605,75 @@ The GC is opt-in -- not wired into every allocation. RC handles the common case;
 
 C runtime: ~1,700 lines. cgen.a: ~1,830 lines. Generated C: 12,300 lines.
 
+## v0.48 -- Stabilize + Complete the Native Surface
+
+*Completed: April 2026*
+
+Addresses foundation issues from v0.47 and fills the native surface area so every std module compiles natively.
+
+### Bug Fixes
+
+1. **Try block return value** -- The `TryBlock` expression now captures the last expression's value on the success path instead of always returning `Ok(void)`. The code generator detects when the last statement is an `ExprStmt`, stores its value in `__try_tail`, and wraps it with `a_ok(__try_tail)`.
+
+2. **Goto-based cleanup** -- Instead of duplicating `a_release` calls at every return site, each function now has a single `__fn_cleanup:` label at the end. Returns become `__ret = expr; goto __fn_cleanup;`. This reduced generated C from **12,390 to ~7,000 lines (44%)** while preserving the fixed-point bootstrap. Lambda functions use the original inline cleanup to avoid label conflicts.
+
+### New Builtins (C Runtime)
+
+Added **30+ new C functions** to the runtime, all mapped in the code generator's `_builtin_map`:
+
+| Category | Functions |
+|----------|-----------|
+| **Math** | `sqrt`, `abs`, `floor`, `ceil`, `round`, `pow`, `min`, `max` |
+| **Result** | `unwrap_or`, `expect` |
+| **String** | `str.lines` |
+| **I/O** | `io.read_stdin`, `io.read_line` |
+| **Environment** | `env.set`, `env.all` |
+| **Filesystem** | `fs.rm`, `fs.mv`, `fs.cp`, `fs.abs`, `fs.is_file` |
+| **Time** | `time.now` (epoch ms), `time.sleep` (ms) |
+| **Hashing** | `hash.sha256`, `hash.md5` (standalone C implementations, no dependencies) |
+| **JSON** | `json.stringify` (compact), `json.pretty` (indented) -- recursive C serializers |
+| **HTTP** | `http.get(url, headers)`, `http.post(url, body, headers)` via system curl |
+
+### Builtin Map Restructuring
+
+The `_builtin_map()` function was split from a single 105-entry map literal into 4 smaller maps merged together. This avoids generating `a_map_new(105, ...)` with 210 variadic arguments, which caused stack overflow during self-compilation on ARM64.
+
+### Std Module Verification
+
+All 12 standard library modules compile and run natively:
+
+| Module | Lines | Notes |
+|--------|-------|-------|
+| `std/path.a` | 292 | Pure string manipulation |
+| `std/testing.a` | 78 | `fail` builtin added to map |
+| `std/datetime.a` | 292 | Uses `time.now`, `time.sleep` |
+| `std/math.a` | 131 | Pure arithmetic |
+| `std/strings.a` | 127 | String utilities |
+| `std/csv.a` | 281 | Parser/serializer |
+| `std/re.a` | 791 | Regex engine (uses `std.strings`) |
+| `std/template.a` | 346 | Template renderer |
+| `std/cli.a` | 117 | ANSI color codes |
+| `std/encoding.a` | 398 | Base64, hex, URL encoding |
+| `std/lexer.a` | 525 | Tokenizer |
+| `std/hash.a` | 67 | SHA-256, MD5 wrappers |
+
+### Verification
+
+- Three-stage bootstrap: **7,004 lines C**, byte-identical across all stages
+- Fixed-point self-compilation verified
+- All 7 example programs pass (arrays, closures, strings, 4 memory tests)
+- All 12 std modules compile and run natively
+- SHA-256 and MD5 produce correct hashes (verified against known vectors)
+- HTTP client successfully fetches from httpbin.org
+- Stack flag requirement increased to 128MB (`-Wl,-stack_size,0x8000000`) due to expanded builtin map
+
+### Files Modified
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.h` | 30+ new function declarations for math, time, hash, JSON, HTTP, fs, env |
+| `c_runtime/runtime.c` | Standalone SHA-256 and MD5 implementations, recursive JSON serializer, HTTP via curl subprocess, POSIX time/fs/env wrappers (~2,200 lines, up from ~1,700) |
+| `std/compiler/cgen.a` | Try block fix, goto cleanup, split builtin map, `fail`/`http.get`/`http.post` and 25+ new builtin mappings (~1,870 lines) |
+
+C runtime: ~2,200 lines. cgen.a: ~1,870 lines. Generated C: ~7,000 lines.
+

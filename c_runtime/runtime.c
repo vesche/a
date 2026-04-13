@@ -1058,6 +1058,520 @@ AValue a_is_alnum(AValue v) {
     return a_bool(0);
 }
 
+/* --- Result extras --- */
+
+AValue a_unwrap_or(AValue v, AValue def) {
+    if (v.tag == TAG_RESULT && v.rval.is_ok) return a_retain(*v.rval.inner);
+    return a_retain(def);
+}
+
+AValue a_expect(AValue v, AValue msg) {
+    if (v.tag == TAG_RESULT) {
+        if (v.rval.is_ok) return a_retain(*v.rval.inner);
+        fprintf(stderr, "expect failed: ");
+        a_eprintln(msg);
+        fprintf(stderr, "  error was: ");
+        a_eprintln(*v.rval.inner);
+        exit(1);
+    }
+    return v;
+}
+
+/* --- Math --- */
+
+AValue a_math_sqrt(AValue v) {
+    double x = (v.tag == TAG_INT) ? (double)v.ival : v.fval;
+    return a_float(sqrt(x));
+}
+
+AValue a_math_abs(AValue v) {
+    if (v.tag == TAG_INT) return a_int(v.ival < 0 ? -v.ival : v.ival);
+    if (v.tag == TAG_FLOAT) return a_float(fabs(v.fval));
+    return v;
+}
+
+AValue a_math_floor(AValue v) {
+    double x = (v.tag == TAG_INT) ? (double)v.ival : v.fval;
+    return a_int((int64_t)floor(x));
+}
+
+AValue a_math_ceil(AValue v) {
+    double x = (v.tag == TAG_INT) ? (double)v.ival : v.fval;
+    return a_int((int64_t)ceil(x));
+}
+
+AValue a_math_round(AValue v) {
+    double x = (v.tag == TAG_INT) ? (double)v.ival : v.fval;
+    return a_int((int64_t)round(x));
+}
+
+AValue a_math_pow(AValue base, AValue exp) {
+    double b = (base.tag == TAG_INT) ? (double)base.ival : base.fval;
+    double e = (exp.tag == TAG_INT) ? (double)exp.ival : exp.fval;
+    double r = pow(b, e);
+    if (base.tag == TAG_INT && exp.tag == TAG_INT && exp.ival >= 0)
+        return a_int((int64_t)r);
+    return a_float(r);
+}
+
+AValue a_math_min(AValue a, AValue b) {
+    if (a.tag == TAG_INT && b.tag == TAG_INT) return a.ival < b.ival ? a : b;
+    double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
+    double fb = (b.tag == TAG_INT) ? (double)b.ival : b.fval;
+    return fa < fb ? a : b;
+}
+
+AValue a_math_max(AValue a, AValue b) {
+    if (a.tag == TAG_INT && b.tag == TAG_INT) return a.ival > b.ival ? a : b;
+    double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
+    double fb = (b.tag == TAG_INT) ? (double)b.ival : b.fval;
+    return fa > fb ? a : b;
+}
+
+/* --- String extras --- */
+
+AValue a_str_lines(AValue s) {
+    if (s.tag != TAG_STRING) return a_array_new(0);
+    return a_str_split(s, a_string("\n"));
+}
+
+/* --- I/O extras --- */
+
+AValue a_io_read_stdin(void) {
+    size_t cap = 4096, len = 0;
+    char* buf = malloc(cap);
+    size_t n;
+    while ((n = fread(buf + len, 1, cap - len, stdin)) > 0) {
+        len += n;
+        if (len >= cap) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    buf[len] = '\0';
+    AValue result = a_string_len(buf, (int)len);
+    free(buf);
+    return result;
+}
+
+AValue a_io_read_line(void) {
+    size_t cap = 256, len = 0;
+    char* buf = malloc(cap);
+    int c;
+    while ((c = fgetc(stdin)) != EOF && c != '\n') {
+        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+        buf[len++] = (char)c;
+    }
+    buf[len] = '\0';
+    AValue result = a_string_len(buf, (int)len);
+    free(buf);
+    return result;
+}
+
+/* --- Environment extras --- */
+
+extern char** environ;
+
+AValue a_env_set(AValue key, AValue val) {
+    if (key.tag != TAG_STRING || val.tag != TAG_STRING) return a_void();
+    setenv(key.sval->data, val.sval->data, 1);
+    return a_void();
+}
+
+AValue a_env_all(void) {
+    AValue m = a_map_new(0);
+    for (char** e = environ; *e; e++) {
+        char* eq = strchr(*e, '=');
+        if (eq) {
+            AValue k = a_string_len(*e, (int)(eq - *e));
+            AValue v = a_string(eq + 1);
+            m = a_map_set(m, k, v);
+        }
+    }
+    return m;
+}
+
+/* --- Filesystem extras --- */
+
+AValue a_fs_rm(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.rm: expected string path"));
+    if (remove(path.sval->data) == 0) return a_ok(a_void());
+    return a_err(a_string("fs.rm: failed"));
+}
+
+AValue a_fs_mv(AValue src, AValue dst) {
+    if (src.tag != TAG_STRING || dst.tag != TAG_STRING) return a_err(a_string("fs.mv: expected string paths"));
+    if (rename(src.sval->data, dst.sval->data) == 0) return a_ok(a_void());
+    return a_err(a_string("fs.mv: failed"));
+}
+
+AValue a_fs_cp(AValue src, AValue dst) {
+    if (src.tag != TAG_STRING || dst.tag != TAG_STRING) return a_err(a_string("fs.cp: expected string paths"));
+    FILE* in = fopen(src.sval->data, "rb");
+    if (!in) return a_err(a_string("fs.cp: cannot open source"));
+    FILE* out = fopen(dst.sval->data, "wb");
+    if (!out) { fclose(in); return a_err(a_string("fs.cp: cannot open dest")); }
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) fwrite(buf, 1, n, out);
+    fclose(in);
+    fclose(out);
+    return a_ok(a_void());
+}
+
+AValue a_fs_abs(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.abs: expected string path"));
+    char resolved[4096];
+    if (realpath(path.sval->data, resolved)) return a_string(resolved);
+    return a_err(a_string("fs.abs: failed"));
+}
+
+AValue a_fs_is_file(AValue path) {
+    if (path.tag != TAG_STRING) return a_bool(0);
+    struct stat st;
+    if (stat(path.sval->data, &st) != 0) return a_bool(0);
+    return a_bool(S_ISREG(st.st_mode));
+}
+
+/* --- Time --- */
+
+#include <sys/time.h>
+
+AValue a_time_now(void) {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return a_int((int64_t)tv.tv_sec * 1000 + tv.tv_usec / 1000);
+}
+
+AValue a_time_sleep(AValue ms) {
+    if (ms.tag != TAG_INT) return a_void();
+    struct timespec ts;
+    ts.tv_sec = ms.ival / 1000;
+    ts.tv_nsec = (ms.ival % 1000) * 1000000;
+    nanosleep(&ts, NULL);
+    return a_void();
+}
+
+/* --- Hashing --- */
+
+static void sha256_transform(uint32_t state[8], const uint8_t data[64]) {
+    static const uint32_t k[64] = {
+        0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+        0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+        0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+        0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+        0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+        0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+        0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+        0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2
+    };
+    #define RR(x,n) (((x)>>(n))|((x)<<(32-(n))))
+    #define CH(x,y,z) (((x)&(y))^(~(x)&(z)))
+    #define MAJ(x,y,z) (((x)&(y))^((x)&(z))^((y)&(z)))
+    #define EP0(x) (RR(x,2)^RR(x,13)^RR(x,22))
+    #define EP1(x) (RR(x,6)^RR(x,11)^RR(x,25))
+    #define SIG0(x) (RR(x,7)^RR(x,18)^((x)>>3))
+    #define SIG1(x) (RR(x,17)^RR(x,19)^((x)>>10))
+    uint32_t w[64], a,b,c,d,e,f,g,h,t1,t2;
+    for (int i = 0; i < 16; i++)
+        w[i] = ((uint32_t)data[i*4]<<24)|((uint32_t)data[i*4+1]<<16)|((uint32_t)data[i*4+2]<<8)|data[i*4+3];
+    for (int i = 16; i < 64; i++)
+        w[i] = SIG1(w[i-2]) + w[i-7] + SIG0(w[i-15]) + w[i-16];
+    a=state[0]; b=state[1]; c=state[2]; d=state[3];
+    e=state[4]; f=state[5]; g=state[6]; h=state[7];
+    for (int i = 0; i < 64; i++) {
+        t1 = h + EP1(e) + CH(e,f,g) + k[i] + w[i];
+        t2 = EP0(a) + MAJ(a,b,c);
+        h=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+    }
+    state[0]+=a; state[1]+=b; state[2]+=c; state[3]+=d;
+    state[4]+=e; state[5]+=f; state[6]+=g; state[7]+=h;
+    #undef RR
+    #undef CH
+    #undef MAJ
+    #undef EP0
+    #undef EP1
+    #undef SIG0
+    #undef SIG1
+}
+
+AValue a_hash_sha256(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("hash.sha256: expected string"));
+    const uint8_t* msg = (const uint8_t*)data.sval->data;
+    uint64_t bitlen = (uint64_t)data.sval->len * 8;
+    uint32_t state[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    int len = data.sval->len;
+    int i;
+    for (i = 0; i + 64 <= len; i += 64)
+        sha256_transform(state, msg + i);
+    uint8_t block[64];
+    int rem = len - i;
+    memcpy(block, msg + i, rem);
+    block[rem] = 0x80;
+    if (rem >= 56) {
+        memset(block + rem + 1, 0, 63 - rem);
+        sha256_transform(state, block);
+        memset(block, 0, 56);
+    } else {
+        memset(block + rem + 1, 0, 55 - rem);
+    }
+    for (int j = 0; j < 8; j++) block[56 + j] = (uint8_t)(bitlen >> (56 - j * 8));
+    sha256_transform(state, block);
+    char hex[65];
+    for (int j = 0; j < 8; j++)
+        snprintf(hex + j * 8, 9, "%08x", state[j]);
+    return a_string(hex);
+}
+
+static void md5_transform(uint32_t state[4], const uint8_t block[64]) {
+    static const uint32_t S[64] = {
+        7,12,17,22,7,12,17,22,7,12,17,22,7,12,17,22,
+        5,9,14,20,5,9,14,20,5,9,14,20,5,9,14,20,
+        4,11,16,23,4,11,16,23,4,11,16,23,4,11,16,23,
+        6,10,15,21,6,10,15,21,6,10,15,21,6,10,15,21
+    };
+    static const uint32_t K[64] = {
+        0xd76aa478,0xe8c7b756,0x242070db,0xc1bdceee,0xf57c0faf,0x4787c62a,0xa8304613,0xfd469501,
+        0x698098d8,0x8b44f7af,0xffff5bb1,0x895cd7be,0x6b901122,0xfd987193,0xa679438e,0x49b40821,
+        0xf61e2562,0xc040b340,0x265e5a51,0xe9b6c7aa,0xd62f105d,0x02441453,0xd8a1e681,0xe7d3fbc8,
+        0x21e1cde6,0xc33707d6,0xf4d50d87,0x455a14ed,0xa9e3e905,0xfcefa3f8,0x676f02d9,0x8d2a4c8a,
+        0xfffa3942,0x8771f681,0x6d9d6122,0xfde5380c,0xa4beea44,0x4bdecfa9,0xf6bb4b60,0xbebfbc70,
+        0x289b7ec6,0xeaa127fa,0xd4ef3085,0x04881d05,0xd9d4d039,0xe6db99e5,0x1fa27cf8,0xc4ac5665,
+        0xf4292244,0x432aff97,0xab9423a7,0xfc93a039,0x655b59c3,0x8f0ccc92,0xffeff47d,0x85845dd1,
+        0x6fa87e4f,0xfe2ce6e0,0xa3014314,0x4e0811a1,0xf7537e82,0xbd3af235,0x2ad7d2bb,0xeb86d391
+    };
+    uint32_t M[16];
+    for (int i = 0; i < 16; i++)
+        M[i] = (uint32_t)block[i*4] | ((uint32_t)block[i*4+1]<<8) | ((uint32_t)block[i*4+2]<<16) | ((uint32_t)block[i*4+3]<<24);
+    uint32_t a=state[0], b=state[1], c=state[2], d=state[3];
+    for (int i = 0; i < 64; i++) {
+        uint32_t F, g;
+        if (i < 16)      { F = (b & c) | (~b & d); g = i; }
+        else if (i < 32) { F = (d & b) | (~d & c); g = (5*i + 1) % 16; }
+        else if (i < 48) { F = b ^ c ^ d;           g = (3*i + 5) % 16; }
+        else              { F = c ^ (b | ~d);        g = (7*i) % 16; }
+        uint32_t tmp = d; d = c; c = b;
+        uint32_t x = a + F + K[i] + M[g];
+        b = b + ((x << S[i]) | (x >> (32 - S[i])));
+        a = tmp;
+    }
+    state[0]+=a; state[1]+=b; state[2]+=c; state[3]+=d;
+}
+
+AValue a_hash_md5(AValue data) {
+    if (data.tag != TAG_STRING) return a_err(a_string("hash.md5: expected string"));
+    const uint8_t* msg = (const uint8_t*)data.sval->data;
+    uint64_t bitlen = (uint64_t)data.sval->len * 8;
+    uint32_t state[4] = {0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476};
+    int len = data.sval->len;
+    int i;
+    for (i = 0; i + 64 <= len; i += 64)
+        md5_transform(state, msg + i);
+    uint8_t block[64];
+    int rem = len - i;
+    memcpy(block, msg + i, rem);
+    block[rem] = 0x80;
+    if (rem >= 56) {
+        memset(block + rem + 1, 0, 63 - rem);
+        md5_transform(state, block);
+        memset(block, 0, 56);
+    } else {
+        memset(block + rem + 1, 0, 55 - rem);
+    }
+    for (int j = 0; j < 8; j++) block[56 + j] = (uint8_t)(bitlen >> (j * 8));
+    md5_transform(state, block);
+    char hex[33];
+    for (int j = 0; j < 4; j++) {
+        uint32_t v = state[j];
+        snprintf(hex + j * 8, 9, "%02x%02x%02x%02x", v&0xff, (v>>8)&0xff, (v>>16)&0xff, (v>>24)&0xff);
+    }
+    return a_string(hex);
+}
+
+/* --- JSON extras --- */
+
+static void json_stringify_val(AValue v, char** buf, int* pos, int* cap, int indent, int pretty) {
+    #define JS_GROW(n) do { while (*pos + (n) >= *cap) { *cap *= 2; *buf = realloc(*buf, *cap); } } while(0)
+    #define JS_PUT(s) do { int _l = (int)strlen(s); JS_GROW(_l); memcpy(*buf + *pos, s, _l); *pos += _l; } while(0)
+    #define JS_INDENT(d) do { if (pretty) { JS_PUT("\n"); for(int _i=0;_i<(d);_i++) JS_PUT("  "); } } while(0)
+    switch (v.tag) {
+        case TAG_INT: { char tmp[32]; snprintf(tmp, 32, "%lld", (long long)v.ival); JS_PUT(tmp); break; }
+        case TAG_FLOAT: { char tmp[64]; snprintf(tmp, 64, "%g", v.fval); JS_PUT(tmp); break; }
+        case TAG_BOOL: JS_PUT(v.bval ? "true" : "false"); break;
+        case TAG_VOID: JS_PUT("null"); break;
+        case TAG_STRING: {
+            JS_GROW(v.sval->len * 2 + 2);
+            (*buf)[(*pos)++] = '"';
+            for (int i = 0; i < v.sval->len; i++) {
+                char c = v.sval->data[i];
+                if (c == '"') { JS_PUT("\\\""); }
+                else if (c == '\\') { JS_PUT("\\\\"); }
+                else if (c == '\n') { JS_PUT("\\n"); }
+                else if (c == '\r') { JS_PUT("\\r"); }
+                else if (c == '\t') { JS_PUT("\\t"); }
+                else { JS_GROW(1); (*buf)[(*pos)++] = c; }
+            }
+            (*buf)[(*pos)++] = '"';
+            break;
+        }
+        case TAG_ARRAY: {
+            JS_PUT("[");
+            for (int i = 0; i < v.aval->len; i++) {
+                if (i > 0) JS_PUT(",");
+                JS_INDENT(indent + 1);
+                json_stringify_val(v.aval->items[i], buf, pos, cap, indent + 1, pretty);
+            }
+            if (v.aval->len > 0) JS_INDENT(indent);
+            JS_PUT("]");
+            break;
+        }
+        case TAG_MAP: {
+            JS_PUT("{");
+            for (int i = 0; i < v.mval->len; i++) {
+                if (i > 0) JS_PUT(",");
+                JS_INDENT(indent + 1);
+                JS_GROW((int)strlen(v.mval->keys[i]) * 2 + 4);
+                (*buf)[(*pos)++] = '"';
+                const char* k = v.mval->keys[i];
+                while (*k) { if (*k == '"') JS_PUT("\\\""); else { (*buf)[(*pos)++] = *k; } k++; }
+                (*buf)[(*pos)++] = '"';
+                JS_PUT(pretty ? ": " : ":");
+                json_stringify_val(v.mval->vals[i], buf, pos, cap, indent + 1, pretty);
+            }
+            if (v.mval->len > 0) JS_INDENT(indent);
+            JS_PUT("}");
+            break;
+        }
+        case TAG_RESULT: {
+            if (v.rval.inner) json_stringify_val(*v.rval.inner, buf, pos, cap, indent, pretty);
+            else JS_PUT("null");
+            break;
+        }
+        default: JS_PUT("null"); break;
+    }
+    #undef JS_GROW
+    #undef JS_PUT
+    #undef JS_INDENT
+}
+
+AValue a_json_stringify(AValue v) {
+    int cap = 256, pos = 0;
+    char* buf = malloc(cap);
+    json_stringify_val(v, &buf, &pos, &cap, 0, 0);
+    buf[pos] = '\0';
+    AValue result = a_string_len(buf, pos);
+    free(buf);
+    return result;
+}
+
+AValue a_json_pretty(AValue v) {
+    int cap = 256, pos = 0;
+    char* buf = malloc(cap);
+    json_stringify_val(v, &buf, &pos, &cap, 0, 1);
+    buf[pos] = '\0';
+    AValue result = a_string_len(buf, pos);
+    free(buf);
+    return result;
+}
+
+/* --- HTTP client (via system curl) --- */
+
+#include <sys/wait.h>
+
+static AValue http_request(const char* method, const char* url, const char* body, AValue headers) {
+    int out_pipe[2], err_pipe[2];
+    if (pipe(out_pipe) < 0 || pipe(err_pipe) < 0)
+        return a_err(a_string("http: pipe failed"));
+
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(out_pipe[0]); close(out_pipe[1]);
+        close(err_pipe[0]); close(err_pipe[1]);
+        return a_err(a_string("http: fork failed"));
+    }
+
+    if (pid == 0) {
+        close(out_pipe[0]);
+        close(err_pipe[0]);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(err_pipe[1], STDERR_FILENO);
+        close(out_pipe[1]);
+        close(err_pipe[1]);
+
+        int argc = 0;
+        char* argv[64];
+        argv[argc++] = "curl";
+        argv[argc++] = "-s";
+        argv[argc++] = "-w";
+        argv[argc++] = "\n__HTTP_STATUS__%{http_code}";
+        argv[argc++] = "-X";
+        argv[argc++] = (char*)method;
+
+        if (headers.tag == TAG_MAP) {
+            for (int i = 0; i < headers.mval->len && argc < 58; i++) {
+                char* hdr = malloc(strlen(headers.mval->keys[i]) + headers.mval->vals[i].sval->len + 4);
+                sprintf(hdr, "%s: %s", headers.mval->keys[i], headers.mval->vals[i].sval->data);
+                argv[argc++] = "-H";
+                argv[argc++] = hdr;
+            }
+        }
+
+        if (body && strlen(body) > 0) {
+            argv[argc++] = "-d";
+            argv[argc++] = (char*)body;
+        }
+
+        argv[argc++] = (char*)url;
+        argv[argc] = NULL;
+        execvp("curl", argv);
+        _exit(127);
+    }
+
+    close(out_pipe[1]);
+    close(err_pipe[1]);
+
+    size_t cap = 4096, len = 0;
+    char* buf = malloc(cap);
+    ssize_t n;
+    while ((n = read(out_pipe[0], buf + len, cap - len)) > 0) {
+        len += n;
+        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    buf[len] = '\0';
+    close(out_pipe[0]);
+    close(err_pipe[0]);
+
+    int status;
+    waitpid(pid, &status, 0);
+
+    if (!WIFEXITED(status) || WEXITSTATUS(status) == 127)  {
+        free(buf);
+        return a_err(a_string("http: curl not found"));
+    }
+
+    int http_status = 0;
+    char* marker = strstr(buf, "\n__HTTP_STATUS__");
+    if (marker) {
+        http_status = atoi(marker + 16);
+        *marker = '\0';
+        len = marker - buf;
+    }
+
+    AValue result = a_map_new(0);
+    result = a_map_set(result, a_string("status"), a_int(http_status));
+    result = a_map_set(result, a_string("body"), a_string_len(buf, (int)len));
+    free(buf);
+    return result;
+}
+
+AValue a_http_get(AValue url, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.get: expected string url"));
+    return http_request("GET", url.sval->data, NULL, headers);
+}
+
+AValue a_http_post(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.post: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : "";
+    return http_request("POST", url.sval->data, b, headers);
+}
+
 /* --- Closures --- */
 
 AValue a_closure(AClosureFn fn, AValue env) {

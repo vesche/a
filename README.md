@@ -114,11 +114,11 @@ use std.lexer                 # legacy tokenizer
 
 ## Self-hosting
 
-The "a" compiler is fully self-hosting through native compilation with **automatic memory management**. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into 12,300 lines of C with reference-counted ownership, retain/release instrumentation, and scope-based cleanup. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. The native binary reads source files from disk, compiles them, and produces identical output across a three-stage bootstrap. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), and memory management all compile natively. Clean under AddressSanitizer.
+The "a" compiler is fully self-hosting through native compilation with **automatic memory management** and **complete builtin coverage**. The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,000 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 105+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. The native binary reads source files from disk, compiles them, and produces identical output across a three-stage bootstrap. All 12 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 ```
 a run std/compiler/cgen.a -- std/compiler/cgen.a > ac.c     # "a" compiles itself to C
-gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O1      # gcc builds native compiler
+gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O1 -Wl,-stack_size,0x8000000
 ./ac program.a > program.c                                     # native compiler works
 ```
 
@@ -130,7 +130,7 @@ gcc ac.c c_runtime/runtime.c -o ac -I c_runtime -lm -O1      # gcc builds native
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit. Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically, allowing "a" programs to call any C library. The C runtime includes POSIX I/O, filesystem ops, shell execution, a JSON parser, an arena allocator, and a mark-and-sweep GC. Combined with a ~1,700-line C runtime, this produces native binaries via `gcc`.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,200 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP client (via curl), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -186,7 +186,7 @@ fn main() -> void {
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 99 | static site generator using path, datetime, hash, csv, template, encoding |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
-| `std/compiler/cgen.a` | ~1,830 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, three-stage bootstrap) |
+| `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
 
 ## Stats
 
