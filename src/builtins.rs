@@ -12,6 +12,22 @@ fn child_procs() -> &'static Mutex<Vec<Option<std::process::Child>>> {
     PROCS.get_or_init(|| Mutex::new(Vec::new()))
 }
 
+struct SendReader(Box<dyn Read>);
+unsafe impl Send for SendReader {}
+impl Read for SendReader {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> { self.0.read(buf) }
+}
+
+fn http_streams() -> &'static Mutex<Vec<Option<std::io::BufReader<SendReader>>>> {
+    static STREAMS: std::sync::OnceLock<Mutex<Vec<Option<std::io::BufReader<SendReader>>>>> = std::sync::OnceLock::new();
+    STREAMS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+fn ws_conns() -> &'static Mutex<Vec<Option<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>> {
+    static CONNS: std::sync::OnceLock<Mutex<Vec<Option<tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>>>>> = std::sync::OnceLock::new();
+    CONNS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
 pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> AResult<Value> {
     match name {
         "print" => {
@@ -866,6 +882,133 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
                 Err(AError::runtime("http.delete: expected string url", None))
             }
         }
+        "http.stream" => {
+            if let Value::String(url) = &args[0] {
+                let body: String = match args.get(1) {
+                    Some(Value::String(s)) => s.to_string(),
+                    _ => String::new(),
+                };
+                let mut req = ureq::post(url.as_str());
+                if let Some(Value::Map(entries)) = args.get(2) {
+                    for (k, v) in entries.iter() {
+                        if let Value::String(hv) = v {
+                            req = req.set(k.as_str(), hv.as_str());
+                        }
+                    }
+                }
+                if !has_header(args.get(2), "content-type") {
+                    req = req.set("Content-Type", "application/json");
+                }
+                let store_stream = |resp: ureq::Response| -> Value {
+                    let reader = resp.into_reader();
+                    let buf_reader = std::io::BufReader::new(SendReader(reader));
+                    let mut streams = http_streams().lock().unwrap();
+                    let slot = streams.len();
+                    streams.push(Some(buf_reader));
+                    Value::Int(slot as i64)
+                };
+                match req.send_string(&body) {
+                    Ok(resp) => Ok(store_stream(resp)),
+                    Err(ureq::Error::Status(_code, resp)) => Ok(store_stream(resp)),
+                    Err(e) => Err(AError::runtime(format!("http.stream: {e}"), None)),
+                }
+            } else {
+                Err(AError::runtime("http.stream: expected string url", None))
+            }
+        }
+        "http.stream_read" => {
+            use std::io::BufRead;
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("http.stream_read: expected int handle", None)) };
+            let mut streams = http_streams().lock().unwrap();
+            if handle >= streams.len() || streams[handle].is_none() {
+                return Err(AError::runtime("http.stream_read: invalid handle", None));
+            }
+            if let Some(ref mut reader) = streams[handle] {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) => Ok(Value::Result(Err(Box::new(Value::string("eof".to_string()))))),
+                    Ok(_) => {
+                        if line.ends_with('\n') { line.pop(); }
+                        if line.ends_with('\r') { line.pop(); }
+                        Ok(Value::string(line))
+                    }
+                    Err(e) => Ok(Value::Result(Err(Box::new(Value::string(e.to_string()))))),
+                }
+            } else {
+                Err(AError::runtime("http.stream_read: invalid handle", None))
+            }
+        }
+        "http.stream_close" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("http.stream_close: expected int handle", None)) };
+            let mut streams = http_streams().lock().unwrap();
+            if handle < streams.len() {
+                streams[handle] = None;
+            }
+            Ok(Value::Void)
+        }
+        // --- WebSocket ---
+        "ws.connect" => {
+            if let Value::String(url) = &args[0] {
+                match tungstenite::connect(url.as_str()) {
+                    Ok((socket, _response)) => {
+                        let mut conns = ws_conns().lock().unwrap();
+                        let slot = conns.len();
+                        conns.push(Some(socket));
+                        Ok(Value::Int(slot as i64))
+                    }
+                    Err(e) => Err(AError::runtime(format!("ws.connect: {e}"), None)),
+                }
+            } else {
+                Err(AError::runtime("ws.connect: expected string url", None))
+            }
+        }
+        "ws.send" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("ws.send: expected int handle", None)) };
+            let msg = match &args[1] { Value::String(s) => s.to_string(), _ => return Err(AError::runtime("ws.send: expected string message", None)) };
+            let mut conns = ws_conns().lock().unwrap();
+            if handle >= conns.len() || conns[handle].is_none() {
+                return Err(AError::runtime("ws.send: invalid handle", None));
+            }
+            if let Some(ref mut ws) = conns[handle] {
+                match ws.send(tungstenite::Message::Text(msg.into())) {
+                    Ok(_) => Ok(Value::Void),
+                    Err(e) => Err(AError::runtime(format!("ws.send: {e}"), None)),
+                }
+            } else {
+                Err(AError::runtime("ws.send: invalid handle", None))
+            }
+        }
+        "ws.recv" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("ws.recv: expected int handle", None)) };
+            let mut conns = ws_conns().lock().unwrap();
+            if handle >= conns.len() || conns[handle].is_none() {
+                return Err(AError::runtime("ws.recv: invalid handle", None));
+            }
+            if let Some(ref mut ws) = conns[handle] {
+                loop {
+                    match ws.read() {
+                        Ok(tungstenite::Message::Text(t)) => return Ok(Value::string(t.to_string())),
+                        Ok(tungstenite::Message::Ping(_)) => continue,
+                        Ok(tungstenite::Message::Pong(_)) => continue,
+                        Ok(tungstenite::Message::Close(_)) => return Ok(Value::Result(Err(Box::new(Value::string("closed".to_string()))))),
+                        Ok(_) => continue,
+                        Err(_) => return Ok(Value::Result(Err(Box::new(Value::string("closed".to_string()))))),
+                    }
+                }
+            } else {
+                Err(AError::runtime("ws.recv: invalid handle", None))
+            }
+        }
+        "ws.close" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("ws.close: expected int handle", None)) };
+            let mut conns = ws_conns().lock().unwrap();
+            if handle < conns.len() {
+                if let Some(mut ws) = conns[handle].take() {
+                    let _ = ws.close(None);
+                }
+            }
+            Ok(Value::Void)
+        }
         "http.serve" | "http.serve_static" => {
             Err(AError::runtime("http.serve is only available in the native CLI (./a build/run). Use ./build.sh first.", None))
         }
@@ -1517,6 +1660,8 @@ pub fn is_builtin(name: &str) -> bool {
         "env.get" | "env.set" | "env.all" |
         "type_of" | "int" | "float" |
         "http.get" | "http.post" | "http.put" | "http.patch" | "http.delete" |
+        "http.stream" | "http.stream_read" | "http.stream_close" |
+        "ws.connect" | "ws.send" | "ws.recv" | "ws.close" |
         "http.serve" | "http.serve_static" |
         "db.open" | "db.close" | "db.exec" | "db.query" |
         "fs.exists" | "fs.is_dir" | "fs.is_file" | "fs.ls" | "fs.mkdir" |

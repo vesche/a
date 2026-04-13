@@ -1,6 +1,6 @@
 [package]
 name = "a-lang"
-version = "0.59.0"
+version = "0.60.0"
 edition = "2021"
 description = "A programming language by AI, for AI"
 license = "Apache-2.0"
@@ -21,3 +21,4 @@ regex = "1"
 sha2 = "0.10"
 md-5 = "0.10"
 flate2 = "1.1"
+tungstenite = { version = "0.26", features = ["native-tls"] }

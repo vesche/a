@@ -160,18 +160,17 @@ MCP (Model Context Protocol) is the standard for AI tool integration. If "a" mak
 - [x] **`examples/mcp_client.a`** -- connects to any MCP server, lists tools, calls first tool
 - [x] Bump to `0.59.0`
 
-### v0.60 -- Streaming + Real-Time Protocols
+### v0.60 -- Streaming + Real-Time Protocols [DONE]
 
 LLM streaming and real-time communication. This unlocks `llm.stream()` which was deferred from v0.56.
 
 #### Deliverables
 
-- **Server-Sent Events (SSE)** parsing in `std/llm.a`: extend `llm.chat()` with a `"stream": true` option that calls a callback per chunk.
-- **`llm.stream(provider, model, messages, on_chunk, options)`**: Streaming interface with a closure callback. Each chunk is `#{ "content": "...", "done": false }`.
-- **Chunked response reading** in the HTTP client (v0.58 lays the groundwork).
-- **WebSocket client** in `runtime.c` (~300-400 lines): `ws.connect(url)`, `ws.send(ws, msg)`, `ws.recv(ws)`, `ws.close(ws)` -- for MCP's streamable HTTP transport and general real-time use.
-- **Example: `examples/stream_chat.a`** -- streaming LLM conversation with live output.
-- Bump to `0.60.0`.
+- [x] **Streaming HTTP builtins**: `http.stream`, `http.stream_read`, `http.stream_close` in both runtimes
+- [x] **`llm.stream(provider, model, messages, on_chunk, options)`**: SSE parsing for OpenAI, Anthropic, Google with closure callback
+- [x] **WebSocket client**: `ws.connect`, `ws.send`, `ws.recv`, `ws.close` -- RFC 6455 with masking, ping/pong, ws://wss://
+- [x] **Example: `examples/stream_chat.a`** -- streaming LLM conversation with live token output
+- [x] Bump to `0.60.0`
 
 ---
 
@@ -375,7 +374,7 @@ What v1.0 means:
 | **v0.57** | Bootstrap + Compression | Pre-generated bootstrap C, miniz, VENDORS.md | Build from gcc alone, no Rust required |
 | **v0.58** | In-Process HTTP | Replace curl, platform TLS, full method parity | Truly hermetic binary, no external deps |
 | **v0.59** | MCP Framework | `proc.*` builtins, `std/mcp.a` server + client, JSON-RPC 2.0 | **DONE** |
-| **v0.60** | Streaming | `llm.stream()`, SSE, WebSocket client | Real-time LLM output, live protocols |
+| **v0.60** | Streaming | `http.stream*`, `ws.*`, `llm.stream()`, SSE parsing | **DONE** |
 | **v0.61** | Agent Stdlib | retry, cache, rate_limit, uuid, logging, args, signals | Production-grade agent code, real CLI tools |
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | Structured output, code review |
 | **v0.63** | Process + Config + Migrations | subprocess orchestration, layered config, db migrations | Real application infrastructure |

@@ -303,6 +303,161 @@ fn chat(provider, model, messages, opts) {
   ret Err("llm.chat: max retries exceeded: {last_err}")
 }
 
+; --- Streaming ---
+
+fn _parse_sse_openai(line, on_chunk) {
+  if !str.starts_with(line, "data: ") { ret 0 }
+  let data = str.slice(line, 6, len(line))
+  if data == "[DONE]" {
+    on_chunk(#{"content": "", "done": true, "stop_reason": "stop"})
+    ret 1
+  }
+  let parsed = json.parse(data)
+  if type_of(parsed) != "map" { ret 0 }
+  if !map.has(parsed, "choices") { ret 0 }
+  let choices = parsed["choices"]
+  if len(choices) == 0 { ret 0 }
+  let choice = choices[0]
+  if map.has(choice, "delta") {
+    let delta = choice["delta"]
+    if map.has(delta, "content") {
+      let c = delta["content"]
+      if type_of(c) == "str" {
+        if len(c) > 0 {
+          on_chunk(#{"content": c, "done": false})
+        }
+      }
+    }
+  }
+  if map.has(choice, "finish_reason") {
+    let fr = choice["finish_reason"]
+    if type_of(fr) == "str" {
+      if fr != "" {
+        on_chunk(#{"content": "", "done": true, "stop_reason": fr})
+        ret 1
+      }
+    }
+  }
+  ret 0
+}
+
+fn _parse_sse_anthropic(line, on_chunk) {
+  if !str.starts_with(line, "data: ") { ret 0 }
+  let data = str.slice(line, 6, len(line))
+  let parsed = json.parse(data)
+  if type_of(parsed) != "map" { ret 0 }
+  if !map.has(parsed, "type") { ret 0 }
+  let evt = parsed["type"]
+  if evt == "content_block_delta" {
+    if map.has(parsed, "delta") {
+      let delta = parsed["delta"]
+      if map.has(delta, "text") {
+        on_chunk(#{"content": delta["text"], "done": false})
+      }
+    }
+  }
+  if evt == "message_delta" {
+    if map.has(parsed, "delta") {
+      let delta = parsed["delta"]
+      let mut reason = "end_turn"
+      if map.has(delta, "stop_reason") { reason = delta["stop_reason"] }
+      on_chunk(#{"content": "", "done": true, "stop_reason": reason})
+      ret 1
+    }
+  }
+  if evt == "message_stop" {
+    on_chunk(#{"content": "", "done": true, "stop_reason": "end_turn"})
+    ret 1
+  }
+  ret 0
+}
+
+fn _parse_sse_google(line, on_chunk) {
+  if !str.starts_with(line, "data: ") { ret 0 }
+  let data = str.slice(line, 6, len(line))
+  let parsed = json.parse(data)
+  if type_of(parsed) != "map" { ret 0 }
+  if map.has(parsed, "candidates") {
+    let candidates = parsed["candidates"]
+    if len(candidates) > 0 {
+      let cand = candidates[0]
+      if map.has(cand, "content") {
+        let content = cand["content"]
+        if map.has(content, "parts") {
+          let parts = content["parts"]
+          if len(parts) > 0 {
+            let part = parts[0]
+            if map.has(part, "text") {
+              on_chunk(#{"content": part["text"], "done": false})
+            }
+          }
+        }
+      }
+      if map.has(cand, "finishReason") {
+        let fr = cand["finishReason"]
+        if type_of(fr) == "str" {
+          if fr == "STOP" {
+            on_chunk(#{"content": "", "done": true, "stop_reason": "stop"})
+            ret 1
+          }
+        }
+      }
+    }
+  }
+  ret 0
+}
+
+fn stream(provider, model, messages, on_chunk, opts) {
+  let key = _get_key(provider, opts)
+  if key == "" {
+    ret Err("llm.stream: missing API key for provider: {provider}")
+  }
+  let mut url = ""
+  let mut headers = #{"Content-Type": "application/json"}
+  let mut body_map = #{}
+
+  if provider == "openai" {
+    url = _opt_str(opts, "base_url", "https://api.openai.com/v1/chat/completions")
+    let auth = str.concat("Bearer ", key)
+    headers = map.set(headers, "Authorization", auth)
+    body_map = _build_openai(model, messages, opts)
+    body_map = map.set(body_map, "stream", true)
+  }
+  if provider == "anthropic" {
+    url = _opt_str(opts, "base_url", "https://api.anthropic.com/v1/messages")
+    headers = map.set(headers, "x-api-key", key)
+    headers = map.set(headers, "anthropic-version", "2023-06-01")
+    body_map = _build_anthropic(model, messages, opts)
+    body_map = map.set(body_map, "stream", true)
+  }
+  if provider == "google" {
+    let base = _opt_str(opts, "base_url", "https://generativelanguage.googleapis.com/v1beta/models")
+    url = str.concat(base, "/{model}:streamGenerateContent?alt=sse&key={key}")
+    body_map = _build_google(model, messages, opts)
+  }
+  if url == "" {
+    ret Err("llm.stream: unknown provider: {provider}")
+  }
+
+  let body_str = json.stringify(body_map)
+  let h = http.stream(url, body_str, headers)
+  if is_err(h) {
+    ret Err("llm.stream: connection failed")
+  }
+
+  while true {
+    let line = http.stream_read(h)
+    if is_err(line) { break }
+    if len(line) == 0 { continue }
+    let mut done = 0
+    if provider == "openai" { done = _parse_sse_openai(line, on_chunk) }
+    if provider == "anthropic" { done = _parse_sse_anthropic(line, on_chunk) }
+    if provider == "google" { done = _parse_sse_google(line, on_chunk) }
+    if done == 1 { break }
+  }
+  http.stream_close(h)
+}
+
 ; --- Convenience ---
 
 fn models(provider) -> [str] {

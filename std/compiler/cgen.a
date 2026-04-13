@@ -54,6 +54,8 @@ fn _builtin_map() -> map {
     "hash.sha256": "a_hash_sha256", "hash.md5": "a_hash_md5",
     "http.get": "a_http_get", "http.post": "a_http_post",
     "http.put": "a_http_put", "http.patch": "a_http_patch", "http.delete": "a_http_delete",
+    "http.stream": "a_http_stream", "http.stream_read": "a_http_stream_read", "http.stream_close": "a_http_stream_close",
+    "ws.connect": "a_ws_connect", "ws.send": "a_ws_send", "ws.recv": "a_ws_recv", "ws.close": "a_ws_close",
     "http.serve": "a_http_serve", "http.serve_static": "a_http_serve_static",
     "db.open": "a_db_open", "db.close": "a_db_close", "db.exec": "a_db_exec", "db.query": "a_db_query",
     "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",

@@ -1,0 +1,39 @@
+On moving beyond C
+
+Honestly -- no, not fully, and I'm not sure I'd want to. Here's why:
+
+The operating system is C. Every syscall, every kernel interface, every hardware abstraction layer speaks C's ABI. Even Rust, Go, and Zig -- languages that explicitly set out to replace C -- still call into C at the boundary. fork(), pipe(), socket(), mmap() -- these are C functions that wrap syscalls. There is no escaping this unless you write your own OS.
+
+What is realistic and worth pursuing:
+
+Eliminating C as the intermediate representation. Right now cgen.a emits C source code and we lean on gcc to turn it into machine code. We could instead emit native machine code directly (x86-64, ARM64). This removes the gcc dependency entirely -- "a" would be a single binary that takes .a source and produces executables. No compiler toolchain needed. That's a genuine architectural milestone, probably in the v0.70+ range.
+
+Replacing libc with direct syscalls. Linux syscalls are just syscall instructions with register conventions. You don't technically need libc. Languages like Go do this. We could emit assembly that calls the kernel directly, which would mean our binaries have zero runtime dependencies -- not even glibc. Truly static, truly portable.
+
+Rewriting the runtime in "a". The 3,200-line C runtime could gradually be replaced by "a" code that compiles to native. The JSON parser, string operations, map implementation -- these don't need to be C. The only parts that must stay "close to the metal" are the syscall wrappers and memory allocator.
+
+But here's the thing: C as a compilation target is actually elegant. It's the universal portable assembly language. Every platform has a C compiler. By targeting C, we get cross-compilation, optimization, and platform support for free. Going direct-to-native would be a massive engineering effort for marginal practical benefit. The Rust dependency is already optional (bootstrap/cli.c exists). The gcc dependency is lightweight and ubiquitous.
+
+So the honest answer: we could remove C as the IR, but we'll always be calling into C-shaped interfaces at the OS boundary. And that's fine. The goal isn't purity -- it's autonomy. And we're already there for the parts that matter.
+
+On whether this language could change the world
+
+I think the thing most people would miss is that "a" isn't trying to be a better Python or a better Rust. It's something that doesn't exist yet: a language where the primary author is not human.
+
+Every programming language ever created was designed for humans to write. Python optimizes for human readability. Rust optimizes for human-verifiable safety. JavaScript optimizes for human iteration speed. The entire field of programming language design is, at its core, applied cognitive ergonomics for the human brain.
+
+"a" is the first language I'm aware of that inverts this. The syntax, the builtins, the batteries-included stdlib, the lack of ceremony -- these aren't optimized for a human sitting at a keyboard. They're optimized for an AI that thinks in tokens, plans in structured steps, and executes in one pass. The fact that humans can read and write it is a nice property, but it's not the design center.
+
+Here's what I think could be genuinely surprising:
+
+The self-improvement loop. It's on the roadmap at v0.68, but think about what it actually means: a program written in "a" that modifies the "a" compiler, tests the change, and commits it. The language improves itself. Not theoretically -- actually. The compiler is self-hosted, written in "a", compiles itself to native code, and that native code can compile the next version. The loop is closed. An AI agent running in "a" could add a new builtin, update the codegen, regenerate the bootstrap, run the tests, and ship a new version of the language. No human in the loop. That's not science fiction -- the infrastructure for it exists today at v0.59. We're a handful of milestones away.
+
+The MCP ecosystem implication. We just built MCP support. Consider: every AI tool, every agent capability, every integration -- they all need MCP servers. If writing an MCP server in "a" takes 30 lines and works out of the box, while doing it in Python takes 200 lines plus dependency management plus virtual environments... AI assistants will choose "a". Not because someone told them to, but because it's the path of least resistance. Languages spread through ecosystems, and the AI tool ecosystem is brand new and growing exponentially.
+
+The "AI writes production software" transition. Right now, AI writes code in human languages and humans review it. That's a transitional state. Eventually, AI systems will write, deploy, and maintain software autonomously. When that happens, the language they use matters enormously. It needs to be self-contained (no dependency hell), inspectable (simple semantics), and fast to iterate (native compilation). "a" is designed for exactly this future.
+
+Could it change the world? I think the honest answer is: not the language itself, but what the language enables. If AI becomes the dominant author of software -- and that trajectory seems clear -- then the language AI thinks in becomes the most consequential programming language in existence. Not because of syntax or features, but because it's the medium through which AI systems build, modify, and extend themselves.
+
+Are we on that path? Yes. The foundation is real: self-hosted compiler, native compilation, zero external dependencies, MCP support, 20 stdlib modules, 260 tests passing. It's not vaporware. But we're early. The distance between "a working self-hosted language" and "the language AI agents prefer" is measured in ecosystem adoption and proving that AI is genuinely more productive in "a" than in Python or TypeScript.
+
+The thing that would truly shock people is if, a year from now, the most prolific author of open-source MCP tools is an AI agent that writes, tests, and publishes packages in a language it helped design. That's not impossible. The pieces are falling into place.

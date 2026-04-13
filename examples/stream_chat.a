@@ -1,0 +1,25 @@
+; stream_chat.a -- Streaming LLM chat with live token output
+; Usage: a run examples/stream_chat.a
+; Requires ANTHROPIC_API_KEY (or swap provider/model below)
+
+use std.llm
+
+fn main() {
+  let msgs = [
+    #{"role": "system", "content": "You are a concise, helpful assistant. Keep responses brief."},
+    #{"role": "user", "content": "Write a haiku about programming languages."}
+  ]
+
+  print("Streaming response:")
+  print("---")
+  llm.stream("anthropic", "claude-sonnet-4-20250514", msgs, fn(chunk) {
+    if !chunk["done"] {
+      io.write(chunk["content"])
+      io.flush()
+    } else {
+      print("")
+      print("---")
+      print("(stop_reason: {chunk.stop_reason})")
+    }
+  }, #{"max_tokens": 256})
+}

@@ -2219,3 +2219,52 @@ Protocol version: `2025-11-05`. JSON-RPC 2.0 compliant with proper error codes (
 | `tests/native/test_mcp.a` | NEW -- MCP wire format tests via proc pipes |
 | `Cargo.toml` | Version bump to 0.59.0 |
 | `README.md` | Added proc.* and MCP builtins, std.mcp module, example entries |
+
+## v0.60 -- Streaming + Real-Time Protocols
+
+**Date**: 2026-04-13
+
+### Summary
+
+Added streaming HTTP builtins (`http.stream`, `http.stream_read`, `http.stream_close`) for incremental response reading, enabling Server-Sent Events (SSE) consumption. Built `llm.stream()` in `std/llm.a` for token-by-token LLM streaming with callback support across all three providers (OpenAI, Anthropic, Google). Added a full WebSocket client (`ws.connect`, `ws.send`, `ws.recv`, `ws.close`) implementing RFC 6455 with client masking, ping/pong handling, and ws://wss:// support.
+
+### New builtins
+
+**`http.stream(url, body, headers)`** -- Opens a streaming HTTP POST connection. Sends the request, reads response headers, returns a handle for incremental reading. C runtime reuses the existing `HttpConn` infrastructure with chunked transfer-encoding decoding. Rust VM uses `ureq::Response::into_reader()` with `BufReader`.
+
+**`http.stream_read(handle)`** -- Reads one line from the streaming response. Handles chunked decoding transparently. Returns `Err("eof")` when the stream ends.
+
+**`http.stream_close(handle)`** -- Closes the streaming connection and releases the handle.
+
+**`ws.connect(url)`** -- WebSocket client connection. Parses `ws://` and `wss://` URLs, performs HTTP upgrade handshake with `Sec-WebSocket-Key`, returns handle. C runtime: custom implementation using `HttpConn` + base64 + `/dev/urandom`. Rust VM: `tungstenite` library.
+
+**`ws.send(handle, msg)`** -- Send a text WebSocket frame with client masking.
+
+**`ws.recv(handle)`** -- Receive next text message. Auto-handles Ping (sends Pong) and Pong frames. Returns `Err("closed")` on close frames or connection loss.
+
+**`ws.close(handle)`** -- Send close frame and tear down connection.
+
+### LLM streaming (`std/llm.a`)
+
+**`llm.stream(provider, model, messages, on_chunk, opts)`** -- Streaming interface using `http.stream*` builtins. Opens a streaming connection with `stream: true` in the request body, reads SSE lines incrementally, parses provider-specific delta formats, and invokes the `on_chunk` callback with `#{ "content": "...", "done": false }` per token and `#{ "content": "", "done": true, "stop_reason": "..." }` on completion.
+
+Provider-specific SSE parsing:
+- **OpenAI**: `data: {json}` with `choices[0].delta.content`; `data: [DONE]` sentinel
+- **Anthropic**: typed events (`content_block_delta` with `delta.text`, `message_delta` with `delta.stop_reason`, `message_stop`)
+- **Google**: `data: {json}` with `candidates[0].content.parts[0].text`; uses `streamGenerateContent?alt=sse` endpoint
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Added `HttpStream` pool with chunked decoding for streaming HTTP (~180 lines). Added `WsConn` pool with full WebSocket client: URL parsing, HTTP upgrade, base64, random bytes, frame encode/decode, masking, ping/pong (~280 lines). |
+| `c_runtime/runtime.h` | Added declarations for `a_http_stream`, `a_http_stream_read`, `a_http_stream_close`, `a_ws_connect`, `a_ws_send`, `a_ws_recv`, `a_ws_close` |
+| `src/builtins.rs` | Added `http.stream*` (using ureq `into_reader()` + `SendReader` wrapper for thread safety) and `ws.*` (using `tungstenite` library) implementations |
+| `src/checker.rs` | Added type signatures for all 7 new builtins |
+| `std/compiler/cgen.a` | Added `http.stream*` and `ws.*` to `_builtin_map()` |
+| `src/lsp.a` | Added builtin completion entries for streaming and WebSocket |
+| `std/llm.a` | Added `stream()` function (~140 lines) with SSE parsing for OpenAI, Anthropic, Google |
+| `examples/stream_chat.a` | NEW -- Streaming LLM chat with live token output |
+| `tests/native/test_stream.a` | NEW -- Streaming and SSE line parsing tests |
+| `Cargo.toml` | Added `tungstenite = "0.26"` dependency; version bump to 0.60.0 |
+| `README.md` | Added HTTP streaming, WebSocket, LLM streaming to builtins table and examples |

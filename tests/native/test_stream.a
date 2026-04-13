@@ -1,0 +1,33 @@
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  ; Test proc-based line streaming (foundation for http.stream)
+  let h = proc.spawn("printf 'line one\nline two\nline three\n'")
+  let l1 = proc.read_line(h)
+  let l2 = proc.read_line(h)
+  let l3 = proc.read_line(h)
+  assert(l1 == "line one", "stream line 1")
+  assert(l2 == "line two", "stream line 2")
+  assert(l3 == "line three", "stream line 3")
+  proc.kill(h)
+
+  ; Test SSE-style line reading via proc
+  let sse = proc.spawn("printf 'data: hello\n\ndata: world\n\ndata: [DONE]\n\n'")
+  let mut lines = []
+  while true {
+    let line = proc.read_line(sse)
+    if is_err(line) { break }
+    if str.starts_with(line, "data: ") {
+      lines = push(lines, str.slice(line, 6, len(line)))
+    }
+  }
+  proc.kill(sse)
+  assert(len(lines) == 3, "should have 3 SSE data lines")
+  assert(lines[0] == "hello", "SSE line 1")
+  assert(lines[1] == "world", "SSE line 2")
+  assert(lines[2] == "[DONE]", "SSE line 3")
+
+  print("all stream tests passed")
+}

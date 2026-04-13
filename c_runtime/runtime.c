@@ -2228,6 +2228,226 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
     return result;
 }
 
+/* --- Streaming HTTP --- */
+
+typedef struct {
+    HttpConn conn;
+    int active;
+    int chunked;
+    char* buf;
+    int buf_len, buf_cap;
+    char* raw;
+    int raw_len, raw_cap;
+    int done;
+} HttpStream;
+
+#define MAX_HTTP_STREAMS 8
+static HttpStream http_streams[MAX_HTTP_STREAMS];
+
+static int http_stream_decode_chunked(HttpStream* s) {
+    while (s->raw_len > 0) {
+        char* crlf = memmem(s->raw, s->raw_len, "\r\n", 2);
+        if (!crlf) return 0;
+        long csize = strtol(s->raw, NULL, 16);
+        if (csize <= 0) { s->done = 1; return 0; }
+        int hdr_len = (int)(crlf - s->raw) + 2;
+        int needed = hdr_len + (int)csize + 2;
+        if (s->raw_len < needed) return 0;
+        while (s->buf_len + (int)csize >= s->buf_cap) {
+            s->buf_cap *= 2;
+            s->buf = realloc(s->buf, s->buf_cap);
+        }
+        memcpy(s->buf + s->buf_len, s->raw + hdr_len, csize);
+        s->buf_len += (int)csize;
+        memmove(s->raw, s->raw + needed, s->raw_len - needed);
+        s->raw_len -= needed;
+    }
+    return 0;
+}
+
+static int http_stream_fill(HttpStream* s) {
+    if (s->done) return 0;
+    if (s->raw_cap == 0) { s->raw_cap = 4096; s->raw = malloc(s->raw_cap); }
+    if (s->raw_len >= s->raw_cap - 1) { s->raw_cap *= 2; s->raw = realloc(s->raw, s->raw_cap); }
+    int n = http_io_read(&s->conn, s->raw + s->raw_len, s->raw_cap - s->raw_len - 1);
+    if (n <= 0) { s->done = 1; return 0; }
+    s->raw_len += n;
+    s->raw[s->raw_len] = '\0';
+    if (s->chunked) http_stream_decode_chunked(s);
+    else {
+        while (s->buf_len + n >= s->buf_cap) { s->buf_cap *= 2; s->buf = realloc(s->buf, s->buf_cap); }
+        memcpy(s->buf + s->buf_len, s->raw + s->raw_len - n, n);
+        s->buf_len += n;
+        s->raw_len -= n;
+    }
+    return 1;
+}
+
+AValue a_http_stream(AValue url, AValue body, AValue req_headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("http.stream: expected string url"));
+    int slot = -1;
+    for (int i = 0; i < MAX_HTTP_STREAMS; i++) {
+        if (!http_streams[i].active) { slot = i; break; }
+    }
+    if (slot < 0) return a_err(a_string("http.stream: too many streams"));
+
+    HttpUrl purl;
+    if (http_parse_url(url.sval->data, &purl) != 0)
+        return a_err(a_string("http.stream: invalid URL"));
+
+    int need_tls = (strcmp(purl.scheme, "https") == 0);
+    int fd = http_tcp_connect(purl.host, purl.port, 15000);
+    if (fd < 0) return a_err(a_string("http.stream: connection failed"));
+
+    HttpConn conn = { .fd = fd, .tls_ctx = NULL, .use_tls = 0 };
+    if (need_tls) {
+        if (http_tls_connect(&conn, purl.host) != 0) {
+            close(fd);
+            return a_err(a_string("http.stream: TLS failed"));
+        }
+    }
+
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : "";
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+
+    char req_buf[8192];
+    int off = snprintf(req_buf, sizeof(req_buf),
+        "POST %s HTTP/1.1\r\nHost: %s\r\n", purl.path, purl.host);
+
+    if (req_headers.tag == TAG_MAP) {
+        int n = a_ilen(req_headers);
+        AValue keys = a_map_keys(req_headers);
+        for (int i = 0; i < n; i++) {
+            AValue k = a_array_get(keys, a_int(i));
+            AValue v = a_map_get(req_headers, k);
+            if (k.tag == TAG_STRING && v.tag == TAG_STRING)
+                off += snprintf(req_buf + off, sizeof(req_buf) - off,
+                    "%s: %s\r\n", k.sval->data, v.sval->data);
+        }
+    }
+
+    if (blen > 0)
+        off += snprintf(req_buf + off, sizeof(req_buf) - off,
+            "Content-Length: %d\r\n", blen);
+    off += snprintf(req_buf + off, sizeof(req_buf) - off, "\r\n");
+
+    if (http_io_write_all(&conn, req_buf, off) < 0 ||
+        (blen > 0 && http_io_write_all(&conn, b, blen) < 0)) {
+        http_conn_close(&conn);
+        return a_err(a_string("http.stream: send failed"));
+    }
+
+    size_t resp_cap = 4096, resp_len = 0;
+    char* resp_buf = malloc(resp_cap);
+    char* header_end = NULL;
+    while (!header_end) {
+        if (resp_len >= resp_cap - 1) { resp_cap *= 2; resp_buf = realloc(resp_buf, resp_cap); }
+        int n = http_io_read(&conn, resp_buf + resp_len, (int)(resp_cap - resp_len - 1));
+        if (n <= 0) break;
+        resp_len += n;
+        resp_buf[resp_len] = '\0';
+        header_end = strstr(resp_buf, "\r\n\r\n");
+    }
+    if (!header_end) {
+        free(resp_buf);
+        http_conn_close(&conn);
+        return a_err(a_string("http.stream: no response headers"));
+    }
+
+    int chunked = 0;
+    char* hdr = resp_buf;
+    while (hdr < header_end) {
+        char* nl = strstr(hdr, "\r\n");
+        if (!nl) break;
+        char* colon = memchr(hdr, ':', nl - hdr);
+        if (colon) {
+            char key[128];
+            int klen = (int)(colon - hdr);
+            if (klen < (int)sizeof(key)) {
+                for (int i = 0; i < klen; i++) key[i] = (hdr[i] >= 'A' && hdr[i] <= 'Z') ? hdr[i] + 32 : hdr[i];
+                key[klen] = '\0';
+                char* val = colon + 1;
+                while (val < nl && *val == ' ') val++;
+                if (strcmp(key, "transfer-encoding") == 0 && strstr(val, "chunked")) chunked = 1;
+            }
+        }
+        hdr = nl + 2;
+    }
+
+    HttpStream* st = &http_streams[slot];
+    memset(st, 0, sizeof(HttpStream));
+    st->conn = conn;
+    st->active = 1;
+    st->chunked = chunked;
+    st->buf_cap = 8192;
+    st->buf = malloc(st->buf_cap);
+    st->buf_len = 0;
+    st->raw_cap = 4096;
+    st->raw = malloc(st->raw_cap);
+    st->raw_len = 0;
+    st->done = 0;
+
+    char* body_start = header_end + 4;
+    int leftover = (int)(resp_len - (body_start - resp_buf));
+    if (leftover > 0) {
+        memcpy(st->raw, body_start, leftover);
+        st->raw_len = leftover;
+        if (chunked) http_stream_decode_chunked(st);
+        else {
+            while (st->buf_len + leftover >= st->buf_cap) { st->buf_cap *= 2; st->buf = realloc(st->buf, st->buf_cap); }
+            memcpy(st->buf + st->buf_len, body_start, leftover);
+            st->buf_len += leftover;
+            st->raw_len = 0;
+        }
+    }
+    free(resp_buf);
+    return a_int(slot);
+}
+
+AValue a_http_stream_read(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("http.stream_read: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_HTTP_STREAMS || !http_streams[h].active)
+        return a_err(a_string("http.stream_read: invalid handle"));
+    HttpStream* s = &http_streams[h];
+
+    for (;;) {
+        char* nl = memchr(s->buf, '\n', s->buf_len);
+        if (nl) {
+            int line_len = (int)(nl - s->buf);
+            int strip = line_len;
+            if (strip > 0 && s->buf[strip - 1] == '\r') strip--;
+            AValue result = a_string_len(s->buf, strip);
+            int consumed = line_len + 1;
+            memmove(s->buf, s->buf + consumed, s->buf_len - consumed);
+            s->buf_len -= consumed;
+            return result;
+        }
+        if (s->done) {
+            if (s->buf_len > 0) {
+                AValue result = a_string_len(s->buf, s->buf_len);
+                s->buf_len = 0;
+                return result;
+            }
+            return a_err(a_string("eof"));
+        }
+        http_stream_fill(s);
+    }
+}
+
+AValue a_http_stream_close(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("http.stream_close: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_HTTP_STREAMS || !http_streams[h].active)
+        return a_err(a_string("http.stream_close: invalid handle"));
+    HttpStream* s = &http_streams[h];
+    http_conn_close(&s->conn);
+    free(s->buf); s->buf = NULL;
+    free(s->raw); s->raw = NULL;
+    s->active = 0;
+    return a_void();
+}
+
 /* --- Public HTTP API --- */
 
 AValue a_http_get(AValue url, AValue headers) {
@@ -2566,6 +2786,285 @@ AValue a_http_serve_static(AValue port, AValue dir) {
     }
 
     close(srv);
+    return a_void();
+}
+
+/* --- WebSocket client --- */
+
+typedef struct {
+    HttpConn conn;
+    int active;
+    char* buf;
+    int buf_len, buf_cap;
+} WsConn;
+
+#define MAX_WS_CONNS 8
+static WsConn ws_conns[MAX_WS_CONNS];
+
+static const char ws_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+static void ws_base64_encode(const unsigned char* in, int len, char* out) {
+    int i, j = 0;
+    for (i = 0; i < len - 2; i += 3) {
+        out[j++] = ws_b64[(in[i] >> 2) & 0x3F];
+        out[j++] = ws_b64[((in[i] & 0x3) << 4) | ((in[i+1] >> 4) & 0xF)];
+        out[j++] = ws_b64[((in[i+1] & 0xF) << 2) | ((in[i+2] >> 6) & 0x3)];
+        out[j++] = ws_b64[in[i+2] & 0x3F];
+    }
+    if (i < len) {
+        out[j++] = ws_b64[(in[i] >> 2) & 0x3F];
+        if (i + 1 < len) {
+            out[j++] = ws_b64[((in[i] & 0x3) << 4) | ((in[i+1] >> 4) & 0xF)];
+            out[j++] = ws_b64[((in[i+1] & 0xF) << 2)];
+        } else {
+            out[j++] = ws_b64[((in[i] & 0x3) << 4)];
+            out[j++] = '=';
+        }
+        out[j++] = '=';
+    }
+    out[j] = '\0';
+}
+
+static void ws_random_bytes(unsigned char* buf, int n) {
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(buf, 1, n, f); fclose(f); }
+    else { for (int i = 0; i < n; i++) buf[i] = (unsigned char)(rand() & 0xFF); }
+}
+
+static int ws_read_exact(HttpConn* c, void* buf, int n) {
+    int total = 0;
+    while (total < n) {
+        int got = http_io_read(c, (char*)buf + total, n - total);
+        if (got <= 0) return -1;
+        total += got;
+    }
+    return total;
+}
+
+AValue a_ws_connect(AValue url_val) {
+    if (url_val.tag != TAG_STRING) return a_err(a_string("ws.connect: expected string url"));
+    int slot = -1;
+    for (int i = 0; i < MAX_WS_CONNS; i++) {
+        if (!ws_conns[i].active) { slot = i; break; }
+    }
+    if (slot < 0) return a_err(a_string("ws.connect: too many connections"));
+
+    const char* url_str = url_val.sval->data;
+    int use_tls = 0;
+    const char* p = url_str;
+    char host[256] = {0};
+    int port = 80;
+    char path[1024] = "/";
+
+    if (strncmp(p, "wss://", 6) == 0) { use_tls = 1; port = 443; p += 6; }
+    else if (strncmp(p, "ws://", 5) == 0) { p += 5; }
+    else return a_err(a_string("ws.connect: expected ws:// or wss:// URL"));
+
+    const char* slash = strchr(p, '/');
+    const char* colon = strchr(p, ':');
+    if (colon && (!slash || colon < slash)) {
+        int hlen = (int)(colon - p);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, p, hlen); host[hlen] = '\0';
+        port = atoi(colon + 1);
+        if (slash) { strncpy(path, slash, sizeof(path) - 1); path[sizeof(path) - 1] = '\0'; }
+    } else if (slash) {
+        int hlen = (int)(slash - p);
+        if (hlen >= (int)sizeof(host)) hlen = (int)sizeof(host) - 1;
+        memcpy(host, p, hlen); host[hlen] = '\0';
+        strncpy(path, slash, sizeof(path) - 1); path[sizeof(path) - 1] = '\0';
+    } else {
+        strncpy(host, p, sizeof(host) - 1); host[sizeof(host) - 1] = '\0';
+    }
+
+    int fd = http_tcp_connect(host, port, 10000);
+    if (fd < 0) return a_err(a_string("ws.connect: connection failed"));
+
+    HttpConn conn = { .fd = fd, .tls_ctx = NULL, .use_tls = 0 };
+    if (use_tls) {
+        if (http_tls_connect(&conn, host) != 0) {
+            close(fd);
+            return a_err(a_string("ws.connect: TLS failed"));
+        }
+    }
+
+    unsigned char key_bytes[16];
+    ws_random_bytes(key_bytes, 16);
+    char key_b64[32];
+    ws_base64_encode(key_bytes, 16, key_b64);
+
+    char req[2048];
+    int rlen = snprintf(req, sizeof(req),
+        "GET %s HTTP/1.1\r\n"
+        "Host: %s\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: Upgrade\r\n"
+        "Sec-WebSocket-Key: %s\r\n"
+        "Sec-WebSocket-Version: 13\r\n\r\n",
+        path, host, key_b64);
+
+    if (http_io_write_all(&conn, req, rlen) < 0) {
+        http_conn_close(&conn);
+        return a_err(a_string("ws.connect: send failed"));
+    }
+
+    char resp[4096];
+    int resp_len = 0;
+    while (resp_len < (int)sizeof(resp) - 1) {
+        int n = http_io_read(&conn, resp + resp_len, 1);
+        if (n <= 0) break;
+        resp_len++;
+        resp[resp_len] = '\0';
+        if (resp_len >= 4 && memcmp(resp + resp_len - 4, "\r\n\r\n", 4) == 0) break;
+    }
+
+    if (!strstr(resp, "101")) {
+        http_conn_close(&conn);
+        return a_err(a_string("ws.connect: upgrade failed"));
+    }
+
+    WsConn* ws = &ws_conns[slot];
+    memset(ws, 0, sizeof(WsConn));
+    ws->conn = conn;
+    ws->active = 1;
+    ws->buf_cap = 8192;
+    ws->buf = malloc(ws->buf_cap);
+    ws->buf_len = 0;
+    return a_int(slot);
+}
+
+AValue a_ws_send(AValue handle, AValue msg) {
+    if (handle.tag != TAG_INT) return a_err(a_string("ws.send: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_WS_CONNS || !ws_conns[h].active)
+        return a_err(a_string("ws.send: invalid handle"));
+    if (msg.tag != TAG_STRING) return a_err(a_string("ws.send: expected string message"));
+
+    WsConn* ws = &ws_conns[h];
+    const char* data = msg.sval->data;
+    int dlen = msg.sval->len;
+
+    unsigned char mask_key[4];
+    ws_random_bytes(mask_key, 4);
+
+    unsigned char header[14];
+    int hlen = 0;
+    header[0] = 0x81;
+    if (dlen < 126) {
+        header[1] = 0x80 | (unsigned char)dlen;
+        hlen = 2;
+    } else if (dlen < 65536) {
+        header[1] = 0x80 | 126;
+        header[2] = (unsigned char)(dlen >> 8);
+        header[3] = (unsigned char)(dlen & 0xFF);
+        hlen = 4;
+    } else {
+        header[1] = 0x80 | 127;
+        memset(header + 2, 0, 4);
+        header[6] = (unsigned char)((dlen >> 24) & 0xFF);
+        header[7] = (unsigned char)((dlen >> 16) & 0xFF);
+        header[8] = (unsigned char)((dlen >> 8) & 0xFF);
+        header[9] = (unsigned char)(dlen & 0xFF);
+        hlen = 10;
+    }
+    memcpy(header + hlen, mask_key, 4);
+    hlen += 4;
+
+    if (http_io_write_all(&ws->conn, (char*)header, hlen) < 0)
+        return a_err(a_string("ws.send: write failed"));
+
+    char* masked = malloc(dlen);
+    for (int i = 0; i < dlen; i++) masked[i] = data[i] ^ mask_key[i % 4];
+    int ok = http_io_write_all(&ws->conn, masked, dlen);
+    free(masked);
+    if (ok < 0) return a_err(a_string("ws.send: write failed"));
+    return a_void();
+}
+
+AValue a_ws_recv(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("ws.recv: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_WS_CONNS || !ws_conns[h].active)
+        return a_err(a_string("ws.recv: invalid handle"));
+
+    WsConn* ws = &ws_conns[h];
+
+    for (;;) {
+        unsigned char hdr[2];
+        if (ws_read_exact(&ws->conn, hdr, 2) < 0)
+            return a_err(a_string("closed"));
+
+        int opcode = hdr[0] & 0x0F;
+        int masked = (hdr[1] & 0x80) != 0;
+        uint64_t payload_len = hdr[1] & 0x7F;
+
+        if (payload_len == 126) {
+            unsigned char ext[2];
+            if (ws_read_exact(&ws->conn, ext, 2) < 0) return a_err(a_string("closed"));
+            payload_len = ((uint64_t)ext[0] << 8) | ext[1];
+        } else if (payload_len == 127) {
+            unsigned char ext[8];
+            if (ws_read_exact(&ws->conn, ext, 8) < 0) return a_err(a_string("closed"));
+            payload_len = 0;
+            for (int i = 0; i < 8; i++) payload_len = (payload_len << 8) | ext[i];
+        }
+
+        unsigned char mask_key[4] = {0};
+        if (masked) {
+            if (ws_read_exact(&ws->conn, mask_key, 4) < 0) return a_err(a_string("closed"));
+        }
+
+        char* payload = malloc((size_t)payload_len + 1);
+        if (payload_len > 0) {
+            if (ws_read_exact(&ws->conn, payload, (int)payload_len) < 0) {
+                free(payload);
+                return a_err(a_string("closed"));
+            }
+            if (masked) {
+                for (uint64_t i = 0; i < payload_len; i++)
+                    payload[i] ^= mask_key[i % 4];
+            }
+        }
+        payload[payload_len] = '\0';
+
+        if (opcode == 0x09) {
+            unsigned char pong[2] = {0x8A, 0x80};
+            unsigned char pmask[4];
+            ws_random_bytes(pmask, 4);
+            http_io_write_all(&ws->conn, (char*)pong, 2);
+            http_io_write_all(&ws->conn, (char*)pmask, 4);
+            free(payload);
+            continue;
+        }
+        if (opcode == 0x08) {
+            free(payload);
+            return a_err(a_string("closed"));
+        }
+        if (opcode == 0x0A) {
+            free(payload);
+            continue;
+        }
+
+        AValue result = a_string_len(payload, (int)payload_len);
+        free(payload);
+        return result;
+    }
+}
+
+AValue a_ws_close(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("ws.close: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_WS_CONNS || !ws_conns[h].active)
+        return a_err(a_string("ws.close: invalid handle"));
+
+    WsConn* ws = &ws_conns[h];
+    unsigned char close_frame[6] = {0x88, 0x80};
+    unsigned char mask[4];
+    ws_random_bytes(mask, 4);
+    memcpy(close_frame + 2, mask, 4);
+    http_io_write_all(&ws->conn, (char*)close_frame, 6);
+    http_conn_close(&ws->conn);
+    free(ws->buf); ws->buf = NULL;
+    ws->active = 0;
     return a_void();
 }
 

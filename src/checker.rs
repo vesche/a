@@ -290,6 +290,41 @@ impl Checker {
                 effects: vec!["io".into()],
             });
         }
+        self.fn_sigs.insert("http.stream".into(), FnSig {
+            params: vec![("url".into(), Type::Str), ("body".into(), Type::Unknown), ("headers".into(), Type::Unknown)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("http.stream_read".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("http.stream_close".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("ws.connect".into(), FnSig {
+            params: vec![("url".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("ws.send".into(), FnSig {
+            params: vec![("handle".into(), Type::I64), ("msg".into(), Type::Str)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("ws.recv".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("ws.close".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
         self.fn_sigs.insert("http.serve".into(), FnSig {
             params: vec![("port".into(), Type::I64), ("handler".into(), Type::Unknown)],
             ret: Type::Void,

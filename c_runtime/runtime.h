@@ -239,9 +239,20 @@ AValue a_http_put(AValue url, AValue body, AValue headers);
 AValue a_http_patch(AValue url, AValue body, AValue headers);
 AValue a_http_delete(AValue url, AValue headers);
 
+/* HTTP streaming */
+AValue a_http_stream(AValue url, AValue body, AValue headers);
+AValue a_http_stream_read(AValue handle);
+AValue a_http_stream_close(AValue handle);
+
 /* HTTP server */
 AValue a_http_serve(AValue port, AValue handler);
 AValue a_http_serve_static(AValue port, AValue dir);
+
+/* WebSocket client */
+AValue a_ws_connect(AValue url);
+AValue a_ws_send(AValue handle, AValue msg);
+AValue a_ws_recv(AValue handle);
+AValue a_ws_close(AValue handle);
 
 /* Subprocess pipes */
 AValue a_proc_spawn(AValue cmd);
