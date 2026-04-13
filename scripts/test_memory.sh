@@ -9,6 +9,8 @@ cd "$SCRIPT_DIR"
 A="cargo run --quiet -- run"
 CGEN="std/compiler/cgen.a"
 RUNTIME="c_runtime/runtime.c"
+SQLITE="c_runtime/sqlite3.c"
+SQLITE_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
 WORK=$(mktemp -d)
 OS=$(uname -s)
 if [ "$OS" = "Darwin" ]; then
@@ -26,7 +28,7 @@ $A "$CGEN" -- "$CGEN" 2>/dev/null > "$WORK/gen1.c"
 echo "  gen1.c: $(wc -l < "$WORK/gen1.c") lines"
 
 echo "Step 2: gcc gen1.c → ac1"
-gcc "$WORK/gen1.c" "$RUNTIME" -o "$WORK/ac1" -I c_runtime -lm -O1 $SFLAGS
+gcc "$WORK/gen1.c" "$RUNTIME" "$SQLITE" -o "$WORK/ac1" -I c_runtime -lm -O1 $SFLAGS $SQLITE_FLAGS
 echo "  ac1 built"
 
 echo "Step 3: ac1 self-compiles → gen2.c"
@@ -49,7 +51,7 @@ for src in examples/c_targets/arrays.a examples/c_targets/closures.a examples/c_
     name=$(basename "$src" .a)
     vm_out=$($A "$src" 2>/dev/null || true)
     if "$WORK/ac1" "$src" > "$WORK/${name}.c" 2>/dev/null && \
-       gcc "$WORK/${name}.c" "$RUNTIME" -o "$WORK/$name" -I c_runtime -lm -O1 $SFLAGS 2>/dev/null; then
+       gcc "$WORK/${name}.c" "$RUNTIME" "$SQLITE" -o "$WORK/$name" -I c_runtime -lm -O1 $SFLAGS $SQLITE_FLAGS 2>/dev/null; then
         nat_out=$("$WORK/$name" 2>/dev/null || true)
         if [ "$vm_out" = "$nat_out" ]; then
             printf "  %-25s PASS\n" "$name"; PASS=$((PASS + 1))
@@ -70,7 +72,7 @@ for mod in path testing datetime math strings csv re template cli encoding lexer
     echo 'fn main() { println("ok") }' >> "$WORK/stdmod.a"
     if "$WORK/ac1" "$WORK/stdmod.a" > "$WORK/stdmod.c" 2>/dev/null && \
        [ "$(wc -l < "$WORK/stdmod.c")" -gt 0 ] && \
-       gcc "$WORK/stdmod.c" "$RUNTIME" -o "$WORK/stdmod" -I c_runtime -lm -O1 $SFLAGS 2>/dev/null; then
+       gcc "$WORK/stdmod.c" "$RUNTIME" "$SQLITE" -o "$WORK/stdmod" -I c_runtime -lm -O1 $SFLAGS $SQLITE_FLAGS 2>/dev/null; then
         out=$("$WORK/stdmod" 2>/dev/null)
         if [ "$out" = "ok" ]; then
             printf "  %-15s PASS\n" "$mod"; SPASS=$((SPASS + 1))

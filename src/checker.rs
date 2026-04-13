@@ -280,6 +280,26 @@ impl Checker {
             ret: Type::Void,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("db.open".into(), FnSig {
+            params: vec![("path".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("db.close".into(), FnSig {
+            params: vec![("db".into(), Type::Unknown)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("db.exec".into(), FnSig {
+            params: vec![("db".into(), Type::Unknown), ("sql".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("db.query".into(), FnSig {
+            params: vec![("db".into(), Type::Unknown), ("sql".into(), Type::Str), ("params".into(), Type::Array(Box::new(Type::Unknown)))],
+            ret: Type::Array(Box::new(Type::Unknown)),
+            effects: vec!["io".into()],
+        });
         for name in &["fs.exists", "fs.is_dir", "fs.is_file"] {
             self.fn_sigs.insert((*name).into(), FnSig {
                 params: vec![("path".into(), Type::Str)],

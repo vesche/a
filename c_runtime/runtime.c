@@ -1909,6 +1909,94 @@ AValue a_http_serve_static(AValue port, AValue dir) {
     return a_void();
 }
 
+/* --- Database (SQLite) --- */
+
+#include "sqlite3.h"
+
+AValue a_db_open(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("db.open: expected string path"));
+    sqlite3* db = NULL;
+    int rc = sqlite3_open(path.sval->data, &db);
+    if (rc != SQLITE_OK) {
+        const char* msg = sqlite3_errmsg(db);
+        AValue err = a_err(a_string(msg ? msg : "db.open failed"));
+        sqlite3_close(db);
+        return err;
+    }
+    return a_ptr(db);
+}
+
+AValue a_db_close(AValue db) {
+    if (db.tag != TAG_PTR || !db.pval) return a_err(a_string("db.close: expected db handle"));
+    sqlite3_close((sqlite3*)db.pval);
+    return a_void();
+}
+
+AValue a_db_exec(AValue db, AValue sql) {
+    if (db.tag != TAG_PTR || !db.pval) return a_err(a_string("db.exec: expected db handle"));
+    if (sql.tag != TAG_STRING) return a_err(a_string("db.exec: expected string sql"));
+    char* errmsg = NULL;
+    int rc = sqlite3_exec((sqlite3*)db.pval, sql.sval->data, NULL, NULL, &errmsg);
+    if (rc != SQLITE_OK) {
+        AValue err = a_err(a_string(errmsg ? errmsg : "db.exec failed"));
+        sqlite3_free(errmsg);
+        return err;
+    }
+    return a_ok(a_void());
+}
+
+AValue a_db_query(AValue db, AValue sql, AValue params) {
+    if (db.tag != TAG_PTR || !db.pval) return a_err(a_string("db.query: expected db handle"));
+    if (sql.tag != TAG_STRING) return a_err(a_string("db.query: expected string sql"));
+
+    sqlite3_stmt* stmt = NULL;
+    int rc = sqlite3_prepare_v2((sqlite3*)db.pval, sql.sval->data, -1, &stmt, NULL);
+    if (rc != SQLITE_OK) {
+        const char* msg = sqlite3_errmsg((sqlite3*)db.pval);
+        return a_err(a_string(msg ? msg : "db.query: prepare failed"));
+    }
+
+    if (params.tag == TAG_ARRAY && params.aval) {
+        for (int i = 0; i < params.aval->len; i++) {
+            AValue p = params.aval->items[i];
+            int idx = i + 1;
+            if (p.tag == TAG_INT) sqlite3_bind_int64(stmt, idx, p.ival);
+            else if (p.tag == TAG_FLOAT) sqlite3_bind_double(stmt, idx, p.fval);
+            else if (p.tag == TAG_STRING) sqlite3_bind_text(stmt, idx, p.sval->data, p.sval->len, SQLITE_TRANSIENT);
+            else if (p.tag == TAG_BOOL) sqlite3_bind_int(stmt, idx, p.bval ? 1 : 0);
+            else sqlite3_bind_null(stmt, idx);
+        }
+    }
+
+    AValue rows = a_array_new(0);
+    int ncols = sqlite3_column_count(stmt);
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        AValue row = a_map_new(0);
+        for (int c = 0; c < ncols; c++) {
+            const char* name = sqlite3_column_name(stmt, c);
+            int ctype = sqlite3_column_type(stmt, c);
+            AValue val;
+            if (ctype == SQLITE_INTEGER) val = a_int(sqlite3_column_int64(stmt, c));
+            else if (ctype == SQLITE_FLOAT) val = a_float(sqlite3_column_double(stmt, c));
+            else if (ctype == SQLITE_TEXT) val = a_string((const char*)sqlite3_column_text(stmt, c));
+            else if (ctype == SQLITE_NULL) val = a_void();
+            else val = a_string((const char*)sqlite3_column_text(stmt, c));
+            row = a_map_set(row, a_string(name), val);
+        }
+        rows = a_array_push(rows, row);
+    }
+
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        const char* msg = sqlite3_errmsg((sqlite3*)db.pval);
+        return a_err(a_string(msg ? msg : "db.query: step failed"));
+    }
+
+    return rows;
+}
+
 /* --- Closures --- */
 
 AValue a_closure(AClosureFn fn, AValue env) {

@@ -32,9 +32,11 @@ TMP_C=$(mktemp /tmp/a_cli_XXXXXX.c)
 cargo run --quiet -- run "$CGEN" -- "$CLI_SRC" > "$TMP_C" 2>/dev/null
 echo "  generated $(wc -l < "$TMP_C" | tr -d ' ') lines of C"
 
+SQLITE_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
+
 echo "Step 2: Build native binary..."
-gcc "$TMP_C" "$RUNTIME_DIR/runtime.c" -o "$OUTPUT" \
-    -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS
+gcc "$TMP_C" "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" -o "$OUTPUT" \
+    -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS $SQLITE_FLAGS
 rm "$TMP_C"
 echo "  built $OUTPUT ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
 
@@ -43,8 +45,8 @@ if [ -f "$LSP_SRC" ]; then
     echo "Step 3: Build language server..."
     TMP_LSP_C=$(mktemp /tmp/a_lsp_XXXXXX.c)
     cargo run --quiet -- run "$CGEN" -- "$LSP_SRC" > "$TMP_LSP_C" 2>/dev/null
-    gcc "$TMP_LSP_C" "$RUNTIME_DIR/runtime.c" -o "./a-lsp" \
-        -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS
+    gcc "$TMP_LSP_C" "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" -o "./a-lsp" \
+        -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS $SQLITE_FLAGS
     rm "$TMP_LSP_C"
     echo "  built ./a-lsp ($(wc -c < "./a-lsp" | tr -d ' ') bytes)"
 fi

@@ -51,6 +51,7 @@ fn _builtin_map() -> map {
     "hash.sha256": "a_hash_sha256", "hash.md5": "a_hash_md5",
     "http.get": "a_http_get", "http.post": "a_http_post",
     "http.serve": "a_http_serve", "http.serve_static": "a_http_serve_static",
+    "db.open": "a_db_open", "db.close": "a_db_close", "db.exec": "a_db_exec", "db.query": "a_db_query",
     "map": "a_hof_map", "filter": "a_hof_filter", "reduce": "a_hof_reduce",
     "each": "a_hof_each", "sort_by": "a_hof_sort_by", "find": "a_hof_find",
     "any": "a_hof_any", "all": "a_hof_all", "flat_map": "a_hof_flat_map",
@@ -64,7 +65,7 @@ fn _builtin_map() -> map {
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static"]
+  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static", "db.close"]
 }
 
 fn _c_keywords() -> [str] {

@@ -240,6 +240,12 @@ AValue a_http_post(AValue url, AValue body, AValue headers);
 AValue a_http_serve(AValue port, AValue handler);
 AValue a_http_serve_static(AValue port, AValue dir);
 
+/* Database (SQLite) */
+AValue a_db_open(AValue path);
+AValue a_db_close(AValue db);
+AValue a_db_exec(AValue db, AValue sql);
+AValue a_db_query(AValue db, AValue sql, AValue params);
+
 /* Closures */
 AValue a_closure(AClosureFn fn, AValue env);
 AValue a_closure_call(AValue closure, int argc, ...);

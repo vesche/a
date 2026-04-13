@@ -1894,3 +1894,52 @@ Verified with curl:
 | `README.md` | Added HTTP server to builtins table, api.a to tools table |
 | `Cargo.toml` | Version bump to 0.53.0 |
 
+---
+
+## v0.54 -- Persistence (SQLite)
+
+**Goal:** Bundle SQLite into the C runtime so "a" programs can persist and query data with zero external dependencies. An agent shouldn't need `apt-get install libsqlite3-dev` before it can persist data.
+
+### Approach
+
+The SQLite amalgamation (`sqlite3.c` + `sqlite3.h`) is bundled directly in `c_runtime/`. This is a single ~9MB C source file that compiles alongside `runtime.c` -- no shared library, no package manager, no install step. The binary grows from ~842KB to ~1.5MB.
+
+Four builtins map directly to the SQLite3 C API:
+
+- **`db.open(path)`** -- Opens (or creates) a database. Accepts file paths or `":memory:"` for in-memory databases. Returns a pointer handle.
+- **`db.exec(db, sql)`** -- Executes a SQL statement (DDL, INSERT, UPDATE, DELETE). No return value.
+- **`db.query(db, sql, params)`** -- Parameterized query with `?` placeholders. Binds int, float, string, bool, null. Returns an array of maps where each row is `#{ "col_name": value }`.
+- **`db.close(db)`** -- Closes the database handle.
+
+SQLite is compiled with `-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION` for a minimal, single-threaded build matching "a"'s execution model.
+
+### Testing
+
+Verified with a CRUD API example (`examples/crud.a`):
+- `db.open("crud.db")` creates a persistent SQLite database
+- `db.exec` creates tables with `CREATE TABLE IF NOT EXISTS`
+- `db.query` with parameterized `?` binding for INSERT, SELECT, DELETE
+- In-memory databases work with `db.open(":memory:")`
+- Integer, float, string, null column types round-trip correctly
+- Parameterized WHERE clauses filter correctly
+- Full HTTP + SQLite integration: REST API with persistent storage in ~40 lines
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/sqlite3.c` | NEW -- SQLite amalgamation (public domain, ~9MB) |
+| `c_runtime/sqlite3.h` | NEW -- SQLite header (public domain) |
+| `c_runtime/runtime.c` | Added `a_db_open`, `a_db_close`, `a_db_exec`, `a_db_query` with full parameter binding and column type mapping |
+| `c_runtime/runtime.h` | Added declarations for all four db builtins |
+| `std/compiler/cgen.a` | Added `db.open`, `db.close`, `db.exec`, `db.query` to builtin map; `db.close` to void builtins |
+| `src/builtins.rs` | Added `db.*` to `is_builtin` with native-only stub |
+| `src/checker.rs` | Added `db.open`, `db.close`, `db.exec`, `db.query` type signatures |
+| `build.sh` | Added `sqlite3.c` to both gcc invocations + SQLite compile flags |
+| `src/cli.a` | Added `_sqlite_flags()`, updated `_gcc()` and `cmd_test()` to compile sqlite3.c |
+| `scripts/test_memory.sh` | Updated all gcc invocations to include sqlite3.c |
+| `.github/workflows/release.yml` | Updated gcc invocations to include sqlite3.c |
+| `examples/crud.a` | NEW -- HTTP + SQLite CRUD API in ~40 lines |
+| `README.md` | Added Database row to builtins table, crud.a to tools table |
+| `Cargo.toml` | Version bump to 0.54.0 |
+

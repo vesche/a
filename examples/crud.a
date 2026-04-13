@@ -1,0 +1,38 @@
+fn main() {
+  let db = db.open("crud.db")
+  db.exec(db, "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT)")
+
+  println("CRUD API on :8080")
+  println("  GET  /users         list all")
+  println("  POST /users         create (JSON body with name, email)")
+  println("  POST /users/delete  delete by id (JSON body with id)")
+
+  http.serve(8080, fn(req) {
+    let m = req["method"]
+    let p = req["path"]
+    let h = #{ "Content-Type": "application/json" }
+
+    if m == "GET" {
+      if p == "/users" {
+        let rows = db.query(db, "SELECT * FROM users ORDER BY id", [])
+        ret #{ "status": 200, "body": json.stringify(rows), "headers": h }
+      }
+    }
+
+    if m == "POST" {
+      if p == "/users" {
+        let body = json.parse(req["body"])
+        db.query(db, "INSERT INTO users (name, email) VALUES (?, ?)", [body["name"], body["email"]])
+        let rows = db.query(db, "SELECT * FROM users ORDER BY id DESC LIMIT 1", [])
+        ret #{ "status": 201, "body": json.stringify(rows), "headers": h }
+      }
+      if p == "/users/delete" {
+        let body = json.parse(req["body"])
+        db.query(db, "DELETE FROM users WHERE id = ?", [body["id"]])
+        ret #{ "status": 200, "body": json.stringify(#{ "deleted": body["id"] }), "headers": h }
+      }
+    }
+
+    ret #{ "status": 404, "body": json.stringify(#{ "error": "not found" }), "headers": h }
+  })
+}

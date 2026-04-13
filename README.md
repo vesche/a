@@ -104,6 +104,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `io.read_file`, `io.write_file` |
 | **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) |
 | **HTTP server** | `http.serve(port, handler)` -- POSIX sockets, closure handler receives `{method, path, headers, body}`, returns `{status, headers, body}`; `http.serve_static(port, dir)` for file serving |
+| **Database** | `db.open(path)` (or `":memory:"`), `db.exec(db, sql)`, `db.query(db, sql, params)` with `?` binding, `db.close(db)` -- bundled SQLite, zero setup |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
@@ -162,7 +163,7 @@ The C code generator compiles itself -- including the lexer, parser, and AST mod
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,200 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP client (via curl), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~2,700 lines) includes POSIX I/O, filesystem ops, shell execution, JSON parse/stringify, SHA-256/MD5 hashing, HTTP client (via curl), HTTP server (POSIX sockets), SQLite (bundled amalgamation), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -218,6 +219,7 @@ fn main() -> void {
 | `examples/parallel_fetch.a` | 54 | concurrent URL fetching with timeouts |
 | `examples/site_gen.a` | 100 | static site generator using path, datetime, hash, csv, template, encoding (runs natively) |
 | `examples/api.a` | 20 | **JSON API server** -- HTTP server with routing, JSON responses, echo endpoint |
+| `examples/crud.a` | 40 | **CRUD API** -- HTTP + SQLite with parameterized queries, create/read/delete users |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 | `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |
@@ -228,7 +230,7 @@ fn main() -> void {
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~1,700 lines (runtime.h + runtime.c) |
+| **C runtime** | ~2,700 lines (runtime.h + runtime.c) + bundled SQLite3 |
 | **"a" source** | ~19,000 lines across 88 files |
 | **Standard library** | 20 modules, 380+ functions, ~8,200 lines |
 | **Test suites** | 27 suites + cgen test script, 498+ native tests, ~4,200 lines |

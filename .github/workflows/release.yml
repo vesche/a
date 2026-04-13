@@ -58,8 +58,9 @@ jobs:
         run: |
           CC=${{ matrix.gcc }}
           STACK="${{ steps.flags.outputs.stack }}"
-          $CC /tmp/cli.c c_runtime/runtime.c -o a -I c_runtime -lm -O2 $STACK
-          $CC /tmp/lsp.c c_runtime/runtime.c -o a-lsp -I c_runtime -lm -O2 $STACK
+          SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
+          $CC /tmp/cli.c c_runtime/runtime.c c_runtime/sqlite3.c -o a -I c_runtime -lm -O2 $STACK $SQLITE
+          $CC /tmp/lsp.c c_runtime/runtime.c c_runtime/sqlite3.c -o a-lsp -I c_runtime -lm -O2 $STACK $SQLITE
 
       - name: Package release tarball
         run: |
