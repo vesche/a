@@ -435,15 +435,24 @@ fn _stdlib_modules() {
 ; --- LSP request handlers ---
 
 fn _handle_initialize(id) {
+  let token_types = ["keyword", "function", "variable", "string", "number",
+    "comment", "type", "namespace", "operator"]
   let capabilities = #{
     "textDocumentSync": 1,
     "completionProvider": #{"triggerCharacters": [".", ":"]},
     "hoverProvider": true,
-    "definitionProvider": true
+    "definitionProvider": true,
+    "renameProvider": #{"prepareProvider": true},
+    "codeActionProvider": true,
+    "workspaceSymbolProvider": true,
+    "semanticTokensProvider": #{
+      "legend": #{"tokenTypes": token_types, "tokenModifiers": []},
+      "full": true
+    }
   }
   let result = #{
     "capabilities": capabilities,
-    "serverInfo": #{"name": "a-lsp", "version": "0.50.0"}
+    "serverInfo": #{"name": "a-lsp", "version": "0.66.0"}
   }
   _respond(id, result)
 }
@@ -692,6 +701,291 @@ fn _handle_definition(id, docs, params) {
   _respond(id, empty)
 }
 
+; --- Semantic tokens ---
+
+fn _token_type_index(kind: str, text: str) -> int {
+  if kind == "Keyword" || kind == "Fn" || kind == "Let" || kind == "Mut" ||
+     kind == "If" || kind == "Else" || kind == "While" || kind == "For" ||
+     kind == "In" || kind == "Ret" || kind == "Use" || kind == "Type" ||
+     kind == "Match" || kind == "True" || kind == "False" || kind == "Break" ||
+     kind == "Continue" || kind == "Extern" { ret 0 }
+  if kind == "Ident" {
+    let first = str.slice(text, 0, 1)
+    if first == str.upper(first) && first != str.lower(first) { ret 7 }
+    ret 2
+  }
+  if kind == "String" || kind == "RawString" || kind == "InterpStart" || kind == "InterpEnd" { ret 3 }
+  if kind == "Int" || kind == "Float" { ret 4 }
+  if kind == "Comment" { ret 5 }
+  if kind == "Arrow" || kind == "Colon" { ret 6 }
+  if kind == "Dot" { ret 8 }
+  ret -1
+}
+
+fn _handle_semantic_tokens(id, docs, params) {
+  let uri = params["textDocument"]["uri"]
+  if !map.has(docs, uri) {
+    _respond(id, #{"data": []})
+    ret ""
+  }
+  let doc = docs[uri]
+  let content = doc["content"]
+  let toks = lexer.lex(content)
+  let num_toks = len(toks) / 2
+  let offsets = _build_token_offsets(content)
+
+  let mut data = []
+  let mut prev_line = 0
+  let mut prev_char = 0
+  let mut ti = 0
+  while ti < num_toks {
+    let kind = toks[ti * 2]
+    let text = toks[ti * 2 + 1]
+    let type_idx = _token_type_index(kind, text)
+    if type_idx >= 0 && kind != "Newline" && kind != "Eof" {
+      let mut offset = 0
+      if ti < len(offsets) { offset = offsets[ti] }
+      let lc = _offset_to_lc(content, offset)
+      let line = lc["line"]
+      let character = lc["character"]
+      let delta_line = line - prev_line
+      let mut delta_char = character
+      if delta_line == 0 { delta_char = character - prev_char }
+      let token_len = len(text)
+      if token_len > 0 {
+        data = push(data, delta_line)
+        data = push(data, delta_char)
+        data = push(data, token_len)
+        data = push(data, type_idx)
+        data = push(data, 0)
+        prev_line = line
+        prev_char = character
+      }
+    }
+    ti = ti + 1
+  }
+  _respond(id, #{"data": data})
+}
+
+; --- Rename ---
+
+fn _find_all_occurrences(content: str, name: str) -> [map] {
+  let lines = str.lines(content)
+  let mut results = []
+  let mut li = 0
+  while li < len(lines) {
+    let line = lines[li]
+    let mut pos = 0
+    while pos < len(line) {
+      let idx = str.find(str.slice(line, pos, len(line)), name)
+      if idx < 0 { break }
+      let abs_pos = pos + idx
+      let before_ok = abs_pos == 0 || !is_alnum(str.slice(line, abs_pos - 1, abs_pos))
+      let after_pos = abs_pos + len(name)
+      let after_ok = after_pos >= len(line) || !is_alnum(str.slice(line, after_pos, after_pos + 1))
+      if before_ok && after_ok {
+        results = push(results, #{"line": li, "start": abs_pos, "end": after_pos})
+      }
+      pos = abs_pos + 1
+    }
+    li = li + 1
+  }
+  ret results
+}
+
+fn _handle_prepare_rename(id, docs, params) {
+  let uri = params["textDocument"]["uri"]
+  let pos = params["position"]
+  if !map.has(docs, uri) {
+    _respond(id, #{"_": 0})
+    ret ""
+  }
+  let doc = docs[uri]
+  let content = doc["content"]
+  let word = _word_at(content, pos["line"], pos["character"])
+  if len(word) == 0 {
+    _respond_error(id, -32602, "no symbol at cursor")
+    ret ""
+  }
+  let lc_start = pos["character"] - len(word) + len(word)
+  let lines = str.lines(content)
+  let line_text = lines[pos["line"]]
+  let idx = str.find(str.slice(line_text, 0, pos["character"] + len(word)), word)
+  let mut start_char = pos["character"]
+  if idx >= 0 { start_char = idx }
+  _respond(id, #{
+    "range": #{
+      "start": #{"line": pos["line"], "character": start_char},
+      "end": #{"line": pos["line"], "character": start_char + len(word)}
+    },
+    "placeholder": word
+  })
+}
+
+fn _handle_rename(id, docs, params) {
+  let uri = params["textDocument"]["uri"]
+  let pos = params["position"]
+  let new_name = params["newName"]
+  if !map.has(docs, uri) {
+    _respond(id, #{"changes": #{}})
+    ret ""
+  }
+  let doc = docs[uri]
+  let content = doc["content"]
+  let word = _word_at(content, pos["line"], pos["character"])
+  if len(word) == 0 {
+    _respond(id, #{"changes": #{}})
+    ret ""
+  }
+  let occurrences = _find_all_occurrences(content, word)
+  let mut edits = []
+  let mut i = 0
+  while i < len(occurrences) {
+    let occ = occurrences[i]
+    edits = push(edits, #{
+      "range": #{
+        "start": #{"line": occ["line"], "character": occ["start"]},
+        "end": #{"line": occ["line"], "character": occ["end"]}
+      },
+      "newText": new_name
+    })
+    i = i + 1
+  }
+  _respond(id, #{"changes": map.set(#{}, uri, edits)})
+}
+
+; --- Code actions ---
+
+fn _handle_code_actions(id, docs, params) {
+  let uri = params["textDocument"]["uri"]
+  let mut actions = []
+  if !map.has(docs, uri) {
+    _respond(id, actions)
+    ret ""
+  }
+  let doc = docs[uri]
+  let content = doc["content"]
+  let ast = doc["ast"]
+  if type_of(ast) != "map" {
+    _respond(id, actions)
+    ret ""
+  }
+
+  let lines = str.lines(content)
+  let mut has_use = #{}
+  let mut li = 0
+  while li < len(lines) {
+    let l = str.trim(lines[li])
+    if str.starts_with(l, "use ") {
+      has_use = map.set(has_use, str.trim(str.slice(l, 4, len(l))), true)
+    }
+    li = li + 1
+  }
+
+  let known_mods = ["std.compiler.parser", "std.compiler.cgen", "std.compiler.emitter",
+    "std.compiler.checker", "std.path", "std.cli", "std.pkg", "std.semver",
+    "std.template", "std.html", "std.csv", "std.toml", "std.config", "std.base64",
+    "std.schema", "std.diff", "std.agent"]
+  let mod_prefixes = ["parser.", "cgen.", "emitter.", "checker.", "path.", "cli.",
+    "pkg.", "semver.", "template.", "html.", "csv.", "toml.", "config.", "base64.",
+    "schema.", "diff.", "agent."]
+
+  let mut mi = 0
+  while mi < len(mod_prefixes) {
+    let prefix = mod_prefixes[mi]
+    let mod_path = known_mods[mi]
+    if str.contains(content, prefix) && !map.has(has_use, mod_path) {
+      let mod_short = str.split(mod_path, ".")[len(str.split(mod_path, ".")) - 1]
+      actions = push(actions, #{
+        "title": "Add 'use " + mod_path + "'",
+        "kind": "quickfix",
+        "edit": #{
+          "changes": map.set(#{}, uri, [#{
+            "range": #{"start": #{"line": 0, "character": 0}, "end": #{"line": 0, "character": 0}},
+            "newText": "use " + mod_path + "\n"
+          }])
+        }
+      })
+    }
+    mi = mi + 1
+  }
+
+  _respond(id, actions)
+}
+
+; --- Workspace symbols ---
+
+fn _handle_workspace_symbols(id, params) {
+  let query = ""
+  if map.has(params, "query") {
+    let q = params["query"]
+    if type_of(q) == "str" { }
+  }
+  let mut symbols = []
+  let cwd = fs.cwd()
+
+  let scan_dirs = ["src", "std", "std/compiler"]
+  let mut di = 0
+  while di < len(scan_dirs) {
+    let dir = scan_dirs[di]
+    if fs.exists(dir) {
+      let entries = fs.ls(dir)
+      let mut ei = 0
+      while ei < len(entries) {
+        let name = entries[ei]["name"]
+        if str.ends_with(name, ".a") && !entries[ei]["is_dir"] {
+          let fpath = dir + "/" + name
+          let content = io.read_file(fpath)
+          if type_of(content) == "str" {
+            let lines = str.lines(content)
+            let file_uri = "file://" + cwd + "/" + fpath
+            let mut li = 0
+            while li < len(lines) {
+              let l = str.trim(lines[li])
+              if str.starts_with(l, "fn ") {
+                let rest = str.slice(l, 3, len(l))
+                let paren = str.find(rest, "(")
+                if paren > 0 {
+                  let fname = str.trim(str.slice(rest, 0, paren))
+                  symbols = push(symbols, #{
+                    "name": fname,
+                    "kind": 12,
+                    "location": #{
+                      "uri": file_uri,
+                      "range": #{"start": #{"line": li, "character": 0}, "end": #{"line": li, "character": len(l)}}
+                    }
+                  })
+                }
+              }
+              if str.starts_with(l, "type ") {
+                let rest = str.slice(l, 5, len(l))
+                let space = str.find(rest, " ")
+                let eq = str.find(rest, "=")
+                let mut end = len(rest)
+                if space > 0 && space < end { end = space }
+                if eq > 0 && eq < end { end = eq }
+                let tname = str.trim(str.slice(rest, 0, end))
+                symbols = push(symbols, #{
+                  "name": tname,
+                  "kind": 5,
+                  "location": #{
+                    "uri": file_uri,
+                    "range": #{"start": #{"line": li, "character": 0}, "end": #{"line": li, "character": len(l)}}
+                  }
+                })
+              }
+              li = li + 1
+            }
+          }
+        }
+        ei = ei + 1
+      }
+    }
+    di = di + 1
+  }
+  _respond(id, symbols)
+}
+
 ; --- Main loop ---
 
 fn _dispatch(msg, docs) {
@@ -758,6 +1052,26 @@ fn _dispatch(msg, docs) {
   }
   if method == "textDocument/definition" {
     _handle_definition(id, docs, params)
+    ret docs
+  }
+  if method == "textDocument/semanticTokens/full" {
+    _handle_semantic_tokens(id, docs, params)
+    ret docs
+  }
+  if method == "textDocument/prepareRename" {
+    _handle_prepare_rename(id, docs, params)
+    ret docs
+  }
+  if method == "textDocument/rename" {
+    _handle_rename(id, docs, params)
+    ret docs
+  }
+  if method == "textDocument/codeAction" {
+    _handle_code_actions(id, docs, params)
+    ret docs
+  }
+  if method == "workspace/symbol" {
+    _handle_workspace_symbols(id, params)
     ret docs
   }
   ret docs

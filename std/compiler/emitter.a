@@ -37,7 +37,26 @@ fn emit_top_level(node, level) {
   if tag == "TypeDecl" { ret emit_type_decl(node, level) }
   if tag == "ModDecl" { ret emit_mod_decl(node, level) }
   if tag == "UseDecl" { ret emit_use_decl(node, level) }
+  if tag == "ExternFn" { ret emit_extern_fn(node, level) }
   ret ""
+}
+
+fn emit_extern_fn(node, level) {
+  let pad = mk_indent(level)
+  let mut out = pad + "extern fn " + node["name"] + "("
+  let params = node["params"]
+  let mut param_parts = []
+  for p in params {
+    param_parts = push(param_parts, emit_param(p))
+  }
+  out = out + str.join(param_parts, ", ") + ")"
+  let ret_type = node["ret_type"]
+  if is_present(ret_type) {
+    if ret_type["tag"] != "TyInfer" {
+      out = out + " -> " + emit_type(ret_type)
+    }
+  }
+  ret out
 }
 
 ; --- Use declaration ---

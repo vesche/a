@@ -1,5 +1,7 @@
 use std.compiler.cgen
 use std.compiler.parser
+use std.compiler.emitter
+use std.compiler.checker
 use std.path
 use std.cli
 use std.pkg
@@ -274,6 +276,219 @@ fn cmd_lsp() {
   eprintln("configure your editor to run ./a-lsp as the language server for *.a files")
 }
 
+fn _parse_source(source_path) -> map {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    _die("cannot read file: " + source_path)
+  }
+  let ast = parser.parse(source)
+  if type_of(ast) == "map" && map.has(ast, "tag") {
+    if ast["tag"] == "ParseError" {
+      _die("parse error: " + ast["msg"] + " at token " + to_str(ast["pos"]))
+    }
+  }
+  ret ast
+}
+
+fn _fmt_file(file_path: str) {
+  let ast = _parse_source(file_path)
+  let formatted = emitter.emit(ast)
+  io.write_file(file_path, formatted)
+}
+
+fn _is_dir(p: str) -> bool {
+  if !fs.exists(p) { ret false }
+  if str.ends_with(p, ".a") { ret false }
+  let result = exec("test -d " + p + " && echo yes || echo no")
+  ret str.trim(result["stdout"]) == "yes"
+}
+
+fn _fmt_dir(target: str) {
+  let entries = fs.ls(target)
+  let mut i = 0
+  while i < len(entries) {
+    let name = map.get(entries[i], "name")
+    let full = path.join(target, name)
+    if map.get(entries[i], "is_dir") {
+      _fmt_dir(full)
+    } else {
+      if str.ends_with(name, ".a") {
+        _fmt_file(full)
+      }
+    }
+    i = i + 1
+  }
+}
+
+fn cmd_fmt(target: str) {
+  if _is_dir(target) {
+    _fmt_dir(target)
+    println(cli.green("formatted") + " " + target)
+    ret
+  }
+  if str.ends_with(target, ".a") && fs.exists(target) {
+    _fmt_file(target)
+    println(cli.green("formatted") + " " + target)
+  } else {
+    _die("expected a .a file or directory: " + target)
+  }
+}
+
+fn cmd_ast(source_path: str) {
+  let ast = _parse_source(source_path)
+  println(json.pretty(ast))
+}
+
+fn cmd_check(source_path: str) {
+  let ast = _parse_source(source_path)
+  let diagnostics = checker.check(ast)
+  if len(diagnostics) == 0 {
+    println(cli.green("no issues found"))
+    ret
+  }
+  let mut errors = 0
+  let mut warnings = 0
+  let mut i = 0
+  while i < len(diagnostics) {
+    let d = diagnostics[i]
+    let sev = map.get(d, "severity")
+    let line = map.get(d, "line")
+    let msg = map.get(d, "msg")
+    if sev == "error" {
+      eprintln(cli.red("error") + " (line " + to_str(line) + "): " + msg)
+      errors = errors + 1
+    } else {
+      eprintln(cli.yellow("warning") + " (line " + to_str(line) + "): " + msg)
+      warnings = warnings + 1
+    }
+    i = i + 1
+  }
+  println("")
+  println(to_str(errors) + " error(s), " + to_str(warnings) + " warning(s)")
+  if errors > 0 { exit(1) }
+}
+
+fn _repl_build_source(fns, bindings, expr: str) -> str {
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let mut src = ""
+  let mut i = 0
+  while i < len(fns) {
+    src = src + fns[i] + "\n"
+    i = i + 1
+  }
+  src = src + "fn main() " + lb + "\n"
+  i = 0
+  while i < len(bindings) {
+    src = src + "  " + bindings[i] + "\n"
+    i = i + 1
+  }
+  if len(expr) > 0 {
+    src = src + "  " + expr + "\n"
+  }
+  src = src + rb + "\n"
+  ret src
+}
+
+fn cmd_repl() {
+  let runtime_dir = _find_runtime_dir()
+  let mut bindings = []
+  let mut fns = []
+  let mut line_buf = ""
+  let mut brace_depth = 0
+  println("a repl -- type :quit to exit, :clear to reset")
+  while true {
+    if brace_depth > 0 {
+      print(".. ")
+    } else {
+      print("a> ")
+    }
+    io.flush()
+    let line = io.read_line()
+    if type_of(line) == "void" { break }
+    let trimmed = str.trim(line)
+
+    if brace_depth == 0 {
+      if trimmed == ":quit" || trimmed == ":q" { break }
+      if trimmed == ":clear" {
+        bindings = []
+        fns = []
+        println("state cleared")
+        continue
+      }
+      if trimmed == ":bindings" {
+        let mut bi = 0
+        while bi < len(bindings) {
+          println("  " + bindings[bi])
+          bi = bi + 1
+        }
+        continue
+      }
+      if len(trimmed) == 0 { continue }
+    }
+
+    line_buf = line_buf + line + "\n"
+    let chars = str.chars(trimmed)
+    let mut ci = 0
+    while ci < len(chars) {
+      let ch = chars[ci]
+      if ch == from_code(123) { brace_depth = brace_depth + 1 }
+      if ch == from_code(125) { brace_depth = brace_depth - 1 }
+      ci = ci + 1
+    }
+
+    if brace_depth > 0 { continue }
+
+    let input = str.trim(line_buf)
+    line_buf = ""
+
+    if str.starts_with(input, "fn ") {
+      fns = push(fns, input)
+      continue
+    }
+
+    if str.starts_with(input, "let ") {
+      let src = _repl_build_source(fns, push(bindings, input), "")
+      let tmp = _tmp_path("_repl.a")
+      io.write_file(tmp, src)
+      let c_path = _tmp_path("_repl.c")
+      let bin_path = _tmp_path("_repl")
+      _codegen_subprocess(tmp, c_path)
+      let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+      fs.rm(tmp)
+      fs.rm(c_path)
+      if gcc_result["code"] != 0 {
+        eprintln(cli.red("error: ") + "invalid binding")
+      } else {
+        fs.rm(bin_path)
+        bindings = push(bindings, input)
+      }
+      continue
+    }
+
+    let expr_line = "println(to_str(" + input + "))"
+    let src = _repl_build_source(fns, bindings, expr_line)
+    let tmp = _tmp_path("_repl.a")
+    io.write_file(tmp, src)
+    let c_path = _tmp_path("_repl.c")
+    let bin_path = _tmp_path("_repl")
+    _codegen_subprocess(tmp, c_path)
+    let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+    fs.rm(tmp)
+    fs.rm(c_path)
+    if gcc_result["code"] != 0 {
+      eprintln(cli.red("error: ") + "cannot evaluate expression")
+    } else {
+      let result = exec(bin_path)
+      fs.rm(bin_path)
+      if len(result["stdout"]) > 0 { print(result["stdout"]) }
+      if result["code"] != 0 {
+        eprintln(cli.red("runtime error") + " (exit " + to_str(result["code"]) + ")")
+      }
+    }
+  }
+}
+
 fn cmd_pkg_init() {
   let dir = fs.cwd()
   pkg.init(dir)
@@ -298,7 +513,11 @@ fn _usage() {
   eprintln("  a run <file.a> [args...]    compile and run (cached)")
   eprintln("  a build <file.a> [-o out]   compile to native binary")
   eprintln("  a eval <expr>              evaluate an expression")
+  eprintln("  a repl                     interactive read-eval-print loop")
   eprintln("  a cc <file.a>              emit C to stdout")
+  eprintln("  a fmt <file.a|dir/>        format source code")
+  eprintln("  a ast <file.a>             dump parsed AST as JSON")
+  eprintln("  a check <file.a>           type-check source file")
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a cache clean              clear the compilation cache")
@@ -378,6 +597,29 @@ fn main() {
       }
     }
     cmd_eval(argv[1], extra)
+    ret
+  }
+
+  if subcmd == "fmt" {
+    if len(argv) < 2 { _die("fmt requires a file or directory") }
+    cmd_fmt(argv[1])
+    ret
+  }
+
+  if subcmd == "ast" {
+    if len(argv) < 2 { _die("ast requires a source file") }
+    cmd_ast(argv[1])
+    ret
+  }
+
+  if subcmd == "check" {
+    if len(argv) < 2 { _die("check requires a source file") }
+    cmd_check(argv[1])
+    ret
+  }
+
+  if subcmd == "repl" {
+    cmd_repl()
     ret
   }
 

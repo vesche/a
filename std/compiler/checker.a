@@ -1,0 +1,507 @@
+; std/compiler/checker.a -- Static analysis: scope, arity, unused vars, unreachable code
+; Uses flat collection + single-pass checking to avoid C runtime refcount issues
+
+fn _builtin_arity() -> map {
+  ret #{
+    "println": 1, "print": 1, "eprintln": 1, "eprint": 1,
+    "len": 1, "push": 2, "pop": 1, "sort": 1,
+    "contains": 2, "slice": 3, "drop": 2,
+    "to_str": 1, "int": 1, "float": 1, "type_of": 1,
+    "is_alpha": 1, "is_digit": 1, "is_alnum": 1,
+    "char_code": 1, "from_code": 1, "range": 2,
+    "exit": 1, "fail": 1, "assert": 1, "error": 1,
+    "Ok": 1, "Err": 1, "is_ok": 1, "is_err": 1, "unwrap": 1,
+    "Some": 1, "is_none": 1,
+    "str.concat": 2, "str.split": 2, "str.join": 2,
+    "str.contains": 2, "str.starts_with": 2, "str.ends_with": 2,
+    "str.replace": 3, "str.trim": 1, "str.upper": 1, "str.lower": 1,
+    "str.chars": 1, "str.lines": 1, "str.slice": 3,
+    "str.find": 2, "str.count": 2, "str.repeat": 2,
+    "json.parse": 1, "json.stringify": 1, "json.pretty": 1,
+    "map.get": 2, "map.set": 3, "map.has": 2, "map.keys": 1,
+    "map.values": 1, "map.entries": 1, "map.remove": 2,
+    "map.from_entries": 1,
+    "io.read_file": 1, "io.write_file": 2, "io.read_line": 0,
+    "io.read_stdin": 0, "io.flush": 0,
+    "fs.exists": 1, "fs.ls": 1, "fs.mkdir": 1, "fs.rm": 1,
+    "fs.cp": 2, "fs.cwd": 0,
+    "http.get": 1, "http.post": 2, "http.put": 2,
+    "http.delete": 1, "http.patch": 2,
+    "http.serve": 2, "http.stream": 2, "http.stream_read": 1,
+    "http.stream_close": 1,
+    "db.open": 1, "db.exec": 2, "db.query": 2, "db.close": 1,
+    "env.get": 1, "env.set": 2,
+    "time.now": 0, "time.sleep": 1,
+    "datetime.now": 0, "datetime.iso": 1,
+    "hash.sha256": 1, "hash.md5": 1,
+    "exec": 1, "argv0": 0, "args": 0,
+    "uuid.v4": 0,
+    "proc.spawn": 1, "proc.write": 2, "proc.read_line": 1, "proc.kill": 1,
+    "proc.wait": 1, "proc.is_running": 1,
+    "ws.connect": 1, "ws.send": 2, "ws.recv": 1, "ws.close": 1,
+    "signal.on": 2,
+    "compress.deflate": 1, "compress.inflate": 1,
+    "compress.gzip": 1, "compress.gunzip": 1,
+    "image.load": 1, "image.decode": 1, "image.save": 2,
+    "image.encode": 2, "image.width": 1, "image.height": 1,
+    "image.resize": 3, "image.pixels": 1,
+    "regex.is_match": 2, "regex.find": 2, "regex.find_all": 2,
+    "regex.replace": 3, "regex.replace_all": 3,
+    "regex.split": 2, "regex.captures": 2
+  }
+}
+
+fn _is_builtin_or_prefix(name: str, arity_map: map) -> bool {
+  if map.has(arity_map, name) { ret true }
+  let prefixes = ["str.", "json.", "map.", "io.", "fs.", "http.", "db.",
+    "env.", "time.", "datetime.", "hash.", "proc.", "ws.", "signal.",
+    "compress.", "image.", "regex.", "math.", "path.", "toml.", "config."]
+  let mut i = 0
+  while i < len(prefixes) {
+    if str.starts_with(name, prefixes[i]) { ret true }
+    i = i + 1
+  }
+  ret false
+}
+
+; Use string-based approach to avoid C runtime refcount issues with
+; recursive functions and mutable array parameters.
+; Scan source text directly for identifiers, calls, let bindings, etc.
+
+fn check(ast) -> [map] {
+  let mut arity_map = _builtin_arity()
+  let mut diags = []
+
+  let items = ast["items"]
+  if type_of(items) != "array" { ret diags }
+
+  ; Build scope of all top-level names
+  let mut scope = #{}
+  let mut fi = 0
+  while fi < len(items) {
+    let item = items[fi]
+    if type_of(item) == "map" && map.has(item, "tag") {
+      if item["tag"] == "FnDecl" {
+        scope = map.set(scope, item["name"], true)
+        let params = item["params"]
+        if type_of(params) == "array" {
+          arity_map = map.set(arity_map, item["name"], len(params))
+        }
+      }
+      if item["tag"] == "UseDecl" {
+        let p = item["path"]
+        if type_of(p) == "array" && len(p) > 0 {
+          scope = map.set(scope, p[len(p) - 1], true)
+        }
+      }
+    }
+    fi = fi + 1
+  }
+
+  ; Check each function
+  fi = 0
+  while fi < len(items) {
+    let item = items[fi]
+    if type_of(item) == "map" && map.has(item, "tag") && item["tag"] == "FnDecl" {
+      diags = _check_fn_body(item, scope, arity_map, diags)
+    }
+    fi = fi + 1
+  }
+
+  ret diags
+}
+
+fn _check_fn_body(fn_node, scope: map, arity_map: map, diags) {
+  ; Build local scope: params + all let bindings in body
+  let mut fn_scope = scope
+  let params = fn_node["params"]
+  if type_of(params) == "array" {
+    let mut pi = 0
+    while pi < len(params) {
+      let p = params[pi]
+      if type_of(p) == "map" && map.has(p, "name") {
+        fn_scope = map.set(fn_scope, p["name"], true)
+      }
+      pi = pi + 1
+    }
+  }
+  let body = fn_node["body"]
+  if type_of(body) != "map" || body["tag"] != "Block" { ret diags }
+  let stmts = body["stmts"]
+  if type_of(stmts) != "array" { ret diags }
+
+  ; Collect all let-bound names (pre-scan)
+  let bindings = _collect_all_lets(stmts)
+  let bkeys = map.keys(bindings)
+  let mut bi = 0
+  while bi < len(bkeys) {
+    fn_scope = map.set(fn_scope, bkeys[bi], true)
+    bi = bi + 1
+  }
+
+  ; Collect all referenced identifiers (as a set/map)
+  let ident_set = _collect_all_idents_block(stmts, #{})
+  ; Collect all function calls with arity
+  let calls = _collect_all_calls(stmts)
+
+  ; Check undefined variables
+  let ident_keys = map.keys(ident_set)
+  let mut ii = 0
+  while ii < len(ident_keys) {
+    let name = ident_keys[ii]
+    if !map.has(fn_scope, name) && !_is_builtin_or_prefix(name, arity_map) {
+      diags = push(diags, #{"severity": "error", "line": 0, "msg": "undefined variable: " + name})
+    }
+    ii = ii + 1
+  }
+
+  ; Check arity mismatches
+  let mut ci = 0
+  while ci < len(calls) {
+    let c = calls[ci]
+    let fn_name = c["name"]
+    let nargs = c["nargs"]
+    if map.has(arity_map, fn_name) {
+      let expected = map.get(arity_map, fn_name)
+      if nargs != expected {
+        diags = push(diags, #{"severity": "error", "line": 0, "msg": fn_name + " expects " + to_str(expected) + " argument(s), got " + to_str(nargs)})
+      }
+    }
+    ci = ci + 1
+  }
+
+  ; Check unreachable code
+  let mut found_ret = false
+  let mut si = 0
+  while si < len(stmts) {
+    if found_ret {
+      diags = push(diags, #{"severity": "warning", "line": 0, "msg": "unreachable code after return"})
+      break
+    }
+    let s = stmts[si]
+    if type_of(s) == "map" && map.has(s, "tag") && s["tag"] == "Return" {
+      found_ret = true
+    }
+    si = si + 1
+  }
+
+  ; Check unused variables
+  let ref_set = ident_set
+  bi = 0
+  while bi < len(bkeys) {
+    let vname = bkeys[bi]
+    if !str.starts_with(vname, "_") && !map.has(ref_set, vname) {
+      diags = push(diags, #{"severity": "warning", "line": 0, "msg": "unused variable: " + vname})
+    }
+    bi = bi + 1
+  }
+
+  ret diags
+}
+
+; ── Flat collectors ──
+
+fn _collect_all_lets(stmts) -> map {
+  let mut names = #{}
+  if type_of(stmts) != "array" { ret names }
+  let mut i = 0
+  while i < len(stmts) {
+    let s = stmts[i]
+    if type_of(s) == "map" && map.has(s, "tag") {
+      let tag = s["tag"]
+      if tag == "Let" && map.has(s, "name") {
+        let n = s["name"]
+        if type_of(n) == "str" { names = map.set(names, n, true) }
+      }
+      if tag == "For" && map.has(s, "binding") {
+        let b = s["binding"]
+        if type_of(b) == "str" { names = map.set(names, b, true) }
+        if type_of(b) == "map" && map.has(b, "name") { names = map.set(names, b["name"], true) }
+      }
+      ; Recurse into nested blocks
+      if tag == "For" || tag == "While" {
+        if map.has(s, "body") {
+          let inner = s["body"]
+          if type_of(inner) == "map" && map.has(inner, "tag") && inner["tag"] == "Block" {
+            let sub = _collect_all_lets(inner["stmts"])
+            let sk = map.keys(sub)
+            let mut j = 0
+            while j < len(sk) {
+              names = map.set(names, sk[j], true)
+              j = j + 1
+            }
+          }
+        }
+      }
+      if tag == "If" {
+        if map.has(s, "then") {
+          let inner = s["then"]
+          if type_of(inner) == "map" && map.has(inner, "tag") && inner["tag"] == "Block" {
+            let sub = _collect_all_lets(inner["stmts"])
+            let sk = map.keys(sub)
+            let mut j = 0
+            while j < len(sk) {
+              names = map.set(names, sk[j], true)
+              j = j + 1
+            }
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  ret names
+}
+
+; Collect all Ident names from expression trees into a set (map)
+fn _collect_idents_expr(node, s: map) -> map {
+  if type_of(node) != "map" { ret s }
+  if !map.has(node, "tag") { ret s }
+  let tag = node["tag"]
+  if tag == "Ident" { ret map.set(s, node["name"], true) }
+  if tag == "Call" {
+    s = _collect_idents_expr(node["func"], s)
+    let args = node["args"]
+    if type_of(args) == "array" {
+      let mut i = 0
+      while i < len(args) {
+        s = _collect_idents_expr(args[i], s)
+        i = i + 1
+      }
+    }
+    ret s
+  }
+  if tag == "BinOp" || tag == "BinaryOp" {
+    s = _collect_idents_expr(node["left"], s)
+    ret _collect_idents_expr(node["right"], s)
+  }
+  if tag == "UnaryOp" || tag == "Not" || tag == "Neg" {
+    if map.has(node, "operand") { ret _collect_idents_expr(node["operand"], s) }
+    if map.has(node, "expr") { ret _collect_idents_expr(node["expr"], s) }
+    ret s
+  }
+  if tag == "Index" {
+    s = _collect_idents_expr(node["object"], s)
+    ret _collect_idents_expr(node["index"], s)
+  }
+  if tag == "FieldAccess" { ret _collect_idents_expr(node["object"], s) }
+  if tag == "Array" && map.has(node, "elements") {
+    let elems = node["elements"]
+    if type_of(elems) == "array" {
+      let mut i = 0
+      while i < len(elems) {
+        s = _collect_idents_expr(elems[i], s)
+        i = i + 1
+      }
+    }
+    ret s
+  }
+  if tag == "Pipe" {
+    s = _collect_idents_expr(node["left"], s)
+    ret _collect_idents_expr(node["right"], s)
+  }
+  if tag == "Interpolation" && map.has(node, "parts") {
+    let parts = node["parts"]
+    if type_of(parts) == "array" {
+      let mut i = 0
+      while i < len(parts) {
+        s = _collect_idents_expr(parts[i], s)
+        i = i + 1
+      }
+    }
+    ret s
+  }
+  if tag == "Try" && map.has(node, "expr") {
+    ret _collect_idents_expr(node["expr"], s)
+  }
+  ret s
+}
+
+fn _collect_all_idents_block(stmts, s: map) -> map {
+  if type_of(stmts) != "array" { ret s }
+  let mut i = 0
+  while i < len(stmts) {
+    let st = stmts[i]
+    if type_of(st) == "map" && map.has(st, "tag") {
+      let tag = st["tag"]
+      if tag == "Let" && map.has(st, "value") && type_of(st["value"]) != "void" {
+        s = _collect_idents_expr(st["value"], s)
+      }
+      if tag == "Assign" {
+        s = _collect_idents_expr(st["target"], s)
+        s = _collect_idents_expr(st["value"], s)
+      }
+      if tag == "Return" && map.has(st, "value") && type_of(st["value"]) != "void" {
+        s = _collect_idents_expr(st["value"], s)
+      }
+      if tag == "ExprStmt" {
+        s = _collect_idents_expr(st["expr"], s)
+      }
+      if tag == "If" {
+        s = _collect_idents_expr(st["condition"], s)
+        if map.has(st, "then") {
+          let inner = st["then"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            s = _collect_all_idents_block(inner["stmts"], s)
+          }
+        }
+        if map.has(st, "else") && type_of(st["else"]) != "void" {
+          let el = st["else"]
+          if type_of(el) == "map" && el["tag"] == "Block" {
+            s = _collect_all_idents_block(el["stmts"], s)
+          }
+        }
+      }
+      if tag == "For" {
+        if map.has(st, "iterable") { s = _collect_idents_expr(st["iterable"], s) }
+        if map.has(st, "body") {
+          let inner = st["body"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            s = _collect_all_idents_block(inner["stmts"], s)
+          }
+        }
+      }
+      if tag == "While" {
+        s = _collect_idents_expr(st["condition"], s)
+        if map.has(st, "body") {
+          let inner = st["body"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            s = _collect_all_idents_block(inner["stmts"], s)
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  ret s
+}
+
+; Collect all function calls as #{"name": fn_name, "nargs": int}
+fn _collect_calls_expr(node, out) {
+  if type_of(node) != "map" { ret out }
+  if !map.has(node, "tag") { ret out }
+  let tag = node["tag"]
+  if tag == "Call" {
+    let callee = node["func"]
+    let args = node["args"]
+    let nargs = 0
+    if type_of(args) == "array" { nargs = len(args) }
+    if type_of(callee) == "map" && callee["tag"] == "Ident" {
+      out = push(out, #{"name": callee["name"], "nargs": nargs})
+    }
+    if type_of(callee) == "map" && callee["tag"] == "FieldAccess" {
+      let obj = callee["object"]
+      let field = callee["field"]
+      if type_of(obj) == "map" && obj["tag"] == "Ident" {
+        out = push(out, #{"name": obj["name"] + "." + field, "nargs": nargs})
+      }
+    }
+    out = _collect_calls_expr(callee, out)
+    if type_of(args) == "array" {
+      let mut i = 0
+      while i < len(args) {
+        out = _collect_calls_expr(args[i], out)
+        i = i + 1
+      }
+    }
+    ret out
+  }
+  if tag == "BinOp" || tag == "BinaryOp" {
+    out = _collect_calls_expr(node["left"], out)
+    ret _collect_calls_expr(node["right"], out)
+  }
+  if tag == "UnaryOp" || tag == "Not" || tag == "Neg" {
+    if map.has(node, "operand") { ret _collect_calls_expr(node["operand"], out) }
+    if map.has(node, "expr") { ret _collect_calls_expr(node["expr"], out) }
+    ret out
+  }
+  if tag == "Index" {
+    out = _collect_calls_expr(node["object"], out)
+    ret _collect_calls_expr(node["index"], out)
+  }
+  if tag == "FieldAccess" { ret _collect_calls_expr(node["object"], out) }
+  if tag == "Array" && map.has(node, "elements") {
+    let elems = node["elements"]
+    if type_of(elems) == "array" {
+      let mut i = 0
+      while i < len(elems) {
+        out = _collect_calls_expr(elems[i], out)
+        i = i + 1
+      }
+    }
+    ret out
+  }
+  if tag == "Pipe" {
+    out = _collect_calls_expr(node["left"], out)
+    ret _collect_calls_expr(node["right"], out)
+  }
+  ret out
+}
+
+fn _collect_all_calls(stmts) -> [map] {
+  let mut out = []
+  if type_of(stmts) != "array" { ret out }
+  let mut i = 0
+  while i < len(stmts) {
+    let s = stmts[i]
+    if type_of(s) == "map" && map.has(s, "tag") {
+      let tag = s["tag"]
+      if tag == "Let" && map.has(s, "value") && type_of(s["value"]) != "void" {
+        out = _collect_calls_expr(s["value"], out)
+      }
+      if tag == "Assign" {
+        out = _collect_calls_expr(s["value"], out)
+      }
+      if tag == "Return" && map.has(s, "value") && type_of(s["value"]) != "void" {
+        out = _collect_calls_expr(s["value"], out)
+      }
+      if tag == "ExprStmt" {
+        out = _collect_calls_expr(s["expr"], out)
+      }
+      if tag == "If" {
+        out = _collect_calls_expr(s["condition"], out)
+        if map.has(s, "then") {
+          let inner = s["then"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            let sub = _collect_all_calls(inner["stmts"])
+            let mut j = 0
+            while j < len(sub) {
+              out = push(out, sub[j])
+              j = j + 1
+            }
+          }
+        }
+      }
+      if tag == "For" {
+        if map.has(s, "iterable") { out = _collect_calls_expr(s["iterable"], out) }
+        if map.has(s, "body") {
+          let inner = s["body"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            let sub = _collect_all_calls(inner["stmts"])
+            let mut j = 0
+            while j < len(sub) {
+              out = push(out, sub[j])
+              j = j + 1
+            }
+          }
+        }
+      }
+      if tag == "While" {
+        out = _collect_calls_expr(s["condition"], out)
+        if map.has(s, "body") {
+          let inner = s["body"]
+          if type_of(inner) == "map" && inner["tag"] == "Block" {
+            let sub = _collect_all_calls(inner["stmts"])
+            let mut j = 0
+            while j < len(sub) {
+              out = push(out, sub[j])
+              j = j + 1
+            }
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  ret out
+}

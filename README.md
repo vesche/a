@@ -40,10 +40,18 @@ cargo build --release
 ./a build program.a         # compile to native binary
 ./a build program.a -o out  # compile to native binary with custom name
 ./a eval "2 + 3"            # evaluate an expression
+./a repl                    # interactive read-eval-print loop
 ./a cc program.a            # emit C to stdout
+./a fmt program.a           # format source code
+./a fmt src/                # format all .a files in directory
+./a ast program.a           # dump parsed AST as JSON
+./a check program.a         # static analysis (undefined vars, arity, unused)
 ./a test tests/native/      # find test_*.a files, compile, run, report
 ./a lsp                     # build the language server binary (./a-lsp)
 ./a cache clean             # clear the compilation cache
+./a pkg init                # create pkg.toml manifest
+./a pkg add name source     # add a dependency
+./a pkg install             # install all dependencies
 ./a-lsp                     # start language server (stdio, for editors)
 
 # Shebang support
@@ -130,7 +138,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Image** | `image.load(path)`, `image.decode(bytes)`, `image.encode(image, fmt)`, `image.save(image, path)`, `image.width`, `image.height`, `image.resize(image, w, h)`, `image.pixels(image)` -- PNG/JPEG/BMP/GIF decode, PNG/BMP/JPEG encode, bilinear resize (native CLI only, via bundled stb_image) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 30 modules:
+**Standard library** with 31 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -167,6 +175,7 @@ use std.compiler.ast          # AST node constructors and accessors
 use std.compiler.compiler     # compile ASTs to bytecode
 use std.compiler.cgen          # compile ASTs to C source code (native compilation)
 use std.compiler.emitter      # pretty-print ASTs back to "a" source
+use std.compiler.checker      # static analysis: undefined vars, arity, unused, unreachable
 use std.compiler.serialize    # serialize/deserialize compiled programs
 use std.lexer                 # legacy tokenizer
 ```
@@ -182,7 +191,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~9,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 145+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~11,700 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 145+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -263,8 +272,8 @@ fn main() -> void {
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
-| `src/cli.a` | ~175 | **native CLI driver** -- `run`, `build`, `cc`, `test`, `lsp` subcommands; self-hosting (compiles itself) |
-| `src/lsp.a` | ~720 | **language server** -- LSP over stdio with diagnostics, completion (105+ builtins), hover, go-to-definition (cross-module) |
+| `src/cli.a` | ~500 | **native CLI driver** -- `run`, `build`, `cc`, `fmt`, `ast`, `check`, `repl`, `test`, `lsp`, `pkg` subcommands; self-hosting (compiles itself) |
+| `src/lsp.a` | ~1,100 | **language server** -- LSP over stdio with diagnostics, completion, hover, go-to-definition, semantic tokens, rename, code actions, workspace symbols |
 | `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
 
 ## Stats
@@ -274,7 +283,7 @@ fn main() -> void {
 | **Rust runtime** | ~10,000 lines across 8 modules |
 | **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
 | **"a" source** | ~20,700 lines across 105 files |
-| **Standard library** | 30 modules, 470+ functions, ~9,600 lines |
+| **Standard library** | 31 modules, 490+ functions, ~10,000 lines |
 | **Test suites** | 37 suites + cgen test script, 590+ native tests, ~5,100 lines |
 | **Examples & tools** | 38 programs, ~6,400 lines |
 
@@ -286,6 +295,10 @@ fn main() -> void {
 - **Completion** -- 145+ builtins with signatures, keywords, user functions, 20+ stdlib modules
 - **Hover** -- function signatures for builtins and user-defined functions
 - **Go-to-definition** -- in-file and cross-module (resolves `use` imports to source files)
+- **Semantic tokens** -- syntax-aware token classification (keywords, functions, variables, strings, etc.)
+- **Rename** -- rename symbols across the document
+- **Code actions** -- "Add missing `use`" quick-fix for unresolved module references
+- **Workspace symbols** -- search `fn` and `type` declarations across all workspace files
 
 Build with `./build.sh` or `./a lsp`, then configure your editor to run `./a-lsp` as the language server for `*.a` files.
 

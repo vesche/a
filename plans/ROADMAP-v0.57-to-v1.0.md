@@ -239,7 +239,7 @@ With the language capable enough for production use, build the ecosystem and com
 - [x] **Git-based registry**: `"deps": #{"router": "github:user/repo@v1.0"}` in `pkg.toml`.
 - [x] Bump to `0.65.0`.
 
-### v0.66 -- Native Toolchain Completion
+### v0.66 -- Native Toolchain Completion [DONE]
 
 Everything the Rust CLI does, "a" does natively.
 

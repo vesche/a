@@ -2503,3 +2503,38 @@ All 5 build paths updated to include `stb_impl.c`:
 | `tests/native/test_pkg.a` | NEW -- parse_source, init, read_manifest, add_dep round-trip |
 | `Cargo.toml` | Version bump to 0.65.0 |
 | `README.md` | Added semver + pkg to stdlib list; updated counts (30 modules); added pkg_demo example |
+
+---
+
+## v0.66.0 -- Native Toolchain Completion
+
+**Theme:** Complete the native toolchain so the Rust CLI becomes optional. Every core development tool now runs natively.
+
+### New subcommands (native CLI)
+- `a fmt <file|dir>` -- format source code using parser + emitter round-trip; supports recursive directory formatting
+- `a ast <file>` -- dump parsed AST as pretty-printed JSON
+- `a check <file>` -- static analysis: undefined variables, arity mismatches, unused variables, unreachable code
+- `a repl` -- interactive read-eval-print loop with state accumulation, multi-line support, special commands (`:quit`, `:clear`, `:bindings`)
+
+### New modules
+- **`std/compiler/checker.a`** (~430 lines) -- static analysis engine: builtin arity table (~100 builtins), AST collection passes (identifiers, calls, let bindings), scope-based undefined variable detection, arity mismatch checking, unused variable detection, unreachable code detection
+
+### Emitter fix
+- `std/compiler/emitter.a` -- added `ExternFn` emission (previously returned empty string for unknown tags)
+
+### Enhanced LSP (`src/lsp.a`)
+- **Semantic tokens** -- full-document token classification (keyword, function, variable, string, number, comment, type, namespace, operator)
+- **Rename** -- prepare rename + rename with whole-word matching across the document
+- **Code actions** -- "Add missing `use`" quick-fix for known stdlib modules
+- **Workspace symbols** -- scan `src/`, `std/`, `std/compiler/` for `fn` and `type` declarations
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/compiler/checker.a` | NEW -- static analysis (undefined vars, arity, unused, unreachable) |
+| `std/compiler/emitter.a` | Added `ExternFn` emission in `emit_top_level` |
+| `src/cli.a` | Added `use std.compiler.emitter`, `use std.compiler.checker`; added `cmd_fmt`, `cmd_ast`, `cmd_check`, `cmd_repl`; added dispatch for `fmt`, `ast`, `check`, `repl`; updated `_usage()` |
+| `src/lsp.a` | Added semantic tokens, rename, code actions, workspace symbols handlers; updated capabilities and version to 0.66.0 |
+| `Cargo.toml` | Version bump to 0.66.0 |
+| `README.md` | Updated usage, stdlib count (31), self-hosting paragraph (~11,700 lines C), stats, editor support section |
