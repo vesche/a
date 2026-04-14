@@ -16,8 +16,27 @@ fn _find_runtime_dir() -> str {
   for dir in candidates {
     if fs.exists(str.concat(dir, "/runtime.c")) { ret dir }
   }
-  _die("cannot find c_runtime/ directory (runtime.c + runtime.h). Run from the project root.")
-  ret ""
+  ; No local c_runtime/ -- extract from embedded files
+  let cache = "/tmp/a_rt"
+  if fs.exists(str.concat(cache, "/runtime.c")) { ret cache }
+  let probe = embedded_file("c_runtime/runtime.c")
+  if type_of(probe) == "void" || len(probe) == 0 {
+    _die("cannot find c_runtime/ directory and no embedded runtime available")
+  }
+  fs.mkdir(cache)
+  let rt_files = ["runtime.c", "runtime.h", "sqlite3.c", "sqlite3.h",
+                  "miniz.c", "miniz.h", "stb_image.h", "stb_image_write.h", "stb_impl.c"]
+  for f in rt_files {
+    let content = embedded_file("c_runtime/" + f)
+    if type_of(content) != "void" {
+      io.write_file(cache + "/" + f, content)
+    }
+  }
+  ; Write a stub embedded.c for sub-compilations
+  let stub = "#include " + from_code(34) + "runtime.h" + from_code(34) + from_code(10)
+  let stub2 = stub + "AValue a_embedded_file(AValue p)" + from_code(123) + "(void)p;return a_void();" + from_code(125) + from_code(10)
+  io.write_file(cache + "/embedded.c", stub2)
+  ret cache
 }
 
 fn _generate_c(source_path) -> str {
@@ -57,9 +76,10 @@ fn _gcc(c_path, out_path, runtime_dir) {
   let sqlite_c = str.concat(runtime_dir, "/sqlite3.c")
   let miniz_c = str.concat(runtime_dir, "/miniz.c")
   let stb_impl_c = str.concat(runtime_dir, "/stb_impl.c")
+  let embedded_c = str.concat(runtime_dir, "/embedded.c")
   let include_flag = str.concat("-I ", runtime_dir)
   let cmd = str.join([
-    "gcc", c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c,
+    "gcc", c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c, embedded_c,
     "-o", out_path,
     include_flag,
     _gcc_flags(),
@@ -219,6 +239,7 @@ fn cmd_test(test_dir) {
       str.concat(runtime_dir, "/sqlite3.c"),
       str.concat(runtime_dir, "/miniz.c"),
       str.concat(runtime_dir, "/stb_impl.c"),
+      str.concat(runtime_dir, "/embedded.c"),
       "-o", bin_path,
       str.concat("-I ", runtime_dir),
       flags, sflags
@@ -454,7 +475,7 @@ fn cmd_repl() {
       let c_path = _tmp_path("_repl.c")
       let bin_path = _tmp_path("_repl")
       _codegen_subprocess(tmp, c_path)
-      let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+      let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), str.concat(runtime_dir, "/embedded.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
       fs.rm(tmp)
       fs.rm(c_path)
       if gcc_result["code"] != 0 {
@@ -473,7 +494,7 @@ fn cmd_repl() {
     let c_path = _tmp_path("_repl.c")
     let bin_path = _tmp_path("_repl")
     _codegen_subprocess(tmp, c_path)
-    let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+    let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), str.concat(runtime_dir, "/embedded.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
     fs.rm(tmp)
     fs.rm(c_path)
     if gcc_result["code"] != 0 {

@@ -38,11 +38,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Generate C sources via VM
         run: |
           CGEN="std/compiler/cgen.a"
           cargo run --quiet -- run "$CGEN" -- src/cli.a > /tmp/cli.c 2>/dev/null
           cargo run --quiet -- run "$CGEN" -- src/lsp.a > /tmp/lsp.c 2>/dev/null
+
+      - name: Generate embedded runtime bundle
+        run: python3 scripts/embed.py > /tmp/embedded.c
 
       - name: Detect platform flags
         id: flags
@@ -62,8 +70,8 @@ jobs:
           STACK="${{ steps.flags.outputs.stack }}"
           TLS="${{ steps.flags.outputs.tls }}"
           SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
-          $CC /tmp/cli.c c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c -o a -I c_runtime -lm -O2 $STACK $TLS $SQLITE
-          $CC /tmp/lsp.c c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c -o a-lsp -I c_runtime -lm -O2 $STACK $TLS $SQLITE
+          $CC /tmp/cli.c c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c /tmp/embedded.c -o a -I c_runtime -lm -O2 $STACK $TLS $SQLITE
+          $CC /tmp/lsp.c c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c /tmp/embedded.c -o a-lsp -I c_runtime -lm -O2 $STACK $TLS $SQLITE
 
       - name: Package release tarball
         run: |

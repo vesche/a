@@ -99,7 +99,7 @@ jobs:
 
             # Compile with gcc
             BIN_FILE=$(mktemp /tmp/a_test_XXXXXX)
-            if ! gcc "$C_FILE" c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c \
+            if ! gcc "$C_FILE" c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c c_runtime/embedded.c \
                 -o "$BIN_FILE" -I c_runtime -lm -O2 $STACK $TLS $SQLITE 2>/dev/null; then
               echo "  FAIL $name (compile error)"
               rm -f "$C_FILE" "$BIN_FILE"

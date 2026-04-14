@@ -4362,7 +4362,7 @@ AValue fn_cgen__builtin_map(void) {
     { AValue __old = m; m = a_map_new(27, "println", a_string("a_println"), "print", a_string("a_print"), "eprintln", a_string("a_eprintln"), "len", a_string("a_len"), "push", a_string("a_array_push"), "to_str", a_string("a_to_str"), "fail", a_string("a_fail"), "type_of", a_string("a_type_of"), "int", a_string("a_to_int"), "float", a_string("a_to_float"), "sort", a_string("a_sort"), "contains", a_string("a_contains"), "reverse_arr", a_string("a_reverse_arr"), "concat_arr", a_string("a_concat_arr"), "args", a_string("a_args"), "slice", a_string("a_array_slice"), "char_code", a_string("a_char_code"), "from_code", a_string("a_from_code"), "is_alpha", a_string("a_is_alpha"), "is_digit", a_string("a_is_digit"), "is_alnum", a_string("a_is_alnum"), "Ok", a_string("a_ok"), "Err", a_string("a_err"), "unwrap", a_string("a_unwrap"), "is_ok", a_string("a_is_ok"), "is_err", a_string("a_is_err"), "unwrap_or", a_string("a_unwrap_or")); a_release(__old); }
     { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
     { AValue __old = m3; m3 = a_map_new(29, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "exec", a_string("a_exec"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
-    { AValue __old = m4; m4 = a_map_new(64, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip")); a_release(__old); }
+    { AValue __old = m4; m4 = a_map_new(65, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip")); a_release(__old); }
     __ret = a_map_merge(a_map_merge(a_map_merge(m, m2), m3), m4); goto __fn_cleanup;
 __fn_cleanup:
     a_release(m);
@@ -7272,7 +7272,7 @@ __fn_cleanup:
 }
 
 AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li) {
-    AValue use_key = {0}, file_path = {0}, source = {0}, mod_ast = {0}, items = {0}, _short = {0}, all_fwd = {0}, all_fns = {0}, sub = {0}, fn_names = {0}, ctx = {0}, aliases = {0}, full_name = {0}, fr = {0};
+    AValue use_key = {0}, file_path = {0}, rel = {0}, source = {0}, mod_ast = {0}, items = {0}, _short = {0}, all_fwd = {0}, all_fns = {0}, sub = {0}, fn_names = {0}, ctx = {0}, aliases = {0}, full_name = {0}, fr = {0};
     AValue __ret = a_void();
     path_arr = a_retain(path_arr);
     bm = a_retain(bm);
@@ -7284,7 +7284,11 @@ AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li
     }
     { AValue __old = loaded; loaded = a_array_push(loaded, use_key); a_release(__old); }
     { AValue __old = file_path; file_path = fn_cgen__use_path_to_file(path_arr); a_release(__old); }
-    { AValue __old = source; source = a_io_read_file(file_path); a_release(__old); }
+    { AValue __old = rel; rel = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); a_release(__old); }
+    { AValue __old = source; source = a_embedded_file(rel); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+        { AValue __old = source; source = a_io_read_file(file_path); a_release(__old); }
+    }
     { AValue __old = mod_ast; mod_ast = fn_parser_parse(source); a_release(__old); }
     { AValue __old = items; items = a_array_get(mod_ast, a_string("items")); a_release(__old); }
     { AValue __old = _short; _short = fn_cgen__use_path_short_name(path_arr); a_release(__old); }
@@ -7343,6 +7347,7 @@ AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li
 __fn_cleanup:
     a_release(use_key);
     a_release(file_path);
+    a_release(rel);
     a_release(source);
     a_release(mod_ast);
     a_release(items);
@@ -11543,7 +11548,7 @@ __fn_cleanup:
 }
 
 AValue fn__find_runtime_dir(void) {
-    AValue candidates = {0};
+    AValue candidates = {0}, cache = {0}, probe = {0}, rt_files = {0}, content = {0}, stub = {0}, stub2 = {0};
     AValue __ret = a_void();
     { AValue __old = candidates; candidates = a_array_new(2, a_string("c_runtime"), a_string("../c_runtime")); a_release(__old); }
     {
@@ -11558,10 +11563,42 @@ AValue fn__find_runtime_dir(void) {
         }
         a_release(__iter_arr);
     }
-    fn__die(a_string("cannot find c_runtime/ directory (runtime.c + runtime.h). Run from the project root."));
-    __ret = a_string(""); goto __fn_cleanup;
+    { AValue __old = cache; cache = a_string("/tmp/a_rt"); a_release(__old); }
+    if (a_truthy(a_fs_exists(a_str_concat(cache, a_string("/runtime.c"))))) {
+        __ret = a_retain(cache); goto __fn_cleanup;
+    }
+    { AValue __old = probe; probe = a_embedded_file(a_string("c_runtime/runtime.c")); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(probe), a_string("void")), a_eq(a_len(probe), a_int(0))))) {
+        fn__die(a_string("cannot find c_runtime/ directory and no embedded runtime available"));
+    }
+    a_fs_mkdir(cache);
+    { AValue __old = rt_files; rt_files = a_array_new(9, a_string("runtime.c"), a_string("runtime.h"), a_string("sqlite3.c"), a_string("sqlite3.h"), a_string("miniz.c"), a_string("miniz.h"), a_string("stb_image.h"), a_string("stb_image_write.h"), a_string("stb_impl.c")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(rt_files);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue f = {0}, content = {0};
+            f = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = content; content = a_embedded_file(a_add(a_string("c_runtime/"), f)); a_release(__old); }
+            if (a_truthy(a_neq(a_type_of(content), a_string("void")))) {
+                a_io_write_file(a_add(a_add(cache, a_string("/")), f), content);
+            }
+            a_release(f);
+            a_release(content);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = stub; stub = a_add(a_add(a_add(a_add(a_string("#include "), a_from_code(a_int(34))), a_string("runtime.h")), a_from_code(a_int(34))), a_from_code(a_int(10))); a_release(__old); }
+    { AValue __old = stub2; stub2 = a_add(a_add(a_add(a_add(a_add(stub, a_string("AValue a_embedded_file(AValue p)")), a_from_code(a_int(123))), a_string("(void)p;return a_void();")), a_from_code(a_int(125))), a_from_code(a_int(10))); a_release(__old); }
+    a_io_write_file(a_add(cache, a_string("/embedded.c")), stub2);
+    __ret = a_retain(cache); goto __fn_cleanup;
 __fn_cleanup:
     a_release(candidates);
+    a_release(cache);
+    a_release(probe);
+    a_release(rt_files);
+    a_release(content);
+    a_release(stub);
+    a_release(stub2);
     return __ret;
 }
 
@@ -11617,7 +11654,7 @@ __fn_cleanup:
 }
 
 AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
-    AValue runtime_c = {0}, sqlite_c = {0}, miniz_c = {0}, stb_impl_c = {0}, include_flag = {0}, cmd = {0}, result = {0};
+    AValue runtime_c = {0}, sqlite_c = {0}, miniz_c = {0}, stb_impl_c = {0}, embedded_c = {0}, include_flag = {0}, cmd = {0}, result = {0};
     AValue __ret = a_void();
     c_path = a_retain(c_path);
     out_path = a_retain(out_path);
@@ -11626,8 +11663,9 @@ AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
     { AValue __old = sqlite_c; sqlite_c = a_str_concat(runtime_dir, a_string("/sqlite3.c")); a_release(__old); }
     { AValue __old = miniz_c; miniz_c = a_str_concat(runtime_dir, a_string("/miniz.c")); a_release(__old); }
     { AValue __old = stb_impl_c; stb_impl_c = a_str_concat(runtime_dir, a_string("/stb_impl.c")); a_release(__old); }
+    { AValue __old = embedded_c; embedded_c = a_str_concat(runtime_dir, a_string("/embedded.c")); a_release(__old); }
     { AValue __old = include_flag; include_flag = a_str_concat(a_string("-I "), runtime_dir); a_release(__old); }
-    { AValue __old = cmd; cmd = a_str_join(a_array_new(11, a_string("gcc"), c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c, a_string("-o"), out_path, include_flag, fn__gcc_flags(), fn__sqlite_flags()), a_string(" ")); a_release(__old); }
+    { AValue __old = cmd; cmd = a_str_join(a_array_new(12, a_string("gcc"), c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c, embedded_c, a_string("-o"), out_path, include_flag, fn__gcc_flags(), fn__sqlite_flags()), a_string(" ")); a_release(__old); }
     { AValue __old = result; result = a_exec(cmd); a_release(__old); }
     if (a_truthy(a_neq(a_array_get(result, a_string("code")), a_int(0)))) {
         a_eprintln(fn_cli_red(a_string("gcc compilation failed:")));
@@ -11644,6 +11682,7 @@ __fn_cleanup:
     a_release(sqlite_c);
     a_release(miniz_c);
     a_release(stb_impl_c);
+    a_release(embedded_c);
     a_release(include_flag);
     a_release(cmd);
     a_release(result);
@@ -11899,7 +11938,7 @@ AValue fn_cmd_test(AValue test_dir) {
             { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("")); a_release(__old); }
             { AValue __old = c_code; c_code = fn__generate_c(src); a_release(__old); }
             a_io_write_file(c_path, c_code);
-            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(11, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), flags, sflags), a_string(" "))); a_release(__old); }
+            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), flags, sflags), a_string(" "))); a_release(__old); }
             a_fs_rm(c_path);
             if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {
                 a_println(a_str_concat(a_string("  "), a_str_concat(fn_cli_red(a_string("FAIL")), a_str_concat(a_string(" "), a_str_concat(name, a_string(" (compile error)"))))));
@@ -12267,7 +12306,7 @@ AValue fn_cmd_repl(void) {
             { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
             { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
             fn__codegen_subprocess(tmp, c_path);
-            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(11, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
+            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
             a_fs_rm(tmp);
             a_fs_rm(c_path);
             if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {
@@ -12285,7 +12324,7 @@ AValue fn_cmd_repl(void) {
         { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
         { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
         fn__codegen_subprocess(tmp, c_path);
-        { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(11, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
+        { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
         a_fs_rm(tmp);
         a_fs_rm(c_path);
         if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {

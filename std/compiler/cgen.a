@@ -72,6 +72,7 @@ fn _builtin_map() -> map {
     "take": "a_take", "drop": "a_drop", "unique": "a_unique", "chunk": "a_chunk",
     "ptr.null": "a_ptr_null", "ptr.is_null": "a_is_null",
     "argv0": "a_argv0",
+    "embedded_file": "a_embedded_file",
     "compress.deflate": "a_compress_deflate", "compress.inflate": "a_compress_inflate",
     "compress.gzip": "a_compress_gzip", "compress.gunzip": "a_compress_gunzip"
   }
@@ -1641,7 +1642,11 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   loaded = push(loaded, use_key)
 
   let file_path = _use_path_to_file(path_arr)
-  let source = io.read_file(file_path)
+  let rel = str.concat(str.join(path_arr, "/"), ".a")
+  let mut source = embedded_file(rel)
+  if type_of(source) == "void" || len(source) == 0 {
+    source = io.read_file(file_path)
+  }
   let mod_ast = parser.parse(source)
   let items = mod_ast["items"]
   let short = _use_path_short_name(path_arr)
