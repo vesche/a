@@ -345,6 +345,46 @@ impl Checker {
             ret: Type::Void,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("image.load".into(), FnSig {
+            params: vec![("path".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("image.decode".into(), FnSig {
+            params: vec![("bytes".into(), Type::Str)],
+            ret: Type::Unknown,
+            effects: vec![],
+        });
+        self.fn_sigs.insert("image.save".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown), ("path".into(), Type::Str)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("image.encode".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown), ("format".into(), Type::Str)],
+            ret: Type::Str,
+            effects: vec![],
+        });
+        self.fn_sigs.insert("image.width".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown)],
+            ret: Type::I64,
+            effects: vec![],
+        });
+        self.fn_sigs.insert("image.height".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown)],
+            ret: Type::I64,
+            effects: vec![],
+        });
+        self.fn_sigs.insert("image.resize".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown), ("w".into(), Type::I64), ("h".into(), Type::I64)],
+            ret: Type::Unknown,
+            effects: vec![],
+        });
+        self.fn_sigs.insert("image.pixels".into(), FnSig {
+            params: vec![("image".into(), Type::Unknown)],
+            ret: Type::Array(Box::new(Type::I64)),
+            effects: vec![],
+        });
         self.fn_sigs.insert("http.serve".into(), FnSig {
             params: vec![("port".into(), Type::I64), ("handler".into(), Type::Unknown)],
             ret: Type::Void,

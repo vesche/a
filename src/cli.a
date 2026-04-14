@@ -53,9 +53,10 @@ fn _gcc(c_path, out_path, runtime_dir) {
   let runtime_c = str.concat(runtime_dir, "/runtime.c")
   let sqlite_c = str.concat(runtime_dir, "/sqlite3.c")
   let miniz_c = str.concat(runtime_dir, "/miniz.c")
+  let stb_impl_c = str.concat(runtime_dir, "/stb_impl.c")
   let include_flag = str.concat("-I ", runtime_dir)
   let cmd = str.join([
-    "gcc", c_path, runtime_c, sqlite_c, miniz_c,
+    "gcc", c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c,
     "-o", out_path,
     include_flag,
     _gcc_flags(),
@@ -214,6 +215,7 @@ fn cmd_test(test_dir) {
       "gcc", c_path, str.concat(runtime_dir, "/runtime.c"),
       str.concat(runtime_dir, "/sqlite3.c"),
       str.concat(runtime_dir, "/miniz.c"),
+      str.concat(runtime_dir, "/stb_impl.c"),
       "-o", bin_path,
       str.concat("-I ", runtime_dir),
       flags, sflags

@@ -209,15 +209,16 @@ Common patterns that every production agent needs, extracted into reusable modul
 - [x] `tests/native/test_config.a`, `tests/native/test_migrate.a`
 - [x] Bump to `0.63.0`
 
-### v0.64 -- Image Processing
+### v0.64 -- Image Processing [DONE]
 
-#### Deliverables
-
-- **Vendor `stb_image.h` + `stb_image_write.h`** into `c_runtime/`. Update `VENDORS.md`.
-- **Builtins**: `image.decode(bytes) -> image`, `image.encode(image, format) -> bytes`, `image.width(image) -> int`, `image.height(image) -> int`, `image.resize(image, w, h) -> image`, `image.pixels(image) -> [int]`.
-- Formats: PNG, JPEG, BMP, GIF decode; PNG, BMP encode.
-- **Use case**: Resize screenshots before sending to vision models, generate simple images, decode API responses containing images.
-- Bump to `0.64.0`.
+- [x] Vendored `stb_image.h` v2.30 + `stb_image_write.h` v1.16 into `c_runtime/`
+- [x] `image.load(path)`, `image.decode(bytes)`, `image.save(image, path)`, `image.encode(image, format)`
+- [x] `image.width(image)`, `image.height(image)`, `image.resize(image, w, h)`, `image.pixels(image)`
+- [x] Formats: PNG, JPEG, BMP, GIF decode; PNG, BMP, JPEG encode
+- [x] Bilinear interpolation resize (no extra vendor dependency)
+- [x] Build integration: all 5 build paths updated with `stb_impl.c`
+- [x] `examples/image_demo.a`, `tests/native/test_image.a`
+- [x] Bump to `0.64.0`
 
 ---
 
@@ -316,7 +317,7 @@ What v1.0 means:
 | **v0.61** | Agent Stdlib | retry, batch, pipeline, timeout, rate_limit, uuid, logging, args, signals | **DONE** |
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | **DONE** |
 | **v0.63** | Process + Config + Migrations | proc.wait, proc.is_running, std.config, std.migrate | **DONE** |
-| **v0.64** | Image Processing | stb_image, decode/encode/resize | Multimodal AI workflows |
+| **v0.64** | Image Processing | stb_image/stb_image_write, 8 image builtins, bilinear resize | **DONE** |
 | **v0.65** | Package Manager | `a pkg`, semver, git-based registry | Reusable libraries |
 | **v0.66** | Native Toolchain | fmt/check/ast/repl in "a", enhanced LSP | Full self-sufficiency, Rust no longer needed |
 | **v0.67** | Native Concurrency | spawn/await/parallel_map in C path | Fast parallel native execution |

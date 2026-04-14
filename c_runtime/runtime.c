@@ -1,5 +1,7 @@
 #include "runtime.h"
 #include "miniz.h"
+#include "stb_image.h"
+#include "stb_image_write.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1621,6 +1623,173 @@ AValue a_signal_on(AValue name, AValue handler) {
     sa.sa_flags = SA_RESTART;
     sigaction(signum, &sa, NULL);
     return a_void();
+}
+
+/* --- Image processing --- */
+
+typedef struct {
+    unsigned char* data;
+    int width, height, channels;
+} AImage;
+
+AValue a_image_decode(AValue bytes) {
+    if (bytes.tag != TAG_STRING) return a_err(a_string("image.decode: expected string (bytes)"));
+    int w, h, ch;
+    unsigned char* px = stbi_load_from_memory(
+        (const unsigned char*)bytes.sval->data, bytes.sval->len,
+        &w, &h, &ch, 4);
+    if (!px) return a_err(a_string("image.decode: failed to decode image"));
+    AImage* img = malloc(sizeof(AImage));
+    img->data = px;
+    img->width = w;
+    img->height = h;
+    img->channels = 4;
+    return a_ptr(img);
+}
+
+AValue a_image_load(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("image.load: expected string path"));
+    FILE* f = fopen(path.sval->data, "rb");
+    if (!f) return a_err(a_string("image.load: cannot open file"));
+    fseek(f, 0, SEEK_END);
+    long sz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    unsigned char* buf = malloc(sz);
+    size_t n = fread(buf, 1, sz, f);
+    fclose(f);
+    int w, h, ch;
+    unsigned char* px = stbi_load_from_memory(buf, (int)n, &w, &h, &ch, 4);
+    free(buf);
+    if (!px) return a_err(a_string("image.load: failed to decode image"));
+    AImage* img = malloc(sizeof(AImage));
+    img->data = px;
+    img->width = w;
+    img->height = h;
+    img->channels = 4;
+    return a_ptr(img);
+}
+
+static int _str_ends_with_ci(const char* s, const char* suffix) {
+    int sl = strlen(s), xl = strlen(suffix);
+    if (sl < xl) return 0;
+    for (int i = 0; i < xl; i++) {
+        char a = s[sl - xl + i], b = suffix[i];
+        if (a >= 'A' && a <= 'Z') a += 32;
+        if (b >= 'A' && b <= 'Z') b += 32;
+        if (a != b) return 0;
+    }
+    return 1;
+}
+
+AValue a_image_save(AValue image, AValue path) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.save: expected image handle"));
+    if (path.tag != TAG_STRING) return a_err(a_string("image.save: expected string path"));
+    AImage* img = (AImage*)image.pval;
+    const char* p = path.sval->data;
+    int ok = 0;
+    if (_str_ends_with_ci(p, ".png"))
+        ok = stbi_write_png(p, img->width, img->height, img->channels, img->data, img->width * img->channels);
+    else if (_str_ends_with_ci(p, ".bmp"))
+        ok = stbi_write_bmp(p, img->width, img->height, img->channels, img->data);
+    else if (_str_ends_with_ci(p, ".jpg") || _str_ends_with_ci(p, ".jpeg"))
+        ok = stbi_write_jpg(p, img->width, img->height, img->channels, img->data, 90);
+    else
+        return a_err(a_string("image.save: unsupported format (use .png, .bmp, .jpg)"));
+    if (!ok) return a_err(a_string("image.save: write failed"));
+    return a_void();
+}
+
+typedef struct {
+    unsigned char* data;
+    int len, cap;
+} EncodeCtx;
+
+static void _encode_callback(void* context, void* data, int size) {
+    EncodeCtx* ctx = (EncodeCtx*)context;
+    while (ctx->len + size > ctx->cap) { ctx->cap *= 2; ctx->data = realloc(ctx->data, ctx->cap); }
+    memcpy(ctx->data + ctx->len, data, size);
+    ctx->len += size;
+}
+
+AValue a_image_encode(AValue image, AValue format) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.encode: expected image handle"));
+    if (format.tag != TAG_STRING) return a_err(a_string("image.encode: expected string format"));
+    AImage* img = (AImage*)image.pval;
+    EncodeCtx ctx = { .data = malloc(4096), .len = 0, .cap = 4096 };
+    const char* fmt = format.sval->data;
+    int ok = 0;
+    if (strcmp(fmt, "png") == 0)
+        ok = stbi_write_png_to_func(_encode_callback, &ctx, img->width, img->height, img->channels, img->data, img->width * img->channels);
+    else if (strcmp(fmt, "bmp") == 0)
+        ok = stbi_write_bmp_to_func(_encode_callback, &ctx, img->width, img->height, img->channels, img->data);
+    else if (strcmp(fmt, "jpg") == 0 || strcmp(fmt, "jpeg") == 0)
+        ok = stbi_write_jpg_to_func(_encode_callback, &ctx, img->width, img->height, img->channels, img->data, 90);
+    else {
+        free(ctx.data);
+        return a_err(a_string("image.encode: unsupported format (use png, bmp, jpg)"));
+    }
+    if (!ok) { free(ctx.data); return a_err(a_string("image.encode: encoding failed")); }
+    AValue result = a_string_len((const char*)ctx.data, ctx.len);
+    free(ctx.data);
+    return result;
+}
+
+AValue a_image_width(AValue image) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.width: expected image handle"));
+    return a_int(((AImage*)image.pval)->width);
+}
+
+AValue a_image_height(AValue image) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.height: expected image handle"));
+    return a_int(((AImage*)image.pval)->height);
+}
+
+AValue a_image_resize(AValue image, AValue w, AValue h) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.resize: expected image handle"));
+    if (w.tag != TAG_INT || h.tag != TAG_INT) return a_err(a_string("image.resize: expected int dimensions"));
+    AImage* src = (AImage*)image.pval;
+    int dw = (int)w.ival, dh = (int)h.ival;
+    if (dw <= 0 || dh <= 0) return a_err(a_string("image.resize: dimensions must be positive"));
+    unsigned char* dst = malloc(dw * dh * 4);
+    for (int y = 0; y < dh; y++) {
+        float sy = (float)y * src->height / dh;
+        int y0 = (int)sy, y1 = y0 + 1 < src->height ? y0 + 1 : y0;
+        float fy = sy - y0;
+        for (int x = 0; x < dw; x++) {
+            float sx = (float)x * src->width / dw;
+            int x0 = (int)sx, x1 = x0 + 1 < src->width ? x0 + 1 : x0;
+            float fx = sx - x0;
+            for (int c = 0; c < 4; c++) {
+                float v00 = src->data[(y0 * src->width + x0) * 4 + c];
+                float v10 = src->data[(y0 * src->width + x1) * 4 + c];
+                float v01 = src->data[(y1 * src->width + x0) * 4 + c];
+                float v11 = src->data[(y1 * src->width + x1) * 4 + c];
+                float v = v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy)
+                        + v01 * (1 - fx) * fy + v11 * fx * fy;
+                int iv = (int)(v + 0.5f);
+                dst[(y * dw + x) * 4 + c] = iv < 0 ? 0 : (iv > 255 ? 255 : iv);
+            }
+        }
+    }
+    AImage* out = malloc(sizeof(AImage));
+    out->data = dst;
+    out->width = dw;
+    out->height = dh;
+    out->channels = 4;
+    return a_ptr(out);
+}
+
+AValue a_image_pixels(AValue image) {
+    if (image.tag != TAG_PTR || !image.pval) return a_err(a_string("image.pixels: expected image handle"));
+    AImage* img = (AImage*)image.pval;
+    int count = img->width * img->height;
+    AValue arr = a_array_new(0);
+    for (int i = 0; i < count; i++) {
+        unsigned char* p = img->data + i * 4;
+        int64_t rgba = ((int64_t)p[0] << 24) | ((int64_t)p[1] << 16) | ((int64_t)p[2] << 8) | (int64_t)p[3];
+        arr = a_array_push(arr, a_int(rgba));
+    }
+    return arr;
 }
 
 /* --- JSON extras --- */

@@ -281,6 +281,16 @@ AValue a_uuid_v4(void);
 AValue a_signal_on(AValue name, AValue handler);
 void a_signal_check(void);
 
+/* Image processing */
+AValue a_image_load(AValue path);
+AValue a_image_decode(AValue bytes);
+AValue a_image_save(AValue image, AValue path);
+AValue a_image_encode(AValue image, AValue format);
+AValue a_image_width(AValue image);
+AValue a_image_height(AValue image);
+AValue a_image_resize(AValue image, AValue w, AValue h);
+AValue a_image_pixels(AValue image);
+
 /* Closures */
 AValue a_closure(AClosureFn fn, AValue env);
 AValue a_closure_call(AValue closure, int argc, ...);

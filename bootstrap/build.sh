@@ -27,10 +27,11 @@ BOOTSTRAP_C="$PROJECT_ROOT/bootstrap/cli.c"
 RUNTIME_C="$PROJECT_ROOT/c_runtime/runtime.c"
 SQLITE_C="$PROJECT_ROOT/c_runtime/sqlite3.c"
 MINIZ_C="$PROJECT_ROOT/c_runtime/miniz.c"
+STB_IMPL_C="$PROJECT_ROOT/c_runtime/stb_impl.c"
 INCLUDE_DIR="$PROJECT_ROOT/c_runtime"
 OUTPUT="$PROJECT_ROOT/a"
 
-for f in "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C"; do
+for f in "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C" "$STB_IMPL_C"; do
     if [ ! -f "$f" ]; then
         echo "error: missing $f"
         echo "run this script from the project root or ensure all files exist."
@@ -39,7 +40,7 @@ for f in "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C"; do
 done
 
 echo "Building 'a' from bootstrap C (no Rust required)..."
-gcc "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C" \
+gcc "$BOOTSTRAP_C" "$RUNTIME_C" "$SQLITE_C" "$MINIZ_C" "$STB_IMPL_C" \
     -o "$OUTPUT" \
     -I "$INCLUDE_DIR" \
     -lm -O2 $STACK_FLAGS $TLS_FLAGS $SQLITE_FLAGS

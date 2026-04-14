@@ -2413,3 +2413,58 @@ Both builtins wired through: `runtime.h` declarations, `cgen.a` builtin map, `bu
 | `tests/native/test_migrate.a` | NEW -- create, run, status, idempotent re-run tests |
 | `Cargo.toml` | Version bump to 0.63.0 |
 | `README.md` | Added config, migrate to stdlib table; updated counts (28 modules, 135+ builtins) |
+
+---
+
+## v0.64 -- Image Processing
+
+### Vendored Libraries
+
+- **stb_image v2.30** + **stb_image_write v1.16** from [nothings/stb](https://github.com/nothings/stb) (public domain / MIT). Three files added to `c_runtime/`: `stb_image.h`, `stb_image_write.h`, `stb_impl.c` (implementation compilation unit).
+- `VENDORS.md` updated with version, checksums, update procedure.
+- `scripts/vendor_check.sh` extended with 3 new checksum entries.
+
+### New Builtins (8 image builtins, native-only)
+
+- **`image.load(path)`** -- read file in binary mode, decode via `stbi_load_from_memory`, force RGBA (4 channels), return `TAG_PTR` to `AImage` struct.
+- **`image.decode(bytes)`** -- decode image from in-memory byte string via `stbi_load_from_memory`.
+- **`image.save(image, path)`** -- detect format from extension (.png/.bmp/.jpg), write via `stbi_write_png`/`stbi_write_bmp`/`stbi_write_jpg`.
+- **`image.encode(image, format)`** -- encode to memory buffer via `stbi_write_*_to_func` callback, return byte string.
+- **`image.width(image)`** / **`image.height(image)`** -- return dimensions as int.
+- **`image.resize(image, w, h)`** -- bilinear interpolation resize, returns new image handle.
+- **`image.pixels(image)`** -- return array of packed RGBA ints `(r<<24 | g<<16 | b<<8 | a)`.
+
+Rust VM returns a native-only error (same pattern as `db.*`). Image handle uses `TAG_PTR` + `AImage*` struct (same pattern as SQLite's `sqlite3*`).
+
+### Build Integration
+
+All 5 build paths updated to include `stb_impl.c`:
+- `build.sh` (main native CLI build)
+- `bootstrap/build.sh` (gcc-only bootstrap)
+- `src/cli.a` `_gcc()` function (native CLI `a build` command)
+- `src/cli.a` `_test_dir()` function (native CLI `a test` command)
+- `.github/workflows/ci.yml` (CI native test compilation)
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/stb_image.h` | NEW -- vendored stb_image v2.30 (public domain) |
+| `c_runtime/stb_image_write.h` | NEW -- vendored stb_image_write v1.16 (public domain) |
+| `c_runtime/stb_impl.c` | NEW -- STB implementation compilation unit (4 lines) |
+| `c_runtime/VENDORS.md` | Added stb_image section with versions, checksums, update procedure |
+| `scripts/vendor_check.sh` | Added 3 checksum entries for stb files |
+| `c_runtime/runtime.c` | Added `#include "stb_image.h"/"stb_image_write.h"`, `AImage` struct, 8 image builtins |
+| `c_runtime/runtime.h` | Added 8 image builtin declarations |
+| `std/compiler/cgen.a` | Added 8 `image.*` entries to builtin map |
+| `src/builtins.rs` | Added native-only error for `image.*`; added to `is_builtin()` |
+| `src/checker.rs` | Added type signatures for all 8 image builtins |
+| `src/lsp.a` | Added 8 image builtin completion entries |
+| `build.sh` | Added `stb_impl.c` to gcc commands |
+| `bootstrap/build.sh` | Added `STB_IMPL_C` variable and gcc inclusion |
+| `src/cli.a` | Added `stb_impl.c` to `_gcc()` and `cmd_test()` gcc commands |
+| `.github/workflows/ci.yml` | Added `stb_impl.c` to native test gcc command |
+| `examples/image_demo.a` | NEW -- gradient creation, resize, save, pixel extraction, encode/decode |
+| `tests/native/test_image.a` | NEW -- self-contained PPM creation, load, encode, decode, resize, pixels, save round-trip |
+| `Cargo.toml` | Version bump to 0.64.0 |
+| `README.md` | Added Image row to builtins table; updated counts (145+ builtins); added example |

@@ -49,6 +49,12 @@ check_sha256 "miniz.c" "7487d4c8cd761b951a99d182672bb3badfa72a5ad5760b70b392fafa
 check_sha256 "miniz.h" "a33e04eb7975ab0c7a391ca48bec5336a7bf3a4b2857cfcff3ee02a44766061f"
 
 echo ""
+echo "stb_image v2.30 + stb_image_write v1.16:"
+check_sha256 "stb_image.h" "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3"
+check_sha256 "stb_image_write.h" "cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05"
+check_sha256 "stb_impl.c" "3bdad46da43a131fc3de1520ae8e3aa839b5b800c90409bc10255dcb58410ec6"
+
+echo ""
 echo "$PASS passed, $FAIL failed"
 
 if [ "$FAIL" -gt 0 ]; then

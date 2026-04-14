@@ -1,0 +1,66 @@
+fn assert(cond, msg) {
+  if !cond { fail("FAIL: " + msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail("FAIL: expected " + to_str(b) + ", got " + to_str(a))
+  }
+}
+
+fn main() {
+  ; Create a 4x3 red image by writing raw pixels, encoding as PNG, then decoding
+  let w = 4
+  let h = 3
+
+  ; Write a minimal PPM file (binary), load it, verify dimensions
+  ; PPM P6 format: "P6\n4 3\n255\n" + 4*3*3 bytes of RGB
+  let header = "P6\n4 3\n255\n"
+  let mut ppm = header
+  let mut i = 0
+  while i < w * h {
+    ; red pixel: R=255, G=0, B=0
+    ppm = ppm + from_code(255) + from_code(0) + from_code(0)
+    i = i + 1
+  }
+  io.write_file("/tmp/test_red.ppm", ppm)
+
+  ; stb_image can load PPM
+  let img = image.load("/tmp/test_red.ppm")
+  assert_eq(image.width(img), 4)
+  assert_eq(image.height(img), 3)
+
+  ; Encode as PNG bytes and decode back
+  let png_bytes = image.encode(img, "png")
+  assert(len(png_bytes) > 0, "PNG encode should produce bytes")
+  let img2 = image.decode(png_bytes)
+  assert_eq(image.width(img2), 4)
+  assert_eq(image.height(img2), 3)
+
+  ; Test pixels
+  let px = image.pixels(img2)
+  assert_eq(len(px), 12)
+  ; First pixel should be red: R=255, G=0, B=0, A=255 -> 0xFF0000FF
+  let expected = 255 * 256 * 256 * 256 + 0 + 0 + 255
+  assert_eq(px[0], expected)
+
+  ; Test resize
+  let small = image.resize(img, 2, 2)
+  assert_eq(image.width(small), 2)
+  assert_eq(image.height(small), 2)
+
+  ; Test save/load round-trip
+  image.save(img, "/tmp/test_out.png")
+  let img3 = image.load("/tmp/test_out.png")
+  assert_eq(image.width(img3), 4)
+  assert_eq(image.height(img3), 3)
+
+  ; Resize to larger
+  let big = image.resize(img, 8, 6)
+  assert_eq(image.width(big), 8)
+  assert_eq(image.height(big), 6)
+
+  ; Clean up
+  exec("rm -f /tmp/test_red.ppm /tmp/test_out.png")
+  println("all image tests passed")
+}

@@ -63,3 +63,30 @@ a33e04eb7975ab0c7a391ca48bec5336a7bf3a4b2857cfcff3ee02a44766061f  miniz.h
 3. Update the version, date, and checksums in this file
 4. Run `scripts/vendor_check.sh` to verify
 5. Run `./a test tests/native/` to verify all tests pass
+
+### stb_image + stb_image_write
+
+| Field | Value |
+|-------|-------|
+| **Version** | stb_image v2.30, stb_image_write v1.16 |
+| **Upstream** | https://github.com/nothings/stb |
+| **License** | Public domain / MIT |
+| **Date vendored** | 2026-04-14 |
+| **Build flags** | None (compiled via `stb_impl.c` with `STB_IMAGE_IMPLEMENTATION` / `STB_IMAGE_WRITE_IMPLEMENTATION`) |
+
+**Files and checksums (SHA-256):**
+
+```
+594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3  stb_image.h
+cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05  stb_image_write.h
+3bdad46da43a131fc3de1520ae8e3aa839b5b800c90409bc10255dcb58410ec6  stb_impl.c
+```
+
+**What it provides:** `image.load`, `image.decode`, `image.save`, `image.encode`, `image.width`, `image.height`, `image.resize`, `image.pixels` builtins for image decoding (PNG, JPEG, BMP, GIF), encoding (PNG, BMP, JPEG), and manipulation.
+
+**Update procedure:**
+1. Download updated headers from https://github.com/nothings/stb
+2. Replace `stb_image.h` and `stb_image_write.h`
+3. Update the version, date, and checksums in this file
+4. Run `scripts/vendor_check.sh` to verify
+5. Run `./a test tests/native/` to verify all tests pass

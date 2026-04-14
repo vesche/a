@@ -1055,6 +1055,10 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
         "db.open" | "db.close" | "db.exec" | "db.query" => {
             Err(AError::runtime("db.* builtins are only available in the native CLI (./a build/run). Use ./build.sh first.", None))
         }
+        "image.load" | "image.decode" | "image.save" | "image.encode" |
+        "image.width" | "image.height" | "image.resize" | "image.pixels" => {
+            Err(AError::runtime("image.* builtins are only available in the native CLI (./a build/run). Use ./build.sh first.", None))
+        }
 
         // --- Filesystem ---
         "fs.exists" => {
@@ -1723,6 +1727,8 @@ pub fn is_builtin(name: &str) -> bool {
         "ws.connect" | "ws.send" | "ws.recv" | "ws.close" |
         "http.serve" | "http.serve_static" |
         "db.open" | "db.close" | "db.exec" | "db.query" |
+        "image.load" | "image.decode" | "image.save" | "image.encode" |
+        "image.width" | "image.height" | "image.resize" | "image.pixels" |
         "fs.exists" | "fs.is_dir" | "fs.is_file" | "fs.ls" | "fs.mkdir" |
         "fs.rm" | "fs.mv" | "fs.cp" | "fs.cwd" | "fs.abs" | "fs.glob" |
         "unwrap" | "unwrap_or" | "is_ok" | "is_err" | "expect" |

@@ -1,0 +1,52 @@
+; image_demo.a -- Demonstrates image processing builtins
+;
+; Creates a gradient image, resizes it, extracts pixel data, and saves as PNG.
+
+fn main() {
+  ; Build a 64x64 gradient image via PPM
+  let w = 64
+  let h = 64
+  let mut ppm = "P6\n64 64\n255\n"
+  let mut y = 0
+  while y < h {
+    let mut x = 0
+    while x < w {
+      let r = x * 255 / w
+      let g = y * 255 / h
+      ppm = ppm + from_code(r) + from_code(g) + from_code(128)
+      x = x + 1
+    }
+    y = y + 1
+  }
+  io.write_file("/tmp/gradient.ppm", ppm)
+  let img = image.load("/tmp/gradient.ppm")
+  println("Loaded: " + to_str(image.width(img)) + "x" + to_str(image.height(img)))
+
+  ; Resize to thumbnail
+  let small = image.resize(img, 16, 16)
+  println("Resized to: " + to_str(image.width(small)) + "x" + to_str(image.height(small)))
+
+  ; Save as PNG
+  image.save(small, "/tmp/thumbnail.png")
+  println("Saved thumbnail to /tmp/thumbnail.png")
+
+  ; Inspect pixel data
+  let px = image.pixels(small)
+  println("Total pixels: " + to_str(len(px)))
+  let first = px[0]
+  let r2 = first / (256 * 256 * 256)
+  let g2 = (first / (256 * 256)) % 256
+  let b2 = (first / 256) % 256
+  let a2 = first % 256
+  println("First pixel RGBA: " + to_str(r2) + ", " + to_str(g2) + ", " + to_str(b2) + ", " + to_str(a2))
+
+  ; Encode to PNG bytes in memory
+  let png_bytes = image.encode(small, "png")
+  println("PNG encoded size: " + to_str(len(png_bytes)) + " bytes")
+
+  ; Decode from memory bytes
+  let img2 = image.decode(png_bytes)
+  println("Decoded from memory: " + to_str(image.width(img2)) + "x" + to_str(image.height(img2)))
+
+  exec("rm -f /tmp/gradient.ppm /tmp/thumbnail.png")
+}
