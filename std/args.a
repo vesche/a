@@ -1,0 +1,196 @@
+; std/args.a -- Declarative CLI argument parsing
+
+fn spec() -> map {
+  ret #{ "flags": [], "options": [], "positionals": [], "name": "", "desc": "" }
+}
+
+fn name(s: map, n: str) -> map {
+  ret map.set(s, "name", n)
+}
+
+fn desc(s: map, d: str) -> map {
+  ret map.set(s, "desc", d)
+}
+
+fn flag(s: map, long: str, short: str, description: str) -> map {
+  let entry = #{ "long": long, "short": short, "desc": description }
+  ret map.set(s, "flags", push(s["flags"], entry))
+}
+
+fn option(s: map, long: str, short: str, description: str, default: str) -> map {
+  let entry = #{ "long": long, "short": short, "desc": description, "default": default }
+  ret map.set(s, "options", push(s["options"], entry))
+}
+
+fn positional(s: map, pname: str, description: str) -> map {
+  let entry = #{ "name": pname, "desc": description }
+  ret map.set(s, "positionals", push(s["positionals"], entry))
+}
+
+fn _print_help(s: map) -> void {
+  let mut out = ""
+  if s["name"] != "" {
+    out = str.concat(out, str.concat(s["name"], "\n"))
+  }
+  if s["desc"] != "" {
+    out = str.concat(out, str.concat(s["desc"], "\n"))
+  }
+  out = str.concat(out, "\nUsage:\n")
+
+  ; positionals
+  let poss = s["positionals"]
+  let mut pi = 0
+  while pi < len(poss) {
+    let p = poss[pi]
+    out = str.concat(out, str.concat("  <", str.concat(p["name"], str.concat(">  ", str.concat(p["desc"], "\n")))))
+    pi = pi + 1
+  }
+
+  ; flags
+  let flgs = s["flags"]
+  if len(flgs) > 0 {
+    out = str.concat(out, "\nFlags:\n")
+    let mut fi = 0
+    while fi < len(flgs) {
+      let f = flgs[fi]
+      let mut line = str.concat("  --", f["long"])
+      if f["short"] != "" {
+        line = str.concat(line, str.concat(", -", f["short"]))
+      }
+      line = str.concat(line, str.concat("  ", str.concat(f["desc"], "\n")))
+      out = str.concat(out, line)
+      fi = fi + 1
+    }
+  }
+
+  ; options
+  let opts = s["options"]
+  if len(opts) > 0 {
+    out = str.concat(out, "\nOptions:\n")
+    let mut oi = 0
+    while oi < len(opts) {
+      let o = opts[oi]
+      let mut line = str.concat("  --", str.concat(o["long"], " <value>"))
+      if o["short"] != "" {
+        line = str.concat(line, str.concat(", -", str.concat(o["short"], " <value>")))
+      }
+      line = str.concat(line, str.concat("  ", o["desc"]))
+      if o["default"] != "" {
+        line = str.concat(line, str.concat(" (default: ", str.concat(o["default"], ")")))
+      }
+      line = str.concat(line, "\n")
+      out = str.concat(out, line)
+      oi = oi + 1
+    }
+  }
+
+  println(out)
+}
+
+fn _find_flag(s: map, arg: str) -> str {
+  let flgs = s["flags"]
+  let mut i = 0
+  while i < len(flgs) {
+    let f = flgs[i]
+    if str.concat("--", f["long"]) == arg { ret f["long"] }
+    if f["short"] != "" {
+      if str.concat("-", f["short"]) == arg { ret f["long"] }
+    }
+    i = i + 1
+  }
+  ret ""
+}
+
+fn _find_option(s: map, arg: str) -> str {
+  let opts = s["options"]
+  let mut i = 0
+  while i < len(opts) {
+    let o = opts[i]
+    if str.concat("--", o["long"]) == arg { ret o["long"] }
+    if o["short"] != "" {
+      if str.concat("-", o["short"]) == arg { ret o["long"] }
+    }
+    i = i + 1
+  }
+  ret ""
+}
+
+fn parse(s: map) -> map {
+  let raw = args()
+  let mut result = #{}
+  let mut pos_idx = 0
+  let mut rest_positional = false
+
+  ; set defaults for flags
+  let flgs = s["flags"]
+  let mut fi = 0
+  while fi < len(flgs) {
+    result = map.set(result, flgs[fi]["long"], false)
+    fi = fi + 1
+  }
+
+  ; set defaults for options
+  let opts = s["options"]
+  let mut oi = 0
+  while oi < len(opts) {
+    result = map.set(result, opts[oi]["long"], opts[oi]["default"])
+    oi = oi + 1
+  }
+
+  let n = len(raw)
+  let mut i = 0
+  while i < n {
+    let arg = raw[i]
+
+    if rest_positional {
+      let poss = s["positionals"]
+      if pos_idx < len(poss) {
+        result = map.set(result, poss[pos_idx]["name"], arg)
+        pos_idx = pos_idx + 1
+      }
+      i = i + 1
+    } else {
+      if arg == "--help" {
+        _print_help(s)
+        exit(0)
+      }
+
+      if arg == "--" {
+        rest_positional = true
+        i = i + 1
+      } else {
+        if str.starts_with(arg, "-") {
+          ; check if it's a flag
+          let flag_name = _find_flag(s, arg)
+          if flag_name != "" {
+            result = map.set(result, flag_name, true)
+            i = i + 1
+          } else {
+            ; check if it's an option
+            let opt_name = _find_option(s, arg)
+            if opt_name != "" {
+              if i + 1 < n {
+                result = map.set(result, opt_name, raw[i + 1])
+                i = i + 2
+              } else {
+                ret Err(str.concat("missing value for option: ", arg))
+              }
+            } else {
+              ret Err(str.concat("unknown flag/option: ", arg))
+            }
+          }
+        } else {
+          ; positional
+          let poss = s["positionals"]
+          if pos_idx < len(poss) {
+            result = map.set(result, poss[pos_idx]["name"], arg)
+            pos_idx = pos_idx + 1
+          }
+          i = i + 1
+        }
+      }
+    }
+  }
+
+  ret result
+}

@@ -100,7 +100,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**110+ builtins** covering everything an agent needs (plus native compilation to C):
+**130+ builtins** covering everything an agent needs (plus native compilation to C):
 
 | Domain | Operations |
 |--------|-----------|
@@ -125,9 +125,11 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Stdin** | `io.read_stdin()`, `io.read_line()`, `io.read_bytes(n)`, `io.flush()` |
 | **Environment** | `env.get`, `env.set`, `env.all` |
 | **Compression** | `compress.deflate`, `compress.inflate` (raw deflate), `compress.gzip`, `compress.gunzip` (gzip format) -- via bundled miniz |
+| **UUID** | `uuid.v4()` -- cryptographic random UUID v4 generation via `/dev/urandom` |
+| **Signals** | `signal.on(name, handler)` -- register handlers for SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2 (native CLI only) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 20 modules:
+**Standard library** with 24 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -147,6 +149,10 @@ use std.html                  # parse, select, text -- HTML DOM tree with CSS se
 use std.url                   # parse, encode, decode, build -- full URL structure parsing
 use std.llm                   # chat(provider, model, msgs, opts) -- unified LLM client (OpenAI, Anthropic, Google)
 use std.mcp                   # MCP server + client -- JSON-RPC 2.0 over stdio, tool/resource registration
+use std.agent                 # retry, batch, pipeline, timeout, rate_limit -- operational primitives
+use std.log                   # info, warn, error, debug, set_level -- structured JSON logging to stderr
+use std.uuid                  # v4() -- UUID generation
+use std.args                  # spec, flag, option, positional, parse -- declarative CLI argument parsing
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -169,7 +175,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 125+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 18 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 130+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -241,6 +247,7 @@ fn main() -> void {
 | `examples/stream_chat.a` | 25 | **streaming LLM** -- token-by-token streaming chat with live output |
 | `examples/mcp_server.a` | 33 | **MCP server** -- file search tool with tool + resource registration, JSON-RPC stdio |
 | `examples/mcp_client.a` | 55 | **MCP client** -- connects to any MCP server, lists tools, calls first tool |
+| `examples/cli_demo.a` | 27 | **CLI parsing** -- declarative argument parsing with flags, options, positionals, auto-help |
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
@@ -253,18 +260,18 @@ fn main() -> void {
 | | |
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~3,700 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
-| **"a" source** | ~19,000 lines across 88 files |
-| **Standard library** | 20 modules, 380+ functions, ~8,200 lines |
-| **Test suites** | 27 suites + cgen test script, 498+ native tests, ~4,200 lines |
-| **Examples & tools** | 35 programs, ~6,100 lines |
+| **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
+| **"a" source** | ~19,500 lines across 93 files |
+| **Standard library** | 24 modules, 400+ functions, ~8,700 lines |
+| **Test suites** | 30 suites + cgen test script, 510+ native tests, ~4,500 lines |
+| **Examples & tools** | 36 programs, ~6,200 lines |
 
 ## Editor support
 
 **Language server:** `./a-lsp` is a native LSP server written in "a" itself. It provides:
 
 - **Diagnostics** -- parse errors on every keystroke (red squiggles)
-- **Completion** -- 105+ builtins with signatures, keywords, user functions, 16+ stdlib modules
+- **Completion** -- 130+ builtins with signatures, keywords, user functions, 20+ stdlib modules
 - **Hover** -- function signatures for builtins and user-defined functions
 - **Go-to-definition** -- in-file and cross-module (resolves `use` imports to source files)
 

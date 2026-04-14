@@ -1,0 +1,54 @@
+; std/log.a -- Structured JSON logging to stderr
+use std.datetime
+
+fn _level_num(level: str) -> int {
+  if level == "debug" { ret 0 }
+  if level == "info" { ret 1 }
+  if level == "warn" { ret 2 }
+  if level == "error" { ret 3 }
+  ret 1
+}
+
+fn _current_level() -> int {
+  let lvl = env.get("_A_LOG_LEVEL")
+  if lvl == "" { ret 1 }
+  ret _level_num(lvl)
+}
+
+fn set_level(level: str) -> void {
+  env.set("_A_LOG_LEVEL", level)
+}
+
+fn log(level: str, msg: str, ctx) -> void {
+  if _level_num(level) < _current_level() { ret }
+  let mut entry = #{ "level": level, "msg": msg, "ts": datetime.iso(time.now()) }
+  if type_of(ctx) == "map" {
+    let keys = map.keys(ctx)
+    let mut i = 0
+    while i < len(keys) {
+      entry = map.set(entry, keys[i], ctx[keys[i]])
+      i = i + 1
+    }
+  }
+  eprintln(json.stringify(entry))
+}
+
+fn debug(msg: str) -> void {
+  log("debug", msg, 0)
+}
+
+fn info(msg: str) -> void {
+  log("info", msg, 0)
+}
+
+fn warn(msg: str) -> void {
+  log("warn", msg, 0)
+}
+
+fn error(msg: str) -> void {
+  log("error", msg, 0)
+}
+
+fn with(key: str, val) -> map {
+  ret map.set(#{}, key, val)
+}

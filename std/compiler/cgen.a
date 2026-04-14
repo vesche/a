@@ -52,6 +52,7 @@ fn _builtin_map() -> map {
     "math.pow": "a_math_pow", "math.min": "a_math_min", "math.max": "a_math_max",
     "time.now": "a_time_now", "time.sleep": "a_time_sleep",
     "hash.sha256": "a_hash_sha256", "hash.md5": "a_hash_md5",
+    "uuid.v4": "a_uuid_v4", "signal.on": "a_signal_on",
     "http.get": "a_http_get", "http.post": "a_http_post",
     "http.put": "a_http_put", "http.patch": "a_http_patch", "http.delete": "a_http_delete",
     "http.stream": "a_http_stream", "http.stream_read": "a_http_stream_read", "http.stream_close": "a_http_stream_close",

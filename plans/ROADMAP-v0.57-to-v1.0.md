@@ -178,45 +178,16 @@ LLM streaming and real-time communication. This unlocks `llm.stream()` which was
 
 Common patterns that every production agent needs, extracted into reusable modules.
 
-### v0.61 -- Agent Stdlib + Operational Primitives
+### v0.61 -- Agent Stdlib + Operational Primitives [DONE]
 
-#### Agent patterns
-
-- **`std/agent.a`** module:
-  - `agent.retry(n, delay_ms, fn)` -- retry with exponential backoff, returns last result
-  - `agent.cache(ttl_ms, fn)` -- memoize expensive calls with TTL
-  - `agent.rate_limit(max_per_sec, fn)` -- rate limiter wrapper
-  - `agent.batch(items, size, fn)` -- process in fixed-size batches
-  - `agent.pipeline(steps)` -- compose sequential transformation functions
-  - `agent.timeout(ms, fn)` -- run with a deadline (native: via `alarm`/`SIGALRM`)
-- **`std/uuid.a`** (or builtin `uuid.v4()`): UUID v4 generation using `/dev/urandom` or `getentropy`. Agents generate request IDs, run IDs, and idempotency keys constantly.
-- **`std/log.a`** module:
-  - `log.info(msg)`, `log.warn(msg)`, `log.error(msg)`, `log.debug(msg)`
-  - Structured JSON output to stderr: `{"level":"info","msg":"...","ts":"..."}`
-  - `log.set_level(level)` to filter
-
-#### CLI argument parsing
-
-Today the language has `args()` which returns a raw string array, and `std.cli` which only provides ANSI color helpers. Every CLI tool I build needs flag parsing and subcommand routing.
-
-- **`std/args.a`** module:
-  - `args.parse(spec)` -- declare flags, options, positional args, subcommands; returns a structured map
-  - `args.flag("verbose", "v", "Enable verbose output")` -- boolean flag with short alias
-  - `args.option("output", "o", "Output file", "default.txt")` -- string option with default
-  - `args.positional("file", "Input file")` -- required positional argument
-  - `args.subcommand("build", "Build the project", sub_spec)` -- subcommand routing
-  - Auto-generated `--help` output
-  - Returns `#{ "verbose": true, "output": "out.txt", "file": "main.a", "_sub": "build", ... }`
-
-#### Signal handling
-
-Long-running servers need graceful shutdown. Agent loops need interrupt handling.
-
-- **Builtins**: `signal.on("SIGINT", fn)`, `signal.on("SIGTERM", fn)` in the C runtime
-- Supported signals: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGUSR1`, `SIGUSR2`
-- Handler is a closure called when the signal fires (via `sigaction` in C)
-- **Codegen mapping** in cgen.a
-- **Use case**: `http.serve` with graceful shutdown; agent loops that clean up on Ctrl-C
+- [x] `uuid.v4()` builtin -- both C runtime and Rust VM
+- [x] `signal.on(name, handler)` -- C runtime with `sigaction` deferred dispatch; Rust VM native-only error
+- [x] `std/agent.a` -- `retry`, `batch`, `pipeline`, `timeout`, `rate_limit`
+- [x] `std/log.a` -- structured JSON logging to stderr with level filtering
+- [x] `std/uuid.a` -- thin wrapper around `uuid.v4()` builtin
+- [x] `std/args.a` -- declarative CLI argument parsing with flags, options, positionals, short aliases, `--help`
+- [x] `examples/cli_demo.a`, `tests/native/test_uuid.a`, `test_agent.a`, `test_args.a`
+- [x] All wiring: cgen, checker, is_builtin, lsp completions
 
 - Bump to `0.61.0`.
 
@@ -375,7 +346,7 @@ What v1.0 means:
 | **v0.58** | In-Process HTTP | Replace curl, platform TLS, full method parity | Truly hermetic binary, no external deps |
 | **v0.59** | MCP Framework | `proc.*` builtins, `std/mcp.a` server + client, JSON-RPC 2.0 | **DONE** |
 | **v0.60** | Streaming | `http.stream*`, `ws.*`, `llm.stream()`, SSE parsing | **DONE** |
-| **v0.61** | Agent Stdlib | retry, cache, rate_limit, uuid, logging, args, signals | Production-grade agent code, real CLI tools |
+| **v0.61** | Agent Stdlib | retry, batch, pipeline, timeout, rate_limit, uuid, logging, args, signals | **DONE** |
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | Structured output, code review |
 | **v0.63** | Process + Config + Migrations | subprocess orchestration, layered config, db migrations | Real application infrastructure |
 | **v0.64** | Image Processing | stb_image, decode/encode/resize | Multimodal AI workflows |

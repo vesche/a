@@ -1,0 +1,69 @@
+; std/agent.a -- Operational primitives for AI agents
+; retry, batch, pipeline, timeout, rate_limit
+
+fn retry(max_attempts: int, delay_ms: int, f) {
+  let mut attempt = 0
+  let mut last_err = ""
+  while attempt < max_attempts {
+    let result = f()
+    if is_ok(result) { ret result }
+    last_err = unwrap_or(result, "unknown error")
+    attempt = attempt + 1
+    if attempt < max_attempts {
+      let mut wait = delay_ms
+      let mut exp = 0
+      while exp < attempt - 1 {
+        wait = wait * 2
+        exp = exp + 1
+      }
+      time.sleep(wait)
+    }
+  }
+  ret Err(str.concat("retry: exhausted after ", str.concat(to_str(max_attempts), str.concat(" attempts: ", last_err))))
+}
+
+fn batch(items, size: int, f) {
+  let mut results = []
+  let total = len(items)
+  let mut i = 0
+  while i < total {
+    let mut end = i + size
+    if end > total { end = total }
+    let chunk = slice(items, i, end)
+    let result = f(chunk)
+    results = push(results, result)
+    i = i + size
+  }
+  ret results
+}
+
+fn pipeline(steps, input) {
+  let mut result = input
+  let n = len(steps)
+  let mut i = 0
+  while i < n {
+    let step = steps[i]
+    result = step(result)
+    i = i + 1
+  }
+  ret result
+}
+
+fn timeout(ms: int, f) {
+  let start = time.now()
+  let result = f()
+  let elapsed = time.now() - start
+  if elapsed > ms {
+    ret Err(str.concat("timeout: exceeded ", str.concat(to_str(ms), "ms")))
+  }
+  ret result
+}
+
+fn rate_limit(min_interval_ms: int, last_call_ms: int, f) {
+  let now = time.now()
+  let gap = now - last_call_ms
+  if gap < min_interval_ms {
+    time.sleep(min_interval_ms - gap)
+  }
+  ret f()
+}

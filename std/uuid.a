@@ -1,0 +1,5 @@
+; std/uuid.a -- UUID generation
+
+fn v4() -> str {
+  ret uuid.v4()
+}

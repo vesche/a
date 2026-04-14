@@ -1521,6 +1521,71 @@ AValue a_hash_md5(AValue data) {
     return a_string(hex);
 }
 
+/* --- UUID v4 --- */
+
+AValue a_uuid_v4(void) {
+    unsigned char b[16];
+    FILE* f = fopen("/dev/urandom", "rb");
+    if (f) { fread(b, 1, 16, f); fclose(f); }
+    else { for (int i = 0; i < 16; i++) b[i] = (unsigned char)(rand() & 0xFF); }
+    b[6] = 0x40 | (b[6] & 0x0F);
+    b[8] = 0x80 | (b[8] & 0x3F);
+    char hex[37];
+    snprintf(hex, sizeof(hex),
+        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+        b[0],b[1],b[2],b[3], b[4],b[5], b[6],b[7], b[8],b[9],
+        b[10],b[11],b[12],b[13],b[14],b[15]);
+    return a_string(hex);
+}
+
+/* --- Signal handling --- */
+
+#include <signal.h>
+
+static AValue signal_handlers[32];
+static volatile sig_atomic_t signal_pending[32];
+
+static void signal_dispatcher(int signum) {
+    if (signum >= 0 && signum < 32) signal_pending[signum] = 1;
+}
+
+void a_signal_check(void) {
+    for (int i = 0; i < 32; i++) {
+        if (signal_pending[i]) {
+            signal_pending[i] = 0;
+            if (signal_handlers[i].tag == TAG_CLOSURE)
+                a_closure_call(signal_handlers[i], 0);
+        }
+    }
+}
+
+static int signal_name_to_num(const char* name) {
+    if (strcmp(name, "SIGINT") == 0) return SIGINT;
+    if (strcmp(name, "SIGTERM") == 0) return SIGTERM;
+    if (strcmp(name, "SIGHUP") == 0) return SIGHUP;
+    if (strcmp(name, "SIGUSR1") == 0) return SIGUSR1;
+    if (strcmp(name, "SIGUSR2") == 0) return SIGUSR2;
+    return -1;
+}
+
+AValue a_signal_on(AValue name, AValue handler) {
+    if (name.tag != TAG_STRING)
+        return a_err(a_string("signal.on: expected string signal name"));
+    if (handler.tag != TAG_CLOSURE)
+        return a_err(a_string("signal.on: expected closure handler"));
+    int signum = signal_name_to_num(name.sval->data);
+    if (signum < 0)
+        return a_err(a_string("signal.on: unknown signal (use SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2)"));
+    signal_handlers[signum] = handler;
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_dispatcher;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+    sigaction(signum, &sa, NULL);
+    return a_void();
+}
+
 /* --- JSON extras --- */
 
 static void json_stringify_val(AValue v, char** buf, int* pos, int* cap, int indent, int pretty) {

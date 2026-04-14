@@ -2268,3 +2268,62 @@ Provider-specific SSE parsing:
 | `tests/native/test_stream.a` | NEW -- Streaming and SSE line parsing tests |
 | `Cargo.toml` | Added `tungstenite = "0.26"` dependency; version bump to 0.60.0 |
 | `README.md` | Added HTTP streaming, WebSocket, LLM streaming to builtins table and examples |
+
+---
+
+## v0.61 -- Agent Stdlib + Operational Primitives
+
+Adds production-ready operational primitives: two new runtime builtins (`uuid.v4`, `signal.on`) and four pure "a" stdlib modules for retry/backoff, structured logging, UUID generation, and CLI argument parsing.
+
+### New builtins
+
+**`uuid.v4()`** -- Generates a cryptographic random UUID v4 string (format: `8-4-4-4-12` hex with dashes). Reads 16 bytes from `/dev/urandom`, sets version bits (byte 6: `0x40 | (b & 0x0F)`) and variant bits (byte 8: `0x80 | (b & 0x3F)`). Implemented in both C runtime and Rust VM.
+
+**`signal.on(name, handler)`** -- Register a closure handler for POSIX signals. Supported signals: `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGUSR1`, `SIGUSR2`. Uses `sigaction` with a deferred dispatch model: the C signal handler sets a flag, and `a_signal_check()` invokes the closure handler outside the signal context. C runtime only; Rust VM returns a runtime error directing users to the native CLI.
+
+### New stdlib modules
+
+**`std/agent.a`** -- Operational primitives for AI agents:
+- `agent.retry(max_attempts, delay_ms, f)` -- Exponential backoff retry with configurable max attempts
+- `agent.batch(items, size, f)` -- Process items in chunks of `size`
+- `agent.pipeline(steps, input)` -- Fold input through an array of transform functions
+- `agent.timeout(ms, f)` -- Run function and check elapsed time (post-execution check)
+- `agent.rate_limit(min_interval_ms, last_call_ms, f)` -- Enforce minimum interval between calls
+
+**`std/log.a`** -- Structured JSON logging to stderr:
+- `log.info(msg)`, `log.warn(msg)`, `log.error(msg)`, `log.debug(msg)` -- Level-specific logging
+- `log.set_level(level)` -- Set minimum log level (uses `env.set("_A_LOG_LEVEL", ...)`)
+- `log.with(key, val)` -- Create context map for structured fields
+- `log.log(level, msg, ctx)` -- Low-level logging with extra fields
+- Output format: `{"level":"info","msg":"...","ts":"2026-04-12T...Z"}`
+
+**`std/uuid.a`** -- Thin wrapper: `uuid.v4()` -> `uuid.v4()` builtin
+
+**`std/args.a`** -- Declarative CLI argument parsing:
+- `args.spec()` -- Create empty spec; `args.name(s, n)`, `args.desc(s, d)` -- Set name/description
+- `args.flag(s, long, short, desc)` -- Boolean flag (`--verbose` / `-v`)
+- `args.option(s, long, short, desc, default)` -- String option (`--output file.txt` / `-o file.txt`)
+- `args.positional(s, name, desc)` -- Required positional argument
+- `args.parse(s)` -- Parse `args()` against spec, returns result map or `Err`
+- Auto `--help` generation, `--` separator support, short alias expansion
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Added `a_uuid_v4()` (~15 lines) and `a_signal_on()` with signal dispatch infrastructure (~55 lines) |
+| `c_runtime/runtime.h` | Added declarations for `a_uuid_v4`, `a_signal_on`, `a_signal_check` |
+| `src/builtins.rs` | Added `uuid.v4` implementation (~15 lines) and `signal.on` native-only error |
+| `src/checker.rs` | Added type signatures for `uuid.v4` and `signal.on` |
+| `std/compiler/cgen.a` | Added `uuid.v4` and `signal.on` to `_builtin_map()` |
+| `src/lsp.a` | Added builtin completion entries for `uuid.v4` and `signal.on` |
+| `std/agent.a` | NEW -- Operational primitives (~68 lines) |
+| `std/log.a` | NEW -- Structured JSON logging (~57 lines) |
+| `std/uuid.a` | NEW -- UUID wrapper (~5 lines) |
+| `std/args.a` | NEW -- Declarative CLI argument parsing (~178 lines) |
+| `examples/cli_demo.a` | NEW -- Demonstrates `std.args` with flags, options, positionals |
+| `tests/native/test_uuid.a` | NEW -- UUID format validation (length, dashes, version, variant) |
+| `tests/native/test_agent.a` | NEW -- Tests retry, batch, pipeline, timeout, rate_limit |
+| `tests/native/test_args.a` | NEW -- Tests spec building, flag/option lookup, parse defaults |
+| `Cargo.toml` | Version bump to 0.61.0 |
+| `README.md` | Added uuid, signal, agent, log, uuid, args to builtins/stdlib tables; updated counts |

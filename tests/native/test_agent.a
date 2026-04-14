@@ -1,0 +1,58 @@
+use std.agent
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail(str.concat("expected ", str.concat(to_str(b), str.concat(", got ", to_str(a)))))
+  }
+}
+
+fn main() {
+  ; --- retry: immediate success ---
+  let ok_result = agent.retry(3, 10, fn() {
+    ret Ok("success")
+  })
+  assert(is_ok(ok_result), "retry should succeed")
+
+  ; --- retry: exhaust all attempts ---
+  let fail_result = agent.retry(2, 10, fn() {
+    ret Err("always fails")
+  })
+  assert(is_err(fail_result), "retry should fail after exhaustion")
+
+  ; --- batch ---
+  let items = [1, 2, 3, 4, 5]
+  let batched = agent.batch(items, 2, fn(chunk) {
+    ret len(chunk)
+  })
+  assert_eq(len(batched), 3)
+  assert_eq(batched[0], 2)
+  assert_eq(batched[1], 2)
+  assert_eq(batched[2], 1)
+
+  ; --- pipeline ---
+  let steps = [
+    fn(x) { ret x + 10 },
+    fn(x) { ret x * 2 },
+    fn(x) { ret x - 1 }
+  ]
+  let pipe_result = agent.pipeline(steps, 5)
+  ; (5+10)*2-1 = 29
+  assert_eq(pipe_result, 29)
+
+  ; --- timeout: fast function passes ---
+  let fast = agent.timeout(5000, fn() {
+    ret "done"
+  })
+  assert_eq(fast, "done")
+
+  ; --- rate_limit ---
+  let start = time.now()
+  let rl = agent.rate_limit(50, start - 100, fn() { ret "ok" })
+  assert_eq(rl, "ok")
+
+  println("all agent tests passed")
+}

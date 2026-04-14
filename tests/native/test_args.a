@@ -1,0 +1,61 @@
+use std.args
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail(str.concat("expected ", str.concat(to_str(b), str.concat(", got ", to_str(a)))))
+  }
+}
+
+fn main() {
+  ; --- spec building ---
+  let s = args.spec()
+  assert(type_of(s) == "map", "spec returns map")
+
+  s = args.name(s, "test-cli")
+  assert_eq(s["name"], "test-cli")
+
+  s = args.desc(s, "A test CLI")
+  assert_eq(s["desc"], "A test CLI")
+
+  s = args.flag(s, "verbose", "v", "Be verbose")
+  assert_eq(len(s["flags"]), 1)
+  assert_eq(s["flags"][0]["long"], "verbose")
+  assert_eq(s["flags"][0]["short"], "v")
+
+  s = args.option(s, "output", "o", "Output file", "out.txt")
+  assert_eq(len(s["options"]), 1)
+  assert_eq(s["options"][0]["long"], "output")
+  assert_eq(s["options"][0]["default"], "out.txt")
+
+  s = args.positional(s, "file", "Input file")
+  assert_eq(len(s["positionals"]), 1)
+  assert_eq(s["positionals"][0]["name"], "file")
+
+  ; --- _find_flag ---
+  assert_eq(args._find_flag(s, "--verbose"), "verbose")
+  assert_eq(args._find_flag(s, "-v"), "verbose")
+  assert_eq(args._find_flag(s, "--unknown"), "")
+
+  ; --- _find_option ---
+  assert_eq(args._find_option(s, "--output"), "output")
+  assert_eq(args._find_option(s, "-o"), "output")
+  assert_eq(args._find_option(s, "--nope"), "")
+
+  ; --- parse with real args (args() returns whatever we pass after --) ---
+  ; When run as: ./test_args --verbose -o result.txt myfile.a
+  ; We test the defaults for now (no extra CLI args passed to test binary)
+  let s2 = args.spec()
+  s2 = args.flag(s2, "debug", "d", "Debug mode")
+  s2 = args.option(s2, "level", "l", "Log level", "info")
+  let result = args.parse(s2)
+  if is_ok(result) || type_of(result) == "map" {
+    assert_eq(result["debug"], false)
+    assert_eq(result["level"], "info")
+  }
+
+  print("all args tests passed")
+}

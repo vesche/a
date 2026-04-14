@@ -1,0 +1,26 @@
+; cli_demo.a -- Demonstrates std.args for declarative CLI parsing
+use std.args
+
+fn main() {
+  let s = args.spec()
+  s = args.name(s, "cli_demo")
+  s = args.desc(s, "A demo of the std.args argument parser")
+  s = args.flag(s, "verbose", "v", "Enable verbose output")
+  s = args.flag(s, "dry-run", "n", "Show what would be done without doing it")
+  s = args.option(s, "output", "o", "Output file path", "out.txt")
+  s = args.option(s, "format", "f", "Output format", "json")
+  s = args.positional(s, "file", "Input file to process")
+
+  let result = args.parse(s)
+  if is_err(result) {
+    eprintln(unwrap_or(result, "parse error"))
+    exit(1)
+  }
+
+  println("Parsed arguments:")
+  println(str.concat("  file    = ", to_str(result["file"])))
+  println(str.concat("  output  = ", to_str(result["output"])))
+  println(str.concat("  format  = ", to_str(result["format"])))
+  println(str.concat("  verbose = ", to_str(result["verbose"])))
+  println(str.concat("  dry-run = ", to_str(result["dry-run"])))
+}

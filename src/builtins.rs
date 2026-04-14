@@ -1373,6 +1373,24 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
                 Err(AError::runtime("time.sleep: expected int milliseconds", None))
             }
         }
+        "uuid.v4" => {
+            let mut buf = [0u8; 16];
+            if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+                use std::io::Read;
+                let _ = f.read_exact(&mut buf);
+            }
+            buf[6] = 0x40 | (buf[6] & 0x0F);
+            buf[8] = 0x80 | (buf[8] & 0x3F);
+            let hex = format!(
+                "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+                buf[0],buf[1],buf[2],buf[3], buf[4],buf[5], buf[6],buf[7], buf[8],buf[9],
+                buf[10],buf[11],buf[12],buf[13],buf[14],buf[15]
+            );
+            Ok(Value::string(hex))
+        }
+        "signal.on" => {
+            Err(AError::runtime("signal.on is only available in the native CLI (./a build/run). Use ./build.sh first.", None))
+        }
         "hash.sha256" => {
             if let Value::String(s) = &args[0] {
                 use sha2::Digest;
@@ -1674,6 +1692,7 @@ pub fn is_builtin(name: &str) -> bool {
         "regex.replace" | "regex.replace_all" | "regex.split" | "regex.captures" |
         "spawn" | "await" | "await_all" | "parallel_map" | "parallel_each" | "timeout" |
         "time.now" | "time.sleep" | "hash.sha256" | "hash.md5" |
+        "uuid.v4" | "signal.on" |
         "compress.deflate" | "compress.inflate" | "compress.gzip" | "compress.gunzip"
     )
 }

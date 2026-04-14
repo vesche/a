@@ -325,6 +325,16 @@ impl Checker {
             ret: Type::Void,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("uuid.v4".into(), FnSig {
+            params: vec![],
+            ret: Type::Str,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("signal.on".into(), FnSig {
+            params: vec![("name".into(), Type::Str), ("handler".into(), Type::Unknown)],
+            ret: Type::Void,
+            effects: vec!["io".into()],
+        });
         self.fn_sigs.insert("http.serve".into(), FnSig {
             params: vec![("port".into(), Type::I64), ("handler".into(), Type::Unknown)],
             ret: Type::Void,

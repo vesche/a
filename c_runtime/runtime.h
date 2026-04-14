@@ -272,6 +272,13 @@ AValue a_compress_inflate(AValue data);
 AValue a_compress_gzip(AValue data);
 AValue a_compress_gunzip(AValue data);
 
+/* UUID */
+AValue a_uuid_v4(void);
+
+/* Signal handling */
+AValue a_signal_on(AValue name, AValue handler);
+void a_signal_check(void);
+
 /* Closures */
 AValue a_closure(AClosureFn fn, AValue env);
 AValue a_closure_call(AValue closure, int argc, ...);
