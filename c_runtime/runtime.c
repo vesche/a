@@ -9,6 +9,7 @@
 #include <math.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
 
@@ -1565,7 +1566,7 @@ AValue a_hash_md5(AValue data) {
 AValue a_uuid_v4(void) {
     unsigned char b[16];
     FILE* f = fopen("/dev/urandom", "rb");
-    if (f) { fread(b, 1, 16, f); fclose(f); }
+    if (f) { if (fread(b, 1, 16, f) < 16) { for (int i = 0; i < 16; i++) b[i] = (unsigned char)(rand() & 0xFF); } fclose(f); }
     else { for (int i = 0; i < 16; i++) b[i] = (unsigned char)(rand() & 0xFF); }
     b[6] = 0x40 | (b[6] & 0x0F);
     b[8] = 0x80 | (b[8] & 0x3F);
@@ -3097,7 +3098,7 @@ static void ws_base64_encode(const unsigned char* in, int len, char* out) {
 
 static void ws_random_bytes(unsigned char* buf, int n) {
     FILE* f = fopen("/dev/urandom", "rb");
-    if (f) { fread(buf, 1, n, f); fclose(f); }
+    if (f) { if ((int)fread(buf, 1, n, f) < n) { for (int i = 0; i < n; i++) buf[i] = (unsigned char)(rand() & 0xFF); } fclose(f); }
     else { for (int i = 0; i < n; i++) buf[i] = (unsigned char)(rand() & 0xFF); }
 }
 
