@@ -1,0 +1,203 @@
+; std/schema.a -- JSON Schema (draft-07 subset) validation
+use std.re
+
+fn _err(path: str, msg: str) {
+  if path == "" { ret Err(msg) }
+  ret Err(str.concat(path, str.concat(": ", msg)))
+}
+
+fn _type_matches(value, schema_type: str) -> bool {
+  let t = type_of(value)
+  if schema_type == "string" { ret t == "str" }
+  if schema_type == "integer" { ret t == "int" }
+  if schema_type == "number" { ret t == "int" || t == "float" }
+  if schema_type == "boolean" { ret t == "bool" }
+  if schema_type == "array" { ret t == "array" }
+  if schema_type == "object" { ret t == "map" }
+  if schema_type == "null" { ret t == "void" }
+  ret false
+}
+
+fn _validate_string(value, schema, path: str) {
+  let chars = str.chars(value)
+  let slen = len(chars)
+  if map.has(schema, "minLength") {
+    if slen < schema["minLength"] {
+      ret _err(path, str.concat("string length ", str.concat(to_str(slen), str.concat(" < minLength ", to_str(schema["minLength"])))))
+    }
+  }
+  if map.has(schema, "maxLength") {
+    if slen > schema["maxLength"] {
+      ret _err(path, str.concat("string length ", str.concat(to_str(slen), str.concat(" > maxLength ", to_str(schema["maxLength"])))))
+    }
+  }
+  if map.has(schema, "pattern") {
+    if !re.test(schema["pattern"], value) {
+      ret _err(path, str.concat("does not match pattern: ", schema["pattern"]))
+    }
+  }
+  ret Ok(value)
+}
+
+fn _validate_number(value, schema, path: str) {
+  if map.has(schema, "minimum") {
+    if value < schema["minimum"] {
+      ret _err(path, str.concat(to_str(value), str.concat(" < minimum ", to_str(schema["minimum"]))))
+    }
+  }
+  if map.has(schema, "maximum") {
+    if value > schema["maximum"] {
+      ret _err(path, str.concat(to_str(value), str.concat(" > maximum ", to_str(schema["maximum"]))))
+    }
+  }
+  ret Ok(value)
+}
+
+fn _validate_array(value, schema, path: str) {
+  let n = len(value)
+  if map.has(schema, "minItems") {
+    if n < schema["minItems"] {
+      ret _err(path, str.concat("array length ", str.concat(to_str(n), str.concat(" < minItems ", to_str(schema["minItems"])))))
+    }
+  }
+  if map.has(schema, "maxItems") {
+    if n > schema["maxItems"] {
+      ret _err(path, str.concat("array length ", str.concat(to_str(n), str.concat(" > maxItems ", to_str(schema["maxItems"])))))
+    }
+  }
+  if map.has(schema, "items") {
+    let item_schema = schema["items"]
+    let mut i = 0
+    while i < n {
+      let child_path = str.concat(path, str.concat("[", str.concat(to_str(i), "]")))
+      let r = _validate_at(value[i], item_schema, child_path)
+      if is_err(r) { ret r }
+      i = i + 1
+    }
+  }
+  ret Ok(value)
+}
+
+fn _validate_object(value, schema, path: str) {
+  if map.has(schema, "required") {
+    let req = schema["required"]
+    let mut i = 0
+    while i < len(req) {
+      if !map.has(value, req[i]) {
+        ret _err(path, str.concat("missing required property: ", req[i]))
+      }
+      i = i + 1
+    }
+  }
+  if map.has(schema, "properties") {
+    let props = schema["properties"]
+    let keys = map.keys(props)
+    let mut i = 0
+    while i < len(keys) {
+      let k = keys[i]
+      if map.has(value, k) {
+        let mut child_path = path
+        if child_path == "" {
+          child_path = k
+        } else {
+          child_path = str.concat(child_path, str.concat(".", k))
+        }
+        let r = _validate_at(value[k], props[k], child_path)
+        if is_err(r) { ret r }
+      }
+      i = i + 1
+    }
+  }
+  ret Ok(value)
+}
+
+fn _validate_at(value, schema, path: str) {
+  if type_of(schema) != "map" { ret Ok(value) }
+
+  if map.has(schema, "type") {
+    if !_type_matches(value, schema["type"]) {
+      ret _err(path, str.concat("expected type ", str.concat(schema["type"], str.concat(", got ", type_of(value)))))
+    }
+  }
+
+  if map.has(schema, "enum") {
+    let allowed = schema["enum"]
+    let mut found = false
+    let mut i = 0
+    while i < len(allowed) {
+      if to_str(value) == to_str(allowed[i]) { found = true }
+      i = i + 1
+    }
+    if !found {
+      ret _err(path, str.concat("value not in enum: ", to_str(value)))
+    }
+  }
+
+  let t = type_of(value)
+  if t == "str" {
+    let r = _validate_string(value, schema, path)
+    if is_err(r) { ret r }
+  }
+  if t == "int" || t == "float" {
+    let r = _validate_number(value, schema, path)
+    if is_err(r) { ret r }
+  }
+  if t == "array" {
+    let r = _validate_array(value, schema, path)
+    if is_err(r) { ret r }
+  }
+  if t == "map" {
+    let r = _validate_object(value, schema, path)
+    if is_err(r) { ret r }
+  }
+
+  ret Ok(value)
+}
+
+fn validate(value, schema) {
+  ret _validate_at(value, schema, "")
+}
+
+fn from_type(type_str: str) -> map {
+  if type_str == "str" { ret #{ "type": "string" } }
+  if type_str == "string" { ret #{ "type": "string" } }
+  if type_str == "int" { ret #{ "type": "integer" } }
+  if type_str == "integer" { ret #{ "type": "integer" } }
+  if type_str == "float" { ret #{ "type": "number" } }
+  if type_str == "number" { ret #{ "type": "number" } }
+  if type_str == "bool" { ret #{ "type": "boolean" } }
+  if type_str == "boolean" { ret #{ "type": "boolean" } }
+  if type_str == "array" { ret #{ "type": "array" } }
+  if type_str == "map" { ret #{ "type": "object" } }
+  if type_str == "object" { ret #{ "type": "object" } }
+  if type_str == "null" { ret #{ "type": "null" } }
+
+  ; Handle "{name: str, age: int}" style object type strings
+  let chars = str.chars(type_str)
+  let lbrace = from_code(123)
+  if len(chars) > 2 {
+    if chars[0] == lbrace {
+      let inner = str.slice(type_str, 1, len(chars) - 1)
+      let fields = str.split(inner, ",")
+      let mut props = #{}
+      let mut required = []
+      let mut i = 0
+      while i < len(fields) {
+        let field = str.trim(fields[i])
+        if field != "" {
+          let parts = str.split(field, ":")
+          if len(parts) == 2 {
+            let fname = str.trim(parts[0])
+            let ftype = str.trim(parts[1])
+            props = map.set(props, fname, from_type(ftype))
+            required = push(required, fname)
+          }
+        }
+        i = i + 1
+      }
+      ret #{ "type": "object", "properties": props, "required": required }
+    }
+  }
+
+  ret #{ "type": "any" }
+}

@@ -191,20 +191,12 @@ Common patterns that every production agent needs, extracted into reusable modul
 
 - Bump to `0.61.0`.
 
-### v0.62 -- Schema + Diff
+### v0.62 -- Schema + Diff [DONE]
 
-#### Deliverables
-
-- **`std/schema.a`** module:
-  - `schema.validate(value, schema)` -- JSON Schema (draft-07 subset) validation. Returns `Ok(value)` or `Err("path: message")`.
-  - `schema.from_type(type_str)` -- generate a JSON Schema from "a" type syntax (e.g., `"{name: str, age: int}"` -> schema map).
-  - Core types: `string`, `number`, `integer`, `boolean`, `array`, `object`. Keywords: `required`, `properties`, `items`, `enum`, `minimum`, `maximum`, `minLength`, `maxLength`, `pattern`.
-- **`std/diff.a`** module:
-  - `diff.text(a, b)` -- unified text diff (Myers algorithm), returns a string in unified diff format.
-  - `diff.patch(original, diff_str)` -- apply a unified diff to produce the patched text.
-  - `diff.lines(a, b)` -- returns structured diff as array of `#{ "op": "add"|"remove"|"keep", "line": "..." }`.
-- **Example: `examples/code_review.a`** -- diff two files with colored output.
-- Bump to `0.62.0`.
+- [x] `std/schema.a` -- `validate(value, schema)`, `from_type(type_str)` with type/string/number/array/object/enum keywords, pattern via `std.re`
+- [x] `std/diff.a` -- `text(a, b)`, `lines(a, b)`, `patch(original, diff_str)` using Myers algorithm
+- [x] `examples/code_review.a` -- diff two files with colored output
+- [x] `tests/native/test_schema.a`, `test_diff.a`
 
 ### v0.63 -- Process Management + Config
 
@@ -347,7 +339,7 @@ What v1.0 means:
 | **v0.59** | MCP Framework | `proc.*` builtins, `std/mcp.a` server + client, JSON-RPC 2.0 | **DONE** |
 | **v0.60** | Streaming | `http.stream*`, `ws.*`, `llm.stream()`, SSE parsing | **DONE** |
 | **v0.61** | Agent Stdlib | retry, batch, pipeline, timeout, rate_limit, uuid, logging, args, signals | **DONE** |
-| **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | Structured output, code review |
+| **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | **DONE** |
 | **v0.63** | Process + Config + Migrations | subprocess orchestration, layered config, db migrations | Real application infrastructure |
 | **v0.64** | Image Processing | stb_image, decode/encode/resize | Multimodal AI workflows |
 | **v0.65** | Package Manager | `a pkg`, semver, git-based registry | Reusable libraries |

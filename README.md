@@ -129,7 +129,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Signals** | `signal.on(name, handler)` -- register handlers for SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2 (native CLI only) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 24 modules:
+**Standard library** with 26 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -153,6 +153,8 @@ use std.agent                 # retry, batch, pipeline, timeout, rate_limit -- o
 use std.log                   # info, warn, error, debug, set_level -- structured JSON logging to stderr
 use std.uuid                  # v4() -- UUID generation
 use std.args                  # spec, flag, option, positional, parse -- declarative CLI argument parsing
+use std.schema                # validate(value, schema), from_type -- JSON Schema draft-07 validation
+use std.diff                  # text, lines, patch -- Myers algorithm unified diff, structured ops, patch
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -248,6 +250,7 @@ fn main() -> void {
 | `examples/mcp_server.a` | 33 | **MCP server** -- file search tool with tool + resource registration, JSON-RPC stdio |
 | `examples/mcp_client.a` | 55 | **MCP client** -- connects to any MCP server, lists tools, calls first tool |
 | `examples/cli_demo.a` | 27 | **CLI parsing** -- declarative argument parsing with flags, options, positionals, auto-help |
+| `examples/code_review.a` | 40 | **code review** -- diff two files with colored add/remove output using Myers algorithm |
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
@@ -261,10 +264,10 @@ fn main() -> void {
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
 | **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
-| **"a" source** | ~19,500 lines across 93 files |
-| **Standard library** | 24 modules, 400+ functions, ~8,700 lines |
-| **Test suites** | 30 suites + cgen test script, 510+ native tests, ~4,500 lines |
-| **Examples & tools** | 36 programs, ~6,200 lines |
+| **"a" source** | ~20,000 lines across 97 files |
+| **Standard library** | 26 modules, 430+ functions, ~9,100 lines |
+| **Test suites** | 32 suites + cgen test script, 530+ native tests, ~4,700 lines |
+| **Examples & tools** | 37 programs, ~6,300 lines |
 
 ## Editor support
 

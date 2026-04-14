@@ -1,0 +1,62 @@
+use std.schema
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail(str.concat("expected ", str.concat(to_str(b), str.concat(", got ", to_str(a)))))
+  }
+}
+
+fn main() {
+  ; --- type validation ---
+  assert(is_ok(schema.validate("hello", #{ "type": "string" })), "string valid")
+  assert(is_err(schema.validate(42, #{ "type": "string" })), "int not string")
+  assert(is_ok(schema.validate(42, #{ "type": "integer" })), "integer valid")
+  assert(is_ok(schema.validate(3.14, #{ "type": "number" })), "float is number")
+  assert(is_ok(schema.validate(42, #{ "type": "number" })), "int is number")
+  assert(is_err(schema.validate("x", #{ "type": "number" })), "str not number")
+  assert(is_ok(schema.validate(true, #{ "type": "boolean" })), "bool valid")
+  assert(is_ok(schema.validate([1, 2], #{ "type": "array" })), "array valid")
+  assert(is_ok(schema.validate(#{ "a": 1 }, #{ "type": "object" })), "object valid")
+
+  ; --- string constraints ---
+  assert(is_err(schema.validate("ab", #{ "type": "string", "minLength": 3 })), "minLength fail")
+  assert(is_ok(schema.validate("abc", #{ "type": "string", "minLength": 3 })), "minLength pass")
+  assert(is_ok(schema.validate("abc", #{ "type": "string", "maxLength": 5 })), "maxLength pass")
+  assert(is_err(schema.validate("abcdef", #{ "type": "string", "maxLength": 5 })), "maxLength fail")
+
+  ; --- numeric constraints ---
+  assert(is_ok(schema.validate(5, #{ "type": "integer", "minimum": 1, "maximum": 10 })), "range ok")
+  assert(is_err(schema.validate(0, #{ "type": "integer", "minimum": 1 })), "min fail")
+  assert(is_err(schema.validate(11, #{ "type": "integer", "maximum": 10 })), "max fail")
+
+  ; --- enum ---
+  assert(is_ok(schema.validate("a", #{ "enum": ["a", "b", "c"] })), "enum ok")
+  assert(is_err(schema.validate("d", #{ "enum": ["a", "b", "c"] })), "enum fail")
+
+  ; --- array constraints ---
+  assert(is_err(schema.validate([], #{ "type": "array", "minItems": 1 })), "arr minItems fail")
+  assert(is_ok(schema.validate([1, 2], #{ "type": "array", "maxItems": 3 })), "arr maxItems ok")
+  assert(is_err(schema.validate([1, 2, 3, 4], #{ "type": "array", "maxItems": 3 })), "arr maxItems fail")
+
+  ; --- object required ---
+  let obj_schema = #{
+    "type": "object",
+    "required": ["name"]
+  }
+  assert(is_ok(schema.validate(#{ "name": "Alice" }, obj_schema)), "obj required ok")
+  assert(is_err(schema.validate(#{ "age": 30 }, obj_schema)), "missing required")
+
+  ; --- from_type ---
+  let s1 = schema.from_type("str")
+  assert_eq(s1["type"], "string")
+  let s2 = schema.from_type("int")
+  assert_eq(s2["type"], "integer")
+  let s3 = schema.from_type("bool")
+  assert_eq(s3["type"], "boolean")
+
+  println("all schema tests passed")
+}

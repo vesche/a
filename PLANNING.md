@@ -2327,3 +2327,45 @@ Adds production-ready operational primitives: two new runtime builtins (`uuid.v4
 | `tests/native/test_args.a` | NEW -- Tests spec building, flag/option lookup, parse defaults |
 | `Cargo.toml` | Version bump to 0.61.0 |
 | `README.md` | Added uuid, signal, agent, log, uuid, args to builtins/stdlib tables; updated counts |
+
+---
+
+## v0.62 -- Schema + Diff
+
+Adds two new pure "a" stdlib modules: JSON Schema validation and Myers-algorithm text diff with patch support. No new runtime builtins needed -- both modules are implemented entirely in "a".
+
+### `std/schema.a` -- JSON Schema (draft-07 subset)
+
+**`schema.validate(value, schema)`** -- Validates a value against a JSON Schema map. Returns `Ok(value)` on success, `Err("path: message")` on first validation failure. Supports recursive object/array validation with dotted error paths.
+
+Supported keywords:
+- **Type**: `"type"` -- `"string"`, `"number"`, `"integer"`, `"boolean"`, `"array"`, `"object"`, `"null"`
+- **String**: `"minLength"`, `"maxLength"`, `"pattern"` (via `std.re` for native compat)
+- **Numeric**: `"minimum"`, `"maximum"`
+- **Array**: `"items"` (schema for all elements), `"minItems"`, `"maxItems"`
+- **Object**: `"properties"` (sub-schemas per key), `"required"` (array of required keys)
+- **Enum**: `"enum"` (array of allowed values)
+
+**`schema.from_type(type_str)`** -- Converts "a"-style type strings to schema maps. Handles simple types (`"str"` -> `{"type":"string"}`) and structured types (`"{name: str, age: int}"` -> object schema with properties and required).
+
+### `std/diff.a` -- Myers text diff
+
+**`diff.text(a, b)`** -- Returns a unified diff string with `--- a`, `+++ b` headers, `@@ -start,count +start,count @@` hunk headers, and `+`/`-`/` ` prefixed lines.
+
+**`diff.lines(a, b)`** -- Returns a structured array of `#{"op": "add"|"remove"|"keep", "line": "..."}` maps representing the minimum edit script.
+
+**`diff.patch(original, diff_str)`** -- Applies a unified diff to the original text, producing the patched result. Supports round-trip: `diff.patch(a, diff.text(a, b)) == b`.
+
+Implementation uses the Myers shortest edit script algorithm with O(ND) time complexity, V-array frontier tracking, and trace-based backtracking to recover the edit script. Array operations use a helper `_arr_set` for immutable-style V updates.
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `std/schema.a` | NEW -- JSON Schema draft-07 validation (~200 lines) |
+| `std/diff.a` | NEW -- Myers diff algorithm with unified format and patch (~300 lines) |
+| `examples/code_review.a` | NEW -- Diff two files with ANSI-colored output |
+| `tests/native/test_schema.a` | NEW -- Type, string, numeric, enum, array, object, from_type tests |
+| `tests/native/test_diff.a` | NEW -- Identical, add, remove, empty, unified format, patch round-trip |
+| `Cargo.toml` | Version bump to 0.62.0 |
+| `README.md` | Added schema, diff to stdlib table; updated counts (26 modules, 430+ functions) |

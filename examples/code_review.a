@@ -1,0 +1,38 @@
+; code_review.a -- Diff two files with colored output
+use std.diff
+use std.cli
+
+fn main() {
+  let a = args()
+  if len(a) < 2 {
+    eprintln("usage: a run examples/code_review.a -- <file_a> <file_b>")
+    exit(1)
+  }
+
+  let text_a = io.read_file(a[0])
+  let text_b = io.read_file(a[1])
+  let ops = diff.lines(text_a, text_b)
+
+  let mut adds = 0
+  let mut removes = 0
+  let mut i = 0
+  while i < len(ops) {
+    let op = ops[i]["op"]
+    let line = ops[i]["line"]
+    if op == "add" {
+      println(cli.green(str.concat("+ ", line)))
+      adds = adds + 1
+    }
+    if op == "remove" {
+      println(cli.red(str.concat("- ", line)))
+      removes = removes + 1
+    }
+    if op == "keep" {
+      println(str.concat("  ", line))
+    }
+    i = i + 1
+  }
+
+  println("")
+  println(str.concat(cli.green(str.concat("+", to_str(adds))), str.concat(" / ", cli.red(str.concat("-", to_str(removes))))))
+}

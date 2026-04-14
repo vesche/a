@@ -1,0 +1,64 @@
+use std.diff
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail(str.concat("expected ", str.concat(to_str(b), str.concat(", got ", to_str(a)))))
+  }
+}
+
+fn main() {
+  ; --- identical texts ---
+  let ops1 = diff.lines("hello\nworld", "hello\nworld")
+  assert_eq(len(ops1), 2)
+  assert_eq(ops1[0]["op"], "keep")
+  assert_eq(ops1[1]["op"], "keep")
+
+  ; --- simple addition ---
+  let ops2 = diff.lines("a\nb", "a\nb\nc")
+  assert_eq(len(ops2), 3)
+  assert_eq(ops2[0]["op"], "keep")
+  assert_eq(ops2[1]["op"], "keep")
+  assert_eq(ops2[2]["op"], "add")
+  assert_eq(ops2[2]["line"], "c")
+
+  ; --- simple removal ---
+  let ops3 = diff.lines("a\nb\nc", "a\nc")
+  assert_eq(len(ops3), 3)
+  assert_eq(ops3[0]["op"], "keep")
+  assert_eq(ops3[1]["op"], "remove")
+  assert_eq(ops3[1]["line"], "b")
+  assert_eq(ops3[2]["op"], "keep")
+
+  ; --- empty to content ---
+  let ops4 = diff.lines("", "x\ny")
+  assert_eq(len(ops4), 2)
+  assert_eq(ops4[0]["op"], "add")
+  assert_eq(ops4[1]["op"], "add")
+
+  ; --- content to empty ---
+  let ops5 = diff.lines("a\nb", "")
+  assert_eq(len(ops5), 2)
+  assert_eq(ops5[0]["op"], "remove")
+  assert_eq(ops5[1]["op"], "remove")
+
+  ; --- unified text format ---
+  let d = diff.text("line1\nline2", "line1\nchanged")
+  assert(str.contains(d, "--- a"), "has --- header")
+  assert(str.contains(d, "+++ b"), "has +++ header")
+  assert(str.contains(d, "@@"), "has hunk header")
+  assert(str.contains(d, "-line2"), "has removal")
+  assert(str.contains(d, "+changed"), "has addition")
+
+  ; --- patch round-trip ---
+  let original = "alpha\nbeta\ngamma\ndelta"
+  let modified = "alpha\nBETA\ngamma\ndelta\nepsilon"
+  let diff_str = diff.text(original, modified)
+  let patched = diff.patch(original, diff_str)
+  assert_eq(patched, modified)
+
+  println("all diff tests passed")
+}
