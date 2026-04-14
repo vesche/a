@@ -1,0 +1,261 @@
+; std/pkg.a -- Package manager: manifest, dependency resolution, git fetch
+
+use std.toml
+use std.semver
+use std.path
+
+fn _manifest_path(dir: str) -> str {
+  ret path.join(dir, "pkg.toml")
+}
+
+fn _lock_path(dir: str) -> str {
+  ret path.join(dir, "pkg.lock")
+}
+
+fn _modules_dir(dir: str) -> str {
+  ret path.join(dir, "a_modules")
+}
+
+fn parse_source(source: str) -> map {
+  let at = str.find(source, "@")
+  let mut repo_part = source
+  let mut constraint = ""
+  if at >= 0 {
+    repo_part = str.slice(source, 0, at)
+    constraint = str.slice(source, at + 1, len(source))
+  }
+  let colon = str.find(repo_part, ":")
+  let mut host = "github"
+  let mut repo = repo_part
+  if colon >= 0 {
+    host = str.slice(repo_part, 0, colon)
+    repo = str.slice(repo_part, colon + 1, len(repo_part))
+  }
+  ret #{"host": host, "repo": repo, "constraint": constraint}
+}
+
+fn _git_url(source: map) -> str {
+  let host = map.get(source, "host")
+  let repo = map.get(source, "repo")
+  if host == "github" {
+    ret "https://github.com/" + repo + ".git"
+  }
+  if host == "gitlab" {
+    ret "https://gitlab.com/" + repo + ".git"
+  }
+  ret "https://" + host + "/" + repo + ".git"
+}
+
+fn _fetch_tags(url: str) -> [str] {
+  let result = exec("git ls-remote --tags " + url + " 2>/dev/null")
+  if map.get(result, "code") != 0 { ret [] }
+  let lines = str.lines(map.get(result, "stdout"))
+  let mut tags = []
+  let mut i = 0
+  while i < len(lines) {
+    let line = str.trim(lines[i])
+    i = i + 1
+    if len(line) == 0 { continue }
+    let tab = str.find(line, "refs/tags/")
+    if tab < 0 { continue }
+    let tag = str.slice(line, tab + 10, len(line))
+    let peeled = "^" + from_code(123) + from_code(125)
+    if str.ends_with(tag, peeled) { continue }
+    if str.starts_with(tag, "v") {
+      tags = push(tags, str.slice(tag, 1, len(tag)))
+    } else {
+      tags = push(tags, tag)
+    }
+  }
+  ret tags
+}
+
+fn _clone_at_tag(url: str, tag: str, dest: str) -> bool {
+  let tag_ref = "v" + tag
+  let r = exec("git clone --depth 1 --branch " + tag_ref + " " + url + " " + dest + " 2>/dev/null")
+  if map.get(r, "code") == 0 { ret true }
+  let r2 = exec("git clone --depth 1 --branch " + tag + " " + url + " " + dest + " 2>/dev/null")
+  ret map.get(r2, "code") == 0
+}
+
+fn _get_commit(dest: str) -> str {
+  let r = exec("git -C " + dest + " rev-parse HEAD 2>/dev/null")
+  if map.get(r, "code") == 0 {
+    ret str.trim(map.get(r, "stdout"))
+  }
+  ret ""
+}
+
+fn _copy_a_files(src_dir: str, dst_dir: str) -> void {
+  if !fs.exists(dst_dir) { fs.mkdir(dst_dir) }
+  let entries = fs.ls(src_dir)
+  let mut i = 0
+  while i < len(entries) {
+    let name = map.get(entries[i], "name")
+    let is_dir = map.get(entries[i], "is_dir")
+    let src_path = path.join(src_dir, name)
+    let dst_path = path.join(dst_dir, name)
+    if is_dir {
+      if name != ".git" {
+        _copy_a_files(src_path, dst_path)
+      }
+    } else {
+      if str.ends_with(name, ".a") {
+        let content = io.read_file(src_path)
+        io.write_file(dst_path, content)
+      }
+    }
+    i = i + 1
+  }
+}
+
+fn init(dir: str) -> void {
+  let name = path.basename(dir)
+  let text = "[package]\nname = \"" + name + "\"\nversion = \"0.1.0\"\n\n[deps]\n"
+  io.write_file(_manifest_path(dir), text)
+}
+
+fn read_manifest(dir: str) -> map {
+  let text = io.read_file(_manifest_path(dir))
+  ret toml.parse(text)
+}
+
+fn write_manifest(dir: str, manifest: map) -> void {
+  let pkg = map.get(manifest, "package")
+  let mut text = "[package]\n"
+  text = text + "name = \"" + map.get(pkg, "name") + "\"\n"
+  text = text + "version = \"" + map.get(pkg, "version") + "\"\n"
+  text = text + "\n[deps]\n"
+  let deps = map.get(manifest, "deps")
+  if type_of(deps) == "map" {
+    let keys = map.keys(deps)
+    let mut i = 0
+    while i < len(keys) {
+      let k = keys[i]
+      text = text + k + " = \"" + map.get(deps, k) + "\"\n"
+      i = i + 1
+    }
+  }
+  io.write_file(_manifest_path(dir), text)
+}
+
+fn add_dep(dir: str, name: str, source: str) -> void {
+  let manifest = read_manifest(dir)
+  let mut deps = map.get(manifest, "deps")
+  if type_of(deps) != "map" { deps = map.from_entries([]) }
+  deps = map.set(deps, name, source)
+  let updated = map.set(manifest, "deps", deps)
+  write_manifest(dir, updated)
+  install(dir)
+}
+
+fn _read_lock(dir: str) -> [map] {
+  let lp = _lock_path(dir)
+  if !fs.exists(lp) { ret [] }
+  let text = io.read_file(lp)
+  let parsed = toml.parse(text)
+  let pkgs = map.get(parsed, "package")
+  if type_of(pkgs) == "array" { ret pkgs }
+  ret []
+}
+
+fn _write_lock(dir: str, packages) -> void {
+  let mut text = ""
+  let mut i = 0
+  while i < len(packages) {
+    let p = packages[i]
+    text = text + "[[package]]\n"
+    text = text + "name = \"" + map.get(p, "name") + "\"\n"
+    text = text + "version = \"" + map.get(p, "version") + "\"\n"
+    text = text + "source = \"" + map.get(p, "source") + "\"\n"
+    text = text + "commit = \"" + map.get(p, "commit") + "\"\n\n"
+    i = i + 1
+  }
+  io.write_file(_lock_path(dir), text)
+}
+
+fn _find_locked(lock_entries, name: str) -> map {
+  let mut i = 0
+  while i < len(lock_entries) {
+    if map.get(lock_entries[i], "name") == name {
+      ret lock_entries[i]
+    }
+    i = i + 1
+  }
+  ret map.from_entries([])
+}
+
+fn install(dir: str) -> map {
+  let manifest = read_manifest(dir)
+  let deps = map.get(manifest, "deps")
+  if type_of(deps) != "map" { ret #{"installed": 0} }
+  let dep_keys = map.keys(deps)
+  let modules = _modules_dir(dir)
+  if !fs.exists(modules) { fs.mkdir(modules) }
+  let lock_entries = _read_lock(dir)
+  let mut new_lock = []
+  let mut installed = 0
+  let mut i = 0
+  while i < len(dep_keys) {
+    let name = dep_keys[i]
+    let source_str = map.get(deps, name)
+    let source = parse_source(source_str)
+    let constraint = map.get(source, "constraint")
+    let url = _git_url(source)
+    let locked = _find_locked(lock_entries, name)
+    let dest = path.join(modules, name)
+
+    if map.has(locked, "version") {
+      let locked_ver = map.get(locked, "version")
+      if len(constraint) == 0 || semver.satisfies(locked_ver, constraint) {
+        if fs.exists(dest) {
+          new_lock = push(new_lock, locked)
+          i = i + 1
+          continue
+        }
+      }
+    }
+
+    let tags = _fetch_tags(url)
+    let mut version = ""
+    if len(constraint) > 0 {
+      version = semver.best_match(tags, constraint)
+    } else {
+      if len(tags) > 0 {
+        version = tags[len(tags) - 1]
+      }
+    }
+
+    if len(version) == 0 {
+      println("  warning: no matching version for " + name + " (" + constraint + ")")
+      i = i + 1
+      continue
+    }
+
+    let tmp = "/tmp/a_pkg_" + name
+    exec("rm -rf " + tmp)
+    let ok = _clone_at_tag(url, version, tmp)
+    if !ok {
+      println("  warning: failed to clone " + name + "@" + version)
+      i = i + 1
+      continue
+    }
+
+    let commit = _get_commit(tmp)
+    if fs.exists(dest) { exec("rm -rf " + dest) }
+    _copy_a_files(tmp, dest)
+    exec("rm -rf " + tmp)
+
+    new_lock = push(new_lock, #{
+      "name": name,
+      "version": version,
+      "source": map.get(source, "host") + ":" + map.get(source, "repo"),
+      "commit": commit
+    })
+    installed = installed + 1
+    println("  installed " + name + "@" + version)
+    i = i + 1
+  }
+  _write_lock(dir, new_lock)
+  ret #{"installed": installed}
+}

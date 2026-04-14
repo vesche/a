@@ -2468,3 +2468,38 @@ All 5 build paths updated to include `stb_impl.c`:
 | `tests/native/test_image.a` | NEW -- self-contained PPM creation, load, encode, decode, resize, pixels, save round-trip |
 | `Cargo.toml` | Version bump to 0.64.0 |
 | `README.md` | Added Image row to builtins table; updated counts (145+ builtins); added example |
+
+---
+
+## v0.65 -- Package Manager
+
+**Theme:** First-class package management with semver, TOML manifests, git-based dependency fetching, and `a_modules/` resolution.
+
+### New modules
+- **`std/semver.a`** (~85 lines) -- semantic version parsing, comparison, constraint matching (caret, tilde, comparison operators, exact), best-match selection
+- **`std/pkg.a`** (~190 lines) -- package manager core: `pkg.toml` manifest read/write, source string parsing (`github:user/repo@^1.0`), git-based dependency resolution and installation, lockfile (`pkg.lock`) management, `a_modules/` directory population
+
+### CLI commands
+- `a pkg init` -- create `pkg.toml` in current directory
+- `a pkg add <name> <source>` -- add dependency and install
+- `a pkg install` -- install all dependencies from manifest
+
+### Module resolution
+- **Rust VM** (`interpreter.rs`, `compiler.rs`): walk up from `source_dir` checking `a_modules/` as a third fallback after `source_dir` and `cwd`
+- **Native cgen** (`cgen.a`): check `a_modules/{path}.a` as fallback after direct path
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/semver.a` | NEW -- parse, compare, satisfies, format, best_match |
+| `std/pkg.a` | NEW -- init, read_manifest, write_manifest, add_dep, install, parse_source |
+| `src/cli.a` | Added `use std.pkg`, `cmd_pkg_init/add/install`, dispatch for `a pkg` subcommands, updated `_usage()` |
+| `src/interpreter.rs` | Added `a_modules/` walk-up search in `load_module` |
+| `src/compiler.rs` | Added `a_modules/` walk-up search in `load_module` |
+| `std/compiler/cgen.a` | Updated `_use_path_to_file` to check `a_modules/` fallback |
+| `examples/pkg_demo.a` | NEW -- init project, parse source strings, semver demo |
+| `tests/native/test_semver.a` | NEW -- parse, format, compare, caret/tilde/comparison/exact constraints, best_match |
+| `tests/native/test_pkg.a` | NEW -- parse_source, init, read_manifest, add_dep round-trip |
+| `Cargo.toml` | Version bump to 0.65.0 |
+| `README.md` | Added semver + pkg to stdlib list; updated counts (30 modules); added pkg_demo example |

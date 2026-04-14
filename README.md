@@ -130,7 +130,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Image** | `image.load(path)`, `image.decode(bytes)`, `image.encode(image, fmt)`, `image.save(image, path)`, `image.width`, `image.height`, `image.resize(image, w, h)`, `image.pixels(image)` -- PNG/JPEG/BMP/GIF decode, PNG/BMP/JPEG encode, bilinear resize (native CLI only, via bundled stb_image) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 28 modules:
+**Standard library** with 30 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -158,6 +158,8 @@ use std.schema                # validate(value, schema), from_type -- JSON Schem
 use std.diff                  # text, lines, patch -- Myers algorithm unified diff, structured ops, patch
 use std.config                # load, from_env, dotenv, merge, require -- layered configuration loading
 use std.migrate               # run, status, create -- SQLite migration runner
+use std.semver                # parse, compare, satisfies, format, best_match -- semantic versioning
+use std.pkg                   # init, add_dep, install, read_manifest -- package manager
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -180,7 +182,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 145+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~9,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 145+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -257,6 +259,7 @@ fn main() -> void {
 | `examples/config_demo.a` | 38 | **config loading** -- TOML/dotenv/env-prefix config with deep merge and required keys |
 | `examples/migrate_demo.a` | 35 | **DB migrations** -- SQLite migration runner with create, run, status, idempotent re-run |
 | `examples/image_demo.a` | 50 | **image processing** -- create gradient, resize, save PNG, extract pixel data, encode/decode in memory |
+| `examples/pkg_demo.a` | 40 | **package manager** -- init project, parse source strings, semver constraint matching |
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
@@ -270,10 +273,10 @@ fn main() -> void {
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
 | **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
-| **"a" source** | ~20,300 lines across 103 files |
-| **Standard library** | 28 modules, 450+ functions, ~9,300 lines |
-| **Test suites** | 35 suites + cgen test script, 560+ native tests, ~5,000 lines |
-| **Examples & tools** | 37 programs, ~6,300 lines |
+| **"a" source** | ~20,700 lines across 105 files |
+| **Standard library** | 30 modules, 470+ functions, ~9,600 lines |
+| **Test suites** | 37 suites + cgen test script, 590+ native tests, ~5,100 lines |
+| **Examples & tools** | 38 programs, ~6,400 lines |
 
 ## Editor support
 

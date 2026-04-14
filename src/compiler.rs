@@ -130,6 +130,19 @@ impl Compiler {
             }
         }
 
+        if !file_path.exists() {
+            let mut search = self.source_dir.clone();
+            loop {
+                let mut mp = search.join("a_modules").join(&rel_path);
+                mp.set_extension("a");
+                if mp.exists() {
+                    file_path = mp;
+                    break;
+                }
+                if !search.pop() { break; }
+            }
+        }
+
         let canonical = file_path.canonicalize().unwrap_or_else(|_| file_path.clone());
         if self.loaded_modules.contains(&canonical) { return; }
         self.loaded_modules.insert(canonical);

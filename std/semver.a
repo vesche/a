@@ -1,0 +1,87 @@
+; std/semver.a -- Semantic versioning: parse, compare, satisfies
+
+fn parse(s: str) -> map {
+  let mut v = s
+  if str.starts_with(v, "v") { v = str.slice(v, 1, len(v)) }
+  let parts = str.split(v, ".")
+  let major = int(parts[0])
+  let minor = 0
+  if len(parts) > 1 { minor = int(parts[1]) }
+  let patch = 0
+  if len(parts) > 2 { patch = int(parts[2]) }
+  ret #{"major": major, "minor": minor, "patch": patch}
+}
+
+fn format(v: map) -> str {
+  ret to_str(map.get(v, "major")) + "." + to_str(map.get(v, "minor")) + "." + to_str(map.get(v, "patch"))
+}
+
+fn compare(a: map, b: map) -> int {
+  let am = map.get(a, "major")
+  let bm = map.get(b, "major")
+  if am < bm { ret -1 }
+  if am > bm { ret 1 }
+  let ai = map.get(a, "minor")
+  let bi = map.get(b, "minor")
+  if ai < bi { ret -1 }
+  if ai > bi { ret 1 }
+  let ap = map.get(a, "patch")
+  let bp = map.get(b, "patch")
+  if ap < bp { ret -1 }
+  if ap > bp { ret 1 }
+  ret 0
+}
+
+fn _gte(v: map, min: map) -> bool { ret compare(v, min) >= 0 }
+fn _lt(v: map, max: map) -> bool { ret compare(v, max) < 0 }
+
+fn satisfies(version: str, constraint: str) -> bool {
+  let v = parse(version)
+  if str.starts_with(constraint, "^") {
+    let min = parse(str.slice(constraint, 1, len(constraint)))
+    let max = #{"major": map.get(min, "major") + 1, "minor": 0, "patch": 0}
+    ret _gte(v, min) && _lt(v, max)
+  }
+  if str.starts_with(constraint, "~") {
+    let min = parse(str.slice(constraint, 1, len(constraint)))
+    let max = #{"major": map.get(min, "major"), "minor": map.get(min, "minor") + 1, "patch": 0}
+    ret _gte(v, min) && _lt(v, max)
+  }
+  if str.starts_with(constraint, ">=") {
+    let min = parse(str.trim(str.slice(constraint, 2, len(constraint))))
+    ret _gte(v, min)
+  }
+  if str.starts_with(constraint, ">") {
+    let min = parse(str.trim(str.slice(constraint, 1, len(constraint))))
+    ret compare(v, min) > 0
+  }
+  if str.starts_with(constraint, "<=") {
+    let max = parse(str.trim(str.slice(constraint, 2, len(constraint))))
+    ret compare(v, max) <= 0
+  }
+  if str.starts_with(constraint, "<") {
+    let max = parse(str.trim(str.slice(constraint, 1, len(constraint))))
+    ret _lt(v, max)
+  }
+  ; Exact match
+  let target = parse(constraint)
+  ret compare(v, target) == 0
+}
+
+fn best_match(versions, constraint: str) -> str {
+  let mut best = ""
+  let mut best_v = #{"major": -1, "minor": -1, "patch": -1}
+  let mut i = 0
+  while i < len(versions) {
+    let vs = versions[i]
+    if satisfies(vs, constraint) {
+      let v = parse(vs)
+      if compare(v, best_v) > 0 {
+        best = vs
+        best_v = v
+      }
+    }
+    i = i + 1
+  }
+  ret best
+}

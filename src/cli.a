@@ -2,6 +2,7 @@ use std.compiler.cgen
 use std.compiler.parser
 use std.path
 use std.cli
+use std.pkg
 
 fn _die(msg) {
   eprintln(cli.red(str.concat("error: ", msg)))
@@ -273,6 +274,23 @@ fn cmd_lsp() {
   eprintln("configure your editor to run ./a-lsp as the language server for *.a files")
 }
 
+fn cmd_pkg_init() {
+  let dir = fs.cwd()
+  pkg.init(dir)
+  println("created pkg.toml in " + dir)
+}
+
+fn cmd_pkg_add(name: str, source: str) {
+  let dir = fs.cwd()
+  pkg.add_dep(dir, name, source)
+}
+
+fn cmd_pkg_install() {
+  let dir = fs.cwd()
+  let result = pkg.install(dir)
+  println("done (" + to_str(map.get(result, "installed")) + " packages installed)")
+}
+
 fn _usage() {
   eprintln("a -- the a language native toolchain")
   eprintln("")
@@ -284,6 +302,9 @@ fn _usage() {
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a cache clean              clear the compilation cache")
+  eprintln("  a pkg init                 create pkg.toml in current directory")
+  eprintln("  a pkg add <name> <source>  add a dependency")
+  eprintln("  a pkg install              install all dependencies")
   eprintln("")
   eprintln("  a run and a build expect c_runtime/ in the current directory.")
   eprintln("  shebang: #!/usr/bin/env a run")
@@ -357,6 +378,25 @@ fn main() {
       }
     }
     cmd_eval(argv[1], extra)
+    ret
+  }
+
+  if subcmd == "pkg" {
+    if len(argv) < 2 { _die("usage: a pkg <init|add|install>") }
+    if argv[1] == "init" {
+      cmd_pkg_init()
+      ret
+    }
+    if argv[1] == "add" {
+      if len(argv) < 4 { _die("usage: a pkg add <name> <source>") }
+      cmd_pkg_add(argv[2], argv[3])
+      ret
+    }
+    if argv[1] == "install" {
+      cmd_pkg_install()
+      ret
+    }
+    _die("usage: a pkg <init|add|install>")
     ret
   }
 

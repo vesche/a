@@ -1606,7 +1606,11 @@ fn _emit_fwd_decl(name, params) -> str {
 ; --- Module loading ---
 
 fn _use_path_to_file(path_arr) -> str {
-  ret str.concat(str.join(path_arr, "/"), ".a")
+  let rel = str.concat(str.join(path_arr, "/"), ".a")
+  if fs.exists(rel) { ret rel }
+  let mod_path = str.concat("a_modules/", rel)
+  if fs.exists(mod_path) { ret mod_path }
+  ret rel
 }
 
 fn _use_path_short_name(path_arr) -> str {

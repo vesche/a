@@ -1,0 +1,39 @@
+; examples/pkg_demo.a -- Package manager demo
+
+use std.pkg
+use std.semver
+
+fn main() {
+  println("=== Package Manager Demo ===")
+
+  ; Initialize a project
+  let dir = "/tmp/a_pkg_demo"
+  exec("rm -rf " + dir)
+  fs.mkdir(dir)
+  pkg.init(dir)
+  println("created project in " + dir)
+
+  ; Read back the manifest
+  let manifest = pkg.read_manifest(dir)
+  let info = map.get(manifest, "package")
+  println("  name:    " + map.get(info, "name"))
+  println("  version: " + map.get(info, "version"))
+
+  ; Parse a source string
+  let src = pkg.parse_source("github:user/a-utils@^1.0")
+  println("\nparsed source:")
+  println("  host:       " + map.get(src, "host"))
+  println("  repo:       " + map.get(src, "repo"))
+  println("  constraint: " + map.get(src, "constraint"))
+
+  ; Semver demo
+  println("\nsemver:")
+  let v = semver.parse("2.4.1")
+  println("  parsed:  " + semver.format(v))
+  println("  ^2.0:    " + to_str(semver.satisfies("2.4.1", "^2.0")))
+  println("  ~2.4:    " + to_str(semver.satisfies("2.4.1", "~2.4")))
+  println("  >=3.0.0: " + to_str(semver.satisfies("2.4.1", ">=3.0.0")))
+
+  exec("rm -rf " + dir)
+  println("\ndone")
+}

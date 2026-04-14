@@ -226,17 +226,18 @@ Common patterns that every production agent needs, extracted into reusable modul
 
 With the language capable enough for production use, build the ecosystem and complete the toolchain.
 
-### v0.65 -- Package Manager
+### v0.65 -- Package Manager [DONE]
 
 #### Deliverables
 
-- **`a pkg init`** -- create `pkg.a` manifest (name, version, deps as a map literal).
-- **`a pkg add <name>`** -- add a dependency, write `pkg.lock`.
-- **`a pkg install`** -- resolve semver, fetch from git repos, store in `a_modules/`.
-- **`use` resolution**: when `a_modules/` exists, resolve imports from it before the stdlib.
-- **Git-based registry**: `"deps": #{"router": "github:user/repo@v1.0"}`.
-- **`a pkg publish`** -- push to a central registry (later iteration).
-- Bump to `0.65.0`.
+- [x] **`std/semver.a`** -- parse, compare, satisfies (caret/tilde/comparison/exact), format, best_match.
+- [x] **`std/pkg.a`** -- manifest read/write (TOML), source parsing (`github:user/repo@^1.0`), git fetch, `a_modules/` population, lockfile.
+- [x] **`a pkg init`** -- create `pkg.toml` manifest (name, version, empty deps).
+- [x] **`a pkg add <name> <source>`** -- add a dependency, install.
+- [x] **`a pkg install`** -- resolve semver, fetch from git repos, store in `a_modules/`, write `pkg.lock`.
+- [x] **`use` resolution**: `a_modules/` fallback in Rust VM (interpreter + compiler) and native cgen.
+- [x] **Git-based registry**: `"deps": #{"router": "github:user/repo@v1.0"}` in `pkg.toml`.
+- [x] Bump to `0.65.0`.
 
 ### v0.66 -- Native Toolchain Completion
 
@@ -318,7 +319,7 @@ What v1.0 means:
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | **DONE** |
 | **v0.63** | Process + Config + Migrations | proc.wait, proc.is_running, std.config, std.migrate | **DONE** |
 | **v0.64** | Image Processing | stb_image/stb_image_write, 8 image builtins, bilinear resize | **DONE** |
-| **v0.65** | Package Manager | `a pkg`, semver, git-based registry | Reusable libraries |
+| **v0.65** | Package Manager | `a pkg`, semver, git-based registry | **DONE** |
 | **v0.66** | Native Toolchain | fmt/check/ast/repl in "a", enhanced LSP | Full self-sufficiency, Rust no longer needed |
 | **v0.67** | Native Concurrency | spawn/await/parallel_map in C path | Fast parallel native execution |
 | **v0.68** | Self-Improvement | codegen, refactor, sandbox execution | The language extends itself |

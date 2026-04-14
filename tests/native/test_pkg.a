@@ -1,0 +1,45 @@
+; tests/native/test_pkg.a
+
+use std.pkg
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail("FAIL: expected " + to_str(b) + ", got " + to_str(a))
+  }
+}
+
+fn main() {
+  ; parse_source
+  let s1 = pkg.parse_source("github:user/a-router@^1.0")
+  assert_eq(map.get(s1, "host"), "github")
+  assert_eq(map.get(s1, "repo"), "user/a-router")
+  assert_eq(map.get(s1, "constraint"), "^1.0")
+
+  let s2 = pkg.parse_source("gitlab:org/lib@~2.1")
+  assert_eq(map.get(s2, "host"), "gitlab")
+  assert_eq(map.get(s2, "repo"), "org/lib")
+  assert_eq(map.get(s2, "constraint"), "~2.1")
+
+  let s3 = pkg.parse_source("github:user/repo")
+  assert_eq(map.get(s3, "constraint"), "")
+
+  ; init + read_manifest
+  let dir = "/tmp/a_test_pkg_native"
+  exec("rm -rf " + dir)
+  fs.mkdir(dir)
+  pkg.init(dir)
+
+  let m = pkg.read_manifest(dir)
+  let info = map.get(m, "package")
+  assert_eq(map.get(info, "name"), "a_test_pkg_native")
+  assert_eq(map.get(info, "version"), "0.1.0")
+
+  ; add_dep + re-read
+  pkg.add_dep(dir, "mylib", "github:test/mylib@^1.0")
+  let m2 = pkg.read_manifest(dir)
+  let deps = map.get(m2, "deps")
+  assert_eq(map.get(deps, "mylib"), "github:test/mylib@^1.0")
+
+  exec("rm -rf " + dir)
+  println("all pkg tests passed")
+}

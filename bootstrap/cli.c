@@ -206,6 +206,49 @@ AValue fn_cli_gray(AValue s);
 AValue fn_cli_bold(AValue s);
 AValue fn_cli_dim(AValue s);
 AValue fn_cli_underline(AValue s);
+AValue fn_toml__t_trim(AValue s);
+AValue fn_toml__t_is_int(AValue s);
+AValue fn_toml__t_is_float(AValue s);
+AValue fn_toml__t_strip_underscores(AValue s);
+AValue fn_toml__t_parse_value(AValue s);
+AValue fn_toml__t_split_array(AValue s);
+AValue fn_toml__t_parse_array(AValue s);
+AValue fn_toml__t_parse_inline_table(AValue s);
+AValue fn_toml__t_find_eq(AValue s);
+AValue fn_toml__t_strip_comment(AValue s);
+AValue fn_toml__t_set_nested(AValue root, AValue path, AValue val);
+AValue fn_toml__t_get_nested(AValue root, AValue path);
+AValue fn_toml__t_parse_key(AValue s);
+AValue fn_toml_parse(AValue text);
+AValue fn_toml__t_needs_quote(AValue s);
+AValue fn_toml__t_quote_key(AValue s);
+AValue fn_toml__t_stringify_value(AValue val);
+AValue fn_toml__t_stringify_section(AValue val, AValue prefix, AValue lines);
+AValue fn_toml_stringify(AValue val);
+AValue fn_semver_parse(AValue s);
+AValue fn_semver_format(AValue v);
+AValue fn_semver_compare(AValue a, AValue b);
+AValue fn_semver__gte(AValue v, AValue min);
+AValue fn_semver__lt(AValue v, AValue max);
+AValue fn_semver_satisfies(AValue version, AValue constraint);
+AValue fn_semver_best_match(AValue versions, AValue constraint);
+AValue fn_pkg__manifest_path(AValue dir);
+AValue fn_pkg__lock_path(AValue dir);
+AValue fn_pkg__modules_dir(AValue dir);
+AValue fn_pkg_parse_source(AValue source);
+AValue fn_pkg__git_url(AValue source);
+AValue fn_pkg__fetch_tags(AValue url);
+AValue fn_pkg__clone_at_tag(AValue url, AValue tag, AValue dest);
+AValue fn_pkg__get_commit(AValue dest);
+AValue fn_pkg__copy_a_files(AValue src_dir, AValue dst_dir);
+AValue fn_pkg_init(AValue dir);
+AValue fn_pkg_read_manifest(AValue dir);
+AValue fn_pkg_write_manifest(AValue dir, AValue manifest);
+AValue fn_pkg_add_dep(AValue dir, AValue name, AValue source);
+AValue fn_pkg__read_lock(AValue dir);
+AValue fn_pkg__write_lock(AValue dir, AValue packages);
+AValue fn_pkg__find_locked(AValue lock_entries, AValue name);
+AValue fn_pkg_install(AValue dir);
 AValue fn__die(AValue msg);
 AValue fn__find_runtime_dir(void);
 AValue fn__generate_c(AValue source_path);
@@ -225,6 +268,9 @@ AValue fn_cmd_test(AValue test_dir);
 AValue fn_cmd_cache_clean(void);
 AValue fn_cmd_eval(AValue expr, AValue extra_args);
 AValue fn_cmd_lsp(void);
+AValue fn_cmd_pkg_init(void);
+AValue fn_cmd_pkg_add(AValue name, AValue source);
+AValue fn_cmd_pkg_install(void);
 AValue fn__usage(void);
 AValue fn_main(void);
 
@@ -6507,9 +6553,20 @@ __fn_cleanup:
 }
 
 AValue fn_cgen__use_path_to_file(AValue path_arr) {
+    AValue rel = {0}, mod_path = {0};
     AValue __ret = a_void();
-    __ret = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); goto __fn_cleanup;
+    { AValue __old = rel; rel = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); a_release(__old); }
+    if (a_truthy(a_fs_exists(rel))) {
+        __ret = a_retain(rel); goto __fn_cleanup;
+    }
+    { AValue __old = mod_path; mod_path = a_str_concat(a_string("a_modules/"), rel); a_release(__old); }
+    if (a_truthy(a_fs_exists(mod_path))) {
+        __ret = a_retain(mod_path); goto __fn_cleanup;
+    }
+    __ret = a_retain(rel); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(rel);
+    a_release(mod_path);
     return __ret;
 }
 
@@ -7396,6 +7453,1455 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_toml__t_trim(AValue s) {
+    AValue __ret = a_void();
+    __ret = a_str_trim(s); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_toml__t_is_int(AValue s) {
+    AValue chars = {0}, n = {0}, start = {0}, i = {0}, c = {0};
+    AValue __ret = a_void();
+    { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    if (a_truthy(a_eq(n, a_int(0)))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    { AValue __old = start; start = a_int(0); a_release(__old); }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("-")))) {
+        { AValue __old = start; start = a_int(1); a_release(__old); }
+    }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("+")))) {
+        { AValue __old = start; start = a_int(1); a_release(__old); }
+    }
+    if (a_truthy(a_gteq(start, n))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    { AValue __old = i; i = a_retain(start); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = c; c = a_array_get(chars, i); a_release(__old); }
+        if (a_truthy(a_eq(a_is_digit(c), a_bool(0)))) {
+            if (a_truthy(a_neq(c, a_string("_")))) {
+                __ret = a_bool(0); goto __fn_cleanup;
+            }
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_bool(1); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(chars);
+    a_release(n);
+    a_release(start);
+    a_release(i);
+    a_release(c);
+    return __ret;
+}
+
+AValue fn_toml__t_is_float(AValue s) {
+    AValue chars = {0}, n = {0}, start = {0}, has_dot = {0}, has_dig = {0}, i = {0}, c = {0};
+    AValue __ret = a_void();
+    { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    if (a_truthy(a_eq(n, a_int(0)))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    { AValue __old = start; start = a_int(0); a_release(__old); }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("-")))) {
+        { AValue __old = start; start = a_int(1); a_release(__old); }
+    }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("+")))) {
+        { AValue __old = start; start = a_int(1); a_release(__old); }
+    }
+    if (a_truthy(a_gteq(start, n))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    { AValue __old = has_dot; has_dot = a_bool(0); a_release(__old); }
+    { AValue __old = has_dig; has_dig = a_bool(0); a_release(__old); }
+    { AValue __old = i; i = a_retain(start); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = c; c = a_array_get(chars, i); a_release(__old); }
+        if (a_truthy(a_eq(c, a_string(".")))) {
+            if (a_truthy(has_dot)) {
+                __ret = a_bool(0); goto __fn_cleanup;
+            }
+            { AValue __old = has_dot; has_dot = a_bool(1); a_release(__old); }
+        } else {
+            if (a_truthy(a_is_digit(c))) {
+                { AValue __old = has_dig; has_dig = a_bool(1); a_release(__old); }
+            } else {
+                if (a_truthy(a_neq(c, a_string("_")))) {
+                    __ret = a_bool(0); goto __fn_cleanup;
+                }
+            }
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    if (a_truthy(a_eq(has_dot, a_bool(0)))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    __ret = a_retain(has_dig); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(chars);
+    a_release(n);
+    a_release(start);
+    a_release(has_dot);
+    a_release(has_dig);
+    a_release(i);
+    a_release(c);
+    return __ret;
+}
+
+AValue fn_toml__t_strip_underscores(AValue s) {
+    AValue __ret = a_void();
+    __ret = a_str_replace(s, a_string("_"), a_string("")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_toml__t_parse_value(AValue s) {
+    AValue t = {0}, chars = {0}, n = {0}, sq = {0}, last = {0};
+    AValue __ret = a_void();
+    { AValue __old = t; t = fn_toml__t_trim(s); a_release(__old); }
+    if (a_truthy(a_eq(t, a_string("true")))) {
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("false")))) {
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+    { AValue __old = chars; chars = a_str_chars(t); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    if (a_truthy(a_eq(n, a_int(0)))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("\"")))) {
+        if (a_truthy(a_gteq(n, a_int(2)))) {
+            if (a_truthy(a_eq(a_array_get(chars, a_sub(n, a_int(1))), a_string("\"")))) {
+                __ret = a_str_slice(t, a_int(1), a_sub(n, a_int(1))); goto __fn_cleanup;
+            }
+        }
+        __ret = a_retain(t); goto __fn_cleanup;
+    }
+    { AValue __old = sq; sq = a_from_code(a_int(39)); a_release(__old); }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), sq))) {
+        if (a_truthy(a_gteq(n, a_int(2)))) {
+            { AValue __old = last; last = a_array_get(chars, a_sub(n, a_int(1))); a_release(__old); }
+            if (a_truthy(a_eq(a_char_code(last), a_int(39)))) {
+                __ret = a_str_slice(t, a_int(1), a_sub(n, a_int(1))); goto __fn_cleanup;
+            }
+        }
+        __ret = a_retain(t); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("[")))) {
+        __ret = fn_toml__t_parse_array(t); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("{")))) {
+        __ret = fn_toml__t_parse_inline_table(t); goto __fn_cleanup;
+    }
+    if (a_truthy(fn_toml__t_is_float(t))) {
+        __ret = a_to_float(fn_toml__t_strip_underscores(t)); goto __fn_cleanup;
+    }
+    if (a_truthy(fn_toml__t_is_int(t))) {
+        __ret = a_to_int(fn_toml__t_strip_underscores(t)); goto __fn_cleanup;
+    }
+    __ret = a_retain(t); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    a_release(chars);
+    a_release(n);
+    a_release(sq);
+    a_release(last);
+    return __ret;
+}
+
+AValue fn_toml__t_split_array(AValue s) {
+    AValue inner = {0}, chars = {0}, n = {0}, parts = {0}, cur = {0}, depth = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0}, trimmed = {0};
+    AValue __ret = a_void();
+    { AValue __old = inner; inner = fn_toml__t_trim(a_str_slice(s, a_int(1), a_sub(a_len(s), a_int(1)))); a_release(__old); }
+    if (a_truthy(a_eq(inner, a_string("")))) {
+        __ret = a_array_new(0); goto __fn_cleanup;
+    }
+    { AValue __old = chars; chars = a_str_chars(inner); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
+    { AValue __old = cur; cur = a_string(""); a_release(__old); }
+    { AValue __old = depth; depth = a_int(0); a_release(__old); }
+    { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+    { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = c; c = a_array_get(chars, i); a_release(__old); }
+        if (a_truthy(in_dq)) {
+            { AValue __old = cur; cur = a_str_concat(cur, c); a_release(__old); }
+            if (a_truthy(a_eq(c, a_string("\"")))) {
+                { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(in_sq)) {
+            { AValue __old = cur; cur = a_str_concat(cur, c); a_release(__old); }
+            if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+                { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_eq(c, a_string("\"")))) {
+            { AValue __old = in_dq; in_dq = a_bool(1); a_release(__old); }
+            { AValue __old = cur; cur = a_str_concat(cur, c); a_release(__old); }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+            { AValue __old = in_sq; in_sq = a_bool(1); a_release(__old); }
+            { AValue __old = cur; cur = a_str_concat(cur, c); a_release(__old); }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_eq(c, a_string("[")))) {
+            { AValue __old = depth; depth = a_add(depth, a_int(1)); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string("]")))) {
+            { AValue __old = depth; depth = a_sub(depth, a_int(1)); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string("{")))) {
+            { AValue __old = depth; depth = a_add(depth, a_int(1)); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string("}")))) {
+            { AValue __old = depth; depth = a_sub(depth, a_int(1)); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string(",")))) {
+            if (a_truthy(a_eq(depth, a_int(0)))) {
+                { AValue __old = trimmed; trimmed = fn_toml__t_trim(cur); a_release(__old); }
+                if (a_truthy(a_neq(trimmed, a_string("")))) {
+                    { AValue __old = parts; parts = a_array_push(parts, trimmed); a_release(__old); }
+                }
+                { AValue __old = cur; cur = a_string(""); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                continue;
+            }
+        }
+        if (a_truthy(a_eq(c, a_string("#")))) {
+            if (a_truthy(a_eq(depth, a_int(0)))) {
+                { AValue __old = trimmed; trimmed = fn_toml__t_trim(cur); a_release(__old); }
+                if (a_truthy(a_neq(trimmed, a_string("")))) {
+                    { AValue __old = parts; parts = a_array_push(parts, trimmed); a_release(__old); }
+                }
+                __ret = a_retain(parts); goto __fn_cleanup;
+            }
+        }
+        { AValue __old = cur; cur = a_str_concat(cur, c); a_release(__old); }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = trimmed; trimmed = fn_toml__t_trim(cur); a_release(__old); }
+    if (a_truthy(a_neq(trimmed, a_string("")))) {
+        { AValue __old = parts; parts = a_array_push(parts, trimmed); a_release(__old); }
+    }
+    __ret = a_retain(parts); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(inner);
+    a_release(chars);
+    a_release(n);
+    a_release(parts);
+    a_release(cur);
+    a_release(depth);
+    a_release(in_dq);
+    a_release(in_sq);
+    a_release(i);
+    a_release(c);
+    a_release(trimmed);
+    return __ret;
+}
+
+AValue fn_toml__t_parse_array(AValue s) {
+    AValue items = {0}, result = {0};
+    AValue __ret = a_void();
+    { AValue __old = items; items = fn_toml__t_split_array(s); a_release(__old); }
+    { AValue __old = result; result = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = result; result = a_array_push(result, fn_toml__t_parse_value(item)); a_release(__old); }
+            a_release(item);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(items);
+    a_release(result);
+    return __ret;
+}
+
+AValue fn_toml__t_parse_inline_table(AValue s) {
+    AValue inner = {0}, empty = {0}, parts = {0}, result = {0}, trimmed = {0}, eq_pos = {0}, key = {0}, val = {0};
+    AValue __ret = a_void();
+    { AValue __old = inner; inner = fn_toml__t_trim(a_str_slice(s, a_int(1), a_sub(a_len(s), a_int(1)))); a_release(__old); }
+    if (a_truthy(a_eq(inner, a_string("")))) {
+        { AValue __old = empty; empty = a_map_new(0); a_release(__old); }
+        __ret = a_retain(empty); goto __fn_cleanup;
+    }
+    { AValue __old = parts; parts = a_str_split(inner, a_string(",")); a_release(__old); }
+    { AValue __old = result; result = a_map_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(parts);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue part = {0}, trimmed = {0}, eq_pos = {0}, key = {0}, val = {0};
+            part = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = trimmed; trimmed = fn_toml__t_trim(part); a_release(__old); }
+            if (a_truthy(a_eq(trimmed, a_string("")))) {
+                continue;
+            }
+            { AValue __old = eq_pos; eq_pos = fn_toml__t_find_eq(trimmed); a_release(__old); }
+            if (a_truthy(a_gt(eq_pos, a_int(0)))) {
+                { AValue __old = key; key = fn_toml__t_trim(a_str_slice(trimmed, a_int(0), eq_pos)); a_release(__old); }
+                { AValue __old = val; val = fn_toml__t_trim(a_str_slice(trimmed, a_add(eq_pos, a_int(1)), a_len(trimmed))); a_release(__old); }
+                { AValue __old = result; result = a_map_set(result, key, fn_toml__t_parse_value(val)); a_release(__old); }
+            }
+            a_release(part);
+            a_release(trimmed);
+            a_release(eq_pos);
+            a_release(key);
+            a_release(val);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(inner);
+    a_release(empty);
+    a_release(parts);
+    a_release(result);
+    a_release(trimmed);
+    a_release(eq_pos);
+    a_release(key);
+    a_release(val);
+    return __ret;
+}
+
+AValue fn_toml__t_find_eq(AValue s) {
+    AValue chars = {0}, n = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0};
+    AValue __ret = a_void();
+    { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+    { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = c; c = a_array_get(chars, i); a_release(__old); }
+        if (a_truthy(in_dq)) {
+            if (a_truthy(a_eq(c, a_string("\"")))) {
+                { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(in_sq)) {
+            if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+                { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_eq(c, a_string("\"")))) {
+            { AValue __old = in_dq; in_dq = a_bool(1); a_release(__old); }
+        }
+        if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+            { AValue __old = in_sq; in_sq = a_bool(1); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string("=")))) {
+            __ret = a_retain(i); goto __fn_cleanup;
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_sub(a_int(0), a_int(1)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(chars);
+    a_release(n);
+    a_release(in_dq);
+    a_release(in_sq);
+    a_release(i);
+    a_release(c);
+    return __ret;
+}
+
+AValue fn_toml__t_strip_comment(AValue s) {
+    AValue chars = {0}, n = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0};
+    AValue __ret = a_void();
+    { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
+    { AValue __old = n; n = a_len(chars); a_release(__old); }
+    { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+    { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = c; c = a_array_get(chars, i); a_release(__old); }
+        if (a_truthy(in_dq)) {
+            if (a_truthy(a_eq(c, a_string("\"")))) {
+                { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(in_sq)) {
+            if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+                { AValue __old = in_sq; in_sq = a_bool(0); a_release(__old); }
+            }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_eq(c, a_string("\"")))) {
+            { AValue __old = in_dq; in_dq = a_bool(1); a_release(__old); }
+        }
+        if (a_truthy(a_eq(a_char_code(c), a_int(39)))) {
+            { AValue __old = in_sq; in_sq = a_bool(1); a_release(__old); }
+        }
+        if (a_truthy(a_eq(c, a_string("#")))) {
+            __ret = fn_toml__t_trim(a_str_slice(s, a_int(0), i)); goto __fn_cleanup;
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_retain(s); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(chars);
+    a_release(n);
+    a_release(in_dq);
+    a_release(in_sq);
+    a_release(i);
+    a_release(c);
+    return __ret;
+}
+
+AValue fn_toml__t_set_nested(AValue root, AValue path, AValue val) {
+    AValue key = {0}, rest = {0}, existing = {0}, updated = {0};
+    AValue __ret = a_void();
+    if (a_truthy(a_eq(a_len(path), a_int(0)))) {
+        __ret = a_retain(root); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(a_len(path), a_int(1)))) {
+        __ret = a_map_set(root, a_array_get(path, a_int(0)), val); goto __fn_cleanup;
+    }
+    { AValue __old = key; key = a_array_get(path, a_int(0)); a_release(__old); }
+    { AValue __old = rest; rest = a_drop(path, a_int(1)); a_release(__old); }
+    { AValue __old = existing; existing = a_map_new(0); a_release(__old); }
+    if (a_truthy(a_map_has(root, key))) {
+        { AValue __old = existing; existing = a_map_get(root, key); a_release(__old); }
+    }
+    { AValue __old = updated; updated = fn_toml__t_set_nested(existing, rest, val); a_release(__old); }
+    __ret = a_map_set(root, key, updated); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(key);
+    a_release(rest);
+    a_release(existing);
+    a_release(updated);
+    return __ret;
+}
+
+AValue fn_toml__t_get_nested(AValue root, AValue path) {
+    AValue cur = {0}, empty = {0};
+    AValue __ret = a_void();
+    { AValue __old = cur; cur = a_retain(root); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(path);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue key = {0}, empty = {0};
+            key = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_map_has(cur, key), a_bool(0)))) {
+                { AValue __old = empty; empty = a_map_new(0); a_release(__old); }
+                __ret = a_retain(empty); goto __fn_cleanup;
+            }
+            { AValue __old = cur; cur = a_map_get(cur, key); a_release(__old); }
+            a_release(key);
+            a_release(empty);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(cur); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(cur);
+    a_release(empty);
+    return __ret;
+}
+
+AValue fn_toml__t_parse_key(AValue s) {
+    AValue parts = {0}, result = {0}, t = {0}, chars = {0}, n = {0};
+    AValue __ret = a_void();
+    { AValue __old = parts; parts = a_str_split(s, a_string(".")); a_release(__old); }
+    { AValue __old = result; result = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(parts);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue p = {0}, t = {0}, chars = {0}, n = {0};
+            p = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = t; t = fn_toml__t_trim(p); a_release(__old); }
+            { AValue __old = chars; chars = a_str_chars(t); a_release(__old); }
+            { AValue __old = n; n = a_len(chars); a_release(__old); }
+            if (a_truthy(a_gteq(n, a_int(2)))) {
+                if (a_truthy(a_eq(a_array_get(chars, a_int(0)), a_string("\"")))) {
+                    if (a_truthy(a_eq(a_array_get(chars, a_sub(n, a_int(1))), a_string("\"")))) {
+                        { AValue __old = result; result = a_array_push(result, a_str_slice(t, a_int(1), a_sub(n, a_int(1)))); a_release(__old); }
+                        continue;
+                    }
+                }
+            }
+            { AValue __old = result; result = a_array_push(result, t); a_release(__old); }
+            a_release(p);
+            a_release(t);
+            a_release(chars);
+            a_release(n);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(parts);
+    a_release(result);
+    a_release(t);
+    a_release(chars);
+    a_release(n);
+    return __ret;
+}
+
+AValue fn_toml_parse(AValue text) {
+    AValue lines = {0}, result = {0}, current_path = {0}, n = {0}, i = {0}, raw = {0}, line = {0}, table_name = {0}, path = {0}, existing = {0}, t = {0}, new_entry = {0}, updated = {0}, arr = {0}, empty = {0}, eq_pos = {0}, key_str = {0}, val_str = {0}, key_parts = {0}, val = {0}, arr_len = {0}, last = {0}, updated_last = {0}, new_arr = {0}, j = {0}, full_path = {0};
+    AValue __ret = a_void();
+    { AValue __old = lines; lines = a_str_lines(a_str_replace(text, a_string("\r"), a_string(""))); a_release(__old); }
+    { AValue __old = result; result = a_map_new(0); a_release(__old); }
+    { AValue __old = current_path; current_path = a_array_new(0); a_release(__old); }
+    { AValue __old = n; n = a_len(lines); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, n))) {
+        { AValue __old = raw; raw = a_array_get(lines, i); a_release(__old); }
+        { AValue __old = line; line = fn_toml__t_trim(fn_toml__t_strip_comment(raw)); a_release(__old); }
+        if (a_truthy(a_eq(line, a_string("")))) {
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        if (a_truthy(a_str_starts_with(line, a_string("[[")))) {
+            if (a_truthy(a_str_ends_with(line, a_string("]]")))) {
+                { AValue __old = table_name; table_name = fn_toml__t_trim(a_str_slice(line, a_int(2), a_sub(a_len(line), a_int(2)))); a_release(__old); }
+                { AValue __old = path; path = fn_toml__t_parse_key(table_name); a_release(__old); }
+                { AValue __old = current_path; current_path = a_retain(path); a_release(__old); }
+                { AValue __old = existing; existing = fn_toml__t_get_nested(result, path); a_release(__old); }
+                { AValue __old = t; t = a_type_of(existing); a_release(__old); }
+                if (a_truthy(a_eq(t, a_string("array")))) {
+                    { AValue __old = new_entry; new_entry = a_map_new(0); a_release(__old); }
+                    { AValue __old = updated; updated = a_array_push(existing, new_entry); a_release(__old); }
+                    { AValue __old = result; result = fn_toml__t_set_nested(result, path, updated); a_release(__old); }
+                } else {
+                    { AValue __old = new_entry; new_entry = a_map_new(0); a_release(__old); }
+                    { AValue __old = arr; arr = a_array_new(1, new_entry); a_release(__old); }
+                    { AValue __old = result; result = fn_toml__t_set_nested(result, path, arr); a_release(__old); }
+                }
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                continue;
+            }
+        }
+        if (a_truthy(a_str_starts_with(line, a_string("[")))) {
+            if (a_truthy(a_str_ends_with(line, a_string("]")))) {
+                { AValue __old = table_name; table_name = fn_toml__t_trim(a_str_slice(line, a_int(1), a_sub(a_len(line), a_int(1)))); a_release(__old); }
+                { AValue __old = current_path; current_path = fn_toml__t_parse_key(table_name); a_release(__old); }
+                { AValue __old = existing; existing = fn_toml__t_get_nested(result, current_path); a_release(__old); }
+                { AValue __old = t; t = a_type_of(existing); a_release(__old); }
+                if (a_truthy(a_neq(t, a_string("map")))) {
+                    { AValue __old = empty; empty = a_map_new(0); a_release(__old); }
+                    { AValue __old = result; result = fn_toml__t_set_nested(result, current_path, empty); a_release(__old); }
+                }
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                continue;
+            }
+        }
+        { AValue __old = eq_pos; eq_pos = fn_toml__t_find_eq(line); a_release(__old); }
+        if (a_truthy(a_gt(eq_pos, a_int(0)))) {
+            { AValue __old = key_str; key_str = fn_toml__t_trim(a_str_slice(line, a_int(0), eq_pos)); a_release(__old); }
+            { AValue __old = val_str; val_str = fn_toml__t_trim(a_str_slice(line, a_add(eq_pos, a_int(1)), a_len(line))); a_release(__old); }
+            { AValue __old = key_parts; key_parts = fn_toml__t_parse_key(key_str); a_release(__old); }
+            { AValue __old = val; val = fn_toml__t_parse_value(val_str); a_release(__old); }
+            if (a_truthy(a_gt(a_len(current_path), a_int(0)))) {
+                { AValue __old = existing; existing = fn_toml__t_get_nested(result, current_path); a_release(__old); }
+                { AValue __old = t; t = a_type_of(existing); a_release(__old); }
+                if (a_truthy(a_eq(t, a_string("array")))) {
+                    { AValue __old = arr_len; arr_len = a_len(existing); a_release(__old); }
+                    if (a_truthy(a_gt(arr_len, a_int(0)))) {
+                        { AValue __old = last; last = a_array_get(existing, a_sub(arr_len, a_int(1))); a_release(__old); }
+                        { AValue __old = updated_last; updated_last = fn_toml__t_set_nested(last, key_parts, val); a_release(__old); }
+                        { AValue __old = new_arr; new_arr = a_array_new(0); a_release(__old); }
+                        { AValue __old = j; j = a_int(0); a_release(__old); }
+                        while (a_truthy(a_lt(j, a_sub(arr_len, a_int(1))))) {
+                            { AValue __old = new_arr; new_arr = a_array_push(new_arr, a_array_get(existing, j)); a_release(__old); }
+                            { AValue __old = j; j = a_add(j, a_int(1)); a_release(__old); }
+                        }
+                        { AValue __old = new_arr; new_arr = a_array_push(new_arr, updated_last); a_release(__old); }
+                        { AValue __old = result; result = fn_toml__t_set_nested(result, current_path, new_arr); a_release(__old); }
+                    }
+                } else {
+                    { AValue __old = full_path; full_path = a_array_new(0); a_release(__old); }
+                    {
+                        AValue __iter_arr = a_iterable(current_path);
+                        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                            AValue p = {0};
+                            p = a_array_get(__iter_arr, a_int(__fi));
+                            { AValue __old = full_path; full_path = a_array_push(full_path, p); a_release(__old); }
+                            a_release(p);
+                        }
+                        a_release(__iter_arr);
+                    }
+                    {
+                        AValue __iter_arr = a_iterable(key_parts);
+                        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                            AValue p = {0};
+                            p = a_array_get(__iter_arr, a_int(__fi));
+                            { AValue __old = full_path; full_path = a_array_push(full_path, p); a_release(__old); }
+                            a_release(p);
+                        }
+                        a_release(__iter_arr);
+                    }
+                    { AValue __old = result; result = fn_toml__t_set_nested(result, full_path, val); a_release(__old); }
+                }
+            } else {
+                { AValue __old = result; result = fn_toml__t_set_nested(result, key_parts, val); a_release(__old); }
+            }
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(lines);
+    a_release(result);
+    a_release(current_path);
+    a_release(n);
+    a_release(i);
+    a_release(raw);
+    a_release(line);
+    a_release(table_name);
+    a_release(path);
+    a_release(existing);
+    a_release(t);
+    a_release(new_entry);
+    a_release(updated);
+    a_release(arr);
+    a_release(empty);
+    a_release(eq_pos);
+    a_release(key_str);
+    a_release(val_str);
+    a_release(key_parts);
+    a_release(val);
+    a_release(arr_len);
+    a_release(last);
+    a_release(updated_last);
+    a_release(new_arr);
+    a_release(j);
+    a_release(full_path);
+    return __ret;
+}
+
+AValue fn_toml__t_needs_quote(AValue s) {
+    AValue chars = {0};
+    AValue __ret = a_void();
+    if (a_truthy(a_eq(s, a_string("")))) {
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+    { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(chars);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(c, a_string(".")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string(" ")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("=")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("#")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("{")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("}")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("[")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            if (a_truthy(a_eq(c, a_string("]")))) {
+                __ret = a_bool(1); goto __fn_cleanup;
+            }
+            a_release(c);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_bool(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(chars);
+    return __ret;
+}
+
+AValue fn_toml__t_quote_key(AValue s) {
+    AValue __ret = a_void();
+    if (a_truthy(fn_toml__t_needs_quote(s))) {
+        __ret = a_str_concat(a_string("\""), a_str_concat(s, a_string("\""))); goto __fn_cleanup;
+    }
+    __ret = a_retain(s); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_toml__t_stringify_value(AValue val) {
+    AValue t = {0}, parts = {0}, keys = {0}, v = {0}, ks = {0}, vs = {0};
+    AValue __ret = a_void();
+    { AValue __old = t; t = a_type_of(val); a_release(__old); }
+    if (a_truthy(a_eq(t, a_string("bool")))) {
+        if (a_truthy(val)) {
+            __ret = a_string("true"); goto __fn_cleanup;
+        }
+        __ret = a_string("false"); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("int")))) {
+        __ret = a_to_str(val); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("float")))) {
+        __ret = a_to_str(val); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("str")))) {
+        __ret = a_str_concat(a_string("\""), a_str_concat(a_str_replace(val, a_string("\""), a_string("\\\"")), a_string("\""))); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("array")))) {
+        { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
+        {
+            AValue __iter_arr = a_iterable(val);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue item = {0};
+                item = a_array_get(__iter_arr, a_int(__fi));
+                { AValue __old = parts; parts = a_array_push(parts, fn_toml__t_stringify_value(item)); a_release(__old); }
+                a_release(item);
+            }
+            a_release(__iter_arr);
+        }
+        __ret = a_str_concat(a_string("["), a_str_concat(a_str_join(parts, a_string(", ")), a_string("]"))); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(t, a_string("map")))) {
+        { AValue __old = keys; keys = a_map_keys(val); a_release(__old); }
+        { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
+        {
+            AValue __iter_arr = a_iterable(keys);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue k = {0}, v = {0}, ks = {0}, vs = {0};
+                k = a_array_get(__iter_arr, a_int(__fi));
+                { AValue __old = v; v = a_map_get(val, k); a_release(__old); }
+                { AValue __old = ks; ks = fn_toml__t_quote_key(k); a_release(__old); }
+                { AValue __old = vs; vs = fn_toml__t_stringify_value(v); a_release(__old); }
+                { AValue __old = parts; parts = a_array_push(parts, a_str_concat(ks, a_str_concat(a_string(" = "), vs))); a_release(__old); }
+                a_release(k);
+                a_release(v);
+                a_release(ks);
+                a_release(vs);
+            }
+            a_release(__iter_arr);
+        }
+        __ret = a_str_concat(a_string("{"), a_str_concat(a_str_join(parts, a_string(", ")), a_string("}"))); goto __fn_cleanup;
+    }
+    __ret = a_to_str(val); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    a_release(parts);
+    a_release(keys);
+    a_release(v);
+    a_release(ks);
+    a_release(vs);
+    return __ret;
+}
+
+AValue fn_toml__t_stringify_section(AValue val, AValue prefix, AValue lines) {
+    AValue keys = {0}, simple_keys = {0}, table_keys = {0}, array_keys = {0}, v = {0}, t = {0}, first_type = {0}, ks = {0}, vs = {0}, section = {0}, arr = {0};
+    AValue __ret = a_void();
+    { AValue __old = keys; keys = a_map_keys(val); a_release(__old); }
+    { AValue __old = simple_keys; simple_keys = a_array_new(0); a_release(__old); }
+    { AValue __old = table_keys; table_keys = a_array_new(0); a_release(__old); }
+    { AValue __old = array_keys; array_keys = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(keys);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue k = {0}, v = {0}, t = {0}, first_type = {0};
+            k = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = v; v = a_map_get(val, k); a_release(__old); }
+            { AValue __old = t; t = a_type_of(v); a_release(__old); }
+            if (a_truthy(a_eq(t, a_string("map")))) {
+                { AValue __old = table_keys; table_keys = a_array_push(table_keys, k); a_release(__old); }
+            } else {
+                if (a_truthy(a_eq(t, a_string("array")))) {
+                    if (a_truthy(a_gt(a_len(v), a_int(0)))) {
+                        { AValue __old = first_type; first_type = a_type_of(a_array_get(v, a_int(0))); a_release(__old); }
+                        if (a_truthy(a_eq(first_type, a_string("map")))) {
+                            { AValue __old = array_keys; array_keys = a_array_push(array_keys, k); a_release(__old); }
+                        } else {
+                            { AValue __old = simple_keys; simple_keys = a_array_push(simple_keys, k); a_release(__old); }
+                        }
+                    } else {
+                        { AValue __old = simple_keys; simple_keys = a_array_push(simple_keys, k); a_release(__old); }
+                    }
+                } else {
+                    { AValue __old = simple_keys; simple_keys = a_array_push(simple_keys, k); a_release(__old); }
+                }
+            }
+            a_release(k);
+            a_release(v);
+            a_release(t);
+            a_release(first_type);
+        }
+        a_release(__iter_arr);
+    }
+    {
+        AValue __iter_arr = a_iterable(simple_keys);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue k = {0}, v = {0}, ks = {0}, vs = {0};
+            k = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = v; v = a_map_get(val, k); a_release(__old); }
+            { AValue __old = ks; ks = fn_toml__t_quote_key(k); a_release(__old); }
+            { AValue __old = vs; vs = fn_toml__t_stringify_value(v); a_release(__old); }
+            { AValue __old = lines; lines = a_array_push(lines, a_str_concat(ks, a_str_concat(a_string(" = "), vs))); a_release(__old); }
+            a_release(k);
+            a_release(v);
+            a_release(ks);
+            a_release(vs);
+        }
+        a_release(__iter_arr);
+    }
+    {
+        AValue __iter_arr = a_iterable(table_keys);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue k = {0}, v = {0}, section = {0};
+            k = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = v; v = a_map_get(val, k); a_release(__old); }
+            { AValue __old = section; section = a_retain(k); a_release(__old); }
+            if (a_truthy(a_neq(prefix, a_string("")))) {
+                { AValue __old = section; section = a_str_concat(prefix, a_str_concat(a_string("."), k)); a_release(__old); }
+            }
+            { AValue __old = lines; lines = a_array_push(lines, a_string("")); a_release(__old); }
+            { AValue __old = lines; lines = a_array_push(lines, a_str_concat(a_string("["), a_str_concat(section, a_string("]")))); a_release(__old); }
+            { AValue __old = lines; lines = fn_toml__t_stringify_section(v, section, lines); a_release(__old); }
+            a_release(k);
+            a_release(v);
+            a_release(section);
+        }
+        a_release(__iter_arr);
+    }
+    {
+        AValue __iter_arr = a_iterable(array_keys);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue k = {0}, arr = {0}, section = {0};
+            k = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = arr; arr = a_map_get(val, k); a_release(__old); }
+            { AValue __old = section; section = a_retain(k); a_release(__old); }
+            if (a_truthy(a_neq(prefix, a_string("")))) {
+                { AValue __old = section; section = a_str_concat(prefix, a_str_concat(a_string("."), k)); a_release(__old); }
+            }
+            {
+                AValue __iter_arr = a_iterable(arr);
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue item = {0};
+                    item = a_array_get(__iter_arr, a_int(__fi));
+                    { AValue __old = lines; lines = a_array_push(lines, a_string("")); a_release(__old); }
+                    { AValue __old = lines; lines = a_array_push(lines, a_str_concat(a_string("[["), a_str_concat(section, a_string("]]")))); a_release(__old); }
+                    { AValue __old = lines; lines = fn_toml__t_stringify_section(item, section, lines); a_release(__old); }
+                    a_release(item);
+                }
+                a_release(__iter_arr);
+            }
+            a_release(k);
+            a_release(arr);
+            a_release(section);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(lines); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(keys);
+    a_release(simple_keys);
+    a_release(table_keys);
+    a_release(array_keys);
+    a_release(v);
+    a_release(t);
+    a_release(first_type);
+    a_release(ks);
+    a_release(vs);
+    a_release(section);
+    a_release(arr);
+    return __ret;
+}
+
+AValue fn_toml_stringify(AValue val) {
+    AValue lines = {0};
+    AValue __ret = a_void();
+    { AValue __old = lines; lines = a_array_new(0); a_release(__old); }
+    { AValue __old = lines; lines = fn_toml__t_stringify_section(val, a_string(""), lines); a_release(__old); }
+    __ret = a_str_trim(a_str_join(lines, a_string("\n"))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(lines);
+    return __ret;
+}
+
+AValue fn_semver_parse(AValue s) {
+    AValue v = {0}, parts = {0}, major = {0}, minor = {0}, patch = {0};
+    AValue __ret = a_void();
+    { AValue __old = v; v = a_retain(s); a_release(__old); }
+    if (a_truthy(a_str_starts_with(v, a_string("v")))) {
+        { AValue __old = v; v = a_str_slice(v, a_int(1), a_len(v)); a_release(__old); }
+    }
+    { AValue __old = parts; parts = a_str_split(v, a_string(".")); a_release(__old); }
+    { AValue __old = major; major = a_to_int(a_array_get(parts, a_int(0))); a_release(__old); }
+    { AValue __old = minor; minor = a_int(0); a_release(__old); }
+    if (a_truthy(a_gt(a_len(parts), a_int(1)))) {
+        { AValue __old = minor; minor = a_to_int(a_array_get(parts, a_int(1))); a_release(__old); }
+    }
+    { AValue __old = patch; patch = a_int(0); a_release(__old); }
+    if (a_truthy(a_gt(a_len(parts), a_int(2)))) {
+        { AValue __old = patch; patch = a_to_int(a_array_get(parts, a_int(2))); a_release(__old); }
+    }
+    __ret = a_map_new(3, "major", major, "minor", minor, "patch", patch); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(v);
+    a_release(parts);
+    a_release(major);
+    a_release(minor);
+    a_release(patch);
+    return __ret;
+}
+
+AValue fn_semver_format(AValue v) {
+    AValue __ret = a_void();
+    __ret = a_add(a_add(a_add(a_add(a_to_str(a_map_get(v, a_string("major"))), a_string(".")), a_to_str(a_map_get(v, a_string("minor")))), a_string(".")), a_to_str(a_map_get(v, a_string("patch")))); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_semver_compare(AValue a, AValue b) {
+    AValue am = {0}, bm = {0}, ai = {0}, bi = {0}, ap = {0}, bp = {0};
+    AValue __ret = a_void();
+    { AValue __old = am; am = a_map_get(a, a_string("major")); a_release(__old); }
+    { AValue __old = bm; bm = a_map_get(b, a_string("major")); a_release(__old); }
+    if (a_truthy(a_lt(am, bm))) {
+        __ret = a_neg(a_int(1)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_gt(am, bm))) {
+        __ret = a_int(1); goto __fn_cleanup;
+    }
+    { AValue __old = ai; ai = a_map_get(a, a_string("minor")); a_release(__old); }
+    { AValue __old = bi; bi = a_map_get(b, a_string("minor")); a_release(__old); }
+    if (a_truthy(a_lt(ai, bi))) {
+        __ret = a_neg(a_int(1)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_gt(ai, bi))) {
+        __ret = a_int(1); goto __fn_cleanup;
+    }
+    { AValue __old = ap; ap = a_map_get(a, a_string("patch")); a_release(__old); }
+    { AValue __old = bp; bp = a_map_get(b, a_string("patch")); a_release(__old); }
+    if (a_truthy(a_lt(ap, bp))) {
+        __ret = a_neg(a_int(1)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_gt(ap, bp))) {
+        __ret = a_int(1); goto __fn_cleanup;
+    }
+    __ret = a_int(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(am);
+    a_release(bm);
+    a_release(ai);
+    a_release(bi);
+    a_release(ap);
+    a_release(bp);
+    return __ret;
+}
+
+AValue fn_semver__gte(AValue v, AValue min) {
+    AValue __ret = a_void();
+    __ret = a_gteq(fn_semver_compare(v, min), a_int(0)); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_semver__lt(AValue v, AValue max) {
+    AValue __ret = a_void();
+    __ret = a_lt(fn_semver_compare(v, max), a_int(0)); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_semver_satisfies(AValue version, AValue constraint) {
+    AValue v = {0}, min = {0}, max = {0}, target = {0};
+    AValue __ret = a_void();
+    { AValue __old = v; v = fn_semver_parse(version); a_release(__old); }
+    if (a_truthy(a_str_starts_with(constraint, a_string("^")))) {
+        { AValue __old = min; min = fn_semver_parse(a_str_slice(constraint, a_int(1), a_len(constraint))); a_release(__old); }
+        { AValue __old = max; max = a_map_new(3, "major", a_add(a_map_get(min, a_string("major")), a_int(1)), "minor", a_int(0), "patch", a_int(0)); a_release(__old); }
+        __ret = a_and(fn_semver__gte(v, min), fn_semver__lt(v, max)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_str_starts_with(constraint, a_string("~")))) {
+        { AValue __old = min; min = fn_semver_parse(a_str_slice(constraint, a_int(1), a_len(constraint))); a_release(__old); }
+        { AValue __old = max; max = a_map_new(3, "major", a_map_get(min, a_string("major")), "minor", a_add(a_map_get(min, a_string("minor")), a_int(1)), "patch", a_int(0)); a_release(__old); }
+        __ret = a_and(fn_semver__gte(v, min), fn_semver__lt(v, max)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_str_starts_with(constraint, a_string(">=")))) {
+        { AValue __old = min; min = fn_semver_parse(a_str_trim(a_str_slice(constraint, a_int(2), a_len(constraint)))); a_release(__old); }
+        __ret = fn_semver__gte(v, min); goto __fn_cleanup;
+    }
+    if (a_truthy(a_str_starts_with(constraint, a_string(">")))) {
+        { AValue __old = min; min = fn_semver_parse(a_str_trim(a_str_slice(constraint, a_int(1), a_len(constraint)))); a_release(__old); }
+        __ret = a_gt(fn_semver_compare(v, min), a_int(0)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_str_starts_with(constraint, a_string("<=")))) {
+        { AValue __old = max; max = fn_semver_parse(a_str_trim(a_str_slice(constraint, a_int(2), a_len(constraint)))); a_release(__old); }
+        __ret = a_lteq(fn_semver_compare(v, max), a_int(0)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_str_starts_with(constraint, a_string("<")))) {
+        { AValue __old = max; max = fn_semver_parse(a_str_trim(a_str_slice(constraint, a_int(1), a_len(constraint)))); a_release(__old); }
+        __ret = fn_semver__lt(v, max); goto __fn_cleanup;
+    }
+    { AValue __old = target; target = fn_semver_parse(constraint); a_release(__old); }
+    __ret = a_eq(fn_semver_compare(v, target), a_int(0)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(v);
+    a_release(min);
+    a_release(max);
+    a_release(target);
+    return __ret;
+}
+
+AValue fn_semver_best_match(AValue versions, AValue constraint) {
+    AValue best = {0}, best_v = {0}, i = {0}, vs = {0}, v = {0};
+    AValue __ret = a_void();
+    { AValue __old = best; best = a_string(""); a_release(__old); }
+    { AValue __old = best_v; best_v = a_map_new(3, "major", a_neg(a_int(1)), "minor", a_neg(a_int(1)), "patch", a_neg(a_int(1))); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(versions)))) {
+        { AValue __old = vs; vs = a_array_get(versions, i); a_release(__old); }
+        if (a_truthy(fn_semver_satisfies(vs, constraint))) {
+            { AValue __old = v; v = fn_semver_parse(vs); a_release(__old); }
+            if (a_truthy(a_gt(fn_semver_compare(v, best_v), a_int(0)))) {
+                { AValue __old = best; best = a_retain(vs); a_release(__old); }
+                { AValue __old = best_v; best_v = a_retain(v); a_release(__old); }
+            }
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_retain(best); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(best);
+    a_release(best_v);
+    a_release(i);
+    a_release(vs);
+    a_release(v);
+    return __ret;
+}
+
+AValue fn_pkg__manifest_path(AValue dir) {
+    AValue __ret = a_void();
+    __ret = fn_path_join(dir, a_string("pkg.toml")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_pkg__lock_path(AValue dir) {
+    AValue __ret = a_void();
+    __ret = fn_path_join(dir, a_string("pkg.lock")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_pkg__modules_dir(AValue dir) {
+    AValue __ret = a_void();
+    __ret = fn_path_join(dir, a_string("a_modules")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_pkg_parse_source(AValue source) {
+    AValue at = {0}, repo_part = {0}, constraint = {0}, colon = {0}, host = {0}, repo = {0};
+    AValue __ret = a_void();
+    { AValue __old = at; at = a_str_find(source, a_string("@")); a_release(__old); }
+    { AValue __old = repo_part; repo_part = a_retain(source); a_release(__old); }
+    { AValue __old = constraint; constraint = a_string(""); a_release(__old); }
+    if (a_truthy(a_gteq(at, a_int(0)))) {
+        { AValue __old = repo_part; repo_part = a_str_slice(source, a_int(0), at); a_release(__old); }
+        { AValue __old = constraint; constraint = a_str_slice(source, a_add(at, a_int(1)), a_len(source)); a_release(__old); }
+    }
+    { AValue __old = colon; colon = a_str_find(repo_part, a_string(":")); a_release(__old); }
+    { AValue __old = host; host = a_string("github"); a_release(__old); }
+    { AValue __old = repo; repo = a_retain(repo_part); a_release(__old); }
+    if (a_truthy(a_gteq(colon, a_int(0)))) {
+        { AValue __old = host; host = a_str_slice(repo_part, a_int(0), colon); a_release(__old); }
+        { AValue __old = repo; repo = a_str_slice(repo_part, a_add(colon, a_int(1)), a_len(repo_part)); a_release(__old); }
+    }
+    __ret = a_map_new(3, "host", host, "repo", repo, "constraint", constraint); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(at);
+    a_release(repo_part);
+    a_release(constraint);
+    a_release(colon);
+    a_release(host);
+    a_release(repo);
+    return __ret;
+}
+
+AValue fn_pkg__git_url(AValue source) {
+    AValue host = {0}, repo = {0};
+    AValue __ret = a_void();
+    { AValue __old = host; host = a_map_get(source, a_string("host")); a_release(__old); }
+    { AValue __old = repo; repo = a_map_get(source, a_string("repo")); a_release(__old); }
+    if (a_truthy(a_eq(host, a_string("github")))) {
+        __ret = a_add(a_add(a_string("https://github.com/"), repo), a_string(".git")); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(host, a_string("gitlab")))) {
+        __ret = a_add(a_add(a_string("https://gitlab.com/"), repo), a_string(".git")); goto __fn_cleanup;
+    }
+    __ret = a_add(a_add(a_add(a_add(a_string("https://"), host), a_string("/")), repo), a_string(".git")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(host);
+    a_release(repo);
+    return __ret;
+}
+
+AValue fn_pkg__fetch_tags(AValue url) {
+    AValue result = {0}, lines = {0}, tags = {0}, i = {0}, line = {0}, tab = {0}, tag = {0}, peeled = {0};
+    AValue __ret = a_void();
+    { AValue __old = result; result = a_exec(a_add(a_add(a_string("git ls-remote --tags "), url), a_string(" 2>/dev/null"))); a_release(__old); }
+    if (a_truthy(a_neq(a_map_get(result, a_string("code")), a_int(0)))) {
+        __ret = a_array_new(0); goto __fn_cleanup;
+    }
+    { AValue __old = lines; lines = a_str_lines(a_map_get(result, a_string("stdout"))); a_release(__old); }
+    { AValue __old = tags; tags = a_array_new(0); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(lines)))) {
+        { AValue __old = line; line = a_str_trim(a_array_get(lines, i)); a_release(__old); }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+        if (a_truthy(a_eq(a_len(line), a_int(0)))) {
+            continue;
+        }
+        { AValue __old = tab; tab = a_str_find(line, a_string("refs/tags/")); a_release(__old); }
+        if (a_truthy(a_lt(tab, a_int(0)))) {
+            continue;
+        }
+        { AValue __old = tag; tag = a_str_slice(line, a_add(tab, a_int(10)), a_len(line)); a_release(__old); }
+        { AValue __old = peeled; peeled = a_add(a_add(a_string("^"), a_from_code(a_int(123))), a_from_code(a_int(125))); a_release(__old); }
+        if (a_truthy(a_str_ends_with(tag, peeled))) {
+            continue;
+        }
+        if (a_truthy(a_str_starts_with(tag, a_string("v")))) {
+            { AValue __old = tags; tags = a_array_push(tags, a_str_slice(tag, a_int(1), a_len(tag))); a_release(__old); }
+        } else {
+            { AValue __old = tags; tags = a_array_push(tags, tag); a_release(__old); }
+        }
+    }
+    __ret = a_retain(tags); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(result);
+    a_release(lines);
+    a_release(tags);
+    a_release(i);
+    a_release(line);
+    a_release(tab);
+    a_release(tag);
+    a_release(peeled);
+    return __ret;
+}
+
+AValue fn_pkg__clone_at_tag(AValue url, AValue tag, AValue dest) {
+    AValue tag_ref = {0}, r = {0}, r2 = {0};
+    AValue __ret = a_void();
+    { AValue __old = tag_ref; tag_ref = a_add(a_string("v"), tag); a_release(__old); }
+    { AValue __old = r; r = a_exec(a_add(a_add(a_add(a_add(a_add(a_add(a_string("git clone --depth 1 --branch "), tag_ref), a_string(" ")), url), a_string(" ")), dest), a_string(" 2>/dev/null"))); a_release(__old); }
+    if (a_truthy(a_eq(a_map_get(r, a_string("code")), a_int(0)))) {
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+    { AValue __old = r2; r2 = a_exec(a_add(a_add(a_add(a_add(a_add(a_add(a_string("git clone --depth 1 --branch "), tag), a_string(" ")), url), a_string(" ")), dest), a_string(" 2>/dev/null"))); a_release(__old); }
+    __ret = a_eq(a_map_get(r2, a_string("code")), a_int(0)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(tag_ref);
+    a_release(r);
+    a_release(r2);
+    return __ret;
+}
+
+AValue fn_pkg__get_commit(AValue dest) {
+    AValue r = {0};
+    AValue __ret = a_void();
+    { AValue __old = r; r = a_exec(a_add(a_add(a_string("git -C "), dest), a_string(" rev-parse HEAD 2>/dev/null"))); a_release(__old); }
+    if (a_truthy(a_eq(a_map_get(r, a_string("code")), a_int(0)))) {
+        __ret = a_str_trim(a_map_get(r, a_string("stdout"))); goto __fn_cleanup;
+    }
+    __ret = a_string(""); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(r);
+    return __ret;
+}
+
+AValue fn_pkg__copy_a_files(AValue src_dir, AValue dst_dir) {
+    AValue entries = {0}, i = {0}, name = {0}, is_dir = {0}, src_path = {0}, dst_path = {0}, content = {0};
+    AValue __ret = a_void();
+    if (a_truthy(a_not(a_fs_exists(dst_dir)))) {
+        a_fs_mkdir(dst_dir);
+    }
+    { AValue __old = entries; entries = a_fs_ls(src_dir); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(entries)))) {
+        { AValue __old = name; name = a_map_get(a_array_get(entries, i), a_string("name")); a_release(__old); }
+        { AValue __old = is_dir; is_dir = a_map_get(a_array_get(entries, i), a_string("is_dir")); a_release(__old); }
+        { AValue __old = src_path; src_path = fn_path_join(src_dir, name); a_release(__old); }
+        { AValue __old = dst_path; dst_path = fn_path_join(dst_dir, name); a_release(__old); }
+        if (a_truthy(is_dir)) {
+            if (a_truthy(a_neq(name, a_string(".git")))) {
+                fn_pkg__copy_a_files(src_path, dst_path);
+            }
+        } else {
+            if (a_truthy(a_str_ends_with(name, a_string(".a")))) {
+                { AValue __old = content; content = a_io_read_file(src_path); a_release(__old); }
+                a_io_write_file(dst_path, content);
+            }
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+__fn_cleanup:
+    a_release(entries);
+    a_release(i);
+    a_release(name);
+    a_release(is_dir);
+    a_release(src_path);
+    a_release(dst_path);
+    a_release(content);
+    return __ret;
+}
+
+AValue fn_pkg_init(AValue dir) {
+    AValue name = {0}, text = {0};
+    AValue __ret = a_void();
+    { AValue __old = name; name = fn_path_basename(dir); a_release(__old); }
+    { AValue __old = text; text = a_add(a_add(a_string("[package]\nname = \""), name), a_string("\"\nversion = \"0.1.0\"\n\n[deps]\n")); a_release(__old); }
+    a_io_write_file(fn_pkg__manifest_path(dir), text);
+__fn_cleanup:
+    a_release(name);
+    a_release(text);
+    return __ret;
+}
+
+AValue fn_pkg_read_manifest(AValue dir) {
+    AValue text = {0};
+    AValue __ret = a_void();
+    { AValue __old = text; text = a_io_read_file(fn_pkg__manifest_path(dir)); a_release(__old); }
+    __ret = fn_toml_parse(text); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(text);
+    return __ret;
+}
+
+AValue fn_pkg_write_manifest(AValue dir, AValue manifest) {
+    AValue pkg = {0}, text = {0}, deps = {0}, keys = {0}, i = {0}, k = {0};
+    AValue __ret = a_void();
+    { AValue __old = pkg; pkg = a_map_get(manifest, a_string("package")); a_release(__old); }
+    { AValue __old = text; text = a_string("[package]\n"); a_release(__old); }
+    { AValue __old = text; text = a_add(a_add(a_add(text, a_string("name = \"")), a_map_get(pkg, a_string("name"))), a_string("\"\n")); a_release(__old); }
+    { AValue __old = text; text = a_add(a_add(a_add(text, a_string("version = \"")), a_map_get(pkg, a_string("version"))), a_string("\"\n")); a_release(__old); }
+    { AValue __old = text; text = a_add(text, a_string("\n[deps]\n")); a_release(__old); }
+    { AValue __old = deps; deps = a_map_get(manifest, a_string("deps")); a_release(__old); }
+    if (a_truthy(a_eq(a_type_of(deps), a_string("map")))) {
+        { AValue __old = keys; keys = a_map_keys(deps); a_release(__old); }
+        { AValue __old = i; i = a_int(0); a_release(__old); }
+        while (a_truthy(a_lt(i, a_len(keys)))) {
+            { AValue __old = k; k = a_array_get(keys, i); a_release(__old); }
+            { AValue __old = text; text = a_add(a_add(a_add(a_add(text, k), a_string(" = \"")), a_map_get(deps, k)), a_string("\"\n")); a_release(__old); }
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+        }
+    }
+    a_io_write_file(fn_pkg__manifest_path(dir), text);
+__fn_cleanup:
+    a_release(pkg);
+    a_release(text);
+    a_release(deps);
+    a_release(keys);
+    a_release(i);
+    a_release(k);
+    return __ret;
+}
+
+AValue fn_pkg_add_dep(AValue dir, AValue name, AValue source) {
+    AValue manifest = {0}, deps = {0}, updated = {0};
+    AValue __ret = a_void();
+    { AValue __old = manifest; manifest = fn_pkg_read_manifest(dir); a_release(__old); }
+    { AValue __old = deps; deps = a_map_get(manifest, a_string("deps")); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(deps), a_string("map")))) {
+        { AValue __old = deps; deps = a_map_from_entries(a_array_new(0)); a_release(__old); }
+    }
+    { AValue __old = deps; deps = a_map_set(deps, name, source); a_release(__old); }
+    { AValue __old = updated; updated = a_map_set(manifest, a_string("deps"), deps); a_release(__old); }
+    fn_pkg_write_manifest(dir, updated);
+    fn_pkg_install(dir);
+__fn_cleanup:
+    a_release(manifest);
+    a_release(deps);
+    a_release(updated);
+    return __ret;
+}
+
+AValue fn_pkg__read_lock(AValue dir) {
+    AValue lp = {0}, text = {0}, parsed = {0}, pkgs = {0};
+    AValue __ret = a_void();
+    { AValue __old = lp; lp = fn_pkg__lock_path(dir); a_release(__old); }
+    if (a_truthy(a_not(a_fs_exists(lp)))) {
+        __ret = a_array_new(0); goto __fn_cleanup;
+    }
+    { AValue __old = text; text = a_io_read_file(lp); a_release(__old); }
+    { AValue __old = parsed; parsed = fn_toml_parse(text); a_release(__old); }
+    { AValue __old = pkgs; pkgs = a_map_get(parsed, a_string("package")); a_release(__old); }
+    if (a_truthy(a_eq(a_type_of(pkgs), a_string("array")))) {
+        __ret = a_retain(pkgs); goto __fn_cleanup;
+    }
+    __ret = a_array_new(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(lp);
+    a_release(text);
+    a_release(parsed);
+    a_release(pkgs);
+    return __ret;
+}
+
+AValue fn_pkg__write_lock(AValue dir, AValue packages) {
+    AValue text = {0}, i = {0}, p = {0};
+    AValue __ret = a_void();
+    { AValue __old = text; text = a_string(""); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(packages)))) {
+        { AValue __old = p; p = a_array_get(packages, i); a_release(__old); }
+        { AValue __old = text; text = a_add(text, a_string("[[package]]\n")); a_release(__old); }
+        { AValue __old = text; text = a_add(a_add(a_add(text, a_string("name = \"")), a_map_get(p, a_string("name"))), a_string("\"\n")); a_release(__old); }
+        { AValue __old = text; text = a_add(a_add(a_add(text, a_string("version = \"")), a_map_get(p, a_string("version"))), a_string("\"\n")); a_release(__old); }
+        { AValue __old = text; text = a_add(a_add(a_add(text, a_string("source = \"")), a_map_get(p, a_string("source"))), a_string("\"\n")); a_release(__old); }
+        { AValue __old = text; text = a_add(a_add(a_add(text, a_string("commit = \"")), a_map_get(p, a_string("commit"))), a_string("\"\n\n")); a_release(__old); }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    a_io_write_file(fn_pkg__lock_path(dir), text);
+__fn_cleanup:
+    a_release(text);
+    a_release(i);
+    a_release(p);
+    return __ret;
+}
+
+AValue fn_pkg__find_locked(AValue lock_entries, AValue name) {
+    AValue i = {0};
+    AValue __ret = a_void();
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(lock_entries)))) {
+        if (a_truthy(a_eq(a_map_get(a_array_get(lock_entries, i), a_string("name")), name))) {
+            __ret = a_array_get(lock_entries, i); goto __fn_cleanup;
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_map_from_entries(a_array_new(0)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(i);
+    return __ret;
+}
+
+AValue fn_pkg_install(AValue dir) {
+    AValue manifest = {0}, deps = {0}, dep_keys = {0}, modules = {0}, lock_entries = {0}, new_lock = {0}, installed = {0}, i = {0}, name = {0}, source_str = {0}, source = {0}, constraint = {0}, url = {0}, locked = {0}, dest = {0}, locked_ver = {0}, tags = {0}, version = {0}, tmp = {0}, ok = {0}, commit = {0};
+    AValue __ret = a_void();
+    { AValue __old = manifest; manifest = fn_pkg_read_manifest(dir); a_release(__old); }
+    { AValue __old = deps; deps = a_map_get(manifest, a_string("deps")); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(deps), a_string("map")))) {
+        __ret = a_map_new(1, "installed", a_int(0)); goto __fn_cleanup;
+    }
+    { AValue __old = dep_keys; dep_keys = a_map_keys(deps); a_release(__old); }
+    { AValue __old = modules; modules = fn_pkg__modules_dir(dir); a_release(__old); }
+    if (a_truthy(a_not(a_fs_exists(modules)))) {
+        a_fs_mkdir(modules);
+    }
+    { AValue __old = lock_entries; lock_entries = fn_pkg__read_lock(dir); a_release(__old); }
+    { AValue __old = new_lock; new_lock = a_array_new(0); a_release(__old); }
+    { AValue __old = installed; installed = a_int(0); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(dep_keys)))) {
+        { AValue __old = name; name = a_array_get(dep_keys, i); a_release(__old); }
+        { AValue __old = source_str; source_str = a_map_get(deps, name); a_release(__old); }
+        { AValue __old = source; source = fn_pkg_parse_source(source_str); a_release(__old); }
+        { AValue __old = constraint; constraint = a_map_get(source, a_string("constraint")); a_release(__old); }
+        { AValue __old = url; url = fn_pkg__git_url(source); a_release(__old); }
+        { AValue __old = locked; locked = fn_pkg__find_locked(lock_entries, name); a_release(__old); }
+        { AValue __old = dest; dest = fn_path_join(modules, name); a_release(__old); }
+        if (a_truthy(a_map_has(locked, a_string("version")))) {
+            { AValue __old = locked_ver; locked_ver = a_map_get(locked, a_string("version")); a_release(__old); }
+            if (a_truthy(a_or(a_eq(a_len(constraint), a_int(0)), fn_semver_satisfies(locked_ver, constraint)))) {
+                if (a_truthy(a_fs_exists(dest))) {
+                    { AValue __old = new_lock; new_lock = a_array_push(new_lock, locked); a_release(__old); }
+                    { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                    continue;
+                }
+            }
+        }
+        { AValue __old = tags; tags = fn_pkg__fetch_tags(url); a_release(__old); }
+        { AValue __old = version; version = a_string(""); a_release(__old); }
+        if (a_truthy(a_gt(a_len(constraint), a_int(0)))) {
+            { AValue __old = version; version = fn_semver_best_match(tags, constraint); a_release(__old); }
+        } else {
+            if (a_truthy(a_gt(a_len(tags), a_int(0)))) {
+                { AValue __old = version; version = a_array_get(tags, a_sub(a_len(tags), a_int(1))); a_release(__old); }
+            }
+        }
+        if (a_truthy(a_eq(a_len(version), a_int(0)))) {
+            a_println(a_add(a_add(a_add(a_add(a_string("  warning: no matching version for "), name), a_string(" (")), constraint), a_string(")")));
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        { AValue __old = tmp; tmp = a_add(a_string("/tmp/a_pkg_"), name); a_release(__old); }
+        a_exec(a_add(a_string("rm -rf "), tmp));
+        { AValue __old = ok; ok = fn_pkg__clone_at_tag(url, version, tmp); a_release(__old); }
+        if (a_truthy(a_not(ok))) {
+            a_println(a_add(a_add(a_add(a_string("  warning: failed to clone "), name), a_string("@")), version));
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            continue;
+        }
+        { AValue __old = commit; commit = fn_pkg__get_commit(tmp); a_release(__old); }
+        if (a_truthy(a_fs_exists(dest))) {
+            a_exec(a_add(a_string("rm -rf "), dest));
+        }
+        fn_pkg__copy_a_files(tmp, dest);
+        a_exec(a_add(a_string("rm -rf "), tmp));
+        { AValue __old = new_lock; new_lock = a_array_push(new_lock, a_map_new(4, "name", name, "version", version, "source", a_add(a_add(a_map_get(source, a_string("host")), a_string(":")), a_map_get(source, a_string("repo"))), "commit", commit)); a_release(__old); }
+        { AValue __old = installed; installed = a_add(installed, a_int(1)); a_release(__old); }
+        a_println(a_add(a_add(a_add(a_string("  installed "), name), a_string("@")), version));
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    fn_pkg__write_lock(dir, new_lock);
+    __ret = a_map_new(1, "installed", installed); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(manifest);
+    a_release(deps);
+    a_release(dep_keys);
+    a_release(modules);
+    a_release(lock_entries);
+    a_release(new_lock);
+    a_release(installed);
+    a_release(i);
+    a_release(name);
+    a_release(source_str);
+    a_release(source);
+    a_release(constraint);
+    a_release(url);
+    a_release(locked);
+    a_release(dest);
+    a_release(locked_ver);
+    a_release(tags);
+    a_release(version);
+    a_release(tmp);
+    a_release(ok);
+    a_release(commit);
+    return __ret;
+}
+
 AValue fn__die(AValue msg) {
     AValue __ret = a_void();
     a_eprintln(fn_cli_red(a_str_concat(a_string("error: "), msg)));
@@ -7825,6 +9331,39 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_cmd_pkg_init(void) {
+    AValue dir = {0};
+    AValue __ret = a_void();
+    { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
+    fn_pkg_init(dir);
+    a_println(a_add(a_string("created pkg.toml in "), dir));
+__fn_cleanup:
+    a_release(dir);
+    return __ret;
+}
+
+AValue fn_cmd_pkg_add(AValue name, AValue source) {
+    AValue dir = {0};
+    AValue __ret = a_void();
+    { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
+    fn_pkg_add_dep(dir, name, source);
+__fn_cleanup:
+    a_release(dir);
+    return __ret;
+}
+
+AValue fn_cmd_pkg_install(void) {
+    AValue dir = {0}, result = {0};
+    AValue __ret = a_void();
+    { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
+    { AValue __old = result; result = fn_pkg_install(dir); a_release(__old); }
+    a_println(a_add(a_add(a_string("done ("), a_to_str(a_map_get(result, a_string("installed")))), a_string(" packages installed)")));
+__fn_cleanup:
+    a_release(dir);
+    a_release(result);
+    return __ret;
+}
+
 AValue fn__usage(void) {
     AValue __ret = a_void();
     a_eprintln(a_string("a -- the a language native toolchain"));
@@ -7837,6 +9376,9 @@ AValue fn__usage(void) {
     a_eprintln(a_string("  a test <dir/>              run test_*.a files in directory"));
     a_eprintln(a_string("  a lsp                      start language server (JSON-RPC over stdio)"));
     a_eprintln(a_string("  a cache clean              clear the compilation cache"));
+    a_eprintln(a_string("  a pkg init                 create pkg.toml in current directory"));
+    a_eprintln(a_string("  a pkg add <name> <source>  add a dependency"));
+    a_eprintln(a_string("  a pkg install              install all dependencies"));
     a_eprintln(a_string(""));
     a_eprintln(a_string("  a run and a build expect c_runtime/ in the current directory."));
     a_eprintln(a_string("  shebang: #!/usr/bin/env a run"));
@@ -7918,6 +9460,28 @@ AValue fn_main(void) {
             }
         }
         fn_cmd_eval(a_array_get(argv, a_int(1)), extra);
+        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(subcmd, a_string("pkg")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+            fn__die(a_string("usage: a pkg <init|add|install>"));
+        }
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("init")))) {
+            fn_cmd_pkg_init();
+            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        }
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("add")))) {
+            if (a_truthy(a_lt(a_len(argv), a_int(4)))) {
+                fn__die(a_string("usage: a pkg add <name> <source>"));
+            }
+            fn_cmd_pkg_add(a_array_get(argv, a_int(2)), a_array_get(argv, a_int(3)));
+            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        }
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("install")))) {
+            fn_cmd_pkg_install();
+            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        }
+        fn__die(a_string("usage: a pkg <init|add|install>"));
         __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("cache")))) {
