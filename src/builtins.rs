@@ -748,6 +748,46 @@ pub fn call_builtin(name: &str, args: &[Value], interp: &mut Interpreter) -> ARe
             Ok(Value::Void)
         }
 
+        "proc.wait" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("proc.wait: expected int handle", None)) };
+            let mut procs = child_procs().lock().unwrap();
+            if handle >= procs.len() || procs[handle].is_none() {
+                return Err(AError::runtime("proc.wait: invalid handle", None));
+            }
+            if let Some(mut child) = procs[handle].take() {
+                drop(child.stdin.take());
+                let output = child.wait_with_output()
+                    .map_err(|e| AError::runtime(format!("proc.wait: {e}"), None))?;
+                let code = output.status.code().unwrap_or(-1) as i64;
+                let stdout_str = String::from_utf8_lossy(&output.stdout).to_string();
+                let mut map = std::collections::HashMap::new();
+                map.insert("code".to_string(), Value::Int(code));
+                map.insert("stdout".to_string(), Value::string(stdout_str));
+                Ok(Value::map(map))
+            } else {
+                Err(AError::runtime("proc.wait: invalid handle", None))
+            }
+        }
+        "proc.is_running" => {
+            let handle = match &args[0] { Value::Int(i) => *i as usize, _ => return Err(AError::runtime("proc.is_running: expected int handle", None)) };
+            let mut procs = child_procs().lock().unwrap();
+            if handle >= procs.len() || procs[handle].is_none() {
+                return Ok(Value::Bool(false));
+            }
+            if let Some(ref mut child) = procs[handle] {
+                match child.try_wait() {
+                    Ok(None) => Ok(Value::Bool(true)),
+                    Ok(Some(_)) => {
+                        procs[handle] = None;
+                        Ok(Value::Bool(false))
+                    }
+                    Err(_) => Ok(Value::Bool(false)),
+                }
+            } else {
+                Ok(Value::Bool(false))
+            }
+        }
+
         // --- JSON ---
         "json.parse" => {
             if let Value::String(s) = &args[0] {
@@ -1674,6 +1714,7 @@ pub fn is_builtin(name: &str) -> bool {
         "str.join" | "str.chars" | "str.slice" | "str.lines" | "str.find" | "str.count" |
         "exec" |
         "proc.spawn" | "proc.write" | "proc.read_line" | "proc.kill" |
+        "proc.wait" | "proc.is_running" |
         "json.parse" | "json.stringify" | "json.pretty" |
         "env.get" | "env.set" | "env.all" |
         "type_of" | "int" | "float" |

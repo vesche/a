@@ -1,0 +1,74 @@
+; std/migrate.a -- SQLite migration runner
+
+use std.path
+use std.datetime
+
+fn _bootstrap(handle) -> void {
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at TEXT)")
+}
+
+fn _is_applied(handle, name: str) -> bool {
+  let rows = db.query(handle, "SELECT name FROM _migrations WHERE name = ?", [name])
+  ret len(rows) > 0
+}
+
+fn _sql_files(dir: str) -> [str] {
+  let entries = fs.ls(dir)
+  let mut result = []
+  let mut i = 0
+  while i < len(entries) {
+    let name = map.get(entries[i], "name")
+    if str.ends_with(name, ".sql") {
+      result = push(result, name)
+    }
+    i = i + 1
+  }
+  ret sort(result)
+}
+
+fn run(handle, dir: str) -> map {
+  _bootstrap(handle)
+  let files = _sql_files(dir)
+  let mut applied = 0
+  let mut i = 0
+  while i < len(files) {
+    let name = files[i]
+    if !_is_applied(handle, name) {
+      let fpath = path.join(dir, name)
+      let sql = io.read_file(fpath)
+      db.exec(handle, sql)
+      let now = datetime.iso(datetime.now())
+      db.exec(handle, "INSERT INTO _migrations (name, applied_at) VALUES ('" + name + "', '" + now + "')")
+      applied = applied + 1
+    }
+    i = i + 1
+  }
+  ret #{"applied": applied, "total": len(files)}
+}
+
+fn status(handle, dir: str) {
+  _bootstrap(handle)
+  let files = _sql_files(dir)
+  let mut result = []
+  let mut i = 0
+  while i < len(files) {
+    let name = files[i]
+    let done = _is_applied(handle, name)
+    result = push(result, #{"file": name, "applied": done})
+    i = i + 1
+  }
+  ret result
+}
+
+fn create(dir: str, name: str) -> str {
+  let files = _sql_files(dir)
+  let num = len(files) + 1
+  let mut prefix = to_str(num)
+  while len(prefix) < 3 {
+    prefix = "0" + prefix
+  }
+  let filename = prefix + "_" + name + ".sql"
+  let fpath = path.join(dir, filename)
+  io.write_file(fpath, "")
+  ret fpath
+}

@@ -328,6 +328,8 @@ fn _builtin_ns_signatures() {
   m = map.set(m, "proc.write", "fn proc.write(handle, data) -> void | Err")
   m = map.set(m, "proc.read_line", "fn proc.read_line(handle) -> str | Err")
   m = map.set(m, "proc.kill", "fn proc.kill(handle) -> void | Err")
+  m = map.set(m, "proc.wait", "fn proc.wait(handle) -> map(code, stdout)")
+  m = map.set(m, "proc.is_running", "fn proc.is_running(handle) -> bool")
   m = map.set(m, "env.get", "fn env.get(key) -> str")
   m = map.set(m, "env.set", "fn env.set(key, value) -> void")
   m = map.set(m, "env.all", "fn env.all() -> map")

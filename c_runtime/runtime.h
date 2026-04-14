@@ -259,6 +259,8 @@ AValue a_proc_spawn(AValue cmd);
 AValue a_proc_write(AValue handle, AValue data);
 AValue a_proc_read_line(AValue handle);
 AValue a_proc_kill(AValue handle);
+AValue a_proc_wait(AValue handle);
+AValue a_proc_is_running(AValue handle);
 
 /* Database (SQLite) */
 AValue a_db_open(AValue path);

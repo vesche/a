@@ -1,0 +1,105 @@
+; std/config.a -- Layered configuration loading
+
+use std.toml
+use std.yaml
+
+fn load(path: str) -> map {
+  let text = io.read_file(path)
+  if str.ends_with(path, ".toml") {
+    ret toml.parse(text)
+  }
+  if str.ends_with(path, ".yaml") {
+    ret yaml.parse(text)
+  }
+  if str.ends_with(path, ".yml") {
+    ret yaml.parse(text)
+  }
+  ret Err("config.load: unsupported format (use .toml, .yaml, .yml)")
+}
+
+fn from_env(prefix: str) -> map {
+  let all = env.all()
+  let keys = map.keys(all)
+  let needle = prefix + "_"
+  let mut result = map.from_entries([])
+  let mut i = 0
+  while i < len(keys) {
+    let k = keys[i]
+    if str.starts_with(k, needle) {
+      let stripped = str.slice(k, len(needle), len(k))
+      let lower = str.lower(stripped)
+      result = map.set(result, lower, map.get(all, k))
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn dotenv(path: str) -> void {
+  let text = io.read_file(path)
+  let lines = str.lines(text)
+  let mut i = 0
+  while i < len(lines) {
+    let line = str.trim(lines[i])
+    i = i + 1
+    if len(line) == 0 { continue }
+    if str.starts_with(line, "#") { continue }
+    let eq = str.find(line, "=")
+    if eq < 0 { continue }
+    let key = str.trim(str.slice(line, 0, eq))
+    let mut val = str.trim(str.slice(line, eq + 1, len(line)))
+    if len(val) >= 2 {
+      let first = str.slice(val, 0, 1)
+      let last_ch = str.slice(val, len(val) - 1, len(val))
+      if first == "\"" {
+        if last_ch == "\"" {
+          val = str.slice(val, 1, len(val) - 1)
+        }
+      }
+      if first == "'" {
+        if last_ch == "'" {
+          val = str.slice(val, 1, len(val) - 1)
+        }
+      }
+    }
+    env.set(key, val)
+  }
+}
+
+fn merge(base: map, over: map) -> map {
+  let mut result = base
+  let keys = map.keys(over)
+  let mut i = 0
+  while i < len(keys) {
+    let k = keys[i]
+    let over_val = map.get(over, k)
+    if map.has(base, k) {
+      let base_val = map.get(base, k)
+      if type_of(base_val) == "map" {
+        if type_of(over_val) == "map" {
+          result = map.set(result, k, merge(base_val, over_val))
+          i = i + 1
+          continue
+        }
+      }
+    }
+    result = map.set(result, k, over_val)
+    i = i + 1
+  }
+  ret result
+}
+
+fn require(cfg: map, keys) {
+  let mut missing = []
+  let mut i = 0
+  while i < len(keys) {
+    if !map.has(cfg, keys[i]) {
+      missing = push(missing, keys[i])
+    }
+    i = i + 1
+  }
+  if len(missing) > 0 {
+    ret Err("missing required keys: " + str.join(missing, ", "))
+  }
+  ret Ok(cfg)
+}

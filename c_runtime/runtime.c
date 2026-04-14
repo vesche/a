@@ -928,6 +928,43 @@ AValue a_proc_kill(AValue handle) {
     return a_void();
 }
 
+AValue a_proc_wait(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("proc.wait: expected int handle"));
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_SUBPROCS || !subprocs[h].active)
+        return a_err(a_string("proc.wait: invalid handle"));
+    close(subprocs[h].stdin_fd);
+    size_t cap = 4096, total = 0;
+    char* buf = malloc(cap);
+    ssize_t n;
+    while ((n = read(subprocs[h].stdout_fd, buf + total, cap - total)) > 0) {
+        total += n;
+        if (total >= cap) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    buf[total] = '\0';
+    close(subprocs[h].stdout_fd);
+    int status = 0;
+    waitpid(subprocs[h].pid, &status, 0);
+    subprocs[h].active = 0;
+    int code = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    AValue result = a_map_new(0);
+    result = a_map_set(result, a_string("code"), a_int(code));
+    result = a_map_set(result, a_string("stdout"), a_string(buf));
+    free(buf);
+    return result;
+}
+
+AValue a_proc_is_running(AValue handle) {
+    if (handle.tag != TAG_INT) return a_bool(0);
+    int h = (int)handle.ival;
+    if (h < 0 || h >= MAX_SUBPROCS || !subprocs[h].active) return a_bool(0);
+    int status = 0;
+    pid_t r = waitpid(subprocs[h].pid, &status, WNOHANG);
+    if (r == 0) return a_bool(1);
+    subprocs[h].active = 0;
+    return a_bool(0);
+}
+
 AValue a_env_get(AValue key) {
     if (key.tag != TAG_STRING) return a_void();
     const char* val = getenv(key.sval->data);

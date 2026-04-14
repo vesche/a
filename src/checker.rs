@@ -231,6 +231,16 @@ impl Checker {
             ret: Type::Void,
             effects: vec!["io".into()],
         });
+        self.fn_sigs.insert("proc.wait".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Unknown,
+            effects: vec!["io".into()],
+        });
+        self.fn_sigs.insert("proc.is_running".into(), FnSig {
+            params: vec![("handle".into(), Type::I64)],
+            ret: Type::Bool,
+            effects: vec!["io".into()],
+        });
         self.fn_sigs.insert("json.parse".into(), FnSig {
             params: vec![("s".into(), Type::Str)],
             ret: Type::Unknown,

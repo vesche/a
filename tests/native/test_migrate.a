@@ -1,0 +1,52 @@
+use std.migrate
+
+fn assert(cond, msg) {
+  if !cond { fail("FAIL: " + msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail("FAIL: expected " + to_str(b) + ", got " + to_str(a))
+  }
+}
+
+fn main() {
+  let dir = "/tmp/test_migrations"
+  exec("rm -rf " + dir)
+  fs.mkdir(dir)
+
+  ; Test create
+  let p1 = migrate.create(dir, "create_users")
+  assert(str.ends_with(p1, "001_create_users.sql"), "first migration name")
+  let p2 = migrate.create(dir, "add_email")
+  assert(str.ends_with(p2, "002_add_email.sql"), "second migration name")
+
+  ; Write SQL content
+  io.write_file(p1, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)")
+  io.write_file(p2, "ALTER TABLE users ADD COLUMN email TEXT")
+
+  ; Test run
+  let handle = db.open(":memory:")
+  let result = migrate.run(handle, dir)
+  assert_eq(map.get(result, "applied"), 2)
+  assert_eq(map.get(result, "total"), 2)
+
+  ; Verify tables exist
+  let rows = db.query(handle, "SELECT name FROM sqlite_master WHERE type='table' AND name='users'", [])
+  assert_eq(len(rows), 1)
+
+  ; Test status
+  let st = migrate.status(handle, dir)
+  assert_eq(len(st), 2)
+  assert_eq(map.get(st[0], "applied"), true)
+  assert_eq(map.get(st[1], "applied"), true)
+
+  ; Test idempotent re-run
+  let rerun = migrate.run(handle, dir)
+  assert_eq(map.get(rerun, "applied"), 0)
+  assert_eq(map.get(rerun, "total"), 2)
+
+  db.close(handle)
+  exec("rm -rf " + dir)
+  println("all migrate tests passed")
+}

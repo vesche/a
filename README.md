@@ -100,7 +100,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**130+ builtins** covering everything an agent needs (plus native compilation to C):
+**135+ builtins** covering everything an agent needs (plus native compilation to C):
 
 | Domain | Operations |
 |--------|-----------|
@@ -111,7 +111,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **HTTP server** | `http.serve(port, handler)` -- POSIX sockets, closure handler receives `{method, path, headers, body}`, returns `{status, headers, body}`; `http.serve_static(port, dir)` for file serving |
 | **Database** | `db.open(path)` (or `":memory:"`), `db.exec(db, sql)`, `db.query(db, sql, params)` with `?` binding, `db.close(db)` -- bundled SQLite, zero setup |
 | **Shell** | `exec(cmd)` returns `{stdout, stderr, code}` |
-| **Subprocess** | `proc.spawn(cmd)`, `proc.write(h, data)`, `proc.read_line(h)`, `proc.kill(h)` -- bidirectional pipe I/O with long-lived child processes |
+| **Subprocess** | `proc.spawn(cmd)`, `proc.write(h, data)`, `proc.read_line(h)`, `proc.kill(h)`, `proc.wait(h)`, `proc.is_running(h)` -- bidirectional pipe I/O with lifecycle management |
 | **MCP** | `mcp.server`, `mcp.add_tool`, `mcp.add_resource`, `mcp.serve` (server); `mcp.connect`, `mcp.list_tools`, `mcp.call_tool`, `mcp.close` (client) -- JSON-RPC 2.0 over stdio (via stdlib) |
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
@@ -129,7 +129,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Signals** | `signal.on(name, handler)` -- register handlers for SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2 (native CLI only) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 26 modules:
+**Standard library** with 28 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -155,6 +155,8 @@ use std.uuid                  # v4() -- UUID generation
 use std.args                  # spec, flag, option, positional, parse -- declarative CLI argument parsing
 use std.schema                # validate(value, schema), from_type -- JSON Schema draft-07 validation
 use std.diff                  # text, lines, patch -- Myers algorithm unified diff, structured ops, patch
+use std.config                # load, from_env, dotenv, merge, require -- layered configuration loading
+use std.migrate               # run, status, create -- SQLite migration runner
 use std.template              # render(template, vars) with {{var}}, {{#if}}, {{#each}}
 use std.compiler.lexer        # tokenize "a" source into token arrays
 use std.compiler.parser       # parse token arrays into tagged-map ASTs
@@ -177,7 +179,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 130+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The C code generator compiles itself -- including the lexer, parser, and AST modules -- into ~7,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 135+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -251,6 +253,8 @@ fn main() -> void {
 | `examples/mcp_client.a` | 55 | **MCP client** -- connects to any MCP server, lists tools, calls first tool |
 | `examples/cli_demo.a` | 27 | **CLI parsing** -- declarative argument parsing with flags, options, positionals, auto-help |
 | `examples/code_review.a` | 40 | **code review** -- diff two files with colored add/remove output using Myers algorithm |
+| `examples/config_demo.a` | 38 | **config loading** -- TOML/dotenv/env-prefix config with deep merge and required keys |
+| `examples/migrate_demo.a` | 35 | **DB migrations** -- SQLite migration runner with create, run, status, idempotent re-run |
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
@@ -264,9 +268,9 @@ fn main() -> void {
 |---|---|
 | **Rust runtime** | ~10,000 lines across 8 modules |
 | **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
-| **"a" source** | ~20,000 lines across 97 files |
-| **Standard library** | 26 modules, 430+ functions, ~9,100 lines |
-| **Test suites** | 32 suites + cgen test script, 530+ native tests, ~4,700 lines |
+| **"a" source** | ~20,200 lines across 101 files |
+| **Standard library** | 28 modules, 450+ functions, ~9,300 lines |
+| **Test suites** | 34 suites + cgen test script, 550+ native tests, ~4,900 lines |
 | **Examples & tools** | 37 programs, ~6,300 lines |
 
 ## Editor support
@@ -274,7 +278,7 @@ fn main() -> void {
 **Language server:** `./a-lsp` is a native LSP server written in "a" itself. It provides:
 
 - **Diagnostics** -- parse errors on every keystroke (red squiggles)
-- **Completion** -- 130+ builtins with signatures, keywords, user functions, 20+ stdlib modules
+- **Completion** -- 135+ builtins with signatures, keywords, user functions, 20+ stdlib modules
 - **Hover** -- function signatures for builtins and user-defined functions
 - **Go-to-definition** -- in-file and cross-module (resolves `use` imports to source files)
 

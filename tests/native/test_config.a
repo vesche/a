@@ -1,0 +1,59 @@
+use std.config
+
+fn assert(cond, msg) {
+  if !cond { fail("FAIL: " + msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail("FAIL: expected " + to_str(b) + ", got " + to_str(a))
+  }
+}
+
+fn main() {
+  ; Test dotenv
+  io.write_file("/tmp/test_config.env", "HOST=localhost\nPORT=8080\n# comment line\nSECRET=my_secret\n")
+  config.dotenv("/tmp/test_config.env")
+  assert_eq(env.get("HOST"), "localhost")
+  assert_eq(env.get("PORT"), "8080")
+  assert_eq(env.get("SECRET"), "my_secret")
+
+  ; Test from_env
+  env.set("TESTAPP_DB_HOST", "db.local")
+  env.set("TESTAPP_PORT", "3000")
+  let e = config.from_env("TESTAPP")
+  assert_eq(map.get(e, "db_host"), "db.local")
+  assert_eq(map.get(e, "port"), "3000")
+
+  ; Test merge - shallow
+  let a = #{"x": 1, "y": 2}
+  let b = #{"y": 3, "z": 4}
+  let m = config.merge(a, b)
+  assert_eq(map.get(m, "x"), 1)
+  assert_eq(map.get(m, "y"), 3)
+  assert_eq(map.get(m, "z"), 4)
+
+  ; Test merge - deep
+  let base = #{"db": #{"host": "localhost", "port": 5432}}
+  let over = #{"db": #{"host": "prod.db"}}
+  let deep = config.merge(base, over)
+  let db_cfg = map.get(deep, "db")
+  assert_eq(map.get(db_cfg, "host"), "prod.db")
+  assert_eq(map.get(db_cfg, "port"), 5432)
+
+  ; Test require - pass
+  let ok = config.require(#{"a": 1, "b": 2}, ["a", "b"])
+  assert(is_ok(ok), "require should pass")
+
+  ; Test require - fail
+  let bad = config.require(#{"a": 1}, ["a", "missing"])
+  assert(is_err(bad), "require should fail for missing key")
+
+  ; Test load TOML
+  io.write_file("/tmp/test_load.toml", "port = 9090\nname = \"test\"\n")
+  let cfg = config.load("/tmp/test_load.toml")
+  assert_eq(map.get(cfg, "port"), 9090)
+  assert_eq(map.get(cfg, "name"), "test")
+
+  println("all config tests passed")
+}

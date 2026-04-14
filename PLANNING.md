@@ -2369,3 +2369,47 @@ Implementation uses the Myers shortest edit script algorithm with O(ND) time com
 | `tests/native/test_diff.a` | NEW -- Identical, add, remove, empty, unified format, patch round-trip |
 | `Cargo.toml` | Version bump to 0.62.0 |
 | `README.md` | Added schema, diff to stdlib table; updated counts (26 modules, 430+ functions) |
+
+---
+
+## v0.63 -- Process Management + Config
+
+### New Builtins
+
+- **`proc.wait(handle)`** -- waits for subprocess to exit, collects remaining stdout, returns `#{"code": int, "stdout": str}`. C runtime: close stdin_fd, read all from stdout_fd, waitpid. Rust VM: `child.wait_with_output()`.
+- **`proc.is_running(handle)`** -- non-blocking check using `waitpid(WNOHANG)` (C) or `child.try_wait()` (Rust). Returns `true`/`false`, marks slot inactive on exit.
+
+Both builtins wired through: `runtime.h` declarations, `cgen.a` builtin map, `builtins.rs` implementation + `is_builtin()`, `checker.rs` type signatures, `lsp.a` completions.
+
+### New Stdlib Modules
+
+- **`std/config.a`** (~100 lines) -- Layered configuration loading:
+  - `load(path)` -- auto-detect TOML/YAML by extension, parse via `std.toml`/`std.yaml`
+  - `from_env(prefix)` -- extract env vars with prefix, strip + lowercase keys
+  - `dotenv(path)` -- parse `.env` file, set vars via `env.set`
+  - `merge(base, over)` -- deep recursive map merge, override wins
+  - `require(cfg, keys)` -- validate required keys present, returns `Ok(cfg)` or `Err`
+
+- **`std/migrate.a`** (~75 lines) -- SQLite migration runner:
+  - `run(handle, dir)` -- apply pending `.sql` files in sorted order, track in `_migrations` table
+  - `status(handle, dir)` -- list all migration files with applied/pending status
+  - `create(dir, name)` -- generate next numbered migration file (e.g. `003_add_index.sql`)
+
+### Files
+
+| File | Changes |
+|------|---------|
+| `c_runtime/runtime.c` | Added `a_proc_wait`, `a_proc_is_running` implementations |
+| `c_runtime/runtime.h` | Added declarations for `a_proc_wait`, `a_proc_is_running` |
+| `std/compiler/cgen.a` | Added `proc.wait`, `proc.is_running` to builtin map |
+| `src/builtins.rs` | Implemented `proc.wait`, `proc.is_running`; added to `is_builtin()` |
+| `src/checker.rs` | Added type signatures for `proc.wait` (Unknown), `proc.is_running` (Bool) |
+| `src/lsp.a` | Added completion entries for `proc.wait`, `proc.is_running` |
+| `std/config.a` | NEW -- Layered config loading (~100 lines) |
+| `std/migrate.a` | NEW -- SQLite migration runner (~75 lines) |
+| `examples/config_demo.a` | NEW -- TOML/dotenv/env-prefix config demo |
+| `examples/migrate_demo.a` | NEW -- SQLite migration runner demo |
+| `tests/native/test_config.a` | NEW -- dotenv, from_env, merge, require, load tests |
+| `tests/native/test_migrate.a` | NEW -- create, run, status, idempotent re-run tests |
+| `Cargo.toml` | Version bump to 0.63.0 |
+| `README.md` | Added config, migrate to stdlib table; updated counts (28 modules, 135+ builtins) |

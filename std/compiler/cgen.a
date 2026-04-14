@@ -41,6 +41,7 @@ fn _builtin_map() -> map {
     "exec": "a_exec",
     "proc.spawn": "a_proc_spawn", "proc.write": "a_proc_write",
     "proc.read_line": "a_proc_read_line", "proc.kill": "a_proc_kill",
+    "proc.wait": "a_proc_wait", "proc.is_running": "a_proc_is_running",
     "env.get": "a_env_get",
     "env.set": "a_env_set", "env.all": "a_env_all",
     "json.parse": "a_json_parse",

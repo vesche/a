@@ -1,0 +1,38 @@
+; config_demo.a -- Demonstrates std.config for layered configuration
+
+use std.config
+
+fn main() {
+  io.write_file("/tmp/app.toml", "[server]\nport = 8080\nhost = \"localhost\"\n\n[database]\nurl = \"sqlite:///data.db\"\npool = 5\n")
+
+  let cfg = config.load("/tmp/app.toml")
+  println("Loaded TOML config:")
+  println("  server.host = " + to_str(map.get(map.get(cfg, "server"), "host")))
+  println("  server.port = " + to_str(map.get(map.get(cfg, "server"), "port")))
+
+  io.write_file("/tmp/demo.env", "APP_DB_URL=postgres://prod\nAPP_DEBUG=false\n")
+  config.dotenv("/tmp/demo.env")
+  println("\nLoaded .env file:")
+  println("  APP_DB_URL = " + env.get("APP_DB_URL"))
+  println("  APP_DEBUG  = " + env.get("APP_DEBUG"))
+
+  env.set("DEMO_HOST", "0.0.0.0")
+  env.set("DEMO_PORT", "9090")
+  let env_cfg = config.from_env("DEMO")
+  println("\nEnvironment config (prefix DEMO_):")
+  println("  host = " + to_str(map.get(env_cfg, "host")))
+  println("  port = " + to_str(map.get(env_cfg, "port")))
+
+  let base = #{"host": "localhost", "port": 3000, "db": #{"pool": 5}}
+  let override_cfg = #{"port": 9090, "db": #{"url": "postgres://prod"}}
+  let merged = config.merge(base, override_cfg)
+  println("\nMerged config:")
+  println("  host = " + to_str(map.get(merged, "host")))
+  println("  port = " + to_str(map.get(merged, "port")))
+  let merged_db = map.get(merged, "db")
+  println("  db.pool = " + to_str(map.get(merged_db, "pool")))
+  println("  db.url  = " + to_str(map.get(merged_db, "url")))
+
+  let check = config.require(merged, ["host", "port"])
+  println("\nRequired keys check: " + to_str(is_ok(check)))
+}

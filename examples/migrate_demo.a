@@ -1,0 +1,40 @@
+; migrate_demo.a -- Demonstrates std.migrate for SQLite migrations
+
+use std.migrate
+
+fn main() {
+  let dir = "/tmp/migrations_demo"
+  exec("rm -rf " + dir)
+  fs.mkdir(dir)
+
+  let p1 = migrate.create(dir, "create_users")
+  io.write_file(p1, "CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT)")
+  println("Created: " + p1)
+
+  let p2 = migrate.create(dir, "add_posts")
+  io.write_file(p2, "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER, title TEXT, body TEXT)")
+  println("Created: " + p2)
+
+  let handle = db.open(":memory:")
+
+  let result = migrate.run(handle, dir)
+  println("\nMigrations applied: " + to_str(map.get(result, "applied")))
+  println("Total migrations:   " + to_str(map.get(result, "total")))
+
+  let st = migrate.status(handle, dir)
+  println("\nMigration status:")
+  let mut i = 0
+  while i < len(st) {
+    let row = st[i]
+    let mark = ""
+    if map.get(row, "applied") { println("  [x] " + map.get(row, "file")) }
+    if !map.get(row, "applied") { println("  [ ] " + map.get(row, "file")) }
+    i = i + 1
+  }
+
+  let rerun = migrate.run(handle, dir)
+  println("\nRe-run applied: " + to_str(map.get(rerun, "applied")) + " (idempotent)")
+
+  db.close(handle)
+  exec("rm -rf " + dir)
+}

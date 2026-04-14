@@ -198,41 +198,16 @@ Common patterns that every production agent needs, extracted into reusable modul
 - [x] `examples/code_review.a` -- diff two files with colored output
 - [x] `tests/native/test_schema.a`, `test_diff.a`
 
-### v0.63 -- Process Management + Config
+### v0.63 -- Process Management + Config [DONE]
 
-The current `exec(cmd)` builtin is one-shot: run a command, wait for it to finish, get stdout/stderr/code. Real agent workflows need more: streaming output, feeding stdin, running background processes, killing hung commands.
-
-#### Subprocess orchestration
-
-- **Builtins**: `proc.spawn(cmd, opts)` -- start a subprocess, return a handle. Options: `stdin` (string to pipe), `env` (environment overrides), `cwd` (working directory).
-- `proc.stdout(handle)` -- read all stdout (blocking until exit)
-- `proc.wait(handle)` -- wait for exit, return `#{ "code": int, "stdout": str, "stderr": str }`
-- `proc.kill(handle)` -- send SIGTERM
-- `proc.is_running(handle)` -- check if still alive
-- Pairs with `agent.timeout` for deadline enforcement.
-
-#### Config loading
-
-Every real application loads config from multiple sources. Today you have TOML/YAML parsers but no standard pattern for layered configuration.
-
-- **`std/config.a`** module:
-  - `config.load(path, opts)` -- load a TOML or YAML config file, overlay with environment variables
-  - `config.env(prefix)` -- load all env vars with a prefix as a map: `APP_PORT=8080` -> `#{ "port": "8080" }`
-  - `config.dotenv(path)` -- parse a `.env` file and set variables
-  - `config.merge(base, override)` -- deep merge two config maps
-  - `config.require(cfg, keys)` -- assert required keys are present, fail with clear error listing missing keys
-
-#### Database migrations
-
-SQLite is bundled but there's no standard pattern for schema evolution.
-
-- **`std/migrate.a`** module:
-  - `migrate.run(db, migrations_dir)` -- scan `*.sql` files in order, track applied migrations in a `_migrations` table, apply pending ones
-  - `migrate.status(db, migrations_dir)` -- list applied and pending migrations
-  - `migrate.create(migrations_dir, name)` -- create a new timestamped migration file
-  - Convention: `001_create_users.sql`, `002_add_email.sql`, etc.
-
-- Bump to `0.63.0`.
+- [x] `proc.wait(handle)` -- wait for exit, return `#{ "code": int, "stdout": str }`
+- [x] `proc.is_running(handle)` -- non-blocking check via `waitpid(WNOHANG)` / `try_wait()`
+- [x] Both builtins in C runtime + Rust VM + cgen + checker + LSP
+- [x] `std/config.a` -- `load`, `from_env`, `dotenv`, `merge`, `require`
+- [x] `std/migrate.a` -- `run`, `status`, `create` with `_migrations` tracking table
+- [x] `examples/config_demo.a`, `examples/migrate_demo.a`
+- [x] `tests/native/test_config.a`, `tests/native/test_migrate.a`
+- [x] Bump to `0.63.0`
 
 ### v0.64 -- Image Processing
 
@@ -340,7 +315,7 @@ What v1.0 means:
 | **v0.60** | Streaming | `http.stream*`, `ws.*`, `llm.stream()`, SSE parsing | **DONE** |
 | **v0.61** | Agent Stdlib | retry, batch, pipeline, timeout, rate_limit, uuid, logging, args, signals | **DONE** |
 | **v0.62** | Schema + Diff | JSON Schema validation, unified text diff | **DONE** |
-| **v0.63** | Process + Config + Migrations | subprocess orchestration, layered config, db migrations | Real application infrastructure |
+| **v0.63** | Process + Config + Migrations | proc.wait, proc.is_running, std.config, std.migrate | **DONE** |
 | **v0.64** | Image Processing | stb_image, decode/encode/resize | Multimodal AI workflows |
 | **v0.65** | Package Manager | `a pkg`, semver, git-based registry | Reusable libraries |
 | **v0.66** | Native Toolchain | fmt/check/ast/repl in "a", enhanced LSP | Full self-sufficiency, Rust no longer needed |
