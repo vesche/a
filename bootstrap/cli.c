@@ -323,27 +323,34 @@ AValue fn_main(void);
 
 AValue fn_lexer_is_ws(AValue c) {
     AValue __ret = a_void();
+    c = a_retain(c);
     __ret = a_or(a_or(a_eq(c, a_string(" ")), a_eq(c, a_string("\t"))), a_eq(c, a_string("\r"))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(c);
     return __ret;
 }
 
 AValue fn_lexer_is_id_start(AValue c) {
     AValue __ret = a_void();
+    c = a_retain(c);
     __ret = a_or(a_is_alpha(c), a_eq(c, a_string("_"))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(c);
     return __ret;
 }
 
 AValue fn_lexer_is_id_char(AValue c) {
     AValue __ret = a_void();
+    c = a_retain(c);
     __ret = a_or(a_is_alnum(c), a_eq(c, a_string("_"))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(c);
     return __ret;
 }
 
 AValue fn_lexer_keyword_or_ident(AValue word) {
     AValue __ret = a_void();
+    word = a_retain(word);
     if (a_truthy(a_eq(word, a_string("fn")))) {
         __ret = a_string("KwFn"); goto __fn_cleanup;
     }
@@ -466,11 +473,13 @@ AValue fn_lexer_keyword_or_ident(AValue word) {
     }
     __ret = a_string("Ident"); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(word);
     return __ret;
 }
 
 AValue fn_lexer_process_escape(AValue c) {
     AValue __ret = a_void();
+    c = a_retain(c);
     if (a_truthy(a_eq(c, a_string("n")))) {
         __ret = a_string("\n"); goto __fn_cleanup;
     }
@@ -494,12 +503,14 @@ AValue fn_lexer_process_escape(AValue c) {
     }
     __ret = a_retain(c); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(c);
     return __ret;
 }
 
 AValue fn_lexer_lex(AValue src) {
     AValue chars = {0}, n = {0}, pos = {0}, toks = {0}, interp_depth = {0}, c = {0}, content = {0}, hash_start = {0}, hashes = {0}, found = {0}, hi = {0}, ok = {0}, start = {0}, word = {0}, kind = {0}, is_float = {0}, text = {0}, done = {0}, sc = {0}, tlen = {0}, ended = {0};
     AValue __ret = a_void();
+    src = a_retain(src);
     { AValue __old = chars; chars = a_str_chars(src); a_release(__old); }
     { AValue __old = n; n = a_len(chars); a_release(__old); }
     { AValue __old = pos; pos = a_int(0); a_release(__old); }
@@ -1007,33 +1018,46 @@ __fn_cleanup:
     a_release(sc);
     a_release(tlen);
     a_release(ended);
+    a_release(src);
     return __ret;
 }
 
 AValue fn_lexer_tk(AValue toks, AValue i) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    i = a_retain(i);
     __ret = a_array_get(toks, a_mul(i, a_int(2))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(i);
     return __ret;
 }
 
 AValue fn_lexer_tv(AValue toks, AValue i) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    i = a_retain(i);
     __ret = a_array_get(toks, a_add(a_mul(i, a_int(2)), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(i);
     return __ret;
 }
 
 AValue fn_lexer_tcount(AValue toks) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
     __ret = a_div(a_len(toks), a_int(2)); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
     return __ret;
 }
 
 AValue fn_lexer_skip_nl(AValue toks, AValue p) {
     AValue i = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    p = a_retain(p);
     { AValue __old = i; i = a_retain(p); a_release(__old); }
     while (a_truthy(a_eq(fn_lexer_tk(toks, i), a_string("Newline")))) {
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
@@ -1041,132 +1065,204 @@ AValue fn_lexer_skip_nl(AValue toks, AValue p) {
     __ret = a_retain(i); goto __fn_cleanup;
 __fn_cleanup:
     a_release(i);
+    a_release(toks);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_ast_mk_program(AValue items) {
     AValue __ret = a_void();
+    items = a_retain(items);
     __ret = a_map_new(2, "tag", a_string("Program"), "items", items); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(items);
     return __ret;
 }
 
 AValue fn_ast_mk_fn_decl(AValue name, AValue params, AValue ret_type, AValue effs, AValue precond, AValue postcond, AValue body) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    params = a_retain(params);
+    ret_type = a_retain(ret_type);
+    effs = a_retain(effs);
+    precond = a_retain(precond);
+    postcond = a_retain(postcond);
+    body = a_retain(body);
     __ret = a_map_new(8, "tag", a_string("FnDecl"), "name", name, "params", params, "ret_type", ret_type, "effects", effs, "pre", precond, "post", postcond, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(params);
+    a_release(ret_type);
+    a_release(effs);
+    a_release(precond);
+    a_release(postcond);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_type_decl(AValue name, AValue type_params, AValue body) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    type_params = a_retain(type_params);
+    body = a_retain(body);
     __ret = a_map_new(4, "tag", a_string("TypeDecl"), "name", name, "params", type_params, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(type_params);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_mod_decl(AValue name, AValue items) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    items = a_retain(items);
     __ret = a_map_new(3, "tag", a_string("ModDecl"), "name", name, "items", items); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(items);
     return __ret;
 }
 
 AValue fn_ast_mk_use_decl(AValue path) {
     AValue __ret = a_void();
+    path = a_retain(path);
     __ret = a_map_new(2, "tag", a_string("UseDecl"), "path", path); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(path);
     return __ret;
 }
 
 AValue fn_ast_mk_extern_fn(AValue name, AValue params, AValue ret_type) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    params = a_retain(params);
+    ret_type = a_retain(ret_type);
     __ret = a_map_new(4, "tag", a_string("ExternFn"), "name", name, "params", params, "ret_type", ret_type); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(params);
+    a_release(ret_type);
     return __ret;
 }
 
 AValue fn_ast_mk_type_record(AValue fields) {
     AValue __ret = a_void();
+    fields = a_retain(fields);
     __ret = a_map_new(2, "tag", a_string("TypeRecord"), "fields", fields); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(fields);
     return __ret;
 }
 
 AValue fn_ast_mk_type_sum(AValue variants) {
     AValue __ret = a_void();
+    variants = a_retain(variants);
     __ret = a_map_new(2, "tag", a_string("TypeSum"), "variants", variants); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(variants);
     return __ret;
 }
 
 AValue fn_ast_mk_type_alias(AValue typ, AValue where_expr) {
     AValue __ret = a_void();
+    typ = a_retain(typ);
+    where_expr = a_retain(where_expr);
     __ret = a_map_new(3, "tag", a_string("TypeAlias"), "type", typ, "where", where_expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(typ);
+    a_release(where_expr);
     return __ret;
 }
 
 AValue fn_ast_mk_variant(AValue name, AValue fields) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    fields = a_retain(fields);
     __ret = a_map_new(3, "tag", a_string("Variant"), "name", name, "fields", fields); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(fields);
     return __ret;
 }
 
 AValue fn_ast_mk_field(AValue name, AValue typ) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    typ = a_retain(typ);
     __ret = a_map_new(3, "tag", a_string("Field"), "name", name, "type", typ); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(typ);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_named(AValue name, AValue args) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    args = a_retain(args);
     __ret = a_map_new(3, "tag", a_string("TyNamed"), "name", name, "args", args); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(args);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_array(AValue elem) {
     AValue __ret = a_void();
+    elem = a_retain(elem);
     __ret = a_map_new(2, "tag", a_string("TyArray"), "elem", elem); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(elem);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_tuple(AValue elems) {
     AValue __ret = a_void();
+    elems = a_retain(elems);
     __ret = a_map_new(2, "tag", a_string("TyTuple"), "elems", elems); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(elems);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_record(AValue fields) {
     AValue __ret = a_void();
+    fields = a_retain(fields);
     __ret = a_map_new(2, "tag", a_string("TyRecord"), "fields", fields); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(fields);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_fn(AValue params, AValue ret_ty) {
     AValue __ret = a_void();
+    params = a_retain(params);
+    ret_ty = a_retain(ret_ty);
     __ret = a_map_new(3, "tag", a_string("TyFn"), "params", params, "ret", ret_ty); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(params);
+    a_release(ret_ty);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_map(AValue key, AValue val) {
     AValue __ret = a_void();
+    key = a_retain(key);
+    val = a_retain(val);
     __ret = a_map_new(3, "tag", a_string("TyMap"), "key", key, "val", val); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(key);
+    a_release(val);
     return __ret;
 }
 
 AValue fn_ast_mk_ty_prim(AValue name) {
     AValue __ret = a_void();
+    name = a_retain(name);
     __ret = a_map_new(2, "tag", a_string("TyPrim"), "name", name); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
     return __ret;
 }
 
@@ -1179,85 +1275,141 @@ __fn_cleanup:
 
 AValue fn_ast_mk_param(AValue name, AValue typ) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    typ = a_retain(typ);
     __ret = a_map_new(3, "tag", a_string("Param"), "name", name, "type", typ); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(typ);
     return __ret;
 }
 
 AValue fn_ast_mk_block(AValue stmts) {
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
     __ret = a_map_new(2, "tag", a_string("Block"), "stmts", stmts); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(stmts);
     return __ret;
 }
 
 AValue fn_ast_mk_let(AValue mutable, AValue name, AValue typ, AValue value) {
     AValue __ret = a_void();
+    mutable = a_retain(mutable);
+    name = a_retain(name);
+    typ = a_retain(typ);
+    value = a_retain(value);
     __ret = a_map_new(5, "tag", a_string("Let"), "mutable", mutable, "name", name, "type", typ, "value", value); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(mutable);
+    a_release(name);
+    a_release(typ);
+    a_release(value);
     return __ret;
 }
 
 AValue fn_ast_mk_assign(AValue target, AValue value) {
     AValue __ret = a_void();
+    target = a_retain(target);
+    value = a_retain(value);
     __ret = a_map_new(3, "tag", a_string("Assign"), "target", target, "value", value); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(target);
+    a_release(value);
     return __ret;
 }
 
 AValue fn_ast_mk_return(AValue expr) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
     __ret = a_map_new(2, "tag", a_string("Return"), "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_ast_mk_expr_stmt(AValue expr) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
     __ret = a_map_new(2, "tag", a_string("ExprStmt"), "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_ast_mk_if_stmt(AValue cond, AValue then_block, AValue else_branch) {
     AValue __ret = a_void();
+    cond = a_retain(cond);
+    then_block = a_retain(then_block);
+    else_branch = a_retain(else_branch);
     __ret = a_map_new(4, "tag", a_string("If"), "cond", cond, "then", then_block, "else", else_branch); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(cond);
+    a_release(then_block);
+    a_release(else_branch);
     return __ret;
 }
 
 AValue fn_ast_mk_match_stmt(AValue expr, AValue arms) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
+    arms = a_retain(arms);
     __ret = a_map_new(3, "tag", a_string("Match"), "expr", expr, "arms", arms); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
+    a_release(arms);
     return __ret;
 }
 
 AValue fn_ast_mk_for_stmt(AValue var, AValue typ, AValue iter, AValue body) {
     AValue __ret = a_void();
+    var = a_retain(var);
+    typ = a_retain(typ);
+    iter = a_retain(iter);
+    body = a_retain(body);
     __ret = a_map_new(5, "tag", a_string("For"), "var", var, "type", typ, "iter", iter, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(var);
+    a_release(typ);
+    a_release(iter);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_while_stmt(AValue cond, AValue body) {
     AValue __ret = a_void();
+    cond = a_retain(cond);
+    body = a_retain(body);
     __ret = a_map_new(3, "tag", a_string("While"), "cond", cond, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(cond);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_let_destructure(AValue bindings, AValue rest, AValue value) {
     AValue __ret = a_void();
+    bindings = a_retain(bindings);
+    rest = a_retain(rest);
+    value = a_retain(value);
     __ret = a_map_new(4, "tag", a_string("LetDestructure"), "bindings", bindings, "rest", rest, "value", value); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(bindings);
+    a_release(rest);
+    a_release(value);
     return __ret;
 }
 
 AValue fn_ast_mk_for_destructure(AValue bindings, AValue iter, AValue body) {
     AValue __ret = a_void();
+    bindings = a_retain(bindings);
+    iter = a_retain(iter);
+    body = a_retain(body);
     __ret = a_map_new(4, "tag", a_string("ForDestructure"), "bindings", bindings, "iter", iter, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(bindings);
+    a_release(iter);
+    a_release(body);
     return __ret;
 }
 
@@ -1277,43 +1429,61 @@ __fn_cleanup:
 
 AValue fn_ast_mk_else_block(AValue block) {
     AValue __ret = a_void();
+    block = a_retain(block);
     __ret = a_map_new(2, "tag", a_string("ElseBlock"), "block", block); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(block);
     return __ret;
 }
 
 AValue fn_ast_mk_else_if(AValue if_stmt) {
     AValue __ret = a_void();
+    if_stmt = a_retain(if_stmt);
     __ret = a_map_new(2, "tag", a_string("ElseIf"), "stmt", if_stmt); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(if_stmt);
     return __ret;
 }
 
 AValue fn_ast_mk_match_arm(AValue pattern, AValue guard, AValue body) {
     AValue __ret = a_void();
+    pattern = a_retain(pattern);
+    guard = a_retain(guard);
+    body = a_retain(body);
     __ret = a_map_new(4, "tag", a_string("MatchArm"), "pattern", pattern, "guard", guard, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(pattern);
+    a_release(guard);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_ident(AValue name) {
     AValue __ret = a_void();
+    name = a_retain(name);
     __ret = a_map_new(2, "tag", a_string("PatIdent"), "name", name); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_constructor(AValue name, AValue args) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    args = a_retain(args);
     __ret = a_map_new(3, "tag", a_string("PatConstructor"), "name", name, "args", args); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(args);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_literal(AValue lit) {
     AValue __ret = a_void();
+    lit = a_retain(lit);
     __ret = a_map_new(2, "tag", a_string("PatLiteral"), "value", lit); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(lit);
     return __ret;
 }
 
@@ -1326,218 +1496,308 @@ __fn_cleanup:
 
 AValue fn_ast_mk_pat_array(AValue elems) {
     AValue __ret = a_void();
+    elems = a_retain(elems);
     __ret = a_map_new(2, "tag", a_string("PatArray"), "elems", elems); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(elems);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_array_elem(AValue pat) {
     AValue __ret = a_void();
+    pat = a_retain(pat);
     __ret = a_map_new(2, "tag", a_string("PatElem"), "pattern", pat); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(pat);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_rest(AValue name) {
     AValue __ret = a_void();
+    name = a_retain(name);
     __ret = a_map_new(2, "tag", a_string("PatRest"), "name", name); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_map(AValue entries) {
     AValue __ret = a_void();
+    entries = a_retain(entries);
     __ret = a_map_new(2, "tag", a_string("PatMap"), "entries", entries); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(entries);
     return __ret;
 }
 
 AValue fn_ast_mk_pat_map_entry(AValue key, AValue pat) {
     AValue __ret = a_void();
+    key = a_retain(key);
+    pat = a_retain(pat);
     __ret = a_map_new(3, "tag", a_string("PatMapEntry"), "key", key, "pattern", pat); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(key);
+    a_release(pat);
     return __ret;
 }
 
 AValue fn_ast_mk_int(AValue val) {
     AValue __ret = a_void();
+    val = a_retain(val);
     __ret = a_map_new(2, "tag", a_string("Int"), "value", val); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(val);
     return __ret;
 }
 
 AValue fn_ast_mk_float(AValue val) {
     AValue __ret = a_void();
+    val = a_retain(val);
     __ret = a_map_new(2, "tag", a_string("Float"), "value", val); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(val);
     return __ret;
 }
 
 AValue fn_ast_mk_string(AValue val) {
     AValue __ret = a_void();
+    val = a_retain(val);
     __ret = a_map_new(2, "tag", a_string("String"), "value", val); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(val);
     return __ret;
 }
 
 AValue fn_ast_mk_bool_lit(AValue val) {
     AValue __ret = a_void();
+    val = a_retain(val);
     __ret = a_map_new(2, "tag", a_string("Bool"), "value", val); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(val);
     return __ret;
 }
 
 AValue fn_ast_mk_ident(AValue name) {
     AValue __ret = a_void();
+    name = a_retain(name);
     __ret = a_map_new(2, "tag", a_string("Ident"), "name", name); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
     return __ret;
 }
 
 AValue fn_ast_mk_binop(AValue op, AValue left, AValue right) {
     AValue __ret = a_void();
+    op = a_retain(op);
+    left = a_retain(left);
+    right = a_retain(right);
     __ret = a_map_new(4, "tag", a_string("BinOp"), "op", op, "left", left, "right", right); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(op);
+    a_release(left);
+    a_release(right);
     return __ret;
 }
 
 AValue fn_ast_mk_unary(AValue op, AValue expr) {
     AValue __ret = a_void();
+    op = a_retain(op);
+    expr = a_retain(expr);
     __ret = a_map_new(3, "tag", a_string("UnaryOp"), "op", op, "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(op);
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_ast_mk_call(AValue func, AValue args) {
     AValue __ret = a_void();
+    func = a_retain(func);
+    args = a_retain(args);
     __ret = a_map_new(3, "tag", a_string("Call"), "func", func, "args", args); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(func);
+    a_release(args);
     return __ret;
 }
 
 AValue fn_ast_mk_field_access(AValue expr, AValue field) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
+    field = a_retain(field);
     __ret = a_map_new(3, "tag", a_string("FieldAccess"), "expr", expr, "field", field); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
+    a_release(field);
     return __ret;
 }
 
 AValue fn_ast_mk_index(AValue expr, AValue index) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
+    index = a_retain(index);
     __ret = a_map_new(3, "tag", a_string("Index"), "expr", expr, "index", index); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
+    a_release(index);
     return __ret;
 }
 
 AValue fn_ast_mk_try(AValue expr) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
     __ret = a_map_new(2, "tag", a_string("Try"), "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_ast_mk_try_block(AValue block) {
     AValue __ret = a_void();
+    block = a_retain(block);
     __ret = a_map_new(2, "tag", a_string("TryBlock"), "block", block); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(block);
     return __ret;
 }
 
 AValue fn_ast_mk_if_expr(AValue cond, AValue then_block, AValue else_block) {
     AValue __ret = a_void();
+    cond = a_retain(cond);
+    then_block = a_retain(then_block);
+    else_block = a_retain(else_block);
     __ret = a_map_new(4, "tag", a_string("IfExpr"), "cond", cond, "then", then_block, "else", else_block); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(cond);
+    a_release(then_block);
+    a_release(else_block);
     return __ret;
 }
 
 AValue fn_ast_mk_match_expr(AValue expr, AValue arms) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
+    arms = a_retain(arms);
     __ret = a_map_new(3, "tag", a_string("MatchExpr"), "expr", expr, "arms", arms); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
+    a_release(arms);
     return __ret;
 }
 
 AValue fn_ast_mk_block_expr(AValue block) {
     AValue __ret = a_void();
+    block = a_retain(block);
     __ret = a_map_new(2, "tag", a_string("BlockExpr"), "block", block); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(block);
     return __ret;
 }
 
 AValue fn_ast_mk_array(AValue elems) {
     AValue __ret = a_void();
+    elems = a_retain(elems);
     __ret = a_map_new(2, "tag", a_string("Array"), "elems", elems); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(elems);
     return __ret;
 }
 
 AValue fn_ast_mk_record(AValue fields) {
     AValue __ret = a_void();
+    fields = a_retain(fields);
     __ret = a_map_new(2, "tag", a_string("Record"), "fields", fields); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(fields);
     return __ret;
 }
 
 AValue fn_ast_mk_record_field(AValue name, AValue value) {
     AValue __ret = a_void();
+    name = a_retain(name);
+    value = a_retain(value);
     __ret = a_map_new(3, "tag", a_string("RecordField"), "name", name, "value", value); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(name);
+    a_release(value);
     return __ret;
 }
 
 AValue fn_ast_mk_lambda(AValue params, AValue body) {
     AValue __ret = a_void();
+    params = a_retain(params);
+    body = a_retain(body);
     __ret = a_map_new(3, "tag", a_string("Lambda"), "params", params, "body", body); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(params);
+    a_release(body);
     return __ret;
 }
 
 AValue fn_ast_mk_pipe(AValue left, AValue right) {
     AValue __ret = a_void();
+    left = a_retain(left);
+    right = a_retain(right);
     __ret = a_map_new(3, "tag", a_string("Pipe"), "left", left, "right", right); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(left);
+    a_release(right);
     return __ret;
 }
 
 AValue fn_ast_mk_interpolation(AValue parts) {
     AValue __ret = a_void();
+    parts = a_retain(parts);
     __ret = a_map_new(2, "tag", a_string("Interpolation"), "parts", parts); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(parts);
     return __ret;
 }
 
 AValue fn_ast_mk_interp_lit(AValue text) {
     AValue __ret = a_void();
+    text = a_retain(text);
     __ret = a_map_new(2, "tag", a_string("InterpLit"), "value", text); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(text);
     return __ret;
 }
 
 AValue fn_ast_mk_interp_expr(AValue expr) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
     __ret = a_map_new(2, "tag", a_string("InterpExpr"), "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_ast_mk_map_literal(AValue entries) {
     AValue __ret = a_void();
+    entries = a_retain(entries);
     __ret = a_map_new(2, "tag", a_string("MapLiteral"), "entries", entries); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(entries);
     return __ret;
 }
 
 AValue fn_ast_mk_map_entry(AValue key, AValue value) {
     AValue __ret = a_void();
+    key = a_retain(key);
+    value = a_retain(value);
     __ret = a_map_new(3, "tag", a_string("MapEntry"), "key", key, "value", value); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(key);
+    a_release(value);
     return __ret;
 }
 
 AValue fn_ast_mk_spread(AValue expr) {
     AValue __ret = a_void();
+    expr = a_retain(expr);
     __ret = a_map_new(2, "tag", a_string("Spread"), "expr", expr); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(expr);
     return __ret;
 }
 
@@ -1550,67 +1810,97 @@ __fn_cleanup:
 
 AValue fn_parser_tk(AValue toks, AValue i) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    i = a_retain(i);
     __ret = a_array_get(toks, a_mul(i, a_int(2))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(i);
     return __ret;
 }
 
 AValue fn_parser_tv(AValue toks, AValue i) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    i = a_retain(i);
     __ret = a_array_get(toks, a_add(a_mul(i, a_int(2)), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(i);
     return __ret;
 }
 
 AValue fn_parser_err(AValue msg, AValue pos) {
     AValue __ret = a_void();
+    msg = a_retain(msg);
+    pos = a_retain(pos);
     __ret = a_array_new(2, a_map_new(3, "tag", a_string("ParseError"), "msg", msg, "pos", pos), pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(msg);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_is_err(AValue r) {
     AValue __ret = a_void();
+    r = a_retain(r);
     if (a_truthy(a_eq(a_type_of(a_array_get(r, a_int(0))), a_string("map")))) {
         __ret = a_and(a_map_has(a_array_get(r, a_int(0)), a_string("tag")), a_eq(a_array_get(a_array_get(r, a_int(0)), a_string("tag")), a_string("ParseError"))); goto __fn_cleanup;
     }
     __ret = a_bool(0); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(r);
     return __ret;
 }
 
 AValue fn_parser_skip_nl(AValue toks, AValue pos) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Newline")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
     }
     __ret = a_retain(pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_expect(AValue toks, AValue pos, AValue kind) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
+    kind = a_retain(kind);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), kind))) {
         __ret = a_array_new(2, fn_parser_tv(toks, pos), a_add(pos, a_int(1))); goto __fn_cleanup;
     }
     __ret = fn_parser_err(a_add(a_add(a_add(a_string("expected "), kind), a_string(", found ")), fn_parser_tk(toks, pos)), pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(pos);
+    a_release(kind);
     return __ret;
 }
 
 AValue fn_parser_expect_ident(AValue toks, AValue pos) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Ident")))) {
         __ret = a_array_new(2, fn_parser_tv(toks, pos), a_add(pos, a_int(1))); goto __fn_cleanup;
     }
     __ret = fn_parser_err(a_add(a_string("expected identifier, found "), fn_parser_tk(toks, pos)), pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_expect_nl_or_eof(AValue toks, AValue pos) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Eof")))) {
         __ret = a_array_new(2, a_bool(1), pos); goto __fn_cleanup;
     }
@@ -1623,24 +1913,30 @@ AValue fn_parser_expect_nl_or_eof(AValue toks, AValue pos) {
     }
     __ret = fn_parser_err(a_add(a_string("expected newline, found "), fn_parser_tk(toks, pos)), pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse(AValue src) {
     AValue toks = {0}, r = {0};
     AValue __ret = a_void();
+    src = a_retain(src);
     { AValue __old = toks; toks = fn_lexer_lex(src); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_program(toks, a_int(0)); a_release(__old); }
     __ret = a_array_get(r, a_int(0)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(toks);
     a_release(r);
+    a_release(src);
     return __ret;
 }
 
 AValue fn_parser_parse_program(AValue toks, AValue pos) {
     AValue items = {0}, r = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = items; items = a_array_new(0); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
     while (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("Eof")))) {
@@ -1655,12 +1951,16 @@ AValue fn_parser_parse_program(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(items);
     a_release(r);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_top_level(AValue toks, AValue pos) {
     AValue k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("KwFn")))) {
         __ret = fn_parser_parse_fn_decl(toks, pos); goto __fn_cleanup;
@@ -1680,12 +1980,16 @@ AValue fn_parser_parse_top_level(AValue toks, AValue pos) {
     __ret = fn_parser_err(a_add(a_string("expected fn, ty, mod, use, or extern; found "), k), pos); goto __fn_cleanup;
 __fn_cleanup:
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, params = {0}, ret_type = {0}, effs = {0}, precond = {0}, postcond = {0}, body = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwFn")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -1793,12 +2097,16 @@ __fn_cleanup:
     a_release(precond);
     a_release(postcond);
     a_release(body);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_extern_fn(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, params = {0}, ret_type = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwExtern")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -1855,12 +2163,16 @@ __fn_cleanup:
     a_release(name);
     a_release(params);
     a_release(ret_type);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_param_list(AValue toks, AValue pos) {
     AValue params = {0}, r = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = params; params = a_array_new(0); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_param(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
@@ -1881,12 +2193,16 @@ AValue fn_parser_parse_param_list(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(params);
     a_release(r);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_param(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, typ = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -1908,12 +2224,16 @@ __fn_cleanup:
     a_release(r);
     a_release(name);
     a_release(typ);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_effects(AValue toks, AValue pos) {
     AValue r = {0}, effs = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwEffects")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -1949,12 +2269,16 @@ AValue fn_parser_parse_effects(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(effs);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_mod_decl(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, items = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwMod")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -1990,12 +2314,16 @@ __fn_cleanup:
     a_release(r);
     a_release(name);
     a_release(items);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_use_decl(AValue toks, AValue pos) {
     AValue r = {0}, path = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwUse")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2025,12 +2353,16 @@ AValue fn_parser_parse_use_decl(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(path);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_type_decl(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, type_params = {0}, body = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwTy")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2073,12 +2405,16 @@ __fn_cleanup:
     a_release(name);
     a_release(type_params);
     a_release(body);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_type_params(AValue toks, AValue pos) {
     AValue r = {0}, params = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Lt")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2109,12 +2445,16 @@ AValue fn_parser_parse_type_params(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(params);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_looks_like_sum(AValue toks, AValue pos) {
     AValue next = {0}, j = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("Ident")))) {
         __ret = a_bool(0); goto __fn_cleanup;
     }
@@ -2138,12 +2478,16 @@ AValue fn_parser_looks_like_sum(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(next);
     a_release(j);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
     AValue r = {0}, variants = {0}, alias_ty = {0}, where_expr = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("LBrace")))) {
         { AValue __old = r; r = fn_parser_parse_record_fields(toks, pos); a_release(__old); }
         if (a_truthy(a_is_err(r))) {
@@ -2202,12 +2546,16 @@ __fn_cleanup:
     a_release(variants);
     a_release(alias_ty);
     a_release(where_expr);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_variant(AValue toks, AValue pos) {
     AValue r = {0}, name = {0}, fields = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2243,12 +2591,16 @@ __fn_cleanup:
     a_release(r);
     a_release(name);
     a_release(fields);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_record_fields(AValue toks, AValue pos) {
     AValue r = {0}, fields = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2285,12 +2637,16 @@ AValue fn_parser_parse_record_fields(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(fields);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_field(AValue toks, AValue pos) {
     AValue r = {0}, name = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2310,12 +2666,16 @@ AValue fn_parser_parse_field(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(name);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
     AValue k = {0}, r = {0}, inner = {0}, types = {0}, params = {0}, key_ty = {0}, val_ty = {0}, name = {0}, type_args = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("TyI8")))) {
         __ret = a_array_new(2, fn_ast_mk_ty_prim(a_string("i8")), a_add(pos, a_int(1))); goto __fn_cleanup;
@@ -2514,12 +2874,16 @@ __fn_cleanup:
     a_release(val_ty);
     a_release(name);
     a_release(type_args);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_block(AValue toks, AValue pos) {
     AValue r = {0}, stmts = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2546,12 +2910,16 @@ AValue fn_parser_parse_block(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(stmts);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_stmt(AValue toks, AValue pos) {
     AValue k = {0}, r = {0}, expr = {0}, value = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("KwLet")))) {
         __ret = fn_parser_parse_let_stmt(toks, pos); goto __fn_cleanup;
@@ -2617,12 +2985,16 @@ __fn_cleanup:
     a_release(r);
     a_release(expr);
     a_release(value);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_let_stmt(AValue toks, AValue pos) {
     AValue r = {0}, mutable = {0}, name = {0}, typ = {0}, value = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwLet")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2674,12 +3046,16 @@ __fn_cleanup:
     a_release(name);
     a_release(typ);
     a_release(value);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_let_destructure(AValue toks, AValue pos) {
     AValue r = {0}, bindings = {0}, rest = {0}, has_rest = {0}, value = {0}, rest_val = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBracket")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2757,12 +3133,16 @@ __fn_cleanup:
     a_release(has_rest);
     a_release(value);
     a_release(rest_val);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_ret_stmt(AValue toks, AValue pos) {
     AValue r = {0}, expr = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwRet")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2782,12 +3162,16 @@ AValue fn_parser_parse_ret_stmt(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(expr);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_if_stmt(AValue toks, AValue pos) {
     AValue r = {0}, cond = {0}, then_block = {0}, else_branch = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwIf")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2830,12 +3214,16 @@ __fn_cleanup:
     a_release(cond);
     a_release(then_block);
     a_release(else_branch);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_match_stmt(AValue toks, AValue pos) {
     AValue r = {0}, expr = {0}, arms = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwMatch")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2871,12 +3259,16 @@ __fn_cleanup:
     a_release(r);
     a_release(expr);
     a_release(arms);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_match_arm(AValue toks, AValue pos) {
     AValue r = {0}, pattern = {0}, guard = {0}, body = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2921,12 +3313,16 @@ __fn_cleanup:
     a_release(pattern);
     a_release(guard);
     a_release(body);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_for_stmt(AValue toks, AValue pos) {
     AValue r = {0}, var = {0}, typ = {0}, iter = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwFor")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -2972,12 +3368,16 @@ __fn_cleanup:
     a_release(var);
     a_release(typ);
     a_release(iter);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_for_destructure(AValue toks, AValue pos) {
     AValue r = {0}, bindings = {0}, iter = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBracket")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3023,12 +3423,16 @@ __fn_cleanup:
     a_release(r);
     a_release(bindings);
     a_release(iter);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_while_stmt(AValue toks, AValue pos) {
     AValue r = {0}, cond = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwWhile")); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3048,12 +3452,16 @@ AValue fn_parser_parse_while_stmt(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(cond);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
     AValue k = {0}, elems = {0}, r = {0}, entries = {0}, key = {0}, name = {0}, pats = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("Underscore")))) {
         __ret = a_array_new(2, fn_ast_mk_pat_wildcard(), a_add(pos, a_int(1))); goto __fn_cleanup;
@@ -3199,19 +3607,27 @@ __fn_cleanup:
     a_release(key);
     a_release(name);
     a_release(pats);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_expr(AValue toks, AValue pos) {
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     __ret = fn_parser_parse_pipe_expr(toks, pos); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_pipe_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0}, cont = {0}, saved = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_or_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3255,12 +3671,16 @@ __fn_cleanup:
     a_release(left);
     a_release(cont);
     a_release(saved);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_or_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_and_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3280,12 +3700,16 @@ AValue fn_parser_parse_or_expr(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(left);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_and_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_eq_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3305,12 +3729,16 @@ AValue fn_parser_parse_and_expr(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(r);
     a_release(left);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_eq_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0}, cont = {0}, k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_cmp_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3348,12 +3776,16 @@ __fn_cleanup:
     a_release(left);
     a_release(cont);
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0}, cont = {0}, k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3411,12 +3843,16 @@ __fn_cleanup:
     a_release(left);
     a_release(cont);
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_add_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0}, cont = {0}, k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_mul_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3454,12 +3890,16 @@ __fn_cleanup:
     a_release(left);
     a_release(cont);
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_mul_expr(AValue toks, AValue pos) {
     AValue r = {0}, left = {0}, cont = {0}, k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3507,12 +3947,16 @@ __fn_cleanup:
     a_release(left);
     a_release(cont);
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_unary_expr(AValue toks, AValue pos) {
     AValue k = {0}, r = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("Minus")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
@@ -3549,12 +3993,16 @@ AValue fn_parser_parse_unary_expr(AValue toks, AValue pos) {
 __fn_cleanup:
     a_release(k);
     a_release(r);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
     AValue r = {0}, expr = {0}, cont = {0}, k = {0}, args = {0}, idx = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_primary_expr(toks, pos); a_release(__old); }
     if (a_truthy(a_is_err(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
@@ -3639,12 +4087,16 @@ __fn_cleanup:
     a_release(k);
     a_release(args);
     a_release(idx);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
     AValue k = {0}, name = {0}, r = {0}, params = {0}, body = {0}, entries = {0}, key = {0}, r2 = {0}, elems = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
     if (a_truthy(a_eq(k, a_string("Int")))) {
         __ret = a_array_new(2, fn_ast_mk_int(a_to_int(fn_parser_tv(toks, pos))), a_add(pos, a_int(1))); goto __fn_cleanup;
@@ -3827,12 +4279,16 @@ __fn_cleanup:
     a_release(key);
     a_release(r2);
     a_release(elems);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_array_element(AValue toks, AValue pos) {
     AValue r = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("DotDotDot")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
@@ -3844,12 +4300,16 @@ AValue fn_parser_parse_array_element(AValue toks, AValue pos) {
     __ret = fn_parser_parse_expr(toks, pos); goto __fn_cleanup;
 __fn_cleanup:
     a_release(r);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
 AValue fn_parser_parse_interp_string(AValue toks, AValue pos) {
     AValue parts = {0}, text = {0}, cont = {0}, r = {0}, k = {0};
     AValue __ret = a_void();
+    toks = a_retain(toks);
+    pos = a_retain(pos);
     { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
     { AValue __old = text; text = fn_parser_tv(toks, pos); a_release(__old); }
     if (a_truthy(a_gt(a_len(a_str_chars(text)), a_int(0)))) {
@@ -3891,6 +4351,8 @@ __fn_cleanup:
     a_release(cont);
     a_release(r);
     a_release(k);
+    a_release(toks);
+    a_release(pos);
     return __ret;
 }
 
@@ -3927,6 +4389,7 @@ __fn_cleanup:
 AValue fn_cgen__mangle(AValue name) {
     AValue out = {0};
     AValue __ret = a_void();
+    name = a_retain(name);
     { AValue __old = out; out = a_str_replace(a_str_replace(name, a_string("."), a_string("_")), a_string("-"), a_string("_")); a_release(__old); }
     if (a_truthy(a_contains(fn_cgen__c_keywords(), out))) {
         __ret = a_str_concat(a_string("_"), out); goto __fn_cleanup;
@@ -3934,6 +4397,7 @@ AValue fn_cgen__mangle(AValue name) {
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(out);
+    a_release(name);
     return __ret;
 }
 
@@ -3975,6 +4439,7 @@ __fn_cleanup:
 AValue fn_cgen__escape_c_str(AValue s) {
     AValue bs = {0}, out = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = bs; bs = fn_cgen__bslash(); a_release(__old); }
     { AValue __old = out; out = a_str_replace(s, bs, a_str_concat(bs, bs)); a_release(__old); }
     { AValue __old = out; out = a_str_replace(out, fn_cgen__dquote(), a_str_concat(bs, fn_cgen__dquote())); a_release(__old); }
@@ -3985,12 +4450,14 @@ AValue fn_cgen__escape_c_str(AValue s) {
 __fn_cleanup:
     a_release(bs);
     a_release(out);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cgen__indent(AValue depth) {
     AValue out = {0}, i = {0};
     AValue __ret = a_void();
+    depth = a_retain(depth);
     { AValue __old = out; out = a_string(""); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
     while (a_truthy(a_lt(i, depth))) {
@@ -4001,12 +4468,15 @@ AValue fn_cgen__indent(AValue depth) {
 __fn_cleanup:
     a_release(out);
     a_release(i);
+    a_release(depth);
     return __ret;
 }
 
 AValue fn_cgen__prefixed_name(AValue name, AValue ctx) {
     AValue prefix = {0};
     AValue __ret = a_void();
+    name = a_retain(name);
+    ctx = a_retain(ctx);
     { AValue __old = prefix; prefix = a_array_get(ctx, a_string("prefix")); a_release(__old); }
     if (a_truthy(a_eq(a_type_of(prefix), a_string("str")))) {
         if (a_truthy(a_gt(a_len(prefix), a_int(0)))) {
@@ -4016,12 +4486,16 @@ AValue fn_cgen__prefixed_name(AValue name, AValue ctx) {
     __ret = a_retain(name); goto __fn_cleanup;
 __fn_cleanup:
     a_release(prefix);
+    a_release(name);
+    a_release(ctx);
     return __ret;
 }
 
 AValue fn_cgen__is_intra_module_call(AValue fname, AValue ctx) {
     AValue prefix = {0}, fns = {0};
     AValue __ret = a_void();
+    fname = a_retain(fname);
+    ctx = a_retain(ctx);
     { AValue __old = prefix; prefix = a_array_get(ctx, a_string("prefix")); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(prefix), a_string("str")))) {
         __ret = a_bool(0); goto __fn_cleanup;
@@ -4040,26 +4514,39 @@ AValue fn_cgen__is_intra_module_call(AValue fname, AValue ctx) {
 __fn_cleanup:
     a_release(prefix);
     a_release(fns);
+    a_release(fname);
+    a_release(ctx);
     return __ret;
 }
 
 AValue fn_cgen__R(AValue code, AValue li) {
     AValue __ret = a_void();
+    code = a_retain(code);
+    li = a_retain(li);
     __ret = a_array_new(3, code, li, a_array_new(0)); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(code);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__RL(AValue code, AValue li, AValue lifted) {
     AValue __ret = a_void();
+    code = a_retain(code);
+    li = a_retain(li);
+    lifted = a_retain(lifted);
     __ret = a_array_new(3, code, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(code);
+    a_release(li);
+    a_release(lifted);
     return __ret;
 }
 
 AValue fn_cgen__is_ident(AValue node) {
     AValue n = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
         __ret = a_bool(0); goto __fn_cleanup;
     }
@@ -4076,12 +4563,15 @@ AValue fn_cgen__is_ident(AValue node) {
     __ret = a_bool(1); goto __fn_cleanup;
 __fn_cleanup:
     a_release(n);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_cgen__emit_cleanup(AValue vars, AValue depth) {
     AValue ind = {0}, out = {0};
     AValue __ret = a_void();
+    vars = a_retain(vars);
+    depth = a_retain(depth);
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
     { AValue __old = out; out = a_string(""); a_release(__old); }
     {
@@ -4098,12 +4588,15 @@ AValue fn_cgen__emit_cleanup(AValue vars, AValue depth) {
 __fn_cleanup:
     a_release(ind);
     a_release(out);
+    a_release(vars);
+    a_release(depth);
     return __ret;
 }
 
 AValue fn_cgen__ea_collect_idents(AValue expr) {
     AValue tag = {0}, n = {0}, ids = {0};
     AValue __ret = a_void();
+    expr = a_retain(expr);
     if (a_truthy(a_neq(a_type_of(expr), a_string("map")))) {
         __ret = a_array_new(0); goto __fn_cleanup;
     }
@@ -4199,12 +4692,15 @@ __fn_cleanup:
     a_release(tag);
     a_release(n);
     a_release(ids);
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_cgen__escape_analysis(AValue stmts, AValue captures) {
     AValue escaping = {0}, tag = {0}, ids = {0};
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
+    captures = a_retain(captures);
     { AValue __old = escaping; escaping = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(stmts);
@@ -4252,12 +4748,15 @@ __fn_cleanup:
     a_release(escaping);
     a_release(tag);
     a_release(ids);
+    a_release(stmts);
+    a_release(captures);
     return __ret;
 }
 
 AValue fn_cgen__collect_idents_in_expr(AValue node) {
     AValue tag = {0}, ids = {0}, func = {0}, body = {0}, bound = {0}, body_ids = {0}, free = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(tag), a_string("str")))) {
         __ret = a_array_new(0); goto __fn_cleanup;
@@ -4423,12 +4922,14 @@ __fn_cleanup:
     a_release(bound);
     a_release(body_ids);
     a_release(free);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_cgen__collect_idents_in_block(AValue block) {
     AValue ids = {0}, stmts = {0};
     AValue __ret = a_void();
+    block = a_retain(block);
     if (a_truthy(a_eq(a_type_of(a_array_get(block, a_string("tag"))), a_string("str")))) {
         if (a_truthy(a_eq(a_array_get(block, a_string("tag")), a_string("BlockExpr")))) {
             __ret = fn_cgen__collect_idents_in_block(a_array_get(block, a_string("block"))); goto __fn_cleanup;
@@ -4453,12 +4954,14 @@ AValue fn_cgen__collect_idents_in_block(AValue block) {
 __fn_cleanup:
     a_release(ids);
     a_release(stmts);
+    a_release(block);
     return __ret;
 }
 
 AValue fn_cgen__collect_idents_in_stmt(AValue s) {
     AValue tag = {0}, ids = {0}, eb = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = tag; tag = a_array_get(s, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("Let")))) {
         __ret = fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("value"))); goto __fn_cleanup;
@@ -4500,12 +5003,16 @@ __fn_cleanup:
     a_release(tag);
     a_release(ids);
     a_release(eb);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cgen__compute_captures(AValue lambda_node, AValue enclosing_vars, AValue bm) {
     AValue bound = {0}, body = {0}, body_lets = {0}, body_ids = {0}, captures = {0};
     AValue __ret = a_void();
+    lambda_node = a_retain(lambda_node);
+    enclosing_vars = a_retain(enclosing_vars);
+    bm = a_retain(bm);
     { AValue __old = bound; bound = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(a_array_get(lambda_node, a_string("params")));
@@ -4543,12 +5050,16 @@ __fn_cleanup:
     a_release(body_lets);
     a_release(body_ids);
     a_release(captures);
+    a_release(lambda_node);
+    a_release(enclosing_vars);
+    a_release(bm);
     return __ret;
 }
 
 AValue fn_cgen__collect_lets_in_block(AValue block) {
     AValue names = {0}, stmts = {0};
     AValue __ret = a_void();
+    block = a_retain(block);
     if (a_truthy(a_eq(a_type_of(a_array_get(block, a_string("tag"))), a_string("str")))) {
         if (a_truthy(a_eq(a_array_get(block, a_string("tag")), a_string("BlockExpr")))) {
             __ret = fn_cgen__collect_lets_in_block(a_array_get(block, a_string("block"))); goto __fn_cleanup;
@@ -4575,12 +5086,17 @@ AValue fn_cgen__collect_lets_in_block(AValue block) {
 __fn_cleanup:
     a_release(names);
     a_release(stmts);
+    a_release(block);
     return __ret;
 }
 
 AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
     AValue tag = {0}, name = {0}, op = {0}, lr = {0}, rr = {0}, l = {0}, r = {0}, lifted = {0}, code = {0}, ir = {0}, func = {0}, a = {0}, fname = {0}, ar = {0}, arg_codes = {0}, cfn = {0}, all_fns = {0}, is_known_fn = {0}, call_args = {0}, mangled = {0}, aliases = {0}, er = {0}, field = {0}, elems = {0}, has_spread = {0}, parts = {0}, entries = {0}, key_node = {0}, key_str = {0}, vr = {0}, cparts = {0}, cr = {0}, tr = {0}, stmts = {0}, last = {0}, right = {0}, new_args = {0}, new_call = {0}, lambda_name = {0}, params = {0}, body = {0}, enclosing_vars = {0}, captures = {0}, fn_code = {0}, ci = {0}, pi = {0}, next_li = {0}, body_lifted = {0}, lambda_vars = {0}, body_tag = {0}, body_vars = {0}, bound = {0}, decl_vars = {0}, body_lets = {0}, lambda_ctx = {0}, init_parts = {0}, lambda_cleanup = {0}, has_return = {0}, si = {0}, s = {0}, is_last = {0}, cleanup = {0}, sr = {0}, env_code = {0}, cap_parts = {0}, closure_code = {0}, all_lifted = {0}, block = {0}, nl = {0}, try_vars = {0}, nstmts = {0}, has_tail = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("Int")))) {
         __ret = fn_cgen__R(a_str_concat(a_string("a_int("), a_str_concat(a_to_str(a_array_get(node, a_string("value"))), a_string(")"))), li); goto __fn_cleanup;
@@ -5229,12 +5745,17 @@ __fn_cleanup:
     a_release(try_vars);
     a_release(nstmts);
     a_release(has_tail);
+    a_release(node);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__resolve_call_name(AValue func) {
     AValue obj = {0};
     AValue __ret = a_void();
+    func = a_retain(func);
     if (a_truthy(a_eq(a_array_get(func, a_string("tag")), a_string("Ident")))) {
         __ret = a_array_get(func, a_string("name")); goto __fn_cleanup;
     }
@@ -5247,12 +5768,18 @@ AValue fn_cgen__resolve_call_name(AValue func) {
     __ret = a_string("__unknown__"); goto __fn_cleanup;
 __fn_cleanup:
     a_release(obj);
+    a_release(func);
     return __ret;
 }
 
 AValue fn_cgen__emit_pat_cond(AValue pat, AValue target, AValue bm, AValue ctx, AValue li) {
     AValue tag = {0}, val = {0}, vr = {0}, name = {0}, elems = {0}, has_rest = {0}, fixed_count = {0}, cond = {0}, idx = {0}, lifted = {0}, sub = {0}, elem_var = {0}, sc = {0}, entries = {0}, key = {0}, val_expr = {0};
     AValue __ret = a_void();
+    pat = a_retain(pat);
+    target = a_retain(target);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("PatWildcard")))) {
         __ret = fn_cgen__R(a_string("1"), li); goto __fn_cleanup;
@@ -5374,12 +5901,23 @@ __fn_cleanup:
     a_release(entries);
     a_release(key);
     a_release(val_expr);
+    a_release(pat);
+    a_release(target);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_pat_bind(AValue pat, AValue target, AValue depth, AValue bm, AValue ctx, AValue li) {
     AValue tag = {0}, ind = {0}, name = {0}, args = {0}, code = {0}, inner = {0}, inner_expr = {0}, br = {0}, elems = {0}, idx = {0}, lifted = {0}, elem_var = {0}, rest_expr = {0}, entries = {0}, key = {0}, val_expr = {0};
     AValue __ret = a_void();
+    pat = a_retain(pat);
+    target = a_retain(target);
+    depth = a_retain(depth);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("PatWildcard")))) {
@@ -5490,12 +6028,23 @@ __fn_cleanup:
     a_release(entries);
     a_release(key);
     a_release(val_expr);
+    a_release(pat);
+    a_release(target);
+    a_release(depth);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_arm_body(AValue body, AValue depth, AValue bm, AValue ctx, AValue li) {
     AValue code = {0}, lifted = {0}, sr = {0}, er = {0};
     AValue __ret = a_void();
+    body = a_retain(body);
+    depth = a_retain(depth);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = code; code = a_string(""); a_release(__old); }
     { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
     if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
@@ -5528,12 +6077,22 @@ __fn_cleanup:
     a_release(lifted);
     a_release(sr);
     a_release(er);
+    a_release(body);
+    a_release(depth);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_match(AValue node, AValue depth, AValue bm, AValue ctx, AValue li) {
     AValue ind = {0}, d1 = {0}, d2 = {0}, er = {0}, lifted = {0}, arms = {0}, out = {0}, pat = {0}, guard = {0}, body = {0}, cr = {0}, has_guard = {0}, br = {0}, gr = {0}, br2 = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    depth = a_retain(depth);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
     { AValue __old = d1; d1 = fn_cgen__indent(a_add(depth, a_int(1))); a_release(__old); }
     { AValue __old = d2; d2 = fn_cgen__indent(a_add(depth, a_int(2))); a_release(__old); }
@@ -5621,12 +6180,21 @@ __fn_cleanup:
     a_release(br);
     a_release(gr);
     a_release(br2);
+    a_release(node);
+    a_release(depth);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_match_expr(AValue node, AValue bm, AValue ctx, AValue li) {
     AValue nl = {0}, er = {0}, lifted = {0}, arms = {0}, code = {0}, arm_vars = {0}, pv = {0}, pat = {0}, guard = {0}, body = {0}, cr = {0}, has_guard = {0}, br = {0}, gr = {0}, body_r = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = nl; nl = fn_cgen__newline_char(); a_release(__old); }
     { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
     { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
@@ -5737,12 +6305,20 @@ __fn_cleanup:
     a_release(br);
     a_release(gr);
     a_release(body_r);
+    a_release(node);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_match_expr_body(AValue body, AValue bm, AValue ctx, AValue li) {
     AValue lifted = {0}, stmts = {0}, last = {0}, nl = {0}, preamble = {0}, i = {0}, sr = {0}, er = {0};
     AValue __ret = a_void();
+    body = a_retain(body);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
     if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
         { AValue __old = stmts; stmts = a_array_get(body, a_string("stmts")); a_release(__old); }
@@ -5788,12 +6364,21 @@ __fn_cleanup:
     a_release(i);
     a_release(sr);
     a_release(er);
+    a_release(body);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen_emit_stmt(AValue node, AValue depth, AValue bm, AValue ctx, AValue li) {
     AValue tag = {0}, ind = {0}, vr = {0}, vname = {0}, assign_expr = {0}, code = {0}, bindings = {0}, i = {0}, rest_name = {0}, target = {0}, tname = {0}, tr = {0}, ir = {0}, use_goto = {0}, cleanup_vars = {0}, has_cleanup = {0}, cleanup = {0}, val_expr = {0}, ret_expr = {0}, er = {0}, cr = {0}, lifted = {0}, out = {0}, then_stmts = {0}, sr = {0}, else_branch = {0}, else_stmts = {0}, body_stmts = {0}, var_name = {0}, body_vars = {0}, for_decls = {0}, init_parts = {0}, for_cleanup = {0}, decls = {0}, bi = {0}, fd_cleanup = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    depth = a_retain(depth);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("Let")))) {
@@ -6151,12 +6736,18 @@ __fn_cleanup:
     a_release(decls);
     a_release(bi);
     a_release(fd_cleanup);
+    a_release(node);
+    a_release(depth);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__collect_pattern_vars(AValue pat) {
     AValue tag = {0}, vs = {0};
     AValue __ret = a_void();
+    pat = a_retain(pat);
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("PatIdent")))) {
         __ret = a_array_new(1, fn_cgen__mangle(a_array_get(pat, a_string("name")))); goto __fn_cleanup;
@@ -6221,12 +6812,14 @@ AValue fn_cgen__collect_pattern_vars(AValue pat) {
 __fn_cleanup:
     a_release(tag);
     a_release(vs);
+    a_release(pat);
     return __ret;
 }
 
 AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
     AValue vars = {0}, tag = {0}, name = {0}, tv = {0}, eb = {0}, ev = {0}, eiv = {0}, wv = {0}, fv = {0}, rn = {0}, pv = {0}, body = {0}, bv = {0};
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
     { AValue __old = vars; vars = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(stmts);
@@ -6435,12 +7028,17 @@ __fn_cleanup:
     a_release(pv);
     a_release(body);
     a_release(bv);
+    a_release(stmts);
     return __ret;
 }
 
 AValue fn_cgen_emit_fn(AValue node, AValue bm, AValue ctx, AValue li) {
-    AValue name = {0}, full_name = {0}, params = {0}, body = {0}, param_parts = {0}, param_str = {0}, out = {0}, all_vars = {0}, param_names = {0}, decl_vars = {0}, init_parts = {0}, all_cleanup_vars = {0}, enc_vars = {0}, fn_ctx = {0}, lifted = {0}, stmts = {0}, sr = {0}, cleanup = {0};
+    AValue name = {0}, full_name = {0}, params = {0}, body = {0}, param_parts = {0}, param_str = {0}, out = {0}, all_vars = {0}, param_names = {0}, decl_vars = {0}, init_parts = {0}, pn = {0}, all_cleanup_vars = {0}, enc_vars = {0}, fn_ctx = {0}, lifted = {0}, stmts = {0}, sr = {0}, cleanup = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    bm = a_retain(bm);
+    ctx = a_retain(ctx);
+    li = a_retain(li);
     { AValue __old = name; name = a_array_get(node, a_string("name")); a_release(__old); }
     { AValue __old = full_name; full_name = fn_cgen__prefixed_name(name, ctx); a_release(__old); }
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
@@ -6503,7 +7101,19 @@ AValue fn_cgen_emit_fn(AValue node, AValue bm, AValue ctx, AValue li) {
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n    AValue "), a_str_concat(a_str_join(init_parts, a_string(", ")), a_string(";")))); a_release(__old); }
     }
     { AValue __old = out; out = a_str_concat(out, a_string("\n    AValue __ret = a_void();")); a_release(__old); }
-    { AValue __old = all_cleanup_vars; all_cleanup_vars = a_retain(decl_vars); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(params);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue p = {0}, pn = {0};
+            p = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = pn; pn = fn_cgen__mangle(a_array_get(p, a_string("name"))); a_release(__old); }
+            { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n    "), a_str_concat(pn, a_str_concat(a_string(" = a_retain("), a_str_concat(pn, a_string(");")))))); a_release(__old); }
+            a_release(p);
+            a_release(pn);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = all_cleanup_vars; all_cleanup_vars = a_concat_arr(decl_vars, param_names); a_release(__old); }
     { AValue __old = enc_vars; enc_vars = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(params);
@@ -6564,6 +7174,7 @@ __fn_cleanup:
     a_release(param_names);
     a_release(decl_vars);
     a_release(init_parts);
+    a_release(pn);
     a_release(all_cleanup_vars);
     a_release(enc_vars);
     a_release(fn_ctx);
@@ -6571,12 +7182,18 @@ __fn_cleanup:
     a_release(stmts);
     a_release(sr);
     a_release(cleanup);
+    a_release(node);
+    a_release(bm);
+    a_release(ctx);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__emit_fwd_decl(AValue name, AValue params) {
     AValue param_parts = {0}, param_str = {0};
     AValue __ret = a_void();
+    name = a_retain(name);
+    params = a_retain(params);
     { AValue __old = param_parts; param_parts = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(params);
@@ -6596,12 +7213,15 @@ AValue fn_cgen__emit_fwd_decl(AValue name, AValue params) {
 __fn_cleanup:
     a_release(param_parts);
     a_release(param_str);
+    a_release(name);
+    a_release(params);
     return __ret;
 }
 
 AValue fn_cgen__use_path_to_file(AValue path_arr) {
     AValue rel = {0}, mod_path = {0};
     AValue __ret = a_void();
+    path_arr = a_retain(path_arr);
     { AValue __old = rel; rel = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); a_release(__old); }
     if (a_truthy(a_fs_exists(rel))) {
         __ret = a_retain(rel); goto __fn_cleanup;
@@ -6614,19 +7234,23 @@ AValue fn_cgen__use_path_to_file(AValue path_arr) {
 __fn_cleanup:
     a_release(rel);
     a_release(mod_path);
+    a_release(path_arr);
     return __ret;
 }
 
 AValue fn_cgen__use_path_short_name(AValue path_arr) {
     AValue __ret = a_void();
+    path_arr = a_retain(path_arr);
     __ret = a_array_get(path_arr, a_sub(a_len(path_arr), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(path_arr);
     return __ret;
 }
 
 AValue fn_cgen__collect_fn_names(AValue items) {
     AValue names = {0};
     AValue __ret = a_void();
+    items = a_retain(items);
     { AValue __old = names; names = a_array_new(0); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(items);
@@ -6643,12 +7267,17 @@ AValue fn_cgen__collect_fn_names(AValue items) {
     __ret = a_retain(names); goto __fn_cleanup;
 __fn_cleanup:
     a_release(names);
+    a_release(items);
     return __ret;
 }
 
 AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li) {
     AValue use_key = {0}, file_path = {0}, source = {0}, mod_ast = {0}, items = {0}, _short = {0}, all_fwd = {0}, all_fns = {0}, sub = {0}, fn_names = {0}, ctx = {0}, aliases = {0}, full_name = {0}, fr = {0};
     AValue __ret = a_void();
+    path_arr = a_retain(path_arr);
+    bm = a_retain(bm);
+    loaded = a_retain(loaded);
+    li = a_retain(li);
     { AValue __old = use_key; use_key = a_str_join(path_arr, a_string(".")); a_release(__old); }
     if (a_truthy(a_contains(loaded, use_key))) {
         __ret = a_map_new(4, "fwd", a_array_new(0), "fns", a_array_new(0), "loaded", loaded, "li", li); goto __fn_cleanup;
@@ -6726,12 +7355,17 @@ __fn_cleanup:
     a_release(aliases);
     a_release(full_name);
     a_release(fr);
+    a_release(path_arr);
+    a_release(bm);
+    a_release(loaded);
+    a_release(li);
     return __ret;
 }
 
 AValue fn_cgen__ffi_c_type(AValue ty_node) {
     AValue tag = {0}, name = {0};
     AValue __ret = a_void();
+    ty_node = a_retain(ty_node);
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
@@ -6782,12 +7416,15 @@ AValue fn_cgen__ffi_c_type(AValue ty_node) {
 __fn_cleanup:
     a_release(tag);
     a_release(name);
+    a_release(ty_node);
     return __ret;
 }
 
 AValue fn_cgen__ffi_extract(AValue ty_node, AValue var_name) {
     AValue tag = {0}, name = {0};
     AValue __ret = a_void();
+    ty_node = a_retain(ty_node);
+    var_name = a_retain(var_name);
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
@@ -6820,12 +7457,16 @@ AValue fn_cgen__ffi_extract(AValue ty_node, AValue var_name) {
 __fn_cleanup:
     a_release(tag);
     a_release(name);
+    a_release(ty_node);
+    a_release(var_name);
     return __ret;
 }
 
 AValue fn_cgen__ffi_wrap(AValue ty_node, AValue expr) {
     AValue tag = {0}, name = {0};
     AValue __ret = a_void();
+    ty_node = a_retain(ty_node);
+    expr = a_retain(expr);
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
@@ -6852,12 +7493,15 @@ AValue fn_cgen__ffi_wrap(AValue ty_node, AValue expr) {
 __fn_cleanup:
     a_release(tag);
     a_release(name);
+    a_release(ty_node);
+    a_release(expr);
     return __ret;
 }
 
 AValue fn_cgen__emit_extern_fn(AValue node) {
     AValue name = {0}, params = {0}, ret_type = {0}, c_ret = {0}, is_void = {0}, c_param_parts = {0}, c_param_str = {0}, raw_proto = {0}, shim_params = {0}, pi = {0}, shim_param_str = {0}, shim = {0}, call_args = {0}, p = {0}, extracted = {0}, call_str = {0}, fwd = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     { AValue __old = name; name = a_array_get(node, a_string("name")); a_release(__old); }
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
     { AValue __old = ret_type; ret_type = a_array_get(node, a_string("ret_type")); a_release(__old); }
@@ -6927,12 +7571,15 @@ __fn_cleanup:
     a_release(extracted);
     a_release(call_str);
     a_release(fwd);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
     AValue items = {0}, all_fwd = {0}, all_fns = {0}, loaded = {0}, li = {0}, import_aliases = {0}, result = {0}, al = {0}, main_fn_names = {0}, extern_protos = {0}, extern_shims = {0}, parts = {0}, main_ctx = {0}, fr = {0}, out = {0}, lambda_fwd = {0}, i = {0};
     AValue __ret = a_void();
+    prog_ast = a_retain(prog_ast);
+    bm = a_retain(bm);
     { AValue __old = items; items = a_array_get(prog_ast, a_string("items")); a_release(__old); }
     { AValue __old = all_fwd; all_fwd = a_array_new(0); a_release(__old); }
     { AValue __old = all_fns; all_fns = a_array_new(0); a_release(__old); }
@@ -7126,6 +7773,8 @@ __fn_cleanup:
     a_release(out);
     a_release(lambda_fwd);
     a_release(i);
+    a_release(prog_ast);
+    a_release(bm);
     return __ret;
 }
 
@@ -7154,6 +7803,7 @@ __fn_cleanup:
 AValue fn_emitter_emit(AValue ast) {
     AValue items = {0}, parts = {0};
     AValue __ret = a_void();
+    ast = a_retain(ast);
     { AValue __old = items; items = a_array_get(ast, a_string("items")); a_release(__old); }
     { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
     {
@@ -7170,11 +7820,13 @@ AValue fn_emitter_emit(AValue ast) {
 __fn_cleanup:
     a_release(items);
     a_release(parts);
+    a_release(ast);
     return __ret;
 }
 
 AValue fn_emitter_is_present(AValue val) {
     AValue __ret = a_void();
+    val = a_retain(val);
     if (a_truthy(a_eq(val, a_bool(0)))) {
         __ret = a_bool(0); goto __fn_cleanup;
     }
@@ -7188,12 +7840,14 @@ AValue fn_emitter_is_present(AValue val) {
     }
     __ret = a_bool(1); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(val);
     return __ret;
 }
 
 AValue fn_emitter_mk_indent(AValue level) {
     AValue pad = {0}, i = {0};
     AValue __ret = a_void();
+    level = a_retain(level);
     { AValue __old = pad; pad = a_string(""); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
     while (a_truthy(a_lt(i, level))) {
@@ -7204,12 +7858,15 @@ AValue fn_emitter_mk_indent(AValue level) {
 __fn_cleanup:
     a_release(pad);
     a_release(i);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_top_level(AValue node, AValue level) {
     AValue tag = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("FnDecl")))) {
         __ret = fn_emitter_emit_fn_decl(node, level); goto __fn_cleanup;
@@ -7229,12 +7886,16 @@ AValue fn_emitter_emit_top_level(AValue node, AValue level) {
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_extern_fn(AValue node, AValue level) {
     AValue pad = {0}, out = {0}, params = {0}, param_parts = {0}, ret_type = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(a_add(pad, a_string("extern fn ")), a_array_get(node, a_string("name"))), a_string("(")); a_release(__old); }
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
@@ -7263,22 +7924,30 @@ __fn_cleanup:
     a_release(params);
     a_release(param_parts);
     a_release(ret_type);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_use_decl(AValue node, AValue level) {
     AValue path = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = path; path = a_array_get(node, a_string("path")); a_release(__old); }
     __ret = a_add(a_add(a_add(fn_emitter_mk_indent(level), a_string("use ")), a_str_join(path, a_string("."))), a_string("\n")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(path);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_mod_decl(AValue node, AValue level) {
     AValue pad = {0}, lb = {0}, rb = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
@@ -7300,12 +7969,16 @@ __fn_cleanup:
     a_release(lb);
     a_release(rb);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_type_decl(AValue node, AValue level) {
     AValue pad = {0}, out = {0}, params = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(pad, a_string("ty ")), a_array_get(node, a_string("name"))); a_release(__old); }
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
@@ -7318,12 +7991,15 @@ __fn_cleanup:
     a_release(pad);
     a_release(out);
     a_release(params);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_type_body(AValue node) {
     AValue tag = {0}, parts = {0}, s = {0}, field_parts = {0}, out = {0}, w = {0}, lb = {0}, rb = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("TypeRecord")))) {
         { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
@@ -7390,12 +8066,14 @@ __fn_cleanup:
     a_release(w);
     a_release(lb);
     a_release(rb);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_emitter_emit_type(AValue node) {
     AValue tag = {0}, args = {0}, parts = {0}, param_parts = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     if (a_truthy(a_eq(a_type_of(node), a_string("void")))) {
         __ret = a_string("_"); goto __fn_cleanup;
     }
@@ -7481,12 +8159,15 @@ __fn_cleanup:
     a_release(args);
     a_release(parts);
     a_release(param_parts);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_emitter_emit_fn_decl(AValue node, AValue level) {
     AValue pad = {0}, out = {0}, params = {0}, param_parts = {0}, ret_type = {0}, effs = {0}, lb = {0}, rb = {0}, precond = {0}, postcond = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(a_add(pad, a_string("fn ")), a_array_get(node, a_string("name"))), a_string("(")); a_release(__old); }
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
@@ -7537,12 +8218,15 @@ __fn_cleanup:
     a_release(rb);
     a_release(precond);
     a_release(postcond);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_param(AValue p) {
     AValue pty = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     { AValue __old = pty; pty = a_array_get(p, a_string("type")); a_release(__old); }
     if (a_truthy(a_eq(a_type_of(pty), a_string("void")))) {
         __ret = a_array_get(p, a_string("name")); goto __fn_cleanup;
@@ -7556,12 +8240,15 @@ AValue fn_emitter_emit_param(AValue p) {
     __ret = a_add(a_add(a_array_get(p, a_string("name")), a_string(": ")), fn_emitter_emit_type(pty)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(pty);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_emitter_emit_block(AValue node, AValue level) {
     AValue pad = {0}, lb = {0}, rb = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
@@ -7583,12 +8270,16 @@ __fn_cleanup:
     a_release(lb);
     a_release(rb);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_stmt(AValue node, AValue level) {
     AValue tag = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
     if (a_truthy(a_eq(tag, a_string("Let")))) {
         __ret = fn_emitter_emit_let(node, level); goto __fn_cleanup;
@@ -7629,12 +8320,16 @@ AValue fn_emitter_emit_stmt(AValue node, AValue level) {
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_let(AValue node, AValue level) {
     AValue pad = {0}, out = {0}, lty = {0}, has_type = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(pad, a_string("let ")); a_release(__old); }
     if (a_truthy(a_eq(a_array_get(node, a_string("mutable")), a_bool(1)))) {
@@ -7659,36 +8354,52 @@ __fn_cleanup:
     a_release(out);
     a_release(lty);
     a_release(has_type);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_assign(AValue node, AValue level) {
     AValue pad = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     __ret = a_add(a_add(a_add(a_add(pad, fn_emitter_emit_expr(a_array_get(node, a_string("target")))), a_string(" = ")), fn_emitter_emit_expr(a_array_get(node, a_string("value")))), a_string("\n")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(pad);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_return(AValue node, AValue level) {
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     __ret = a_add(a_add(a_add(fn_emitter_mk_indent(level), a_string("ret ")), fn_emitter_emit_expr(a_array_get(node, a_string("expr")))), a_string("\n")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_expr_stmt(AValue node, AValue level) {
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     __ret = a_add(a_add(fn_emitter_mk_indent(level), fn_emitter_emit_expr(a_array_get(node, a_string("expr")))), a_string("\n")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_if_stmt(AValue node, AValue level) {
     AValue pad = {0}, out = {0}, els = {0}, els_tag = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(a_add(pad, a_string("if ")), fn_emitter_emit_expr(a_array_get(node, a_string("cond")))), a_string(" \n")); a_release(__old); }
     { AValue __old = out; out = a_add(out, fn_emitter_emit_block(a_array_get(node, a_string("then")), level)); a_release(__old); }
@@ -7713,12 +8424,16 @@ __fn_cleanup:
     a_release(out);
     a_release(els);
     a_release(els_tag);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_match_stmt(AValue node, AValue level) {
     AValue pad = {0}, lb = {0}, rb = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
@@ -7740,12 +8455,16 @@ __fn_cleanup:
     a_release(lb);
     a_release(rb);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_match_arm(AValue arm, AValue level) {
     AValue pad = {0}, out = {0}, guard = {0}, body = {0};
     AValue __ret = a_void();
+    arm = a_retain(arm);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(pad, fn_emitter_emit_pattern(a_array_get(arm, a_string("pattern")))); a_release(__old); }
     { AValue __old = guard; guard = a_array_get(arm, a_string("guard")); a_release(__old); }
@@ -7765,12 +8484,16 @@ __fn_cleanup:
     a_release(out);
     a_release(guard);
     a_release(body);
+    a_release(arm);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_for_stmt(AValue node, AValue level) {
     AValue pad = {0}, fty = {0}, has_type = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = fty; fty = a_array_get(node, a_string("type")); a_release(__old); }
     { AValue __old = has_type; has_type = a_bool(0); a_release(__old); }
@@ -7793,12 +8516,16 @@ __fn_cleanup:
     a_release(fty);
     a_release(has_type);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_while_stmt(AValue node, AValue level) {
     AValue pad = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(a_add(pad, a_string("while ")), fn_emitter_emit_expr(a_array_get(node, a_string("cond")))), a_string("\n")); a_release(__old); }
     { AValue __old = out; out = a_add(a_add(out, fn_emitter_emit_block(a_array_get(node, a_string("body")), level)), a_string("\n")); a_release(__old); }
@@ -7806,12 +8533,16 @@ AValue fn_emitter_emit_while_stmt(AValue node, AValue level) {
 __fn_cleanup:
     a_release(pad);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_let_destructure(AValue node, AValue level) {
     AValue pad = {0}, parts = {0}, rest = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
     {
@@ -7841,12 +8572,16 @@ __fn_cleanup:
     a_release(pad);
     a_release(parts);
     a_release(rest);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_for_destructure(AValue node, AValue level) {
     AValue pad = {0}, lb = {0}, rb = {0}, parts = {0}, out = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    level = a_retain(level);
     { AValue __old = pad; pad = fn_emitter_mk_indent(level); a_release(__old); }
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
@@ -7880,12 +8615,15 @@ __fn_cleanup:
     a_release(rb);
     a_release(parts);
     a_release(out);
+    a_release(node);
+    a_release(level);
     return __ret;
 }
 
 AValue fn_emitter_emit_expr(AValue node) {
     AValue tag = {0}, arg_parts = {0}, parts = {0}, param_parts = {0}, lbrace = {0}, rbrace = {0}, dq = {0}, out = {0}, lb = {0}, rb = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     if (a_truthy(a_eq(a_type_of(node), a_string("void")))) {
         __ret = a_string("void"); goto __fn_cleanup;
     }
@@ -8064,12 +8802,14 @@ __fn_cleanup:
     a_release(out);
     a_release(lb);
     a_release(rb);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_emitter_emit_pattern(AValue node) {
     AValue tag = {0}, args = {0}, parts = {0}, dq = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
     if (a_truthy(a_eq(a_type_of(node), a_string("void")))) {
         __ret = a_string("_"); goto __fn_cleanup;
     }
@@ -8144,12 +8884,14 @@ __fn_cleanup:
     a_release(args);
     a_release(parts);
     a_release(dq);
+    a_release(node);
     return __ret;
 }
 
 AValue fn_emitter_emit_pat_literal(AValue lit) {
     AValue tag = {0};
     AValue __ret = a_void();
+    lit = a_retain(lit);
     if (a_truthy(a_eq(a_type_of(lit), a_string("int")))) {
         __ret = a_to_str(lit); goto __fn_cleanup;
     }
@@ -8184,12 +8926,14 @@ AValue fn_emitter_emit_pat_literal(AValue lit) {
     __ret = a_to_str(lit); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
+    a_release(lit);
     return __ret;
 }
 
 AValue fn_emitter_escape_str(AValue s) {
     AValue out = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = out; out = a_str_replace(s, a_string("\\"), a_string("\\\\")); a_release(__old); }
     { AValue __old = out; out = a_str_replace(out, a_string("\""), a_string("\\\"")); a_release(__old); }
     { AValue __old = out; out = a_str_replace(out, a_string("\n"), a_string("\\n")); a_release(__old); }
@@ -8197,6 +8941,7 @@ AValue fn_emitter_escape_str(AValue s) {
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(out);
+    a_release(s);
     return __ret;
 }
 
@@ -8210,6 +8955,8 @@ __fn_cleanup:
 AValue fn_checker__is_builtin_or_prefix(AValue name, AValue arity_map) {
     AValue prefixes = {0}, i = {0};
     AValue __ret = a_void();
+    name = a_retain(name);
+    arity_map = a_retain(arity_map);
     if (a_truthy(a_map_has(arity_map, name))) {
         __ret = a_bool(1); goto __fn_cleanup;
     }
@@ -8225,12 +8972,15 @@ AValue fn_checker__is_builtin_or_prefix(AValue name, AValue arity_map) {
 __fn_cleanup:
     a_release(prefixes);
     a_release(i);
+    a_release(name);
+    a_release(arity_map);
     return __ret;
 }
 
 AValue fn_checker_check(AValue ast) {
     AValue arity_map = {0}, diags = {0}, items = {0}, scope = {0}, fi = {0}, item = {0}, params = {0}, p = {0};
     AValue __ret = a_void();
+    ast = a_retain(ast);
     { AValue __old = arity_map; arity_map = fn_checker__builtin_arity(); a_release(__old); }
     { AValue __old = diags; diags = a_array_new(0); a_release(__old); }
     { AValue __old = items; items = a_array_get(ast, a_string("items")); a_release(__old); }
@@ -8276,12 +9026,17 @@ __fn_cleanup:
     a_release(item);
     a_release(params);
     a_release(p);
+    a_release(ast);
     return __ret;
 }
 
 AValue fn_checker__check_fn_body(AValue fn_node, AValue scope, AValue arity_map, AValue diags) {
     AValue fn_scope = {0}, params = {0}, pi = {0}, p = {0}, body = {0}, stmts = {0}, bindings = {0}, bkeys = {0}, bi = {0}, ident_set = {0}, calls = {0}, ident_keys = {0}, ii = {0}, name = {0}, ci = {0}, c = {0}, fn_name = {0}, nargs = {0}, expected = {0}, found_ret = {0}, si = {0}, s = {0}, ref_set = {0}, vname = {0};
     AValue __ret = a_void();
+    fn_node = a_retain(fn_node);
+    scope = a_retain(scope);
+    arity_map = a_retain(arity_map);
+    diags = a_retain(diags);
     { AValue __old = fn_scope; fn_scope = a_retain(scope); a_release(__old); }
     { AValue __old = params; params = a_array_get(fn_node, a_string("params")); a_release(__old); }
     if (a_truthy(a_eq(a_type_of(params), a_string("array")))) {
@@ -8381,12 +9136,17 @@ __fn_cleanup:
     a_release(s);
     a_release(ref_set);
     a_release(vname);
+    a_release(fn_node);
+    a_release(scope);
+    a_release(arity_map);
+    a_release(diags);
     return __ret;
 }
 
 AValue fn_checker__collect_all_lets(AValue stmts) {
     AValue names = {0}, i = {0}, s = {0}, tag = {0}, n = {0}, b = {0}, inner = {0}, sub = {0}, sk = {0}, j = {0};
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
     { AValue __old = names; names = a_map_new(0); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(stmts), a_string("array")))) {
         __ret = a_retain(names); goto __fn_cleanup;
@@ -8454,12 +9214,15 @@ __fn_cleanup:
     a_release(sub);
     a_release(sk);
     a_release(j);
+    a_release(stmts);
     return __ret;
 }
 
 AValue fn_checker__collect_idents_expr(AValue node, AValue s) {
     AValue tag = {0}, args = {0}, i = {0}, elems = {0}, parts = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    s = a_retain(s);
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
         __ret = a_retain(s); goto __fn_cleanup;
     }
@@ -8538,12 +9301,16 @@ __fn_cleanup:
     a_release(i);
     a_release(elems);
     a_release(parts);
+    a_release(node);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_checker__collect_all_idents_block(AValue stmts, AValue s) {
     AValue i = {0}, st = {0}, tag = {0}, inner = {0}, el = {0};
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
+    s = a_retain(s);
     if (a_truthy(a_neq(a_type_of(stmts), a_string("array")))) {
         __ret = a_retain(s); goto __fn_cleanup;
     }
@@ -8610,12 +9377,16 @@ __fn_cleanup:
     a_release(tag);
     a_release(inner);
     a_release(el);
+    a_release(stmts);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_checker__collect_calls_expr(AValue node, AValue out) {
     AValue tag = {0}, callee = {0}, args = {0}, nargs = {0}, obj = {0}, field = {0}, i = {0}, elems = {0};
     AValue __ret = a_void();
+    node = a_retain(node);
+    out = a_retain(out);
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
         __ret = a_retain(out); goto __fn_cleanup;
     }
@@ -8695,12 +9466,15 @@ __fn_cleanup:
     a_release(field);
     a_release(i);
     a_release(elems);
+    a_release(node);
+    a_release(out);
     return __ret;
 }
 
 AValue fn_checker__collect_all_calls(AValue stmts) {
     AValue out = {0}, i = {0}, s = {0}, tag = {0}, inner = {0}, sub = {0}, j = {0};
     AValue __ret = a_void();
+    stmts = a_retain(stmts);
     { AValue __old = out; out = a_array_new(0); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(stmts), a_string("array")))) {
         __ret = a_retain(out); goto __fn_cleanup;
@@ -8778,11 +9552,14 @@ __fn_cleanup:
     a_release(inner);
     a_release(sub);
     a_release(j);
+    a_release(stmts);
     return __ret;
 }
 
 AValue fn_path_join(AValue a, AValue b) {
     AValue __ret = a_void();
+    a = a_retain(a);
+    b = a_retain(b);
     if (a_truthy(a_eq(a, a_string("")))) {
         __ret = a_retain(b); goto __fn_cleanup;
     }
@@ -8797,19 +9574,28 @@ AValue fn_path_join(AValue a, AValue b) {
     }
     __ret = a_str_concat(a_str_concat(a, a_string("/")), b); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(a);
+    a_release(b);
     return __ret;
 }
 
 AValue fn_path_join3(AValue a, AValue b, AValue c) {
     AValue __ret = a_void();
+    a = a_retain(a);
+    b = a_retain(b);
+    c = a_retain(c);
     __ret = fn_path_join(fn_path_join(a, b), c); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(a);
+    a_release(b);
+    a_release(c);
     return __ret;
 }
 
 AValue fn_path_dirname(AValue p) {
     AValue clean = {0}, idx = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     if (a_truthy(a_eq(p, a_string("/")))) {
         __ret = a_string("/"); goto __fn_cleanup;
     }
@@ -8828,12 +9614,14 @@ AValue fn_path_dirname(AValue p) {
 __fn_cleanup:
     a_release(clean);
     a_release(idx);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_basename(AValue p) {
     AValue clean = {0}, idx = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     if (a_truthy(a_eq(p, a_string("/")))) {
         __ret = a_string("/"); goto __fn_cleanup;
     }
@@ -8849,12 +9637,14 @@ AValue fn_path_basename(AValue p) {
 __fn_cleanup:
     a_release(clean);
     a_release(idx);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_extension(AValue p) {
     AValue base = {0}, idx = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     { AValue __old = base; base = fn_path_basename(p); a_release(__old); }
     { AValue __old = idx; idx = fn_path__last_dot(base); a_release(__old); }
     if (a_truthy(a_lteq(idx, a_int(0)))) {
@@ -8864,12 +9654,14 @@ AValue fn_path_extension(AValue p) {
 __fn_cleanup:
     a_release(base);
     a_release(idx);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_stem(AValue p) {
     AValue base = {0}, idx = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     { AValue __old = base; base = fn_path_basename(p); a_release(__old); }
     { AValue __old = idx; idx = fn_path__last_dot(base); a_release(__old); }
     if (a_truthy(a_lteq(idx, a_int(0)))) {
@@ -8879,12 +9671,15 @@ AValue fn_path_stem(AValue p) {
 __fn_cleanup:
     a_release(base);
     a_release(idx);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_with_extension(AValue p, AValue ext) {
     AValue dir = {0}, s = {0}, new_base = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
+    ext = a_retain(ext);
     { AValue __old = dir; dir = fn_path_dirname(p); a_release(__old); }
     { AValue __old = s; s = fn_path_stem(p); a_release(__old); }
     { AValue __old = new_base; new_base = a_retain(s); a_release(__old); }
@@ -8899,19 +9694,24 @@ __fn_cleanup:
     a_release(dir);
     a_release(s);
     a_release(new_base);
+    a_release(p);
+    a_release(ext);
     return __ret;
 }
 
 AValue fn_path_is_absolute(AValue p) {
     AValue __ret = a_void();
+    p = a_retain(p);
     __ret = a_str_starts_with(p, a_string("/")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_segments(AValue p) {
     AValue parts = {0}, out = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     if (a_truthy(a_eq(p, a_string("")))) {
         __ret = a_array_new(0); goto __fn_cleanup;
     }
@@ -8933,12 +9733,14 @@ AValue fn_path_segments(AValue p) {
 __fn_cleanup:
     a_release(parts);
     a_release(out);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path_normalize(AValue p) {
     AValue is_abs = {0}, parts = {0}, stack = {0}, top = {0}, result = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     { AValue __old = is_abs; is_abs = a_str_starts_with(p, a_string("/")); a_release(__old); }
     { AValue __old = parts; parts = a_str_split(p, a_string("/")); a_release(__old); }
     { AValue __old = stack; stack = a_array_new(0); a_release(__old); }
@@ -8986,12 +9788,14 @@ __fn_cleanup:
     a_release(stack);
     a_release(top);
     a_release(result);
+    a_release(p);
     return __ret;
 }
 
 AValue fn_path__last_slash(AValue s) {
     AValue chars = {0}, last = {0}, i = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = last; last = a_neg(a_int(1)); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
@@ -9013,12 +9817,14 @@ __fn_cleanup:
     a_release(chars);
     a_release(last);
     a_release(i);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_path__last_dot(AValue s) {
     AValue chars = {0}, last = {0}, i = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = last; last = a_neg(a_int(1)); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
@@ -9040,6 +9846,7 @@ __fn_cleanup:
     a_release(chars);
     a_release(last);
     a_release(i);
+    a_release(s);
     return __ret;
 }
 
@@ -9053,93 +9860,120 @@ __fn_cleanup:
 AValue fn_cli_wrap(AValue s, AValue code) {
     AValue e = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
+    code = a_retain(code);
     { AValue __old = e; e = fn_cli_esc_code(); a_release(__old); }
     __ret = a_concat_n(7, a_to_str(e), a_string("["), a_to_str(code), a_string("m"), a_to_str(s), a_to_str(e), a_string("[0m")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(e);
+    a_release(s);
+    a_release(code);
     return __ret;
 }
 
 AValue fn_cli_red(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("31")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_green(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("32")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_yellow(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("33")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_blue(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("34")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_magenta(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("35")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_cyan(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("36")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_gray(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("90")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_bold(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("1")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_dim(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("2")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_cli_underline(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = fn_cli_wrap(s, a_string("4")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_trim(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = a_str_trim(s); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_is_int(AValue s) {
     AValue chars = {0}, n = {0}, start = {0}, i = {0}, c = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = n; n = a_len(chars); a_release(__old); }
     if (a_truthy(a_eq(n, a_int(0)))) {
@@ -9172,12 +10006,14 @@ __fn_cleanup:
     a_release(start);
     a_release(i);
     a_release(c);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_is_float(AValue s) {
     AValue chars = {0}, n = {0}, start = {0}, has_dot = {0}, has_dig = {0}, i = {0}, c = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = n; n = a_len(chars); a_release(__old); }
     if (a_truthy(a_eq(n, a_int(0)))) {
@@ -9226,19 +10062,23 @@ __fn_cleanup:
     a_release(has_dig);
     a_release(i);
     a_release(c);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_strip_underscores(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     __ret = a_str_replace(s, a_string("_"), a_string("")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_parse_value(AValue s) {
     AValue t = {0}, chars = {0}, n = {0}, sq = {0}, last = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = t; t = fn_toml__t_trim(s); a_release(__old); }
     if (a_truthy(a_eq(t, a_string("true")))) {
         __ret = a_bool(1); goto __fn_cleanup;
@@ -9288,12 +10128,14 @@ __fn_cleanup:
     a_release(n);
     a_release(sq);
     a_release(last);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_split_array(AValue s) {
     AValue inner = {0}, chars = {0}, n = {0}, parts = {0}, cur = {0}, depth = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0}, trimmed = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = inner; inner = fn_toml__t_trim(a_str_slice(s, a_int(1), a_sub(a_len(s), a_int(1)))); a_release(__old); }
     if (a_truthy(a_eq(inner, a_string("")))) {
         __ret = a_array_new(0); goto __fn_cleanup;
@@ -9388,12 +10230,14 @@ __fn_cleanup:
     a_release(i);
     a_release(c);
     a_release(trimmed);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_parse_array(AValue s) {
     AValue items = {0}, result = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = items; items = fn_toml__t_split_array(s); a_release(__old); }
     { AValue __old = result; result = a_array_new(0); a_release(__old); }
     {
@@ -9410,12 +10254,14 @@ AValue fn_toml__t_parse_array(AValue s) {
 __fn_cleanup:
     a_release(items);
     a_release(result);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_parse_inline_table(AValue s) {
     AValue inner = {0}, empty = {0}, parts = {0}, result = {0}, trimmed = {0}, eq_pos = {0}, key = {0}, val = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = inner; inner = fn_toml__t_trim(a_str_slice(s, a_int(1), a_sub(a_len(s), a_int(1)))); a_release(__old); }
     if (a_truthy(a_eq(inner, a_string("")))) {
         { AValue __old = empty; empty = a_map_new(0); a_release(__old); }
@@ -9456,12 +10302,14 @@ __fn_cleanup:
     a_release(eq_pos);
     a_release(key);
     a_release(val);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_find_eq(AValue s) {
     AValue chars = {0}, n = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = n; n = a_len(chars); a_release(__old); }
     { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
@@ -9502,12 +10350,14 @@ __fn_cleanup:
     a_release(in_sq);
     a_release(i);
     a_release(c);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_strip_comment(AValue s) {
     AValue chars = {0}, n = {0}, in_dq = {0}, in_sq = {0}, i = {0}, c = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = chars; chars = a_str_chars(s); a_release(__old); }
     { AValue __old = n; n = a_len(chars); a_release(__old); }
     { AValue __old = in_dq; in_dq = a_bool(0); a_release(__old); }
@@ -9548,12 +10398,16 @@ __fn_cleanup:
     a_release(in_sq);
     a_release(i);
     a_release(c);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_set_nested(AValue root, AValue path, AValue val) {
     AValue key = {0}, rest = {0}, existing = {0}, updated = {0};
     AValue __ret = a_void();
+    root = a_retain(root);
+    path = a_retain(path);
+    val = a_retain(val);
     if (a_truthy(a_eq(a_len(path), a_int(0)))) {
         __ret = a_retain(root); goto __fn_cleanup;
     }
@@ -9573,12 +10427,17 @@ __fn_cleanup:
     a_release(rest);
     a_release(existing);
     a_release(updated);
+    a_release(root);
+    a_release(path);
+    a_release(val);
     return __ret;
 }
 
 AValue fn_toml__t_get_nested(AValue root, AValue path) {
     AValue cur = {0}, empty = {0};
     AValue __ret = a_void();
+    root = a_retain(root);
+    path = a_retain(path);
     { AValue __old = cur; cur = a_retain(root); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(path);
@@ -9599,12 +10458,15 @@ AValue fn_toml__t_get_nested(AValue root, AValue path) {
 __fn_cleanup:
     a_release(cur);
     a_release(empty);
+    a_release(root);
+    a_release(path);
     return __ret;
 }
 
 AValue fn_toml__t_parse_key(AValue s) {
     AValue parts = {0}, result = {0}, t = {0}, chars = {0}, n = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = parts; parts = a_str_split(s, a_string(".")); a_release(__old); }
     { AValue __old = result; result = a_array_new(0); a_release(__old); }
     {
@@ -9638,12 +10500,14 @@ __fn_cleanup:
     a_release(t);
     a_release(chars);
     a_release(n);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml_parse(AValue text) {
     AValue lines = {0}, result = {0}, current_path = {0}, n = {0}, i = {0}, raw = {0}, line = {0}, table_name = {0}, path = {0}, existing = {0}, t = {0}, new_entry = {0}, updated = {0}, arr = {0}, empty = {0}, eq_pos = {0}, key_str = {0}, val_str = {0}, key_parts = {0}, val = {0}, arr_len = {0}, last = {0}, updated_last = {0}, new_arr = {0}, j = {0}, full_path = {0};
     AValue __ret = a_void();
+    text = a_retain(text);
     { AValue __old = lines; lines = a_str_lines(a_str_replace(text, a_string("\r"), a_string(""))); a_release(__old); }
     { AValue __old = result; result = a_map_new(0); a_release(__old); }
     { AValue __old = current_path; current_path = a_array_new(0); a_release(__old); }
@@ -9771,12 +10635,14 @@ __fn_cleanup:
     a_release(new_arr);
     a_release(j);
     a_release(full_path);
+    a_release(text);
     return __ret;
 }
 
 AValue fn_toml__t_needs_quote(AValue s) {
     AValue chars = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     if (a_truthy(a_eq(s, a_string("")))) {
         __ret = a_bool(1); goto __fn_cleanup;
     }
@@ -9817,22 +10683,26 @@ AValue fn_toml__t_needs_quote(AValue s) {
     __ret = a_bool(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(chars);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_quote_key(AValue s) {
     AValue __ret = a_void();
+    s = a_retain(s);
     if (a_truthy(fn_toml__t_needs_quote(s))) {
         __ret = a_str_concat(a_string("\""), a_str_concat(s, a_string("\""))); goto __fn_cleanup;
     }
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(s);
     return __ret;
 }
 
 AValue fn_toml__t_stringify_value(AValue val) {
     AValue t = {0}, parts = {0}, keys = {0}, v = {0}, ks = {0}, vs = {0};
     AValue __ret = a_void();
+    val = a_retain(val);
     { AValue __old = t; t = a_type_of(val); a_release(__old); }
     if (a_truthy(a_eq(t, a_string("bool")))) {
         if (a_truthy(val)) {
@@ -9892,12 +10762,16 @@ __fn_cleanup:
     a_release(v);
     a_release(ks);
     a_release(vs);
+    a_release(val);
     return __ret;
 }
 
 AValue fn_toml__t_stringify_section(AValue val, AValue prefix, AValue lines) {
     AValue keys = {0}, simple_keys = {0}, table_keys = {0}, array_keys = {0}, v = {0}, t = {0}, first_type = {0}, ks = {0}, vs = {0}, section = {0}, arr = {0};
     AValue __ret = a_void();
+    val = a_retain(val);
+    prefix = a_retain(prefix);
+    lines = a_retain(lines);
     { AValue __old = keys; keys = a_map_keys(val); a_release(__old); }
     { AValue __old = simple_keys; simple_keys = a_array_new(0); a_release(__old); }
     { AValue __old = table_keys; table_keys = a_array_new(0); a_release(__old); }
@@ -10010,23 +10884,29 @@ __fn_cleanup:
     a_release(vs);
     a_release(section);
     a_release(arr);
+    a_release(val);
+    a_release(prefix);
+    a_release(lines);
     return __ret;
 }
 
 AValue fn_toml_stringify(AValue val) {
     AValue lines = {0};
     AValue __ret = a_void();
+    val = a_retain(val);
     { AValue __old = lines; lines = a_array_new(0); a_release(__old); }
     { AValue __old = lines; lines = fn_toml__t_stringify_section(val, a_string(""), lines); a_release(__old); }
     __ret = a_str_trim(a_str_join(lines, a_string("\n"))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(lines);
+    a_release(val);
     return __ret;
 }
 
 AValue fn_semver_parse(AValue s) {
     AValue v = {0}, parts = {0}, major = {0}, minor = {0}, patch = {0};
     AValue __ret = a_void();
+    s = a_retain(s);
     { AValue __old = v; v = a_retain(s); a_release(__old); }
     if (a_truthy(a_str_starts_with(v, a_string("v")))) {
         { AValue __old = v; v = a_str_slice(v, a_int(1), a_len(v)); a_release(__old); }
@@ -10048,19 +10928,24 @@ __fn_cleanup:
     a_release(major);
     a_release(minor);
     a_release(patch);
+    a_release(s);
     return __ret;
 }
 
 AValue fn_semver_format(AValue v) {
     AValue __ret = a_void();
+    v = a_retain(v);
     __ret = a_add(a_add(a_add(a_add(a_to_str(a_map_get(v, a_string("major"))), a_string(".")), a_to_str(a_map_get(v, a_string("minor")))), a_string(".")), a_to_str(a_map_get(v, a_string("patch")))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(v);
     return __ret;
 }
 
 AValue fn_semver_compare(AValue a, AValue b) {
     AValue am = {0}, bm = {0}, ai = {0}, bi = {0}, ap = {0}, bp = {0};
     AValue __ret = a_void();
+    a = a_retain(a);
+    b = a_retain(b);
     { AValue __old = am; am = a_map_get(a, a_string("major")); a_release(__old); }
     { AValue __old = bm; bm = a_map_get(b, a_string("major")); a_release(__old); }
     if (a_truthy(a_lt(am, bm))) {
@@ -10093,26 +10978,38 @@ __fn_cleanup:
     a_release(bi);
     a_release(ap);
     a_release(bp);
+    a_release(a);
+    a_release(b);
     return __ret;
 }
 
 AValue fn_semver__gte(AValue v, AValue min) {
     AValue __ret = a_void();
+    v = a_retain(v);
+    min = a_retain(min);
     __ret = a_gteq(fn_semver_compare(v, min), a_int(0)); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(v);
+    a_release(min);
     return __ret;
 }
 
 AValue fn_semver__lt(AValue v, AValue max) {
     AValue __ret = a_void();
+    v = a_retain(v);
+    max = a_retain(max);
     __ret = a_lt(fn_semver_compare(v, max), a_int(0)); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(v);
+    a_release(max);
     return __ret;
 }
 
 AValue fn_semver_satisfies(AValue version, AValue constraint) {
     AValue v = {0}, min = {0}, max = {0}, target = {0};
     AValue __ret = a_void();
+    version = a_retain(version);
+    constraint = a_retain(constraint);
     { AValue __old = v; v = fn_semver_parse(version); a_release(__old); }
     if (a_truthy(a_str_starts_with(constraint, a_string("^")))) {
         { AValue __old = min; min = fn_semver_parse(a_str_slice(constraint, a_int(1), a_len(constraint))); a_release(__old); }
@@ -10147,12 +11044,16 @@ __fn_cleanup:
     a_release(min);
     a_release(max);
     a_release(target);
+    a_release(version);
+    a_release(constraint);
     return __ret;
 }
 
 AValue fn_semver_best_match(AValue versions, AValue constraint) {
     AValue best = {0}, best_v = {0}, i = {0}, vs = {0}, v = {0};
     AValue __ret = a_void();
+    versions = a_retain(versions);
+    constraint = a_retain(constraint);
     { AValue __old = best; best = a_string(""); a_release(__old); }
     { AValue __old = best_v; best_v = a_map_new(3, "major", a_neg(a_int(1)), "minor", a_neg(a_int(1)), "patch", a_neg(a_int(1))); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
@@ -10174,33 +11075,42 @@ __fn_cleanup:
     a_release(i);
     a_release(vs);
     a_release(v);
+    a_release(versions);
+    a_release(constraint);
     return __ret;
 }
 
 AValue fn_pkg__manifest_path(AValue dir) {
     AValue __ret = a_void();
+    dir = a_retain(dir);
     __ret = fn_path_join(dir, a_string("pkg.toml")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg__lock_path(AValue dir) {
     AValue __ret = a_void();
+    dir = a_retain(dir);
     __ret = fn_path_join(dir, a_string("pkg.lock")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg__modules_dir(AValue dir) {
     AValue __ret = a_void();
+    dir = a_retain(dir);
     __ret = fn_path_join(dir, a_string("a_modules")); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg_parse_source(AValue source) {
     AValue at = {0}, repo_part = {0}, constraint = {0}, colon = {0}, host = {0}, repo = {0};
     AValue __ret = a_void();
+    source = a_retain(source);
     { AValue __old = at; at = a_str_find(source, a_string("@")); a_release(__old); }
     { AValue __old = repo_part; repo_part = a_retain(source); a_release(__old); }
     { AValue __old = constraint; constraint = a_string(""); a_release(__old); }
@@ -10223,12 +11133,14 @@ __fn_cleanup:
     a_release(colon);
     a_release(host);
     a_release(repo);
+    a_release(source);
     return __ret;
 }
 
 AValue fn_pkg__git_url(AValue source) {
     AValue host = {0}, repo = {0};
     AValue __ret = a_void();
+    source = a_retain(source);
     { AValue __old = host; host = a_map_get(source, a_string("host")); a_release(__old); }
     { AValue __old = repo; repo = a_map_get(source, a_string("repo")); a_release(__old); }
     if (a_truthy(a_eq(host, a_string("github")))) {
@@ -10241,12 +11153,14 @@ AValue fn_pkg__git_url(AValue source) {
 __fn_cleanup:
     a_release(host);
     a_release(repo);
+    a_release(source);
     return __ret;
 }
 
 AValue fn_pkg__fetch_tags(AValue url) {
     AValue result = {0}, lines = {0}, tags = {0}, i = {0}, line = {0}, tab = {0}, tag = {0}, peeled = {0};
     AValue __ret = a_void();
+    url = a_retain(url);
     { AValue __old = result; result = a_exec(a_add(a_add(a_string("git ls-remote --tags "), url), a_string(" 2>/dev/null"))); a_release(__old); }
     if (a_truthy(a_neq(a_map_get(result, a_string("code")), a_int(0)))) {
         __ret = a_array_new(0); goto __fn_cleanup;
@@ -10285,12 +11199,16 @@ __fn_cleanup:
     a_release(tab);
     a_release(tag);
     a_release(peeled);
+    a_release(url);
     return __ret;
 }
 
 AValue fn_pkg__clone_at_tag(AValue url, AValue tag, AValue dest) {
     AValue tag_ref = {0}, r = {0}, r2 = {0};
     AValue __ret = a_void();
+    url = a_retain(url);
+    tag = a_retain(tag);
+    dest = a_retain(dest);
     { AValue __old = tag_ref; tag_ref = a_add(a_string("v"), tag); a_release(__old); }
     { AValue __old = r; r = a_exec(a_add(a_add(a_add(a_add(a_add(a_add(a_string("git clone --depth 1 --branch "), tag_ref), a_string(" ")), url), a_string(" ")), dest), a_string(" 2>/dev/null"))); a_release(__old); }
     if (a_truthy(a_eq(a_map_get(r, a_string("code")), a_int(0)))) {
@@ -10302,12 +11220,16 @@ __fn_cleanup:
     a_release(tag_ref);
     a_release(r);
     a_release(r2);
+    a_release(url);
+    a_release(tag);
+    a_release(dest);
     return __ret;
 }
 
 AValue fn_pkg__get_commit(AValue dest) {
     AValue r = {0};
     AValue __ret = a_void();
+    dest = a_retain(dest);
     { AValue __old = r; r = a_exec(a_add(a_add(a_string("git -C "), dest), a_string(" rev-parse HEAD 2>/dev/null"))); a_release(__old); }
     if (a_truthy(a_eq(a_map_get(r, a_string("code")), a_int(0)))) {
         __ret = a_str_trim(a_map_get(r, a_string("stdout"))); goto __fn_cleanup;
@@ -10315,12 +11237,15 @@ AValue fn_pkg__get_commit(AValue dest) {
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(r);
+    a_release(dest);
     return __ret;
 }
 
 AValue fn_pkg__copy_a_files(AValue src_dir, AValue dst_dir) {
     AValue entries = {0}, i = {0}, name = {0}, is_dir = {0}, src_path = {0}, dst_path = {0}, content = {0};
     AValue __ret = a_void();
+    src_dir = a_retain(src_dir);
+    dst_dir = a_retain(dst_dir);
     if (a_truthy(a_not(a_fs_exists(dst_dir)))) {
         a_fs_mkdir(dst_dir);
     }
@@ -10351,34 +11276,42 @@ __fn_cleanup:
     a_release(src_path);
     a_release(dst_path);
     a_release(content);
+    a_release(src_dir);
+    a_release(dst_dir);
     return __ret;
 }
 
 AValue fn_pkg_init(AValue dir) {
     AValue name = {0}, text = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
     { AValue __old = name; name = fn_path_basename(dir); a_release(__old); }
     { AValue __old = text; text = a_add(a_add(a_string("[package]\nname = \""), name), a_string("\"\nversion = \"0.1.0\"\n\n[deps]\n")); a_release(__old); }
     a_io_write_file(fn_pkg__manifest_path(dir), text);
 __fn_cleanup:
     a_release(name);
     a_release(text);
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg_read_manifest(AValue dir) {
     AValue text = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
     { AValue __old = text; text = a_io_read_file(fn_pkg__manifest_path(dir)); a_release(__old); }
     __ret = fn_toml_parse(text); goto __fn_cleanup;
 __fn_cleanup:
     a_release(text);
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg_write_manifest(AValue dir, AValue manifest) {
     AValue pkg = {0}, text = {0}, deps = {0}, keys = {0}, i = {0}, k = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
+    manifest = a_retain(manifest);
     { AValue __old = pkg; pkg = a_map_get(manifest, a_string("package")); a_release(__old); }
     { AValue __old = text; text = a_string("[package]\n"); a_release(__old); }
     { AValue __old = text; text = a_add(a_add(a_add(text, a_string("name = \"")), a_map_get(pkg, a_string("name"))), a_string("\"\n")); a_release(__old); }
@@ -10402,12 +11335,17 @@ __fn_cleanup:
     a_release(keys);
     a_release(i);
     a_release(k);
+    a_release(dir);
+    a_release(manifest);
     return __ret;
 }
 
 AValue fn_pkg_add_dep(AValue dir, AValue name, AValue source) {
     AValue manifest = {0}, deps = {0}, updated = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
+    name = a_retain(name);
+    source = a_retain(source);
     { AValue __old = manifest; manifest = fn_pkg_read_manifest(dir); a_release(__old); }
     { AValue __old = deps; deps = a_map_get(manifest, a_string("deps")); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(deps), a_string("map")))) {
@@ -10421,12 +11359,16 @@ __fn_cleanup:
     a_release(manifest);
     a_release(deps);
     a_release(updated);
+    a_release(dir);
+    a_release(name);
+    a_release(source);
     return __ret;
 }
 
 AValue fn_pkg__read_lock(AValue dir) {
     AValue lp = {0}, text = {0}, parsed = {0}, pkgs = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
     { AValue __old = lp; lp = fn_pkg__lock_path(dir); a_release(__old); }
     if (a_truthy(a_not(a_fs_exists(lp)))) {
         __ret = a_array_new(0); goto __fn_cleanup;
@@ -10443,12 +11385,15 @@ __fn_cleanup:
     a_release(text);
     a_release(parsed);
     a_release(pkgs);
+    a_release(dir);
     return __ret;
 }
 
 AValue fn_pkg__write_lock(AValue dir, AValue packages) {
     AValue text = {0}, i = {0}, p = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
+    packages = a_retain(packages);
     { AValue __old = text; text = a_string(""); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
     while (a_truthy(a_lt(i, a_len(packages)))) {
@@ -10465,12 +11410,16 @@ __fn_cleanup:
     a_release(text);
     a_release(i);
     a_release(p);
+    a_release(dir);
+    a_release(packages);
     return __ret;
 }
 
 AValue fn_pkg__find_locked(AValue lock_entries, AValue name) {
     AValue i = {0};
     AValue __ret = a_void();
+    lock_entries = a_retain(lock_entries);
+    name = a_retain(name);
     { AValue __old = i; i = a_int(0); a_release(__old); }
     while (a_truthy(a_lt(i, a_len(lock_entries)))) {
         if (a_truthy(a_eq(a_map_get(a_array_get(lock_entries, i), a_string("name")), name))) {
@@ -10481,12 +11430,15 @@ AValue fn_pkg__find_locked(AValue lock_entries, AValue name) {
     __ret = a_map_from_entries(a_array_new(0)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(i);
+    a_release(lock_entries);
+    a_release(name);
     return __ret;
 }
 
 AValue fn_pkg_install(AValue dir) {
     AValue manifest = {0}, deps = {0}, dep_keys = {0}, modules = {0}, lock_entries = {0}, new_lock = {0}, installed = {0}, i = {0}, name = {0}, source_str = {0}, source = {0}, constraint = {0}, url = {0}, locked = {0}, dest = {0}, locked_ver = {0}, tags = {0}, version = {0}, tmp = {0}, ok = {0}, commit = {0};
     AValue __ret = a_void();
+    dir = a_retain(dir);
     { AValue __old = manifest; manifest = fn_pkg_read_manifest(dir); a_release(__old); }
     { AValue __old = deps; deps = a_map_get(manifest, a_string("deps")); a_release(__old); }
     if (a_truthy(a_neq(a_type_of(deps), a_string("map")))) {
@@ -10576,14 +11528,17 @@ __fn_cleanup:
     a_release(tmp);
     a_release(ok);
     a_release(commit);
+    a_release(dir);
     return __ret;
 }
 
 AValue fn__die(AValue msg) {
     AValue __ret = a_void();
+    msg = a_retain(msg);
     a_eprintln(fn_cli_red(a_str_concat(a_string("error: "), msg)));
     (exit((int)a_int(1).ival), a_void());
 __fn_cleanup:
+    a_release(msg);
     return __ret;
 }
 
@@ -10613,6 +11568,7 @@ __fn_cleanup:
 AValue fn__generate_c(AValue source_path) {
     AValue source = {0}, lines = {0}, prog_ast = {0}, bm = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
         fn__die(a_str_concat(a_string("cannot read file: "), source_path));
@@ -10634,6 +11590,7 @@ __fn_cleanup:
     a_release(lines);
     a_release(prog_ast);
     a_release(bm);
+    a_release(source_path);
     return __ret;
 }
 
@@ -10662,6 +11619,9 @@ __fn_cleanup:
 AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
     AValue runtime_c = {0}, sqlite_c = {0}, miniz_c = {0}, stb_impl_c = {0}, include_flag = {0}, cmd = {0}, result = {0};
     AValue __ret = a_void();
+    c_path = a_retain(c_path);
+    out_path = a_retain(out_path);
+    runtime_dir = a_retain(runtime_dir);
     { AValue __old = runtime_c; runtime_c = a_str_concat(runtime_dir, a_string("/runtime.c")); a_release(__old); }
     { AValue __old = sqlite_c; sqlite_c = a_str_concat(runtime_dir, a_string("/sqlite3.c")); a_release(__old); }
     { AValue __old = miniz_c; miniz_c = a_str_concat(runtime_dir, a_string("/miniz.c")); a_release(__old); }
@@ -10687,22 +11647,29 @@ __fn_cleanup:
     a_release(include_flag);
     a_release(cmd);
     a_release(result);
+    a_release(c_path);
+    a_release(out_path);
+    a_release(runtime_dir);
     return __ret;
 }
 
 AValue fn__tmp_path(AValue suffix) {
     AValue ts = {0};
     AValue __ret = a_void();
+    suffix = a_retain(suffix);
     { AValue __old = ts; ts = a_to_str(a_time_now()); a_release(__old); }
     __ret = a_str_concat(a_string("/tmp/a_cli_"), a_str_concat(ts, suffix)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(ts);
+    a_release(suffix);
     return __ret;
 }
 
 AValue fn_cmd_cc(AValue source_path, AValue out_file) {
     AValue c_code = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    out_file = a_retain(out_file);
     { AValue __old = c_code; c_code = fn__generate_c(source_path); a_release(__old); }
     if (a_truthy(a_gt(a_len(out_file), a_int(0)))) {
         a_io_write_file(out_file, c_code);
@@ -10711,12 +11678,16 @@ AValue fn_cmd_cc(AValue source_path, AValue out_file) {
     }
 __fn_cleanup:
     a_release(c_code);
+    a_release(source_path);
+    a_release(out_file);
     return __ret;
 }
 
 AValue fn__codegen_subprocess(AValue source_path, AValue c_path) {
     AValue self = {0}, cmd = {0}, attempts = {0}, max_attempts = {0}, result = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    c_path = a_retain(c_path);
     { AValue __old = self; self = a_argv0(); a_release(__old); }
     { AValue __old = cmd; cmd = a_str_join(a_array_new(5, self, a_string("cc"), source_path, a_string("-o"), c_path), a_string(" ")); a_release(__old); }
     { AValue __old = attempts; attempts = a_int(0); a_release(__old); }
@@ -10741,12 +11712,16 @@ __fn_cleanup:
     a_release(attempts);
     a_release(max_attempts);
     a_release(result);
+    a_release(source_path);
+    a_release(c_path);
     return __ret;
 }
 
 AValue fn_cmd_build(AValue source_path, AValue out_path) {
     AValue runtime_dir = {0}, c_path = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    out_path = a_retain(out_path);
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
     { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
     fn__codegen_subprocess(source_path, c_path);
@@ -10756,6 +11731,8 @@ AValue fn_cmd_build(AValue source_path, AValue out_path) {
 __fn_cleanup:
     a_release(runtime_dir);
     a_release(c_path);
+    a_release(source_path);
+    a_release(out_path);
     return __ret;
 }
 
@@ -10781,6 +11758,7 @@ __fn_cleanup:
 AValue fn__cached_bin(AValue source_path) {
     AValue source = {0}, h = {0}, cache_path = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
         __ret = a_string(""); goto __fn_cleanup;
@@ -10795,12 +11773,15 @@ __fn_cleanup:
     a_release(source);
     a_release(h);
     a_release(cache_path);
+    a_release(source_path);
     return __ret;
 }
 
 AValue fn__store_cache(AValue source_path, AValue bin_path) {
     AValue source = {0}, h = {0}, cache_path = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    bin_path = a_retain(bin_path);
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
         __ret = a_string(""); goto __fn_cleanup;
@@ -10815,12 +11796,16 @@ __fn_cleanup:
     a_release(source);
     a_release(h);
     a_release(cache_path);
+    a_release(source_path);
+    a_release(bin_path);
     return __ret;
 }
 
 AValue fn_cmd_run(AValue source_path, AValue extra_args) {
     AValue cached = {0}, run_cmd = {0}, result = {0}, runtime_dir = {0}, c_path = {0}, bin_path = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    extra_args = a_retain(extra_args);
     { AValue __old = cached; cached = fn__cached_bin(source_path); a_release(__old); }
     if (a_truthy(a_gt(a_len(cached), a_int(0)))) {
         { AValue __old = run_cmd; run_cmd = a_retain(cached); a_release(__old); }
@@ -10868,12 +11853,15 @@ __fn_cleanup:
     a_release(runtime_dir);
     a_release(c_path);
     a_release(bin_path);
+    a_release(source_path);
+    a_release(extra_args);
     return __ret;
 }
 
 AValue fn_cmd_test(AValue test_dir) {
     AValue runtime_dir = {0}, self = {0}, entries = {0}, test_files = {0}, name = {0}, passed = {0}, failed = {0}, flags = {0}, sflags = {0}, c_path = {0}, bin_path = {0}, c_code = {0}, gcc_result = {0}, run_result = {0};
     AValue __ret = a_void();
+    test_dir = a_retain(test_dir);
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
     { AValue __old = self; self = a_argv0(); a_release(__old); }
     { AValue __old = entries; entries = a_fs_ls(test_dir); a_release(__old); }
@@ -10960,6 +11948,7 @@ __fn_cleanup:
     a_release(c_code);
     a_release(gcc_result);
     a_release(run_result);
+    a_release(test_dir);
     return __ret;
 }
 
@@ -10981,6 +11970,8 @@ __fn_cleanup:
 AValue fn_cmd_eval(AValue expr, AValue extra_args) {
     AValue wrapped = {0}, tmp = {0};
     AValue __ret = a_void();
+    expr = a_retain(expr);
+    extra_args = a_retain(extra_args);
     { AValue __old = wrapped; wrapped = a_str_concat(a_string("fn main() {\n  println("), a_str_concat(expr, a_string(")\n}"))); a_release(__old); }
     { AValue __old = tmp; tmp = fn__tmp_path(a_string("_eval.a")); a_release(__old); }
     a_io_write_file(tmp, wrapped);
@@ -10989,6 +11980,8 @@ AValue fn_cmd_eval(AValue expr, AValue extra_args) {
 __fn_cleanup:
     a_release(wrapped);
     a_release(tmp);
+    a_release(expr);
+    a_release(extra_args);
     return __ret;
 }
 
@@ -11011,6 +12004,7 @@ __fn_cleanup:
 AValue fn__parse_source(AValue source_path) {
     AValue source = {0}, ast = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
         fn__die(a_add(a_string("cannot read file: "), source_path));
@@ -11025,24 +12019,28 @@ AValue fn__parse_source(AValue source_path) {
 __fn_cleanup:
     a_release(source);
     a_release(ast);
+    a_release(source_path);
     return __ret;
 }
 
 AValue fn__fmt_file(AValue file_path) {
     AValue ast = {0}, formatted = {0};
     AValue __ret = a_void();
+    file_path = a_retain(file_path);
     { AValue __old = ast; ast = fn__parse_source(file_path); a_release(__old); }
     { AValue __old = formatted; formatted = fn_emitter_emit(ast); a_release(__old); }
     a_io_write_file(file_path, formatted);
 __fn_cleanup:
     a_release(ast);
     a_release(formatted);
+    a_release(file_path);
     return __ret;
 }
 
 AValue fn__is_dir(AValue p) {
     AValue result = {0};
     AValue __ret = a_void();
+    p = a_retain(p);
     if (a_truthy(a_not(a_fs_exists(p)))) {
         __ret = a_bool(0); goto __fn_cleanup;
     }
@@ -11053,12 +12051,14 @@ AValue fn__is_dir(AValue p) {
     __ret = a_eq(a_str_trim(a_array_get(result, a_string("stdout"))), a_string("yes")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(result);
+    a_release(p);
     return __ret;
 }
 
 AValue fn__fmt_dir(AValue target) {
     AValue entries = {0}, i = {0}, name = {0}, full = {0};
     AValue __ret = a_void();
+    target = a_retain(target);
     { AValue __old = entries; entries = a_fs_ls(target); a_release(__old); }
     { AValue __old = i; i = a_int(0); a_release(__old); }
     while (a_truthy(a_lt(i, a_len(entries)))) {
@@ -11078,11 +12078,13 @@ __fn_cleanup:
     a_release(i);
     a_release(name);
     a_release(full);
+    a_release(target);
     return __ret;
 }
 
 AValue fn_cmd_fmt(AValue target) {
     AValue __ret = a_void();
+    target = a_retain(target);
     if (a_truthy(fn__is_dir(target))) {
         fn__fmt_dir(target);
         a_println(a_add(a_add(fn_cli_green(a_string("formatted")), a_string(" ")), target));
@@ -11095,22 +12097,26 @@ AValue fn_cmd_fmt(AValue target) {
         fn__die(a_add(a_string("expected a .a file or directory: "), target));
     }
 __fn_cleanup:
+    a_release(target);
     return __ret;
 }
 
 AValue fn_cmd_ast(AValue source_path) {
     AValue ast = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
     { AValue __old = ast; ast = fn__parse_source(source_path); a_release(__old); }
     a_println(a_json_pretty(ast));
 __fn_cleanup:
     a_release(ast);
+    a_release(source_path);
     return __ret;
 }
 
 AValue fn_cmd_check(AValue source_path) {
     AValue ast = {0}, diagnostics = {0}, errors = {0}, warnings = {0}, i = {0}, d = {0}, sev = {0}, line = {0}, msg = {0};
     AValue __ret = a_void();
+    source_path = a_retain(source_path);
     { AValue __old = ast; ast = fn__parse_source(source_path); a_release(__old); }
     { AValue __old = diagnostics; diagnostics = fn_checker_check(ast); a_release(__old); }
     if (a_truthy(a_eq(a_len(diagnostics), a_int(0)))) {
@@ -11149,12 +12155,16 @@ __fn_cleanup:
     a_release(sev);
     a_release(line);
     a_release(msg);
+    a_release(source_path);
     return __ret;
 }
 
 AValue fn__repl_build_source(AValue fns, AValue bindings, AValue expr) {
     AValue lb = {0}, rb = {0}, src = {0}, i = {0};
     AValue __ret = a_void();
+    fns = a_retain(fns);
+    bindings = a_retain(bindings);
+    expr = a_retain(expr);
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
     { AValue __old = src; src = a_string(""); a_release(__old); }
@@ -11179,6 +12189,9 @@ __fn_cleanup:
     a_release(rb);
     a_release(src);
     a_release(i);
+    a_release(fns);
+    a_release(bindings);
+    a_release(expr);
     return __ret;
 }
 
@@ -11325,10 +12338,14 @@ __fn_cleanup:
 AValue fn_cmd_pkg_add(AValue name, AValue source) {
     AValue dir = {0};
     AValue __ret = a_void();
+    name = a_retain(name);
+    source = a_retain(source);
     { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
     fn_pkg_add_dep(dir, name, source);
 __fn_cleanup:
     a_release(dir);
+    a_release(name);
+    a_release(source);
     return __ret;
 }
 

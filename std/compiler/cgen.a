@@ -1563,7 +1563,13 @@ fn emit_fn(node, bm, ctx, li) {
   }
   out = str.concat(out, "\n    AValue __ret = a_void();")
 
-  let all_cleanup_vars = decl_vars
+  ; Retain function parameters so the function owns its copies
+  for p in params {
+    let pn = _mangle(p["name"])
+    out = str.concat(out, str.concat("\n    ", str.concat(pn, str.concat(" = a_retain(", str.concat(pn, ");")))))
+  }
+
+  let all_cleanup_vars = concat_arr(decl_vars, param_names)
 
   ; Build enclosing_vars for lambda capture analysis
   let mut enc_vars = []
