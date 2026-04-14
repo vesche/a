@@ -70,24 +70,27 @@ jobs:
 
       - name: Native test suite
         run: |
-          CGEN="std/compiler/cgen.a"
           STACK="${{ steps.flags.outputs.stack }}"
           TLS="${{ steps.flags.outputs.tls }}"
           SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
           PASS=0; FAIL=0
 
+          # Pre-build cgen as a native binary once -- avoids cargo run per test file
+          echo "Building cgen binary..."
+          ./a build std/compiler/cgen.a -o /tmp/cgen
+          echo ""
+
           for src in tests/native/test_*.a; do
             name=$(basename "$src")
 
-            # Skip test_http.a -- it needs a live server; HTTP is covered by cargo test
             if [ "$name" = "test_http.a" ]; then
               echo "  SKIP $name (requires server; covered by Rust VM tests)"
               continue
             fi
 
-            # Generate C via Rust VM cgen (avoids native self-compilation segfault)
+            # Generate C using the pre-built native cgen binary
             C_FILE=$(mktemp /tmp/a_test_XXXXXX.c)
-            if ! cargo run --quiet -- run "$CGEN" -- "$src" > "$C_FILE" 2>/dev/null; then
+            if ! /tmp/cgen "$src" > "$C_FILE" 2>/dev/null; then
               echo "  FAIL $name (codegen error)"
               rm -f "$C_FILE"
               FAIL=$((FAIL + 1))
