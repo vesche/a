@@ -1,0 +1,98 @@
+use std.testing
+use std.agent
+
+fn _cleanup_state_db() {
+  let home = env.get("HOME")
+  let mut db_path = "/tmp/a_agent_state.db"
+  if type_of(home) != "void" && len(home) > 0 {
+    db_path = home + "/.a/agent_state.db"
+  }
+  if fs.exists(db_path) { fs.rm(db_path) }
+  let wal = db_path + "-wal"
+  if fs.exists(wal) { fs.rm(wal) }
+  let shm = db_path + "-shm"
+  if fs.exists(shm) { fs.rm(shm) }
+}
+
+fn main() {
+  ; Start clean
+  _cleanup_state_db()
+
+  ; --- Test 1: checkpoint and restore ---
+  agent.checkpoint("test-cp", #{ "step": 3, "data": [1, 2, 3] })
+  let r1 = agent.restore("test-cp")
+  testing.assert_eq(is_ok(r1), true)
+  let state = unwrap(r1)
+  testing.assert_eq(state["step"], 3)
+  testing.assert_eq(len(state["data"]), 3)
+  println("PASS: checkpoint and restore")
+
+  ; --- Test 2: restore missing returns Err ---
+  let r2 = agent.restore("nonexistent-agent-xyz")
+  testing.assert_eq(is_err(r2), true)
+  println("PASS: restore missing returns Err")
+
+  ; --- Test 3: checkpoint overwrites previous ---
+  agent.checkpoint("test-cp", #{ "step": 7, "data": [10, 20] })
+  let r3 = agent.restore("test-cp")
+  let state2 = unwrap(r3)
+  testing.assert_eq(state2["step"], 7)
+  testing.assert_eq(len(state2["data"]), 2)
+  println("PASS: checkpoint overwrites")
+
+  ; --- Test 4: save_plan and restore_plan ---
+  let p = #{
+    "goal": "test plan",
+    "steps": [#{ "id": "s1", "description": "step one", "deps": [], "status": "done" }],
+    "results": #{ "s1": #{ "status": "done", "value": 42 } },
+    "created_at": time.now(),
+    "updated_at": time.now()
+  }
+  agent.save_plan("test-cp", p)
+  let r4 = agent.restore_plan("test-cp")
+  testing.assert_eq(is_ok(r4), true)
+  let plan = unwrap(r4)
+  testing.assert_eq(plan["goal"], "test plan")
+  testing.assert_eq(len(plan["steps"]), 1)
+  testing.assert_eq(plan["steps"][0]["id"], "s1")
+  println("PASS: save_plan and restore_plan")
+
+  ; --- Test 5: restore_plan missing returns Err ---
+  let r5 = agent.restore_plan("nonexistent-xyz")
+  testing.assert_eq(is_err(r5), true)
+  println("PASS: restore_plan missing returns Err")
+
+  ; --- Test 6: save_trace and restore_trace ---
+  let t = #{
+    "name": "test-trace",
+    "events": [#{ "type": "begin", "name": "op1", "ts": 1000, "data": #{} }],
+    "start_ms": 1000,
+    "open_spans": #{}
+  }
+  agent.save_trace("test-cp", t)
+  let r6 = agent.restore_trace("test-cp")
+  testing.assert_eq(is_ok(r6), true)
+  let trace = unwrap(r6)
+  testing.assert_eq(trace["name"], "test-trace")
+  testing.assert_eq(len(trace["events"]), 1)
+  println("PASS: save_trace and restore_trace")
+
+  ; --- Test 7: restore_trace missing returns Err ---
+  let r7 = agent.restore_trace("nonexistent-xyz")
+  testing.assert_eq(is_err(r7), true)
+  println("PASS: restore_trace missing returns Err")
+
+  ; --- Test 8: multiple agents can checkpoint independently ---
+  agent.checkpoint("agent-a", #{ "val": "alpha" })
+  agent.checkpoint("agent-b", #{ "val": "beta" })
+  let ra = agent.restore("agent-a")
+  let rb = agent.restore("agent-b")
+  testing.assert_eq(unwrap(ra)["val"], "alpha")
+  testing.assert_eq(unwrap(rb)["val"], "beta")
+  println("PASS: independent agent checkpoints")
+
+  ; Cleanup
+  _cleanup_state_db()
+
+  println("all agent checkpoint tests passed")
+}

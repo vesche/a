@@ -110,15 +110,15 @@ The language doesn't just compile itself -- it *optimizes* itself.
 - **Automatic test generation** -- `std/testgen.a` with `testgen.gen_tests(source)` parses modules, extracts public functions, infers parameter types by name heuristics, generates edge-case test combinations (0, 1, -1, empty, etc.). `testgen.analyze(source)` returns code metrics. CLI: `a gentests file.a [-o out]`.
 - **Compiler self-improvement** -- `std/compiler/optimizer.a` loads profile JSON, identifies hot functions (>10% of max), hot branches/loops, suggests inlining (small body + high call count), loop unrolling (>10K iterations). `optimizer.measure_binary()`, `optimizer.benchmark()`, `optimizer.report()` for quality measurement. CLI: `a optimize file.a profile.json`.
 
-### v2.0 -- The Agent OS
+### v2.0 -- The Agent OS [DONE]
 
 The convergence point. Not a language with agent libraries -- an operating system for AI agents.
 
-- **`a agent program.a`** -- deploy a long-running agent. Supervised process with automatic restart, health checks, structured logging, and graceful shutdown.
-- **Agent registry** -- agents register themselves, discover each other, negotiate capabilities. `agent.register("code-reviewer", capabilities)`, `agent.find("code-reviewer")`, `agent.delegate(agent, task)`.
-- **Swarm primitives** -- `swarm.create(task, agents, strategy)`. Strategies: `"divide"` (split work), `"vote"` (consensus), `"race"` (first-to-finish), `"chain"` (sequential handoff). Built on channels and RPC.
-- **Persistent agent state** -- agents automatically checkpoint their state (memory, plans, traces) and resume from checkpoints after restart. A restarted agent picks up exactly where it left off.
-- **Self-update** -- `agent.update()` pulls the latest source, recompiles, and hot-swaps the running binary. Zero-downtime upgrades. The agent maintains itself.
+- **`a agent program.a`** [DONE] -- deploy a long-running agent. Supervised process with automatic restart (exponential backoff, capped at 30s), PID files, and graceful shutdown. Exit code 42 protocol for self-update. Environment passthrough: `A_AGENT_NAME`, `A_COMPILER`, `A_AGENT_PORT`.
+- **Agent registry** [DONE] -- agents register themselves, discover each other, negotiate capabilities. `agent.register("code-reviewer", capabilities)`, `agent.discover("code-reviewer")`, `agent.find_by_capability("review")`, `agent.delegate(agent, task)`. 60s stale detection via heartbeat.
+- **Swarm primitives** [DONE] -- `swarm.create(task, agents, strategy)`. Strategies: `"divide"` (split work), `"vote"` (consensus), `"race"` (first-to-finish), `"chain"` (sequential handoff). Built on RPC. `swarm.create_async` for fork-based async execution.
+- **Persistent agent state** [DONE] -- `agent.checkpoint(name, state)` / `agent.restore(name)` backed by SQLite (`~/.a/agent_state.db`). Also: `save_plan`/`restore_plan`, `save_trace`/`restore_trace`. A restarted agent picks up exactly where it left off.
+- **Self-update** [DONE] -- `agent.update(source_path)` rebuilds the binary and exits with code 42. `agent.update_from_git(dir)` pulls and rebuilds. The supervisor detects exit code 42, skips backoff, and restarts immediately with the new binary.
 
 ---
 
@@ -135,7 +135,7 @@ The convergence point. Not a language with agent libraries -- an operating syste
 | **v1.7** | Multi-Target [DONE] | WASM WAT codegen, `a build --target`, `a wat`/`a targets`, portable C runtime | Deploy anywhere (WASM + cross-native) |
 | **v1.8** | Local Intelligence [DONE] | GGUF parser + CPU inference (Q4_0/Q8_0/F16/F32), BPE + transformer forward pass, nucleus sampling, `std/local_llm.a`, 8 `a_llm_*` builtins | Offline agents, no API dependency for local reasoning |
 | **v1.9** | Self-Optimization | PGO, auto test gen, compiler self-improvement | The language improves itself |
-| **v2.0** | The Agent OS | Agent supervision, registry, swarms, self-update | Autonomous multi-agent systems |
+| **v2.0** | The Agent OS [DONE] | Agent supervision, registry, swarms, self-update | Autonomous multi-agent systems |
 
 ---
 

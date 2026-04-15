@@ -1,0 +1,44 @@
+; examples/agent_demo.a -- Simple agent that registers, checkpoints, and responds to tasks.
+;
+; Run with:   a agent examples/agent_demo.a --name demo
+; Or:         a run examples/agent_demo.a
+
+use std.agent
+
+fn main() {
+  let name = env.get("A_AGENT_NAME")
+  let mut agent_name = "demo-agent"
+  if type_of(name) != "void" && len(name) > 0 {
+    agent_name = name
+  }
+
+  ; Register with capabilities
+  agent.register(agent_name, ["greet", "compute"])
+  println("registered as " + agent_name)
+
+  ; Restore previous state or start fresh
+  let prev = agent.restore(agent_name)
+  let mut run_count = 0
+  if is_ok(prev) {
+    let state = unwrap(prev)
+    if map.has(state, "run_count") {
+      run_count = state["run_count"]
+    }
+    println("restored state: run_count=" + to_str(run_count))
+  } else {
+    println("no previous state, starting fresh")
+  }
+
+  run_count = run_count + 1
+
+  ; Do some "work"
+  println("run #" + to_str(run_count) + " of " + agent_name)
+
+  ; Checkpoint state for next restart
+  agent.checkpoint(agent_name, #{ "run_count": run_count, "last_run": time.now() })
+  println("state checkpointed")
+
+  ; Clean up
+  agent.unregister(agent_name)
+  println("done")
+}

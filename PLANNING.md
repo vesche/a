@@ -2951,3 +2951,56 @@ The language optimizes itself: profile-guided optimization, automatic test gener
 - 50 native tests total
 
 **Files changed:** c_runtime/runtime.c, c_runtime/runtime.h, std/compiler/profiler.a (new), std/compiler/optimizer.a (new), std/testgen.a (new), std/compiler/cgen.a, src/cli.a, tests/native/test_selfopt.a (new), bootstrap/cli.c
+
+## v2.0.0 -- The Agent OS
+
+Not a language with agent libraries -- an operating system for AI agents. Supervised deployment, capability-based registry, swarm coordination, persistent agent state, and self-update.
+
+**Supervised agent deployment (`a agent`):**
+- `a agent program.a [--name N] [--max-restarts N] [--no-restart]` -- supervised long-running agent process
+- Automatic restart with exponential backoff (1s, 2s, 4s... capped at 30s), reset after 60s healthy uptime
+- PID file management: `/tmp/a_agents/<name>.pid`, cleaned up on exit
+- Exit code 42 protocol: agent calls `agent.update()` to rebuild and restart without backoff
+- Environment variables: `A_AGENT_NAME`, `A_COMPILER`, `A_AGENT_PORT` passed to child
+
+**Agent registry and capabilities (`std/agent.a`):**
+- `agent.register(name, capabilities)` -- writes to `/tmp/a_agents/<name>.json` with real PID, capabilities array, timestamps
+- `agent.discover(name)` -- discovers agent by name with 60s stale detection
+- `agent.find_by_capability(cap)` -- scans all registered agents for matching capability
+- `agent.list()` -- all registered agents
+- `agent.heartbeat(name)` -- update last_seen timestamp
+- `agent.delegate(target, task, params)` -- RPC call to named agent
+- `agent.unregister(name)` -- cleanup
+
+**Persistent agent state:**
+- `agent.checkpoint(name, state)` / `agent.restore(name)` -- JSON-serializable state in `~/.a/agent_state.db` (SQLite)
+- `agent.save_plan(name, plan)` / `agent.restore_plan(name)` -- checkpoint/resume `std/plan.a` plans
+- `agent.save_trace(name, trace)` / `agent.restore_trace(name)` -- checkpoint `std/trace.a` traces
+- Agents resume from last checkpoint after restart
+
+**Self-update:**
+- `agent.update(source_path)` -- rebuilds binary from source, exits with code 42
+- `agent.update_from_git(source_dir)` -- git pull + rebuild + restart
+- `agent.version()` -- returns current version string
+- Supervisor detects exit code 42, skips backoff, restarts immediately
+
+**Swarm coordination (`std/swarm.a`):**
+- `swarm.create(task, agents, strategy)` -- execute multi-agent strategy synchronously
+- `swarm.create_async(task, agents, strategy)` -- fork-based async swarm execution
+- `swarm.cancel(agents)` -- best-effort cancel via RPC
+- Strategies:
+  - `"divide"` -- split task items across agents, gather and merge results
+  - `"vote"` -- send same task to all, return majority response
+  - `"race"` -- send to all, return first Ok result
+  - `"chain"` -- sequential handoff: output of agent N feeds agent N+1
+
+**Operational primitives (existing, preserved):**
+- `agent.retry(max_attempts, delay_ms, f)` with exponential backoff
+- `agent.batch(items, size, f)`, `agent.pipeline(steps, input)`, `agent.timeout(ms, f)`, `agent.rate_limit(interval, last, f)`
+
+**Tests:**
+- `tests/native/test_agent_registry.a` (9 tests): register, find, find_by_capability, list, heartbeat, unregister, delegate error, version
+- `tests/native/test_agent_checkpoint.a` (8 tests): checkpoint/restore, overwrite, save_plan/restore_plan, save_trace/restore_trace, independent agents
+- `tests/native/test_swarm.a` (8 tests): strategy dispatch, error handling, edge cases
+
+**Files changed:** std/agent.a, std/swarm.a (new), src/cli.a, tests/native/test_agent_registry.a (new), tests/native/test_agent_checkpoint.a (new), tests/native/test_swarm.a (new), examples/agent_demo.a (new), Cargo.toml, src/lsp.a, README.md, PLANNING.md, plans/ROADMAP-v1.1-to-v2.0.md, bootstrap/cli.c

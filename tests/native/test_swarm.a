@@ -1,0 +1,54 @@
+use std.swarm
+
+fn _assert(cond, msg) {
+  if !cond {
+    eprintln("FAIL: " + msg)
+    exit(1)
+  }
+}
+
+fn main() {
+  ; --- Test 1: unknown strategy returns Err ---
+  let r1 = swarm.create(#{ "method": "test" }, [], "unknown_strategy")
+  _assert(is_err(r1), "unknown strategy should Err")
+  println("PASS: unknown strategy returns Err")
+
+  ; --- Test 2: divide with no agents returns Err ---
+  let r2 = swarm.create(#{ "method": "test", "items": [1, 2, 3] }, [], "divide")
+  _assert(is_err(r2), "divide with no agents should Err")
+  println("PASS: divide with no agents returns Err")
+
+  ; --- Test 3: race with no agents returns Err ---
+  let r3 = swarm.create(#{ "method": "test", "params": #{} }, [], "race")
+  _assert(is_err(r3), "race with no agents should Err")
+  println("PASS: race with no agents returns Err")
+
+  ; --- Test 4: vote with no reachable agents returns Err ---
+  let r4 = swarm.create(#{ "method": "test", "params": #{} }, ["fake-agent-1"], "vote")
+  _assert(is_err(r4), "vote with unreachable agent should Err")
+  println("PASS: vote with unreachable agent returns Err")
+
+  ; --- Test 5: chain with no agents returns Ok ---
+  let r5 = swarm.create(#{ "method": "test", "params": #{ "val": 42 } }, [], "chain")
+  _assert(is_ok(r5), "chain with no agents should Ok")
+  _assert(unwrap(r5)["val"] == 42, "chain passthrough value")
+  println("PASS: chain with no agents passes through")
+
+  ; --- Test 6: race with unreachable agents returns Err ---
+  let r6 = swarm.create(#{ "method": "test", "params": #{} }, ["no-such-agent-a", "no-such-agent-b"], "race")
+  _assert(is_err(r6), "race with all unreachable should Err")
+  println("PASS: race with all unreachable returns Err")
+
+  ; --- Test 7: divide with unreachable agent fails ---
+  let r7 = swarm.create(#{ "method": "test", "items": [1, 2] }, ["no-such-agent-x"], "divide")
+  _assert(is_err(r7), "divide with unreachable agent should Err")
+  println("PASS: divide with unreachable agent returns Err")
+
+  ; --- Test 8: cancel with no agents does not crash ---
+  swarm.cancel([])
+  swarm.cancel(["nonexistent-agent"])
+  println("PASS: cancel does not crash")
+
+  println("all swarm tests passed")
+  exit(0)
+}

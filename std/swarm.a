@@ -1,0 +1,193 @@
+; std/swarm.a -- Swarm coordination primitives
+; Multi-agent strategies: divide, vote, race, chain.
+;
+; Usage:
+;   let result = swarm.create(
+;     #{ "method": "process", "items": [1, 2, 3, 4, 5, 6] },
+;     ["worker1", "worker2"],
+;     "divide"
+;   )
+;
+; Strategies:
+;   "divide" -- split task items across agents, gather and merge results
+;   "vote"   -- send same task to all agents, return majority response
+;   "race"   -- send to all, return first Ok result
+;   "chain"  -- sequential handoff: output of agent N feeds agent N+1
+
+fn _agent_addr(name) {
+  let p = "/tmp/a_agents/" + name + ".json"
+  if !fs.exists(p) {
+    ret Err("agent not found: " + name)
+  }
+  let info = json.parse(io.read_file(p))
+  if !map.has(info, "addr") {
+    ret Err("agent has no RPC address: " + name)
+  }
+  ret Ok(info["addr"])
+}
+
+fn _rpc_call(addr, method, params) {
+  let body = json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": method,
+    "params": params
+  })
+  let resp = http.post(addr + "/rpc", body, #{ "Content-Type": "application/json" })
+  if type_of(resp) == "map" {
+    if resp["status"] != 200 {
+      ret Err("rpc: HTTP " + to_str(resp["status"]))
+    }
+    let parsed = json.parse(resp["body"])
+    if map.has(parsed, "error") {
+      ret Err(parsed["error"]["message"])
+    }
+    ret Ok(parsed["result"])
+  }
+  ret Err("rpc: request failed")
+}
+
+fn _call_agent(name, method, params) {
+  let addr_result = _agent_addr(name)
+  if is_ok(addr_result) {
+    ret _rpc_call(unwrap(addr_result), method, params)
+  }
+  ret Err("agent not reachable: " + name)
+}
+
+fn _divide(task, agents) {
+  let method = task["method"]
+  let items = task["items"]
+  let n = len(agents)
+  if n == 0 { ret Err("divide: no agents") }
+
+  let chunk_size = len(items) / n
+  let remainder = len(items) - chunk_size * n
+
+  let mut results = []
+  let mut offset = 0
+  let mut i = 0
+  while i < n {
+    let mut end_idx = offset + chunk_size
+    if i < remainder { end_idx = end_idx + 1 }
+    let chunk = slice(items, offset, end_idx)
+    let r = _call_agent(agents[i], method, #{ "items": chunk })
+    if is_err(r) {
+      ret Err("divide: agent " + agents[i] + " failed")
+    }
+    let val = unwrap(r)
+    if type_of(val) == "array" {
+      let mut j = 0
+      while j < len(val) {
+        results = push(results, val[j])
+        j = j + 1
+      }
+    } else {
+      results = push(results, val)
+    }
+    offset = end_idx
+    i = i + 1
+  }
+  ret Ok(slice(results, 0, len(results)))
+}
+
+fn _vote(task, agents) {
+  let method = task["method"]
+  let params = task["params"]
+
+  let mut votes = []
+  let mut idx = 0
+  while idx < len(agents) {
+    let r = _call_agent(agents[idx], method, params)
+    if is_ok(r) {
+      votes = push(votes, unwrap(r))
+    }
+    idx = idx + 1
+  }
+
+  if len(votes) == 0 { ret Err("vote: no responses") }
+
+  ; Count votes by stringified value
+  let mut counts = #{}
+  idx = 0
+  while idx < len(votes) {
+    let key = json.stringify(votes[idx])
+    if map.has(counts, key) {
+      counts = map.set(counts, key, counts[key] + 1)
+    } else {
+      counts = map.set(counts, key, 1)
+    }
+    idx = idx + 1
+  }
+
+  ; Find the most common
+  let k = map.keys(counts)
+  let mut best_key = k[0]
+  let mut best_count = counts[k[0]]
+  idx = 1
+  while idx < len(k) {
+    if counts[k[idx]] > best_count {
+      best_key = k[idx]
+      best_count = counts[k[idx]]
+    }
+    idx = idx + 1
+  }
+
+  ret Ok(json.parse(best_key))
+}
+
+fn _race(task, agents) {
+  let method = task["method"]
+  let params = task["params"]
+
+  let mut last_err = ""
+  let mut i = 0
+  while i < len(agents) {
+    let r = _call_agent(agents[i], method, params)
+    if is_ok(r) { ret Ok(unwrap(r)) }
+    last_err = unwrap_or(r, "unknown")
+    i = i + 1
+  }
+  ret Err("race: all agents failed: " + last_err)
+}
+
+fn _chain(task, agents) {
+  let method = task["method"]
+  let n = len(agents)
+  if n == 0 { ret Ok(task["params"]) }
+
+  let mut current = task["params"]
+  let mut i = 0
+  while i < n - 1 {
+    let r = _call_agent(agents[i], method, current)
+    if is_err(r) { ret Err(unwrap_or(r, "chain failed")) }
+    current = unwrap(r)
+    i = i + 1
+  }
+  ret _call_agent(agents[n - 1], method, current)
+}
+
+fn create(task, agents, strategy) {
+  if strategy == "divide" { ret _divide(task, agents) }
+  if strategy == "vote" { ret _vote(task, agents) }
+  if strategy == "race" { ret _race(task, agents) }
+  if strategy == "chain" { ret _chain(task, agents) }
+  ret Err("unknown strategy: " + strategy)
+}
+
+fn create_async(task, agents, strategy) {
+  ret spawn(fn() {
+    ret create(task, agents, strategy)
+  })
+}
+
+fn cancel(agents) {
+  let mut i = 0
+  while i < len(agents) {
+    let addr_result = _agent_addr(agents[i])
+    if is_ok(addr_result) {
+      _rpc_call(unwrap(addr_result), "_cancel", #{})
+    }
+    i = i + 1
+  }
+}

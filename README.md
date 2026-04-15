@@ -49,6 +49,7 @@ The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: 
 ./a test tests/native/      # find test_*.a files, compile, run, report
 ./a watch program.a         # recompile and re-run on file change
 ./a lsp                     # build the language server binary (./a-lsp)
+./a agent agent.a --name w1 # deploy supervised long-running agent
 ./a spawn agent.a --name w1 # build and launch named agent process
 ./a plugin install ./my_ext # install a plugin from directory
 ./a plugin list             # list installed plugins
@@ -109,7 +110,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**181+ builtins** covering everything an agent needs (plus native compilation to C and optional WASM WAT output):
+**181+ builtins** covering everything an agent needs (plus native compilation to C and optional WASM WAT output), with supervised agent deployment, swarm coordination, and persistent state:
 
 | Domain | Operations |
 |--------|-----------|
@@ -146,6 +147,8 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Reflection** | `reflect.memory_usage`, `reflect.uptime_ms`, `reflect.pid` -- runtime self-inspection (RSS via mach/procfs, process uptime, PID) |
 | **Sandboxing** | `sandbox.run(source, caps)`, `sandbox.validate(source)`, `sandbox.deny_all()`, `sandbox.allow_all()` -- capability-based code execution with fs/net/exec/db/env restrictions |
 | **Plugins** | `plugin.install(dir)`, `plugin.install_git(repo)`, `plugin.list()`, `plugin.run(name)`, `plugin.remove(name)` -- runtime extensibility with `~/.a/plugins/` registry |
+| **Agent OS** | `agent.register`, `agent.discover`, `agent.find_by_capability`, `agent.list`, `agent.delegate`, `agent.heartbeat`, `agent.checkpoint`, `agent.restore`, `agent.save_plan`, `agent.restore_plan`, `agent.update` -- supervised agents with registry, delegation, persistent state, self-update (exit code 42 protocol); `a agent file.a` CLI with auto-restart, exponential backoff, PID files |
+| **Swarm** | `swarm.create(task, agents, strategy)` -- coordinate multiple agents: `"divide"` (split work), `"vote"` (consensus), `"race"` (first-to-finish), `"chain"` (sequential handoff); `swarm.create_async`, `swarm.cancel` |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
 **Local LLM (GGUF)** -- load a quantized model and generate text without a network round-trip (native builds only; WASM gets stubs):
@@ -161,7 +164,7 @@ fn main() -> void effects [io] {
 }
 ```
 
-**Standard library** with 47 modules:
+**Standard library** with 48 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -185,7 +188,8 @@ use std.testgen               # gen_tests, analyze -- automatic test generation 
 use std.compiler.profiler     # instrument, analyze_profile -- profile-guided optimization
 use std.compiler.optimizer    # analyze_profile, suggest, measure_binary, benchmark, report
 use std.mcp                   # MCP server + client -- JSON-RPC 2.0 over stdio, tool/resource registration
-use std.agent                 # retry, batch, pipeline, timeout, rate_limit -- operational primitives
+use std.agent                 # register, discover, delegate, checkpoint, restore, update -- agent OS
+use std.swarm                 # create(task, agents, strategy) -- divide/vote/race/chain coordination
 use std.log                   # info, warn, error, debug, set_level -- structured JSON logging to stderr
 use std.uuid                  # v4() -- UUID generation
 use std.args                  # spec, flag, option, positional, parse -- declarative CLI argument parsing

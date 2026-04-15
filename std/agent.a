@@ -1,5 +1,19 @@
-; std/agent.a -- Operational primitives for AI agents
-; retry, batch, pipeline, timeout, rate_limit
+; std/agent.a -- Agent OS: registry, delegation, checkpoint, self-update
+; Also includes operational primitives: retry, batch, pipeline, timeout, rate_limit.
+;
+; Registry:
+;   agent.register("code-reviewer", ["review", "lint"])
+;   let info = agent.discover("code-reviewer")
+;   agent.delegate("code-reviewer", "review", #{ "file": "app.a" })
+;
+; Checkpoint:
+;   agent.checkpoint("my-agent", #{ "step": 3, "data": [...] })
+;   let state = agent.restore("my-agent")
+;
+; Self-update:
+;   agent.update("src/my_agent.a")   ; rebuilds and exits with code 42
+
+; --- Operational primitives ---
 
 fn retry(max_attempts: int, delay_ms: int, f) {
   let mut attempt = 0
@@ -27,9 +41,9 @@ fn batch(items, size: int, f) {
   let total = len(items)
   let mut i = 0
   while i < total {
-    let mut end = i + size
-    if end > total { end = total }
-    let chunk = slice(items, i, end)
+    let mut end_idx = i + size
+    if end_idx > total { end_idx = total }
+    let chunk = slice(items, i, end_idx)
     let result = f(chunk)
     results = push(results, result)
     i = i + size
@@ -66,4 +80,248 @@ fn rate_limit(min_interval_ms: int, last_call_ms: int, f) {
     time.sleep(min_interval_ms - gap)
   }
   ret f()
+}
+
+; --- Registry ---
+
+fn _registry_dir() -> str {
+  ret "/tmp/a_agents"
+}
+
+fn _registry_path(name) -> str {
+  ret _registry_dir() + "/" + name + ".json"
+}
+
+fn _ensure_registry() {
+  let d = _registry_dir()
+  if !fs.exists(d) {
+    fs.mkdir(d)
+  }
+}
+
+fn register(name, capabilities) {
+  _ensure_registry()
+  let info = #{
+    "name": name,
+    "pid": reflect.pid(),
+    "capabilities": capabilities,
+    "registered_at": time.now(),
+    "last_seen": time.now()
+  }
+  io.write_file(_registry_path(name), json.stringify(info))
+}
+
+fn unregister(name) {
+  let p = _registry_path(name)
+  if fs.exists(p) {
+    fs.rm(p)
+  }
+}
+
+fn discover(name) {
+  let p = _registry_path(name)
+  if !fs.exists(p) {
+    ret Err("agent not found: " + name)
+  }
+  let data = io.read_file(p)
+  let age = time.now() - json.parse(data)["last_seen"]
+  if age > 60000 {
+    ret Err("agent stale: " + name + " (last seen " + to_str(age / 1000) + "s ago)")
+  }
+  ret Ok(json.parse(data))
+}
+
+fn find_by_capability(cap) {
+  let all = list()
+  let mut matches = []
+  let mut i = 0
+  while i < len(all) {
+    let agent_info = all[i]
+    if map.has(agent_info, "capabilities") {
+      let caps = agent_info["capabilities"]
+      if type_of(caps) == "array" {
+        let mut j = 0
+        while j < len(caps) {
+          if caps[j] == cap {
+            matches = push(matches, agent_info)
+            j = len(caps)
+          }
+          j = j + 1
+        }
+      }
+    }
+    i = i + 1
+  }
+  ret matches
+}
+
+fn list() -> [map] {
+  _ensure_registry()
+  let d = _registry_dir()
+  let entries = fs.ls(d)
+  let mut agents = []
+  let mut i = 0
+  while i < len(entries) {
+    let e = entries[i]
+    if str.ends_with(e["name"], ".json") {
+      let data = io.read_file(d + "/" + e["name"])
+      let info = json.parse(data)
+      agents = push(agents, info)
+    }
+    i = i + 1
+  }
+  ret agents
+}
+
+fn heartbeat(name) {
+  let p = _registry_path(name)
+  if fs.exists(p) {
+    let info = json.parse(io.read_file(p))
+    let updated = map.set(info, "last_seen", time.now())
+    io.write_file(p, json.stringify(updated))
+  }
+}
+
+fn delegate(target, task, params) {
+  let info_result = discover(target)
+  if is_err(info_result) { ret Err("delegate: agent not found: " + target) }
+  let agent_info = unwrap(info_result)
+  if !map.has(agent_info, "addr") {
+    ret Err("agent has no RPC address: " + target)
+  }
+  let addr = agent_info["addr"]
+  let body = json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "agent.task",
+    "params": #{ "task": task, "params": params }
+  })
+  let resp = http.post(addr + "/rpc", body, #{ "Content-Type": "application/json" })
+  if type_of(resp) == "map" {
+    if resp["status"] != 200 {
+      ret Err("delegate: HTTP " + to_str(resp["status"]))
+    }
+    let parsed = json.parse(resp["body"])
+    if map.has(parsed, "error") {
+      ret Err(parsed["error"]["message"])
+    }
+    ret Ok(parsed["result"])
+  }
+  ret Err("delegate: request failed")
+}
+
+; --- Checkpoint / Restore ---
+
+fn _state_db_path() -> str {
+  let home = env.get("HOME")
+  if type_of(home) == "void" || len(home) == 0 {
+    ret "/tmp/a_agent_state.db"
+  }
+  let dir = home + "/.a"
+  if !fs.exists(dir) { fs.mkdir(dir) }
+  ret dir + "/agent_state.db"
+}
+
+fn _open_state_db() {
+  let h = db.open(_state_db_path())
+  db.exec(h, "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+  ret h
+}
+
+fn checkpoint(name, state) {
+  let h = _open_state_db()
+  let data = json.stringify(#{ "state": state, "checkpoint_at": time.now() })
+  db.query(h, "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)", ["agent:" + name + ":state", data, time.now()])
+  db.close(h)
+}
+
+fn restore(name) {
+  let h = _open_state_db()
+  let rows = db.query(h, "SELECT value FROM kv WHERE key = ?", ["agent:" + name + ":state"])
+  db.close(h)
+  if len(rows) == 0 {
+    ret Err("no checkpoint for: " + name)
+  }
+  let data = json.parse(rows[0]["value"])
+  ret Ok(data["state"])
+}
+
+fn save_plan(name, p) {
+  let h = _open_state_db()
+  let data = json.stringify(#{ "plan": p, "saved_at": time.now() })
+  db.query(h, "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)", ["agent:" + name + ":plan", data, time.now()])
+  db.close(h)
+}
+
+fn restore_plan(name) {
+  let h = _open_state_db()
+  let rows = db.query(h, "SELECT value FROM kv WHERE key = ?", ["agent:" + name + ":plan"])
+  db.close(h)
+  if len(rows) == 0 {
+    ret Err("no plan for: " + name)
+  }
+  let data = json.parse(rows[0]["value"])
+  ret Ok(data["plan"])
+}
+
+fn save_trace(name, t) {
+  let h = _open_state_db()
+  let data = json.stringify(#{ "trace": t, "saved_at": time.now() })
+  db.query(h, "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)", ["agent:" + name + ":trace", data, time.now()])
+  db.close(h)
+}
+
+fn restore_trace(name) {
+  let h = _open_state_db()
+  let rows = db.query(h, "SELECT value FROM kv WHERE key = ?", ["agent:" + name + ":trace"])
+  db.close(h)
+  if len(rows) == 0 {
+    ret Err("no trace for: " + name)
+  }
+  let data = json.parse(rows[0]["value"])
+  ret Ok(data["trace"])
+}
+
+; --- Self-update ---
+
+fn update(source_path) {
+  let mut compiler = env.get("A_COMPILER")
+  if type_of(compiler) == "void" || len(compiler) == 0 {
+    compiler = "a"
+  }
+  let bin = argv0()
+  let r = exec(compiler + " build " + source_path + " -o " + bin)
+  if r["code"] != 0 {
+    ret Err("update: build failed")
+  }
+  exit(42)
+}
+
+fn update_from_git(source_dir) {
+  let r = exec("cd " + source_dir + " && git pull")
+  if r["code"] != 0 {
+    ret Err("update_from_git: git pull failed")
+  }
+  let entries = fs.ls(source_dir)
+  let mut main_file = ""
+  let mut i = 0
+  while i < len(entries) {
+    let entry_name = entries[i]["name"]
+    if str.ends_with(entry_name, ".a") && len(main_file) == 0 {
+      main_file = source_dir + "/" + entry_name
+    }
+    i = i + 1
+  }
+  if len(main_file) == 0 {
+    ret Err("update_from_git: no .a file found in " + source_dir)
+  }
+  ret update(main_file)
+}
+
+fn version() -> str {
+  let v = env.get("A_VERSION")
+  if type_of(v) == "void" || len(v) == 0 {
+    ret "2.0.0"
+  }
+  ret v
 }

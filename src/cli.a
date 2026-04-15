@@ -1075,6 +1075,100 @@ fn cmd_spawn(source, agent_name) {
   eprintln(cli.green("[spawn]") + " launched agent " + cli.bold(agent_name) + " from " + source)
 }
 
+fn _agent_log(name, msg) {
+  eprintln(cli.dim("[agent]") + " " + cli.bold(name) + " " + msg)
+}
+
+fn cmd_agent(source, agent_name, health_port, max_restarts, no_restart) {
+  if !fs.exists(source) {
+    _die("agent: file not found: " + source)
+  }
+  let self = argv0()
+
+  ; Ensure cache and registry dirs exist
+  if !fs.exists(".a_cache") { fs.mkdir(".a_cache") }
+  if !fs.exists("/tmp/a_agents") { fs.mkdir("/tmp/a_agents") }
+
+  ; Build the agent binary
+  let bin = ".a_cache/agent_" + agent_name
+  let build_r = exec(self + " build " + source + " -o " + bin)
+  if build_r["code"] != 0 {
+    if len(build_r["stderr"]) > 0 { eprintln(build_r["stderr"]) }
+    _die("agent: build failed")
+  }
+
+  ; Write PID file for the supervisor
+  let pid_file = "/tmp/a_agents/" + agent_name + ".pid"
+  io.write_file(pid_file, to_str(reflect.pid()))
+
+  _agent_log(agent_name, "supervisor started (pid " + to_str(reflect.pid()) + ")")
+
+  let mut restarts = 0
+  let mut running = true
+
+  while running {
+    let start_time = time.now()
+    _agent_log(agent_name, "starting agent process")
+
+    let mut env_prefix = "A_AGENT_NAME=" + agent_name + " A_COMPILER=" + self
+    if health_port > 0 {
+      env_prefix = env_prefix + " A_AGENT_PORT=" + to_str(health_port)
+    }
+
+    let result = exec(env_prefix + " " + bin)
+
+    ; Forward captured output
+    if len(result["stdout"]) > 0 { print(result["stdout"]) }
+    if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+
+    let code = result["code"]
+    let uptime = time.now() - start_time
+
+    if code == 42 {
+      ; Exit code 42 = self-update requested: rebuild and restart immediately
+      _agent_log(agent_name, "update requested, rebuilding...")
+      let rebuild = exec(self + " build " + source + " -o " + bin)
+      if rebuild["code"] != 0 {
+        _agent_log(agent_name, "rebuild failed, restarting with old binary")
+      } else {
+        _agent_log(agent_name, "rebuild succeeded")
+      }
+      restarts = 0
+    } else if code == 0 || no_restart {
+      _agent_log(agent_name, "exited (code " + to_str(code) + "), stopping")
+      running = false
+    } else {
+      _agent_log(agent_name, "crashed (exit " + to_str(code) + ", uptime " + to_str(uptime / 1000) + "s)")
+
+      ; Reset restart count if the agent ran healthily for >60s
+      if uptime > 60000 {
+        restarts = 0
+      }
+
+      restarts = restarts + 1
+      if max_restarts > 0 && restarts >= max_restarts {
+        _agent_log(agent_name, "max restarts (" + to_str(max_restarts) + ") reached, giving up")
+        running = false
+      } else {
+        ; Exponential backoff: 1s, 2s, 4s, ..., capped at 30s
+        let mut backoff = 1000
+        let mut e = 0
+        while e < restarts - 1 {
+          backoff = backoff * 2
+          e = e + 1
+        }
+        if backoff > 30000 { backoff = 30000 }
+        _agent_log(agent_name, "restarting in " + to_str(backoff / 1000) + "s (attempt " + to_str(restarts) + ")")
+        time.sleep(backoff)
+      }
+    }
+  }
+
+  ; Cleanup
+  if fs.exists(pid_file) { fs.rm(pid_file) }
+  _agent_log(agent_name, "supervisor stopped")
+}
+
 fn cmd_plugin(argv) {
   if len(argv) < 1 { _die("usage: a plugin <install|list|remove|init|run>") }
   let sub = argv[0]
@@ -1169,6 +1263,10 @@ fn _usage() {
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a watch <file.a>           recompile and run on file change")
+  eprintln("  a agent <file.a> [opts]     deploy supervised long-running agent")
+  eprintln("     --name N                  agent name (default: filename)")
+  eprintln("     --max-restarts N          max restart attempts (default: 10, 0=unlimited)")
+  eprintln("     --no-restart              run once, exit on child exit")
   eprintln("  a spawn <file.a> --name N  launch named agent process (background)")
   eprintln("  a plugin install <dir>     install a plugin from directory")
   eprintln("  a plugin list              list installed plugins")
@@ -1352,6 +1450,35 @@ fn main() {
   if subcmd == "watch" {
     if len(argv) < 2 { _die("watch requires a source file") }
     cmd_watch(argv[1])
+    ret
+  }
+
+  if subcmd == "agent" {
+    if len(argv) < 2 { _die("agent requires a source file") }
+    let source = argv[1]
+    let mut agent_name = path.stem(source)
+    let mut health_port = 0
+    let mut max_restarts = 10
+    let mut no_restart = false
+    let mut i = 2
+    while i < len(argv) {
+      if argv[i] == "--name" && i + 1 < len(argv) {
+        agent_name = argv[i + 1]
+        i = i + 2
+      } else if argv[i] == "--health-port" && i + 1 < len(argv) {
+        health_port = int(argv[i + 1])
+        i = i + 2
+      } else if argv[i] == "--max-restarts" && i + 1 < len(argv) {
+        max_restarts = int(argv[i + 1])
+        i = i + 2
+      } else if argv[i] == "--no-restart" {
+        no_restart = true
+        i = i + 1
+      } else {
+        i = i + 1
+      }
+    }
+    cmd_agent(source, agent_name, health_port, max_restarts, no_restart)
     ret
   }
 

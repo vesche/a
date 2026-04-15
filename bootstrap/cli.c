@@ -411,6 +411,8 @@ AValue fn__get_mtimes(AValue files);
 AValue fn__mtimes_changed(AValue old_mt, AValue new_mt);
 AValue fn_cmd_watch(AValue source_path);
 AValue fn_cmd_spawn(AValue source, AValue agent_name);
+AValue fn__agent_log(AValue name, AValue msg);
+AValue fn_cmd_agent(AValue source, AValue agent_name, AValue health_port, AValue max_restarts, AValue no_restart);
 AValue fn_cmd_plugin(AValue argv);
 AValue fn__usage(void);
 AValue fn_main(void);
@@ -16110,6 +16112,127 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn__agent_log(AValue name, AValue msg) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+    msg = a_retain(msg);
+    a_eprintln(a_add(a_add(a_add(a_add(fn_cli_dim(a_string("[agent]")), a_string(" ")), fn_cli_bold(name)), a_string(" ")), msg));
+__fn_cleanup:
+    a_release(name);
+    a_release(msg);
+    return __ret;
+}
+
+AValue fn_cmd_agent(AValue source, AValue agent_name, AValue health_port, AValue max_restarts, AValue no_restart) {
+    AValue self = {0}, bin = {0}, build_r = {0}, pid_file = {0}, restarts = {0}, running = {0}, start_time = {0}, env_prefix = {0}, result = {0}, code = {0}, uptime = {0}, rebuild = {0}, backoff = {0}, e = {0};
+    AValue __ret = a_void();
+    source = a_retain(source);
+    agent_name = a_retain(agent_name);
+    health_port = a_retain(health_port);
+    max_restarts = a_retain(max_restarts);
+    no_restart = a_retain(no_restart);
+    if (a_truthy(a_not(a_fs_exists(source)))) {
+        fn__die(a_add(a_string("agent: file not found: "), source));
+    }
+    { AValue __old = self; self = a_argv0(); a_release(__old); }
+    if (a_truthy(a_not(a_fs_exists(a_string(".a_cache"))))) {
+        a_fs_mkdir(a_string(".a_cache"));
+    }
+    if (a_truthy(a_not(a_fs_exists(a_string("/tmp/a_agents"))))) {
+        a_fs_mkdir(a_string("/tmp/a_agents"));
+    }
+    { AValue __old = bin; bin = a_add(a_string(".a_cache/agent_"), agent_name); a_release(__old); }
+    { AValue __old = build_r; build_r = a_exec(a_add(a_add(a_add(a_add(self, a_string(" build ")), source), a_string(" -o ")), bin)); a_release(__old); }
+    if (a_truthy(a_neq(a_array_get(build_r, a_string("code")), a_int(0)))) {
+        if (a_truthy(a_gt(a_len(a_array_get(build_r, a_string("stderr"))), a_int(0)))) {
+            a_eprintln(a_array_get(build_r, a_string("stderr")));
+        }
+        fn__die(a_string("agent: build failed"));
+    }
+    { AValue __old = pid_file; pid_file = a_add(a_add(a_string("/tmp/a_agents/"), agent_name), a_string(".pid")); a_release(__old); }
+    a_io_write_file(pid_file, a_to_str(a_reflect_pid()));
+    fn__agent_log(agent_name, a_add(a_add(a_string("supervisor started (pid "), a_to_str(a_reflect_pid())), a_string(")")));
+    { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
+    { AValue __old = running; running = a_bool(1); a_release(__old); }
+    while (a_truthy(running)) {
+        { AValue __old = start_time; start_time = a_time_now(); a_release(__old); }
+        fn__agent_log(agent_name, a_string("starting agent process"));
+        { AValue __old = env_prefix; env_prefix = a_add(a_add(a_add(a_string("A_AGENT_NAME="), agent_name), a_string(" A_COMPILER=")), self); a_release(__old); }
+        if (a_truthy(a_gt(health_port, a_int(0)))) {
+            { AValue __old = env_prefix; env_prefix = a_add(a_add(env_prefix, a_string(" A_AGENT_PORT=")), a_to_str(health_port)); a_release(__old); }
+        }
+        { AValue __old = result; result = a_exec(a_add(a_add(env_prefix, a_string(" ")), bin)); a_release(__old); }
+        if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
+            a_print(a_array_get(result, a_string("stdout")));
+        }
+        if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
+            a_eprintln(a_array_get(result, a_string("stderr")));
+        }
+        { AValue __old = code; code = a_array_get(result, a_string("code")); a_release(__old); }
+        { AValue __old = uptime; uptime = a_sub(a_time_now(), start_time); a_release(__old); }
+        if (a_truthy(a_eq(code, a_int(42)))) {
+            fn__agent_log(agent_name, a_string("update requested, rebuilding..."));
+            { AValue __old = rebuild; rebuild = a_exec(a_add(a_add(a_add(a_add(self, a_string(" build ")), source), a_string(" -o ")), bin)); a_release(__old); }
+            if (a_truthy(a_neq(a_array_get(rebuild, a_string("code")), a_int(0)))) {
+                fn__agent_log(agent_name, a_string("rebuild failed, restarting with old binary"));
+            } else {
+                fn__agent_log(agent_name, a_string("rebuild succeeded"));
+            }
+            { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
+        } else         if (a_truthy(a_or(a_eq(code, a_int(0)), no_restart))) {
+            fn__agent_log(agent_name, a_add(a_add(a_string("exited (code "), a_to_str(code)), a_string("), stopping")));
+            { AValue __old = running; running = a_bool(0); a_release(__old); }
+        } else {
+            fn__agent_log(agent_name, a_add(a_add(a_add(a_add(a_string("crashed (exit "), a_to_str(code)), a_string(", uptime ")), a_to_str(a_div(uptime, a_int(1000)))), a_string("s)")));
+            if (a_truthy(a_gt(uptime, a_int(60000)))) {
+                { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
+            }
+            { AValue __old = restarts; restarts = a_add(restarts, a_int(1)); a_release(__old); }
+            if (a_truthy(a_and(a_gt(max_restarts, a_int(0)), a_gteq(restarts, max_restarts)))) {
+                fn__agent_log(agent_name, a_add(a_add(a_string("max restarts ("), a_to_str(max_restarts)), a_string(") reached, giving up")));
+                { AValue __old = running; running = a_bool(0); a_release(__old); }
+            } else {
+                { AValue __old = backoff; backoff = a_int(1000); a_release(__old); }
+                { AValue __old = e; e = a_int(0); a_release(__old); }
+                while (a_truthy(a_lt(e, a_sub(restarts, a_int(1))))) {
+                    { AValue __old = backoff; backoff = a_mul(backoff, a_int(2)); a_release(__old); }
+                    { AValue __old = e; e = a_add(e, a_int(1)); a_release(__old); }
+                }
+                if (a_truthy(a_gt(backoff, a_int(30000)))) {
+                    { AValue __old = backoff; backoff = a_int(30000); a_release(__old); }
+                }
+                fn__agent_log(agent_name, a_add(a_add(a_add(a_add(a_string("restarting in "), a_to_str(a_div(backoff, a_int(1000)))), a_string("s (attempt ")), a_to_str(restarts)), a_string(")")));
+                a_time_sleep(backoff);
+            }
+        }
+    }
+    if (a_truthy(a_fs_exists(pid_file))) {
+        a_fs_rm(pid_file);
+    }
+    fn__agent_log(agent_name, a_string("supervisor stopped"));
+__fn_cleanup:
+    a_release(self);
+    a_release(bin);
+    a_release(build_r);
+    a_release(pid_file);
+    a_release(restarts);
+    a_release(running);
+    a_release(start_time);
+    a_release(env_prefix);
+    a_release(result);
+    a_release(code);
+    a_release(uptime);
+    a_release(rebuild);
+    a_release(backoff);
+    a_release(e);
+    a_release(source);
+    a_release(agent_name);
+    a_release(health_port);
+    a_release(max_restarts);
+    a_release(no_restart);
+    return __ret;
+}
+
 AValue fn_cmd_plugin(AValue argv) {
     AValue sub = {0}, source = {0}, result = {0}, repo = {0}, info = {0}, plugins = {0}, i = {0}, p = {0}, r = {0};
     AValue __ret = a_void();
@@ -16228,6 +16351,10 @@ AValue fn__usage(void) {
     a_eprintln(a_string("  a test <dir/>              run test_*.a files in directory"));
     a_eprintln(a_string("  a lsp                      start language server (JSON-RPC over stdio)"));
     a_eprintln(a_string("  a watch <file.a>           recompile and run on file change"));
+    a_eprintln(a_string("  a agent <file.a> [opts]     deploy supervised long-running agent"));
+    a_eprintln(a_string("     --name N                  agent name (default: filename)"));
+    a_eprintln(a_string("     --max-restarts N          max restart attempts (default: 10, 0=unlimited)"));
+    a_eprintln(a_string("     --no-restart              run once, exit on child exit"));
     a_eprintln(a_string("  a spawn <file.a> --name N  launch named agent process (background)"));
     a_eprintln(a_string("  a plugin install <dir>     install a plugin from directory"));
     a_eprintln(a_string("  a plugin list              list installed plugins"));
@@ -16249,7 +16376,7 @@ __fn_cleanup:
 }
 
 AValue fn_main(void) {
-    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, plugin_argv = {0}, agent_name = {0}, prof_out = {0}, test_out = {0};
+    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, plugin_argv = {0}, agent_name = {0}, health_port = {0}, max_restarts = {0}, no_restart = {0}, prof_out = {0}, test_out = {0};
     AValue __ret = a_void();
     { AValue __old = argv; argv = a_args(); a_release(__old); }
     if (a_truthy(a_eq(a_len(argv), a_int(0)))) {
@@ -16425,6 +16552,36 @@ AValue fn_main(void) {
         fn_cmd_watch(a_array_get(argv, a_int(1)));
         __ret = a_void(); goto __fn_cleanup;
     }
+    if (a_truthy(a_eq(subcmd, a_string("agent")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+            fn__die(a_string("agent requires a source file"));
+        }
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+        { AValue __old = agent_name; agent_name = fn_path_stem(source); a_release(__old); }
+        { AValue __old = health_port; health_port = a_int(0); a_release(__old); }
+        { AValue __old = max_restarts; max_restarts = a_int(10); a_release(__old); }
+        { AValue __old = no_restart; no_restart = a_bool(0); a_release(__old); }
+        { AValue __old = i; i = a_int(2); a_release(__old); }
+        while (a_truthy(a_lt(i, a_len(argv)))) {
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--name")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+                { AValue __old = agent_name; agent_name = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--health-port")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+                { AValue __old = health_port; health_port = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--max-restarts")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+                { AValue __old = max_restarts; max_restarts = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else             if (a_truthy(a_eq(a_array_get(argv, i), a_string("--no-restart")))) {
+                { AValue __old = no_restart; no_restart = a_bool(1); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            } else {
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+        fn_cmd_agent(source, agent_name, health_port, max_restarts, no_restart);
+        __ret = a_void(); goto __fn_cleanup;
+    }
     if (a_truthy(a_eq(subcmd, a_string("spawn")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("spawn requires a source file"));
@@ -16504,6 +16661,9 @@ __fn_cleanup:
     a_release(extra);
     a_release(plugin_argv);
     a_release(agent_name);
+    a_release(health_port);
+    a_release(max_restarts);
+    a_release(no_restart);
     a_release(prof_out);
     a_release(test_out);
     return __ret;

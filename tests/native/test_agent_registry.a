@@ -1,0 +1,101 @@
+use std.testing
+use std.agent
+
+fn _cleanup(name) {
+  let p = "/tmp/a_agents/" + name + ".json"
+  if fs.exists(p) { fs.rm(p) }
+}
+
+fn main() {
+  ; --- Test 1: register creates a registry entry ---
+  agent.register("test-reg-1", ["review", "lint"])
+  let p = "/tmp/a_agents/test-reg-1.json"
+  testing.assert_eq(fs.exists(p), true)
+  let data = json.parse(io.read_file(p))
+  testing.assert_eq(data["name"], "test-reg-1")
+  testing.assert_eq(len(data["capabilities"]), 2)
+  testing.assert_eq(data["capabilities"][0], "review")
+  testing.assert_eq(data["capabilities"][1], "lint")
+  println("PASS: register creates entry")
+
+  ; --- Test 2: discover returns Ok for existing agent ---
+  let r = agent.discover("test-reg-1")
+  testing.assert_eq(is_ok(r), true)
+  let info = unwrap(r)
+  testing.assert_eq(info["name"], "test-reg-1")
+  println("PASS: discover returns Ok")
+
+  ; --- Test 3: discover returns Err for missing agent ---
+  let r2 = agent.discover("nonexistent-agent-xyz")
+  testing.assert_eq(is_err(r2), true)
+  println("PASS: discover returns Err for missing")
+
+  ; --- Test 4: list includes the registered agent ---
+  let all = agent.list()
+  let mut found = false
+  let mut i = 0
+  while i < len(all) {
+    if all[i]["name"] == "test-reg-1" { found = true }
+    i = i + 1
+  }
+  testing.assert_eq(found, true)
+  println("PASS: list includes agent")
+
+  ; --- Test 5: find_by_capability ---
+  agent.register("test-reg-2", ["deploy", "lint"])
+  let reviewers = agent.find_by_capability("review")
+  let mut has_reg1 = false
+  i = 0
+  while i < len(reviewers) {
+    if reviewers[i]["name"] == "test-reg-1" { has_reg1 = true }
+    i = i + 1
+  }
+  testing.assert_eq(has_reg1, true)
+
+  let linters = agent.find_by_capability("lint")
+  testing.assert_eq(len(linters) >= 2, true)
+
+  let deployers = agent.find_by_capability("deploy")
+  let mut has_reg2 = false
+  i = 0
+  while i < len(deployers) {
+    if deployers[i]["name"] == "test-reg-2" { has_reg2 = true }
+    i = i + 1
+  }
+  testing.assert_eq(has_reg2, true)
+  println("PASS: find_by_capability")
+
+  ; --- Test 6: heartbeat updates last_seen ---
+  let before = json.parse(io.read_file("/tmp/a_agents/test-reg-1.json"))
+  let old_seen = before["last_seen"]
+  time.sleep(10)
+  agent.heartbeat("test-reg-1")
+  let after = json.parse(io.read_file("/tmp/a_agents/test-reg-1.json"))
+  testing.assert_eq(after["last_seen"] >= old_seen, true)
+  println("PASS: heartbeat updates last_seen")
+
+  ; --- Test 7: unregister removes the entry ---
+  agent.unregister("test-reg-1")
+  testing.assert_eq(fs.exists("/tmp/a_agents/test-reg-1.json"), false)
+  let r3 = agent.discover("test-reg-1")
+  testing.assert_eq(is_err(r3), true)
+  println("PASS: unregister removes entry")
+
+  ; --- Test 8: delegate returns Err when agent has no addr ---
+  agent.register("test-reg-3", ["test"])
+  let r4 = agent.delegate("test-reg-3", "some-task", #{})
+  testing.assert_eq(is_err(r4), true)
+  println("PASS: delegate returns Err without addr")
+
+  ; --- Test 9: version returns a string ---
+  let v = agent.version()
+  testing.assert_eq(len(v) > 0, true)
+  println("PASS: version returns string")
+
+  ; Cleanup
+  _cleanup("test-reg-1")
+  _cleanup("test-reg-2")
+  _cleanup("test-reg-3")
+
+  println("all agent registry tests passed")
+}
