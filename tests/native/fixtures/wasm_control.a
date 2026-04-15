@@ -1,0 +1,12 @@
+fn main() {
+  let x = 10
+  if x == 10 {
+    println(x)
+  }
+
+  let mut i = 0
+  while i < 5 {
+    i = i + 1
+  }
+  println(i)
+}

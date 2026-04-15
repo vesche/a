@@ -1,0 +1,91 @@
+; std/local_llm.a -- Local LLM inference via GGUF models
+;
+; Load quantized GGUF models and run inference locally (CPU).
+; Supports LLaMA/Mistral/Gemma architectures, Q4_0/Q8_0/F16/F32 quantization.
+;
+; Usage:
+;   use std.local_llm
+;   let model = local_llm.load("model.gguf")
+;   let response = local_llm.generate(model, "Once upon a time", #{})
+;   local_llm.unload(model)
+
+fn load(model_path) {
+  let result = local_llm.load(model_path)
+  if is_err(result) {
+    ret result
+  }
+  let handle = unwrap(result)
+  ret Ok(handle)
+}
+
+fn generate(handle, prompt, opts) {
+  ret local_llm.generate(handle, prompt, opts)
+}
+
+fn chat(handle, messages, opts) {
+  let mut prompt_text = ""
+  for msg in messages {
+    let role = msg["role"]
+    let content = msg["content"]
+    if role == "system" {
+      prompt_text = prompt_text + "<|system|>" + content + "<|end|>"
+    }
+    if role == "user" {
+      prompt_text = prompt_text + "<|user|>" + content + "<|end|>"
+    }
+    if role == "assistant" {
+      prompt_text = prompt_text + "<|assistant|>" + content + "<|end|>"
+    }
+  }
+  prompt_text = prompt_text + "<|assistant|>"
+  ret local_llm.generate(handle, prompt_text, opts)
+}
+
+fn embed(handle, text) {
+  ret local_llm.embed(handle, text)
+}
+
+fn info(handle) {
+  ret local_llm.info(handle)
+}
+
+fn unload(handle) {
+  ret local_llm.unload(handle)
+}
+
+fn tokenize(handle, text) {
+  ret local_llm.tokenize(handle, text)
+}
+
+fn detokenize(handle, tokens) {
+  ret local_llm.detokenize(handle, tokens)
+}
+
+fn vocab_size(handle) {
+  ret local_llm.vocab_size(handle)
+}
+
+fn is_loaded(handle) {
+  let r = local_llm.info(handle)
+  ret is_ok(r)
+}
+
+fn complete(handle, prompt, max_tokens) {
+  ret local_llm.generate(handle, prompt, #{ "max_tokens": max_tokens })
+}
+
+fn classify(handle, text, labels) {
+  let prompt_parts = ["Classify the following text into one of these categories: "]
+  let label_str = str.join(labels, ", ")
+  let full_prompt = prompt_parts[0] + label_str + ".\n\nText: " + text + "\n\nCategory:"
+  ret local_llm.generate(handle, full_prompt, #{ "max_tokens": 20, "temperature": 0.0 })
+}
+
+fn summarize(handle, text, max_len) {
+  let prompt_str = "Summarize the following text concisely:\n\n" + text + "\n\nSummary:"
+  let mt = 100
+  if max_len > 0 {
+    mt = max_len
+  }
+  ret local_llm.generate(handle, prompt_str, #{ "max_tokens": mt, "temperature": 0.3 })
+}

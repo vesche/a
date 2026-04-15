@@ -1,0 +1,96 @@
+use std.testing
+use std.rpc
+
+fn main() {
+  ; Clean up any stale registry entries
+  rpc.unregister("test-rpc-agent")
+
+  ; Start RPC server in background (redirect output to avoid blocking exec)
+  exec("./a build tests/native/_rpc_server.a -o /tmp/_rpc_srv_test 2>/dev/null")
+  exec("/tmp/_rpc_srv_test > /dev/null 2>&1 &")
+  time.sleep(2000)
+
+  ; --- Test 1: discover finds registered agent ---
+  let info = rpc.discover("test-rpc-agent")
+  testing.assert_eq(is_ok(info), true)
+  let agent = unwrap(info)
+  testing.assert_eq(agent["name"], "test-rpc-agent")
+  testing.assert_eq(to_str(agent["port"]), "9881")
+  println("PASS: discover finds registered agent")
+
+  ; --- Test 2: call by name -- add ---
+  let r1 = rpc.call("test-rpc-agent", "add", #{ "a": 10, "b": 20 })
+  testing.assert_eq(is_ok(r1), true)
+  testing.assert_eq(to_str(unwrap(r1)), "30")
+  println("PASS: rpc.call add returns correct result")
+
+  ; --- Test 3: call by name -- greet ---
+  let r2 = rpc.call("test-rpc-agent", "greet", #{ "name": "world" })
+  testing.assert_eq(is_ok(r2), true)
+  testing.assert_eq(unwrap(r2), "hello, world")
+  println("PASS: rpc.call greet returns string")
+
+  ; --- Test 4: call by name -- echo ---
+  let r3 = rpc.call("test-rpc-agent", "echo", #{ "key": "value" })
+  testing.assert_eq(is_ok(r3), true)
+  let echoed = unwrap(r3)
+  testing.assert_eq(echoed["key"], "value")
+  println("PASS: rpc.call echo returns params")
+
+  ; --- Test 5: call_addr directly ---
+  let r4 = rpc.call_addr("http://127.0.0.1:9881", "add", #{ "a": 5, "b": 3 })
+  testing.assert_eq(is_ok(r4), true)
+  testing.assert_eq(to_str(unwrap(r4)), "8")
+  println("PASS: rpc.call_addr works directly")
+
+  ; --- Test 6: unknown method returns Err ---
+  let r5 = rpc.call("test-rpc-agent", "nonexistent", #{})
+  testing.assert_eq(is_err(r5), true)
+  println("PASS: unknown method returns Err")
+
+  ; --- Test 7: discover unknown agent returns Err ---
+  let r6 = rpc.discover("no-such-agent")
+  testing.assert_eq(is_err(r6), true)
+  println("PASS: discover unknown agent returns Err")
+
+  ; --- Test 8: _ping built-in method ---
+  let r7 = rpc.call("test-rpc-agent", "_ping", #{})
+  testing.assert_eq(is_ok(r7), true)
+  testing.assert_eq(unwrap(r7), "pong")
+  println("PASS: _ping built-in method")
+
+  ; --- Test 9: _methods built-in method ---
+  let r8 = rpc.call("test-rpc-agent", "_methods", #{})
+  testing.assert_eq(is_ok(r8), true)
+  let methods = unwrap(r8)
+  testing.assert_eq(type_of(methods), "array")
+  println("PASS: _methods built-in returns handler names")
+
+  ; --- Test 10: list_agents includes our agent ---
+  let agents = rpc.list_agents()
+  let mut found = false
+  let mut i = 0
+  while i < len(agents) {
+    if agents[i]["name"] == "test-rpc-agent" {
+      found = true
+    }
+    i = i + 1
+  }
+  testing.assert_eq(to_str(found), "true")
+  println("PASS: list_agents includes our agent")
+
+  ; --- Test 11: health endpoint ---
+  let health = http.get("http://127.0.0.1:9881/health", #{})
+  testing.assert_eq(to_str(health["status"]), "200")
+  let hbody = json.parse(health["body"])
+  testing.assert_eq(hbody["status"], "ok")
+  testing.assert_eq(hbody["name"], "test-rpc-agent")
+  println("PASS: /health endpoint")
+
+  ; Clean up
+  exec("pkill -f '_rpc_srv_test' 2>/dev/null || true")
+  rpc.unregister("test-rpc-agent")
+
+  println("")
+  println("All RPC tests passed!")
+}

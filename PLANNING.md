@@ -2756,3 +2756,158 @@ Added persistent storage primitives: a key-value store, a vector store for seman
 | `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.3 as DONE |
 | `README.md` | Updated stats, module list |
 | `bootstrap/cli.c` | Regenerated |
+
+---
+
+## v1.4.0 -- Agent-to-Agent Communication
+
+Phase 2 begins: agents talking to each other through structured channels and RPC.
+
+### Features
+
+- **`std/channel.a`** -- SQLite-backed inter-process message channels. Persistent, multi-producer/multi-consumer with independent cursors. `channel.create(name)`, `channel.open(name)`, `channel.open_as(name, cursor)`, `channel.send(ch, msg)`, `channel.recv(ch)` (blocking), `channel.try_recv(ch)` (non-blocking), `channel.recv_timeout(ch, ms)`, `channel.peek(ch)`, `channel.count(ch)`, `channel.total(ch)`, `channel.drain(ch)`, `channel.purge(ch)`, `channel.close(ch)`, `channel.destroy(name)`. Messages are JSON-serialized, supporting maps, arrays, strings, numbers.
+- **`std/rpc.a`** -- JSON-RPC 2.0 over HTTP with file-based service discovery. `rpc.serve(name, port, handlers)` starts a named agent with HTTP endpoint. `rpc.call(target, method, params)` discovers agent by name and calls it. `rpc.call_addr(addr, method, params)` for direct calls. `rpc.notify(target, method, params)` for fire-and-forget. `rpc.discover(name)`, `rpc.list_agents()`, `rpc.register(name, port)`, `rpc.unregister(name)`. Built-in `_ping` and `_methods` introspection endpoints. `/health` endpoint for liveness checks.
+- **`a spawn <file.a> --name <name>`** -- CLI subcommand to build and launch named agent processes in background. Sets `A_AGENT_NAME` environment variable. Agents auto-register in `/tmp/a_agents/` for service discovery.
+
+### Tests
+
+- `test_channel.a` -- 13 tests: create/close, send/try_recv, empty recv, multiple send/drain, count, total, peek without consume, purge, complex messages (maps/arrays), independent cursors, persistence across open/close, recv_timeout, destroy
+- `test_rpc.a` -- 11 tests: discover registered agent, rpc.call add/greet/echo, call_addr direct, unknown method error, discover unknown agent, _ping builtin, _methods builtin, list_agents, /health endpoint
+- Native test suite grew from 40 to 42 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/channel.a` | NEW -- SQLite-backed message channels (~140 lines) |
+| `std/rpc.a` | NEW -- JSON-RPC over HTTP with service discovery (~165 lines) |
+| `src/cli.a` | Added `a spawn` subcommand, `cmd_spawn()` function |
+| `tests/native/test_channel.a` | NEW -- 13 channel tests |
+| `tests/native/test_rpc.a` | NEW -- 11 RPC tests |
+| `tests/native/_rpc_server.a` | NEW -- test RPC server with add/echo/greet handlers |
+| `Cargo.toml` | Version bump to 1.4.0 |
+| `src/lsp.a` | Version bump to 1.4.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.4 as DONE |
+| `README.md` | Updated stats, module list |
+| `bootstrap/cli.c` | Regenerated |
+
+---
+
+## v1.5.0 -- Planning and Reflection
+
+Agents gain deliberation: structured task planning, execution tracing, and runtime self-inspection.
+
+### Features
+
+- **`std/plan.a`** -- DAG-based structured task decomposition. Plans are data (serializable, inspectable, resumable). `plan.create(goal)`, `plan.add_step(p, id, description, deps)` builds a dependency graph. `plan.execute(p, step_fn)` runs steps in topological order -- failed steps cascade to skip dependents, not crash the plan. `plan.mark_done`/`mark_failed`/`reset_step` for manual control. `plan.serialize`/`deserialize` for persistence. `plan.status(p)` returns done/failed/skipped/pending counts. `plan.summary(p)` for human-readable output.
+- **`std/trace.a`** -- Structured execution tracing with timeline reconstruction. `trace.begin`/`end` for spans, `trace.event` for point events, `trace.counter` for metrics, `trace.measure(t, name, fn)` for auto-instrumented function calls. Export formats: `export_json` (raw events), `export_chrome` (Chrome trace viewer / chrome://tracing compatible), `export_otel` (OpenTelemetry-style spans). Span extraction, nested span support, event filtering by name.
+- **`std/reflect.a`** -- Runtime self-inspection combining C builtins and pure-"a" instrumentation. C builtins: `reflect.memory_usage()` returns RSS bytes (macOS via `mach_task_basic_info`, Linux via `/proc/self/status`), `reflect.uptime_ms()` tracks process start time, `reflect.pid()` returns process ID. Pure-"a" profiler: `reflect.profiler()` creates a counter registry, `reflect.tick(p, name)` increments call count, `reflect.tick_ms(p, name, ms)` tracks timing, `reflect.hot_paths(p, limit)` returns top functions sorted by call count, `reflect.stats(p)` for aggregate metrics. `reflect.health()` for quick status map, `reflect.info()` for full runtime info.
+
+### Tests
+
+- `test_plan.a` -- 14 tests: create, add steps, status before/after, execute all success, get_result, failed cascade, summary string, serialize/deserialize, step_ids, is_complete, mark_done/mark_failed, reset_step, failed_steps, parallel-ready steps
+- `test_trace.a` -- 14 tests: create, begin/end span, instant event, counter event, spans extraction, find_events, duration_ms, export_json, export_chrome format, export_otel, measure ok, measure error, nested spans, clear
+- `test_reflect.a` -- 15 tests: uptime_ms, memory_usage, pid, memory_mb, memory_kb, info map, health check, profiler create, tick, tick_ms, avg_time, hot_paths sorted, hot_paths limit, stats, reset
+- Native test suite grew from 42 to 45 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/plan.a` | NEW -- DAG-based task decomposition (~170 lines) |
+| `std/trace.a` | NEW -- execution tracing with Chrome/OTel export (~175 lines) |
+| `std/reflect.a` | NEW -- runtime self-inspection with C builtins + profiler (~130 lines) |
+| `c_runtime/runtime.c` | Added `a_reflect_uptime_ms`, `a_reflect_memory_usage`, `a_reflect_pid` builtins (~40 lines) |
+| `c_runtime/runtime.h` | Added reflect builtin declarations |
+| `std/compiler/cgen.a` | Added `reflect.uptime_ms`, `reflect.memory_usage`, `reflect.pid` to `_builtin_map()` |
+| `tests/native/test_plan.a` | NEW -- 14 plan tests |
+| `tests/native/test_trace.a` | NEW -- 14 trace tests |
+| `tests/native/test_reflect.a` | NEW -- 15 reflect tests |
+| `Cargo.toml` | Version bump to 1.5.0 |
+| `src/lsp.a` | Version bump to 1.5.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.5 as DONE |
+| `README.md` | Updated stats, module list |
+| `bootstrap/cli.c` | Regenerated |
+
+---
+
+## v1.6.0 -- Sandboxed Extensibility
+
+### Features
+
+- **`std/sandbox.a`** -- Capability-based sandboxed code execution:
+  - `capabilities(opts)` -- create a capability map with defaults for fs_read, fs_write, net, exec, db, env, max_output, timeout_ms
+  - `run(source, caps)` -- generate guard functions, rewrite source to intercept dangerous calls, wrap in `fn main()`, execute in subprocess
+  - `validate(source)` -- static analysis to detect potentially dangerous operations
+  - `deny_all()`, `allow_all()`, `allow_read_only(paths)`, `allow_network(hosts)` -- convenience constructors
+  - `run_file(path, caps)` -- run a file with sandbox restrictions
+
+- **`std/plugin.a`** -- Plugin system for runtime extensibility:
+  - `install(dir)` -- install from local directory to `~/.a/plugins/`, register in `registry.json`
+  - `install_git(repo)` -- clone from GitHub and install
+  - `remove(name)`, `list()`, `get(name)`, `is_installed(name)`, `load(name)` -- registry operations
+  - `run(name)` -- execute installed plugin
+  - `init(dir, name)` -- scaffold new plugin with `plugin.toml` and `main.a`
+  - `create_manifest(name, version, desc, ep)` -- generate manifest content
+
+- **`a plugin` CLI subcommand**:
+  - `a plugin install <dir|git:user/repo>`, `a plugin list`, `a plugin remove <name>`
+  - `a plugin init <dir> <name>`, `a plugin run <name>`
+
+### Tests
+
+- `test_sandbox.a` -- 12 tests
+- `test_plugin.a` -- 13 tests
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/sandbox.a` | NEW -- capability-based sandboxed execution (~140 lines) |
+| `std/plugin.a` | NEW -- plugin system with registry (~230 lines) |
+| `src/cli.a` | Added `a plugin` subcommand, `use std.plugin` import |
+| `tests/native/test_sandbox.a` | NEW -- 12 sandbox tests |
+| `tests/native/test_plugin.a` | NEW -- 13 plugin tests |
+| `Cargo.toml` | Version bump to 1.6.0 |
+| `src/lsp.a` | Version bump to 1.6.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.6 as DONE |
+| `README.md` | Updated stats, module list |
+| `bootstrap/cli.c` | Regenerated (13,529 lines) |
+
+---
+
+## v1.7.0 -- Multi-Target Compilation
+
+**Features:**
+
+- WebAssembly target: `std/compiler/wasmgen.a` generates WAT (WebAssembly Text Format) from AST
+- Cross-compilation: `a build program.a --target wasm32-wasi|linux-x86_64|windows-x86_64|...`
+- `a targets` lists available cross-compilation targets and detected toolchains
+- `a wat <file>` emits WebAssembly Text Format to stdout or file
+- Runtime portability: `#ifdef _WIN32` guards for Windows (Winsock, process), `#ifdef WASM_BUILD` guards for WASM (stub fork/spawn, signals, HTTP, images)
+- Platform stubs return graceful errors on unsupported platforms
+
+**Tests:**
+
+- `tests/native/test_wasmgen.a` (15 tests): WAT generation, CLI commands, cross-compilation targets
+- 48 native tests total, all passing
+
+**Files changed:** src/cli.a, std/compiler/wasmgen.a (new), c_runtime/runtime.c, tests/native/test_wasmgen.a (new), tests/native/fixtures/*.a (new), bootstrap/cli.c
+
+---
+
+## v1.8.0 -- Local Intelligence
+
+**Features:**
+- GGUF model loading: `c_runtime/gguf.c` (~700 lines) -- complete GGUF file format parser supporting LLaMA/Mistral/Gemma architectures with Q4_0/Q8_0/F16/F32 quantization
+- Transformer inference engine: multi-head attention with KV cache, RoPE positional encoding, SwiGLU feed-forward, RMS normalization, BPE tokenizer
+- Nucleus (top-p) sampling with temperature control
+- `std/local_llm.a`: `load`, `generate`, `chat`, `embed`, `info`, `unload`, `tokenize`, `detokenize`, `vocab_size`, `complete`, `classify`, `summarize`
+- 8 new runtime builtins: `a_llm_load/generate/embed/unload/info/tokenize/detokenize/vocab_size`
+- WASM builds get graceful stubs for all LLM functions
+
+**Tests:**
+- `tests/native/test_local_llm.a` (15 tests): API surface, error handling, convenience functions
+- 49 native tests total, all passing
+
+**Files changed:** c_runtime/gguf.c (new), c_runtime/runtime.h, std/local_llm.a (new), std/compiler/cgen.a, src/cli.a, build.sh, tests/native/test_local_llm.a (new), bootstrap/cli.c

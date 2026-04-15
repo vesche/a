@@ -1,0 +1,202 @@
+; std/trace.a -- Execution tracing and structured timeline
+; Captures function calls, decisions, API responses as structured events.
+; Exports to JSON array or Chrome trace viewer format (chrome://tracing).
+;
+; Usage:
+;   let t = trace.create("my-service")
+;   let t = trace.begin(t, "fetch_data")
+;   ; ... do work ...
+;   let t = trace.end(t, "fetch_data", #{ "rows": 42 })
+;   let t = trace.event(t, "cache_hit", #{ "key": "users" })
+;   io.write_file("trace.json", trace.export_chrome(t))
+
+fn create(name) -> map {
+  ret #{
+    "name": name,
+    "events": [],
+    "start_ms": time.now(),
+    "open_spans": #{}
+  }
+}
+
+fn begin(t, name) -> map {
+  let ev = #{
+    "type": "begin",
+    "name": name,
+    "ts": time.now(),
+    "data": #{}
+  }
+  let events = push(t["events"], ev)
+  let spans = map.set(t["open_spans"], name, time.now())
+  ret map.set(map.set(t, "events", events), "open_spans", spans)
+}
+
+fn end(t, name, data) -> map {
+  let ev = #{
+    "type": "end",
+    "name": name,
+    "ts": time.now(),
+    "data": data
+  }
+  let events = push(t["events"], ev)
+  let mut spans = t["open_spans"]
+  if map.has(spans, name) {
+    spans = map.delete(spans, name)
+  }
+  ret map.set(map.set(t, "events", events), "open_spans", spans)
+}
+
+fn event(t, name, data) -> map {
+  let ev = #{
+    "type": "instant",
+    "name": name,
+    "ts": time.now(),
+    "data": data
+  }
+  ret map.set(t, "events", push(t["events"], ev))
+}
+
+fn counter(t, name, values) -> map {
+  let ev = #{
+    "type": "counter",
+    "name": name,
+    "ts": time.now(),
+    "data": values
+  }
+  ret map.set(t, "events", push(t["events"], ev))
+}
+
+fn measure(t, name, f) -> map {
+  let t2 = begin(t, name)
+  let result = f()
+  let mut data = #{}
+  if is_ok(result) {
+    data = map.set(data, "ok", true)
+  } else {
+    data = map.set(data, "ok", false)
+    data = map.set(data, "error", unwrap_or(result, "unknown"))
+  }
+  let t3 = end(t2, name, data)
+  ret #{ "trace": t3, "result": result }
+}
+
+fn duration_ms(t) -> int {
+  ret time.now() - t["start_ms"]
+}
+
+fn count(t) -> int {
+  ret len(t["events"])
+}
+
+fn spans(t) -> [map] {
+  let events = t["events"]
+  let mut result = []
+  let mut open = #{}
+  let mut i = 0
+  while i < len(events) {
+    let ev = events[i]
+    if ev["type"] == "begin" {
+      open = map.set(open, ev["name"], ev["ts"])
+    } else if ev["type"] == "end" {
+      if map.has(open, ev["name"]) {
+        let start = open[ev["name"]]
+        let span = #{
+          "name": ev["name"],
+          "start": start,
+          "end": ev["ts"],
+          "duration_ms": ev["ts"] - start,
+          "data": ev["data"]
+        }
+        result = push(result, span)
+        open = map.delete(open, ev["name"])
+      }
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn find_events(t, name) -> [map] {
+  let events = t["events"]
+  let mut result = []
+  let mut i = 0
+  while i < len(events) {
+    if events[i]["name"] == name {
+      result = push(result, events[i])
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn export_json(t) -> str {
+  ret json.stringify(#{
+    "name": t["name"],
+    "start_ms": t["start_ms"],
+    "duration_ms": duration_ms(t),
+    "event_count": len(t["events"]),
+    "events": t["events"]
+  })
+}
+
+fn export_chrome(t) -> str {
+  let events = t["events"]
+  let base_ts = t["start_ms"]
+  let mut chrome_events = []
+  let mut i = 0
+  while i < len(events) {
+    let ev = events[i]
+    let ts_us = (ev["ts"] - base_ts) * 1000
+    if ev["type"] == "begin" {
+      chrome_events = push(chrome_events, #{
+        "name": ev["name"], "ph": "B",
+        "ts": ts_us, "pid": 1, "tid": 1,
+        "args": ev["data"]
+      })
+    } else if ev["type"] == "end" {
+      chrome_events = push(chrome_events, #{
+        "name": ev["name"], "ph": "E",
+        "ts": ts_us, "pid": 1, "tid": 1,
+        "args": ev["data"]
+      })
+    } else if ev["type"] == "instant" {
+      chrome_events = push(chrome_events, #{
+        "name": ev["name"], "ph": "i",
+        "ts": ts_us, "pid": 1, "tid": 1,
+        "s": "t",
+        "args": ev["data"]
+      })
+    } else if ev["type"] == "counter" {
+      chrome_events = push(chrome_events, #{
+        "name": ev["name"], "ph": "C",
+        "ts": ts_us, "pid": 1, "tid": 1,
+        "args": ev["data"]
+      })
+    }
+    i = i + 1
+  }
+  ret json.stringify(chrome_events)
+}
+
+fn export_otel(t) -> str {
+  let s = spans(t)
+  let mut otel_spans = []
+  let mut i = 0
+  while i < len(s) {
+    let sp = s[i]
+    otel_spans = push(otel_spans, #{
+      "traceId": t["name"],
+      "spanId": sp["name"] + "_" + to_str(i),
+      "operationName": sp["name"],
+      "startTime": sp["start"],
+      "duration": sp["duration_ms"],
+      "tags": sp["data"]
+    })
+    i = i + 1
+  }
+  ret json.stringify(#{ "resourceSpans": otel_spans })
+}
+
+fn clear(t) -> map {
+  ret map.set(map.set(t, "events", []), "open_spans", #{})
+}

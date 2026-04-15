@@ -5,7 +5,8 @@ fn main() {
   let addr = str.concat("http://127.0.0.1:", to_str(port))
 
   ; Launch server in background via exec
-  exec("./a run tests/native/_http_server.a &")
+  exec("./a build tests/native/_http_server.a -o /tmp/_http_srv_test 2>/dev/null")
+  exec("/tmp/_http_srv_test > /dev/null 2>&1 &")
   time.sleep(1000)
 
   ; --- Test 1: GET returns status, body, headers ---
@@ -51,7 +52,7 @@ fn main() {
   println("PASS: 404 for unknown path")
 
   ; Kill the background server
-  exec("pkill -f '_http_server.a' 2>/dev/null || true")
+  exec("pkill -f '_http_srv_test' 2>/dev/null || true")
 
   println("")
   println("All HTTP tests passed!")

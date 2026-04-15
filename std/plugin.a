@@ -1,0 +1,229 @@
+; std/plugin.a -- Plugin system for runtime extensibility
+; Plugins are "a" modules installed to ~/.a/plugins/ with metadata.
+
+fn _plugins_dir() -> str {
+  let home = env.get("HOME")
+  ret home + "/.a/plugins"
+}
+
+fn _ensure_plugins_dir() {
+  let d = _plugins_dir()
+  if !fs.exists(d) {
+    exec("mkdir -p " + d)
+  }
+}
+
+fn _registry_path() -> str {
+  ret _plugins_dir() + "/registry.json"
+}
+
+fn _load_registry() -> map {
+  let p = _registry_path()
+  if !fs.exists(p) {
+    ret #{ "plugins": #{} }
+  }
+  ret json.parse(io.read_file(p))
+}
+
+fn _save_registry(reg) {
+  io.write_file(_registry_path(), json.pretty(reg))
+}
+
+fn _parse_manifest(dir) -> map {
+  let toml_path = dir + "/plugin.toml"
+  if fs.exists(toml_path) {
+    let content = io.read_file(toml_path)
+    let lines = str.lines(content)
+    let mut m = #{}
+    let mut i = 0
+    while i < len(lines) {
+      let line = str.trim(lines[i])
+      i = i + 1
+      if len(line) == 0 || str.starts_with(line, "#") || str.starts_with(line, ";") {
+        continue
+      }
+      let eq = str.find(line, "=")
+      if eq > 0 {
+        let key = str.trim(str.slice(line, 0, eq))
+        let mut val = str.trim(str.slice(line, eq + 1, len(line)))
+        let q = from_code(34)
+        if str.starts_with(val, q) && str.ends_with(val, q) {
+          val = str.slice(val, 1, len(val) - 1)
+        }
+        m = map.set(m, key, val)
+      }
+    }
+    ret m
+  }
+
+  let json_path = dir + "/plugin.json"
+  if fs.exists(json_path) {
+    ret json.parse(io.read_file(json_path))
+  }
+
+  ret #{ "name": "unknown", "version": "0.0.0" }
+}
+
+fn install(source_dir) {
+  _ensure_plugins_dir()
+  let manifest = _parse_manifest(source_dir)
+  let name = manifest["name"]
+  if name == "unknown" {
+    ret Err("no plugin.toml or plugin.json found in " + source_dir)
+  }
+
+  let dest = _plugins_dir() + "/" + name
+  if fs.exists(dest) {
+    exec("rm -rf " + dest)
+  }
+  exec("cp -r " + source_dir + " " + dest)
+
+  let mut reg = _load_registry()
+  let mut plugins = reg["plugins"]
+  plugins = map.set(plugins, name, #{
+    "name": name,
+    "version": manifest["version"],
+    "dir": dest,
+    "entry": _entry_point(manifest, dest),
+    "capabilities": _plugin_caps(manifest),
+    "installed_at": time.now()
+  })
+  reg = map.set(reg, "plugins", plugins)
+  _save_registry(reg)
+
+  ret Ok(#{ "name": name, "version": manifest["version"], "dir": dest })
+}
+
+fn install_git(repo) {
+  _ensure_plugins_dir()
+  let tmp = "/tmp/a_plugin_" + to_str(time.now())
+  let url = "https://github.com/" + repo + ".git"
+  let result = exec("git clone --depth 1 " + url + " " + tmp + " 2>&1")
+  if result["code"] != 0 {
+    ret Err("git clone failed: " + result["stderr"])
+  }
+  let r = install(tmp)
+  exec("rm -rf " + tmp)
+  ret r
+}
+
+fn _entry_point(manifest, dir) -> str {
+  if map.has(manifest, "entry") {
+    ret dir + "/" + manifest["entry"]
+  }
+  if fs.exists(dir + "/main.a") { ret dir + "/main.a" }
+  if fs.exists(dir + "/init.a") { ret dir + "/init.a" }
+  ret ""
+}
+
+fn _plugin_caps(manifest) -> map {
+  if map.has(manifest, "capabilities") {
+    let caps_str = manifest["capabilities"]
+    let parts = str.split(caps_str, ",")
+    let mut result = #{}
+    let mut i = 0
+    while i < len(parts) {
+      let cap = str.trim(parts[i])
+      if len(cap) > 0 {
+        result = map.set(result, cap, true)
+      }
+      i = i + 1
+    }
+    ret result
+  }
+  ret #{}
+}
+
+fn remove(name) {
+  let reg = _load_registry()
+  let plugins = reg["plugins"]
+  if !map.has(plugins, name) {
+    ret Err("not installed: " + name)
+  }
+  let info = plugins[name]
+  let pdir = info["dir"]
+  if fs.exists(pdir) {
+    exec("rm -rf " + pdir)
+  }
+  let new_plugins = map.delete(plugins, name)
+  _save_registry(map.set(reg, "plugins", new_plugins))
+  ret Ok(name)
+}
+
+fn list() -> [map] {
+  let reg = _load_registry()
+  let plugins = reg["plugins"]
+  let kk = map.keys(plugins)
+  let mut result = []
+  let mut i = 0
+  while i < len(kk) {
+    result = push(result, plugins[kk[i]])
+    i = i + 1
+  }
+  ret result
+}
+
+fn get(name) {
+  let reg = _load_registry()
+  if map.has(reg["plugins"], name) {
+    ret Ok(reg["plugins"][name])
+  }
+  ret Err("not installed: " + name)
+}
+
+fn is_installed(name) -> bool {
+  let reg = _load_registry()
+  ret map.has(reg["plugins"], name)
+}
+
+fn load(name) {
+  let info_result = get(name)
+  if is_err(info_result) { ret info_result }
+  let info = unwrap(info_result)
+  let ep = info["entry"]
+  if len(ep) == 0 || !fs.exists(ep) {
+    ret Err("no entry point for " + name)
+  }
+  let source = io.read_file(ep)
+  ret Ok(#{ "name": name, "source": source, "info": info })
+}
+
+fn run(name) {
+  let loaded = load(name)
+  if is_err(loaded) { ret loaded }
+  let pl = unwrap(loaded)
+  let cli = _find_cli()
+  let r = exec(cli + " run " + pl["info"]["entry"])
+  ret Ok(#{ "stdout": r["stdout"], "stderr": r["stderr"], "code": r["code"] })
+}
+
+fn _find_cli() -> str {
+  if fs.exists("./a") { ret "./a" }
+  let which = exec("which a")
+  if which["code"] == 0 { ret str.trim(which["stdout"]) }
+  ret "a"
+}
+
+fn create_manifest(name, version, desc, ep) -> str {
+  let q = from_code(34)
+  let mut out = []
+  out = push(out, "name = " + q + name + q)
+  out = push(out, "version = " + q + version + q)
+  out = push(out, "description = " + q + desc + q)
+  out = push(out, "entry = " + q + ep + q)
+  ret str.join(out, "\n") + "\n"
+}
+
+fn init(dir, name) {
+  if !fs.exists(dir) {
+    fs.mkdir(dir)
+  }
+  let manifest = create_manifest(name, "0.1.0", "An a-lang module", "main.a")
+  io.write_file(dir + "/plugin.toml", manifest)
+  let q = from_code(34)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let main_src = "fn main() " + lb + "\n  println(" + q + "hello from " + name + q + ")\n" + rb + "\n"
+  io.write_file(dir + "/main.a", main_src)
+  ret Ok(dir)
+}

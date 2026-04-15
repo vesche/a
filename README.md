@@ -10,6 +10,9 @@ Every design choice -- grammar, keywords, type system, builtins -- optimizes for
 ./build.sh                  # bootstrap the native CLI + language server
 ./a run program.a           # compile and run in one step
 ./a build program.a -o out  # compile to native binary
+./a build program.a --target wasm32-wasi -o out.wasm  # cross-compile to WASM (WASI)
+./a wat program.a           # emit WebAssembly Text Format (WAT) to stdout
+./a targets                 # list cross-compile targets and detected toolchains
 ./a test tests/native/      # run test suite
 ./a cc program.a            # emit C to stdout
 ./a-lsp                     # language server (JSON-RPC over stdio)
@@ -33,6 +36,9 @@ The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: 
 ./a run program.a           # compile and run (cached -- instant on repeat)
 ./a build program.a         # compile to native binary
 ./a build program.a -o out  # compile to native binary with custom name
+./a build program.a --target wasm32-wasi -o app.wasm  # cross-compile (WASM / Linux / Windows / macOS targets)
+./a wat program.a           # print WAT; `./a wat program.a -o out.wat` to write a file
+./a targets                 # show `--target` values and which compilers are installed
 ./a eval "2 + 3"            # evaluate an expression
 ./a repl                    # interactive read-eval-print loop
 ./a cc program.a            # emit C to stdout
@@ -43,6 +49,10 @@ The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: 
 ./a test tests/native/      # find test_*.a files, compile, run, report
 ./a watch program.a         # recompile and re-run on file change
 ./a lsp                     # build the language server binary (./a-lsp)
+./a spawn agent.a --name w1 # build and launch named agent process
+./a plugin install ./my_ext # install a plugin from directory
+./a plugin list             # list installed plugins
+./a plugin run my_ext       # execute an installed plugin
 ./a cache clean             # clear the compilation cache
 ./a pkg init                # create pkg.toml manifest
 ./a pkg add name source     # add a dependency
@@ -96,10 +106,11 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**150+ builtins** covering everything an agent needs (plus native compilation to C):
+**178+ builtins** covering everything an agent needs (plus native compilation to C and optional WASM WAT output):
 
 | Domain | Operations |
 |--------|-----------|
+| **WebAssembly** | `a wat`, `a build --target wasm32-wasi` -- WAT codegen from the AST (`std.compiler.wasmgen`), WASI-style imports from `env`; use `a targets` to see installed cross toolchains |
 | **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `fs.stat`, `fs.watch`, `io.read_file`, `io.write_file` |
 | **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) -- in-process via POSIX sockets + platform TLS (macOS SecureTransport, Linux OpenSSL) |
 | **HTTP streaming** | `http.stream(url, body, headers)`, `http.stream_read(h)`, `http.stream_close(h)` -- incremental line-by-line response reading for SSE/streaming APIs |
@@ -112,12 +123,15 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **JSON** | `json.parse`, `json.stringify`, `json.pretty` |
 | **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
 | **LLM client** | `llm.chat(provider, model, messages, options)` -- unified API for OpenAI, Anthropic, Google AI with retry, tool use, normalized responses; `llm.stream(provider, model, messages, on_chunk, options)` for token-by-token streaming (via stdlib) |
+| **Local LLM** | `std.local_llm` -- GGUF model load/inference in-process (CPU-only): Q4_0, Q8_0, F16, F32; `local_llm.load`, `generate`, `chat`, `embed`, `tokenize`/`detokenize`; eight `a_llm_*` runtime builtins (stubs on WASM) |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
 | **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`, `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`, `len` |
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
 | **Error handling** | `try { }`, `?` operator, `Ok`/`Err` constructors, `unwrap`, `unwrap_or`, `is_ok`, `is_err`, `expect`, pattern matching on Results |
 | **Concurrency** | `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout` |
 | **Async I/O** | `async.http_get`, `async.http_post`, `async.http_put`, `async.http_patch`, `async.http_delete`, `async.await`, `async.gather` -- non-blocking HTTP via `poll()` event loop, up to 256 concurrent requests |
+| **Channels** | `channel.create`, `channel.send`, `channel.recv`, `channel.try_recv`, `channel.peek`, `channel.drain`, `channel.count` -- SQLite-backed inter-process message queues with independent cursors |
+| **RPC** | `rpc.serve`, `rpc.call`, `rpc.call_addr`, `rpc.notify`, `rpc.discover`, `rpc.list_agents` -- JSON-RPC 2.0 over HTTP with file-based service discovery |
 | **Process** | `args()`, `exit(code)`, `eprintln()` |
 | **Stdin** | `io.read_stdin()`, `io.read_line()`, `io.read_bytes(n)`, `io.flush()` |
 | **Environment** | `env.get`, `env.set`, `env.all` |
@@ -125,9 +139,25 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **UUID** | `uuid.v4()` -- cryptographic random UUID v4 generation via `/dev/urandom` |
 | **Signals** | `signal.on(name, handler)` -- register handlers for SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2 (native CLI only) |
 | **Image** | `image.load(path)`, `image.decode(bytes)`, `image.encode(image, fmt)`, `image.save(image, path)`, `image.width`, `image.height`, `image.resize(image, w, h)`, `image.pixels(image)` -- PNG/JPEG/BMP/GIF decode, PNG/BMP/JPEG encode, bilinear resize (native CLI only, via bundled stb_image) |
+| **Reflection** | `reflect.memory_usage`, `reflect.uptime_ms`, `reflect.pid` -- runtime self-inspection (RSS via mach/procfs, process uptime, PID) |
+| **Sandboxing** | `sandbox.run(source, caps)`, `sandbox.validate(source)`, `sandbox.deny_all()`, `sandbox.allow_all()` -- capability-based code execution with fs/net/exec/db/env restrictions |
+| **Plugins** | `plugin.install(dir)`, `plugin.install_git(repo)`, `plugin.list()`, `plugin.run(name)`, `plugin.remove(name)` -- runtime extensibility with `~/.a/plugins/` registry |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 35 modules:
+**Local LLM (GGUF)** -- load a quantized model and generate text without a network round-trip (native builds only; WASM gets stubs):
+
+```
+use std.local_llm
+
+fn main() -> void effects [io] {
+  let model = local_llm.load("model.gguf")
+  let reply = local_llm.generate(model, "Summarize the project in one sentence.", #{})
+  println(reply)
+  local_llm.unload(model)
+}
+```
+
+**Standard library** with 44 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -146,6 +176,7 @@ use std.toml                  # parse, stringify -- TOML (tables, arrays of tabl
 use std.html                  # parse, select, text -- HTML DOM tree with CSS selector queries
 use std.url                   # parse, encode, decode, build -- full URL structure parsing
 use std.llm                   # chat(provider, model, msgs, opts) -- unified LLM client (OpenAI, Anthropic, Google)
+use std.local_llm             # load, generate, chat, embed -- GGUF inference (CPU, Q4_0/Q8_0/F16/F32)
 use std.mcp                   # MCP server + client -- JSON-RPC 2.0 over stdio, tool/resource registration
 use std.agent                 # retry, batch, pipeline, timeout, rate_limit -- operational primitives
 use std.log                   # info, warn, error, debug, set_level -- structured JSON logging to stderr
@@ -163,6 +194,7 @@ use std.compiler.parser       # parse token arrays into tagged-map ASTs
 use std.compiler.ast          # AST node constructors and accessors
 use std.compiler.compiler     # compile ASTs to bytecode
 use std.compiler.cgen          # compile ASTs to C source code (native compilation)
+use std.compiler.wasmgen       # compile ASTs to WebAssembly Text Format (WAT)
 use std.compiler.emitter      # pretty-print ASTs back to "a" source
 use std.compiler.checker      # static analysis: undefined vars, arity, unused, unreachable
 use std.compiler.serialize    # serialize/deserialize compiled programs
@@ -173,6 +205,13 @@ use std.kv                    # open, get, set, delete, list, keys, count -- per
 use std.vector                # open, add, search, get, remove -- vector store with cosine similarity
 use std.cache                 # open/create, get, set, get_or_set, evict -- cache with TTL and LRU
 use std.pool                  # create, acquire, release, drain, stats -- generic resource pool
+use std.channel               # create, send, recv, try_recv, peek, drain -- SQLite-backed message channels
+use std.rpc                   # serve, call, discover, list_agents -- JSON-RPC 2.0 over HTTP, service discovery
+use std.plan                  # create, add_step, execute, status -- DAG-based task decomposition
+use std.trace                 # begin, end, event, export_json, export_chrome -- execution tracing
+use std.reflect               # memory_usage, uptime_ms, pid, profiler, hot_paths -- runtime self-inspection
+use std.sandbox               # run, validate, deny_all, allow_all, capabilities -- sandboxed code execution
+use std.plugin                # install, remove, list, load, run, init -- plugin management
 use std.lexer                 # legacy tokenizer
 ```
 
@@ -187,7 +226,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~12,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 170+ native builtins. All 35 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~13,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 178+ native builtins. All 44 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -197,7 +236,7 @@ The entire language bootstraps from a single C compiler. `build.sh` compiles the
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~4,250 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, fork-based concurrency (spawn/await/parallel_map/timeout), async event loop (poll()-based non-blocking HTTP with state machine), JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~4,950 lines in `runtime.c`, ~700 lines in `gguf.c` for GGUF parse + local transformer inference, plus headers and bundled libs) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, fork-based concurrency (spawn/await/parallel_map/timeout), async event loop (poll()-based non-blocking HTTP with state machine), JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), local LLM inference (GGUF, Q4_0/Q8_0/F16/F32), POSIX time, environment management, arena allocator, and mark-and-sweep GC, with Windows (`_WIN32`) and WASM (`WASM_BUILD`) portability shims where APIs differ.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -269,18 +308,19 @@ fn main() -> void {
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
 | `examples/self_extend.a` | ~130 | **self-improvement loop** -- analyze, compile-check, sandbox, test, refactor, LLM generate |
-| `src/cli.a` | ~500 | **native CLI driver** -- `run`, `build`, `cc`, `fmt`, `ast`, `check`, `repl`, `test`, `lsp`, `pkg` subcommands; self-hosting (compiles itself) |
+| `src/cli.a` | ~1,135 | **native CLI driver** -- `run`, `build`, `cc`, `fmt`, `ast`, `check`, `repl`, `test`, `lsp`, `pkg`, `spawn`, `plugin`, `wat`, `targets` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~1,100 | **language server** -- LSP over stdio with diagnostics, completion, hover, go-to-definition, semantic tokens, rename, code actions, workspace symbols |
-| `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
+| `std/compiler/cgen.a` | ~1,920 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
+| `std/compiler/wasmgen.a` | ~640 | **WAT code generator** -- emits WebAssembly Text from AST for `a wat` / `a build --target wasm32-wasi` |
 
 ## Stats
 
 | | |
 |---|---|
-| **C runtime** | ~4,100 lines (runtime.h + runtime.c) + bundled SQLite3, miniz, stb_image |
-| **"a" source** | ~21,000 lines across 110+ files |
-| **Standard library** | 37 modules, 550+ functions, ~11,100 lines |
-| **Test suites** | 38 suites + cgen test script, 770+ native tests, ~7,000 lines |
+| **C runtime** | ~5,350 lines (runtime.h + runtime.c) + ~700 lines (`gguf.c`) + bundled SQLite3, miniz, stb_image |
+| **"a" source** | ~42,400 lines across 200+ `.a` files |
+| **Standard library** | 44 modules, 650+ functions, ~13,100 lines |
+| **Test suites** | 49 suites + cgen test script, 875+ native tests, ~8,500 lines |
 | **Examples & tools** | 39 programs, ~6,600 lines |
 
 ## Editor support

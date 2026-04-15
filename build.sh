@@ -27,7 +27,7 @@ OUTPUT="./a"
 echo "=== Building the 'a' language (gcc only, no Rust) ==="
 echo ""
 
-for f in bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c"; do
+for f in bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/gguf.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c"; do
     if [ ! -f "$f" ]; then
         echo "error: missing $f"
         echo "run this script from the project root."
@@ -36,7 +36,7 @@ for f in bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUN
 done
 
 echo "Step 1: Bootstrap from pre-generated C..."
-gcc bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c" \
+gcc bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/gguf.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c" \
     -o "$OUTPUT" -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS $TLS_FLAGS $SQLITE_FLAGS
 echo "  built bootstrap ./a ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
 

@@ -1,0 +1,230 @@
+; std/plan.a -- Structured task decomposition for deliberative agents
+; Plans are data: serializable, inspectable, resumable.
+; A failed step marks itself failed and lets the agent decide.
+;
+; Usage:
+;   let p = plan.create("deploy app")
+;   let p = plan.add_step(p, "build", "compile source", [])
+;   let p = plan.add_step(p, "test", "run tests", ["build"])
+;   let p = plan.add_step(p, "deploy", "push to prod", ["test"])
+;   let p = plan.execute(p, fn(step) { ... return Ok(result) or Err(reason) })
+;   println(plan.summary(p))
+
+fn create(goal) -> map {
+  ret #{
+    "goal": goal,
+    "steps": [],
+    "results": #{},
+    "created_at": time.now(),
+    "updated_at": time.now()
+  }
+}
+
+fn add_step(p, id, description, deps) -> map {
+  let step = #{
+    "id": id,
+    "description": description,
+    "deps": deps,
+    "status": "pending"
+  }
+  let steps = push(p["steps"], step)
+  ret map.set(map.set(p, "steps", steps), "updated_at", time.now())
+}
+
+fn _find_step_idx(steps, id) -> int {
+  let mut i = 0
+  while i < len(steps) {
+    if steps[i]["id"] == id { ret i }
+    i = i + 1
+  }
+  ret -1
+}
+
+fn _set_step_status(steps, id, status) {
+  let idx = _find_step_idx(steps, id)
+  if idx < 0 { ret steps }
+  let step = map.set(steps[idx], "status", status)
+  let mut new_steps = []
+  let mut i = 0
+  while i < len(steps) {
+    if i == idx {
+      new_steps = push(new_steps, step)
+    } else {
+      new_steps = push(new_steps, steps[i])
+    }
+    i = i + 1
+  }
+  ret new_steps
+}
+
+fn _deps_met(steps, dep_ids) -> bool {
+  let mut i = 0
+  while i < len(dep_ids) {
+    let idx = _find_step_idx(steps, dep_ids[i])
+    if idx < 0 { ret false }
+    if steps[idx]["status"] != "done" { ret false }
+    i = i + 1
+  }
+  ret true
+}
+
+fn _any_dep_failed(steps, dep_ids) -> bool {
+  let mut i = 0
+  while i < len(dep_ids) {
+    let idx = _find_step_idx(steps, dep_ids[i])
+    if idx >= 0 {
+      let st = steps[idx]["status"]
+      if st == "failed" || st == "skipped" { ret true }
+    }
+    i = i + 1
+  }
+  ret false
+}
+
+fn execute(p, step_fn) -> map {
+  let mut steps = p["steps"]
+  let mut results = p["results"]
+  let mut progress = true
+
+  while progress {
+    progress = false
+    let mut i = 0
+    while i < len(steps) {
+      let step = steps[i]
+      if step["status"] == "pending" {
+        if _any_dep_failed(steps, step["deps"]) {
+          steps = _set_step_status(steps, step["id"], "skipped")
+          results = map.set(results, step["id"], #{ "status": "skipped", "reason": "dependency failed" })
+          progress = true
+        } else if _deps_met(steps, step["deps"]) {
+          steps = _set_step_status(steps, step["id"], "running")
+          let result = step_fn(step)
+          if is_ok(result) {
+            steps = _set_step_status(steps, step["id"], "done")
+            results = map.set(results, step["id"], #{ "status": "done", "value": unwrap(result) })
+          } else {
+            steps = _set_step_status(steps, step["id"], "failed")
+            results = map.set(results, step["id"], #{ "status": "failed", "error": unwrap_or(result, "unknown") })
+          }
+          progress = true
+        }
+      }
+      i = i + 1
+    }
+  }
+
+  let mut out = map.set(p, "steps", steps)
+  out = map.set(out, "results", results)
+  ret map.set(out, "updated_at", time.now())
+}
+
+fn get_step(p, id) {
+  let idx = _find_step_idx(p["steps"], id)
+  if idx < 0 { ret Err("step not found: " + id) }
+  ret Ok(p["steps"][idx])
+}
+
+fn get_result(p, id) {
+  if map.has(p["results"], id) {
+    ret Ok(p["results"][id])
+  }
+  ret Err("no result for: " + id)
+}
+
+fn mark_done(p, id, value) -> map {
+  let steps = _set_step_status(p["steps"], id, "done")
+  let results = map.set(p["results"], id, #{ "status": "done", "value": value })
+  ret map.set(map.set(map.set(p, "steps", steps), "results", results), "updated_at", time.now())
+}
+
+fn mark_failed(p, id, reason) -> map {
+  let steps = _set_step_status(p["steps"], id, "failed")
+  let results = map.set(p["results"], id, #{ "status": "failed", "error": reason })
+  ret map.set(map.set(map.set(p, "steps", steps), "results", results), "updated_at", time.now())
+}
+
+fn reset_step(p, id) -> map {
+  let steps = _set_step_status(p["steps"], id, "pending")
+  let mut results = p["results"]
+  if map.has(results, id) {
+    results = map.delete(results, id)
+  }
+  ret map.set(map.set(map.set(p, "steps", steps), "results", results), "updated_at", time.now())
+}
+
+fn status(p) -> map {
+  let steps = p["steps"]
+  let mut done = 0
+  let mut failed = 0
+  let mut skipped = 0
+  let mut pending = 0
+  let mut running = 0
+  let mut i = 0
+  while i < len(steps) {
+    let st = steps[i]["status"]
+    if st == "done" { done = done + 1 }
+    else if st == "failed" { failed = failed + 1 }
+    else if st == "skipped" { skipped = skipped + 1 }
+    else if st == "running" { running = running + 1 }
+    else { pending = pending + 1 }
+    i = i + 1
+  }
+  ret #{
+    "total": len(steps),
+    "done": done,
+    "failed": failed,
+    "skipped": skipped,
+    "pending": pending,
+    "running": running,
+    "complete": done + failed + skipped == len(steps)
+  }
+}
+
+fn summary(p) -> str {
+  let s = status(p)
+  let mut parts = [p["goal"] + ": "]
+  parts = push(parts, to_str(s["done"]) + " done")
+  if s["failed"] > 0 { parts = push(parts, to_str(s["failed"]) + " failed") }
+  if s["skipped"] > 0 { parts = push(parts, to_str(s["skipped"]) + " skipped") }
+  if s["pending"] > 0 { parts = push(parts, to_str(s["pending"]) + " pending") }
+  ret str.join(parts, ", ")
+}
+
+fn serialize(p) -> str {
+  ret json.stringify(p)
+}
+
+fn deserialize(json_str) -> map {
+  ret json.parse(json_str)
+}
+
+fn steps(p) {
+  ret p["steps"]
+}
+
+fn step_ids(p) -> [str] {
+  let mut ids = []
+  let mut i = 0
+  while i < len(p["steps"]) {
+    ids = push(ids, p["steps"][i]["id"])
+    i = i + 1
+  }
+  ret ids
+}
+
+fn is_complete(p) -> bool {
+  let s = status(p)
+  ret s["complete"]
+}
+
+fn failed_steps(p) -> [map] {
+  let mut out = []
+  let mut i = 0
+  while i < len(p["steps"]) {
+    if p["steps"][i]["status"] == "failed" {
+      out = push(out, p["steps"][i])
+    }
+    i = i + 1
+  }
+  ret out
+}

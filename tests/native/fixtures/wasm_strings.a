@@ -1,0 +1,6 @@
+fn main() {
+  let greeting = str.concat("hello", " world")
+  println(greeting)
+  let nums = push(push([], 1), 2)
+  println(len(nums))
+}

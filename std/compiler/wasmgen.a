@@ -1,0 +1,641 @@
+; std/compiler/wasmgen.a -- WebAssembly Text Format (WAT) code generator
+; Generates WAT from the "a" AST, targeting WASI for I/O.
+;
+; Values are i64-tagged (same layout as AValue).
+; Runtime builtins are imported from "env" module.
+; Control flow uses WASM structured blocks/loops.
+
+use std.compiler.parser
+use std.compiler.ast
+
+fn _indent(n) -> str {
+  let mut s = ""
+  let mut i = 0
+  while i < n {
+    s = s + "  "
+    i = i + 1
+  }
+  ret s
+}
+
+fn _mangle(nm) -> str {
+  ret str.replace(str.replace(nm, ".", "_"), "-", "_")
+}
+
+fn _prefixed(nm, pfx) -> str {
+  if len(pfx) > 0 {
+    ret pfx + "_" + nm
+  }
+  ret nm
+}
+
+fn _wat_type(count) -> str {
+  if count == 0 {
+    ret ""
+  }
+  let mut ps = []
+  let mut i = 0
+  while i < count {
+    ps = push(ps, "(param $p" + to_str(i) + " i64)")
+    i = i + 1
+  }
+  ret str.join(ps, " ")
+}
+
+fn _collect_fns(items) -> [str] {
+  let mut names = []
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      names = push(names, item["name"])
+    }
+  }
+  ret names
+}
+
+fn _collect_locals(stmts) -> [str] {
+  let mut locals = []
+  for s in stmts {
+    let stag = s["tag"]
+    if stag == "Let" {
+      let vn = s["name"]
+      if !contains(locals, vn) {
+        locals = push(locals, vn)
+      }
+    }
+    if stag == "If" {
+      if map.has(s, "then") {
+        let then_s = _unwrap_body(s["then"])
+        let sub = _collect_locals(then_s)
+        for v in sub {
+          if !contains(locals, v) {
+            locals = push(locals, v)
+          }
+        }
+      }
+      if map.has(s, "else") {
+        let else_n = s["else"]
+        if type_of(else_n) == "map" && map.has(else_n, "stmts") {
+          let sub2 = _collect_locals(else_n["stmts"])
+          for v2 in sub2 {
+            if !contains(locals, v2) {
+              locals = push(locals, v2)
+            }
+          }
+        }
+      }
+    }
+    if stag == "While" && map.has(s, "body") {
+      let w_stmts = _unwrap_body(s["body"])
+      let sub3 = _collect_locals(w_stmts)
+      for v3 in sub3 {
+        if !contains(locals, v3) {
+          locals = push(locals, v3)
+        }
+      }
+    }
+    if stag == "For" && map.has(s, "body") {
+      let iter_var = s["var"]
+      if !contains(locals, iter_var) {
+        locals = push(locals, iter_var)
+      }
+      let f_stmts = _unwrap_body(s["body"])
+      let sub4 = _collect_locals(f_stmts)
+      for v4 in sub4 {
+        if !contains(locals, v4) {
+          locals = push(locals, v4)
+        }
+      }
+    }
+  }
+  ret locals
+}
+
+fn _builtin_map() -> map {
+  let m1 = #{
+    "println": "$rt_println",
+    "print": "$rt_print",
+    "to_str": "$rt_to_str",
+    "len": "$rt_len",
+    "int": "$rt_to_int",
+    "float": "$rt_to_float",
+    "type_of": "$rt_type_of",
+    "push": "$rt_push",
+    "concat_arr": "$rt_concat",
+    "Ok": "$rt_ok",
+    "Err": "$rt_err",
+    "unwrap": "$rt_unwrap",
+    "unwrap_or": "$rt_unwrap_or",
+    "is_ok": "$rt_is_ok",
+    "is_err": "$rt_is_err",
+    "fail": "$rt_fail",
+    "exit": "$rt_exit",
+    "exec": "$rt_exec",
+    "from_code": "$rt_from_code",
+    "char_code": "$rt_char_code",
+    "contains": "$rt_contains"
+  }
+  let m2 = #{
+    "str.concat": "$rt_str_concat",
+    "str.len": "$rt_str_len",
+    "str.slice": "$rt_str_slice",
+    "str.find": "$rt_str_find",
+    "str.contains": "$rt_str_contains",
+    "str.replace": "$rt_str_replace",
+    "str.split": "$rt_str_split",
+    "str.trim": "$rt_str_trim",
+    "str.starts_with": "$rt_str_starts_with",
+    "str.ends_with": "$rt_str_ends_with",
+    "str.join": "$rt_str_join",
+    "str.lines": "$rt_str_lines",
+    "str.upper": "$rt_str_upper",
+    "str.lower": "$rt_str_lower"
+  }
+  let m3 = #{
+    "map.get": "$rt_map_get",
+    "map.set": "$rt_map_set",
+    "map.has": "$rt_map_has",
+    "map.delete": "$rt_map_delete",
+    "map.keys": "$rt_map_keys",
+    "map.values": "$rt_map_values",
+    "map.merge": "$rt_map_merge",
+    "json.parse": "$rt_json_parse",
+    "json.stringify": "$rt_json_stringify",
+    "json.pretty": "$rt_json_pretty"
+  }
+  let m4 = #{
+    "io.read_file": "$rt_read_file",
+    "io.write_file": "$rt_write_file",
+    "fs.exists": "$rt_fs_exists",
+    "fs.mkdir": "$rt_fs_mkdir",
+    "fs.rm": "$rt_fs_rm",
+    "fs.ls": "$rt_fs_ls",
+    "time.now": "$rt_time_now",
+    "hash.sha256": "$rt_sha256",
+    "hash.md5": "$rt_md5",
+    "env.get": "$rt_env_get",
+    "env.set": "$rt_env_set"
+  }
+  ret map.merge(map.merge(map.merge(m1, m2), m3), m4)
+}
+
+fn _intern_string(ctx, s) -> int {
+  let strs = ctx["strings"]
+  let mut i = 0
+  while i < len(strs) {
+    if strs[i] == s {
+      ret i
+    }
+    i = i + 1
+  }
+  ctx["strings"] = push(strs, s)
+  ret len(strs)
+}
+
+fn emit_expr(node, dep, ctx) -> str {
+  let etag = node["tag"]
+
+  if etag == "Int" {
+    let raw = node["value"]
+    ret "(call $rt_int (i64.const " + to_str(raw) + "))"
+  }
+  if etag == "Float" {
+    ret "(call $rt_float (f64.const " + to_str(node["value"]) + "))"
+  }
+  if etag == "Bool" {
+    if node["value"] {
+      ret "(call $rt_bool (i32.const 1))"
+    }
+    ret "(call $rt_bool (i32.const 0))"
+  }
+  if etag == "String" {
+    let sv = node["value"]
+    let idx = _intern_string(ctx, sv)
+    ret "(call $rt_string (i32.const " + to_str(idx) + "))"
+  }
+  if etag == "Void" {
+    ret "(call $rt_void)"
+  }
+  if etag == "Ident" {
+    let iname = node["name"]
+    ret "(local.get $" + _mangle(iname) + ")"
+  }
+  if etag == "BinOp" {
+    let op = node["op"]
+    let lft = emit_expr(node["left"], dep, ctx)
+    let rgt = emit_expr(node["right"], dep, ctx)
+    if op == "+" {
+      ret "(call $rt_add " + lft + " " + rgt + ")"
+    }
+    if op == "-" {
+      ret "(call $rt_sub " + lft + " " + rgt + ")"
+    }
+    if op == "*" {
+      ret "(call $rt_mul " + lft + " " + rgt + ")"
+    }
+    if op == "/" {
+      ret "(call $rt_div " + lft + " " + rgt + ")"
+    }
+    if op == "%" {
+      ret "(call $rt_mod " + lft + " " + rgt + ")"
+    }
+    if op == "==" {
+      ret "(call $rt_eq " + lft + " " + rgt + ")"
+    }
+    if op == "!=" {
+      ret "(call $rt_neq " + lft + " " + rgt + ")"
+    }
+    if op == "<" {
+      ret "(call $rt_lt " + lft + " " + rgt + ")"
+    }
+    if op == ">" {
+      ret "(call $rt_gt " + lft + " " + rgt + ")"
+    }
+    if op == "<=" {
+      ret "(call $rt_lte " + lft + " " + rgt + ")"
+    }
+    if op == ">=" {
+      ret "(call $rt_gte " + lft + " " + rgt + ")"
+    }
+    if op == "&&" {
+      ret "(call $rt_and " + lft + " " + rgt + ")"
+    }
+    if op == "||" {
+      ret "(call $rt_or " + lft + " " + rgt + ")"
+    }
+    ret "(call $rt_add " + lft + " " + rgt + ")"
+  }
+  if etag == "UnaryOp" {
+    let uop = node["op"]
+    let operand = emit_expr(node["expr"], dep, ctx)
+    if uop == "-" {
+      ret "(call $rt_neg " + operand + ")"
+    }
+    if uop == "!" {
+      ret "(call $rt_not " + operand + ")"
+    }
+    ret operand
+  }
+  if etag == "Call" {
+    let func_node = node["func"]
+    let mut fname = ""
+    if type_of(func_node) == "map" {
+      let ftag = func_node["tag"]
+      if ftag == "Ident" {
+        fname = func_node["name"]
+      }
+      if ftag == "FieldAccess" {
+        let fa_expr = func_node["expr"]
+        if type_of(fa_expr) == "map" && fa_expr["tag"] == "Ident" {
+          fname = fa_expr["name"] + "." + func_node["field"]
+        }
+      }
+    }
+    let cargs = node["args"]
+    let bm = ctx["builtins"]
+    let mut arg_strs = []
+    for ca in cargs {
+      arg_strs = push(arg_strs, emit_expr(ca, dep, ctx))
+    }
+    let arg_wat = str.join(arg_strs, " ")
+
+    if map.has(bm, fname) {
+      let rt_name = bm[fname]
+      if len(arg_strs) == 0 {
+        ret "(call " + rt_name + ")"
+      }
+      ret "(call " + rt_name + " " + arg_wat + ")"
+    }
+
+    let dotpos = str.find(fname, ".")
+    if dotpos > 0 {
+      let qual = str.replace(fname, ".", "_")
+      if map.has(bm, fname) {
+        ret "(call " + bm[fname] + " " + arg_wat + ")"
+      }
+      if len(arg_strs) == 0 {
+        ret "(call $fn_" + _mangle(qual) + ")"
+      }
+      ret "(call $fn_" + _mangle(qual) + " " + arg_wat + ")"
+    }
+
+    if len(arg_strs) == 0 {
+      ret "(call $fn_" + _mangle(fname) + ")"
+    }
+    ret "(call $fn_" + _mangle(fname) + " " + arg_wat + ")"
+  }
+  if etag == "Index" {
+    let obj = emit_expr(node["expr"], dep, ctx)
+    let idx = emit_expr(node["index"], dep, ctx)
+    ret "(call $rt_index " + obj + " " + idx + ")"
+  }
+  if etag == "FieldAccess" {
+    let obj2 = emit_expr(node["expr"], dep, ctx)
+    let fld = node["field"]
+    let fi = _intern_string(ctx, fld)
+    ret "(call $rt_field " + obj2 + " (i32.const " + to_str(fi) + "))"
+  }
+  if etag == "Array" {
+    let elems = node["elements"]
+    if len(elems) == 0 {
+      ret "(call $rt_array_new)"
+    }
+    let mut arr_s = "(call $rt_array_new)"
+    for ae in elems {
+      arr_s = "(call $rt_push " + arr_s + " " + emit_expr(ae, dep, ctx) + ")"
+    }
+    ret arr_s
+  }
+  if etag == "MapLiteral" {
+    let pairs = node["pairs"]
+    let mut ms = "(call $rt_map_new)"
+    for mp in pairs {
+      let k_e = emit_expr(mp["key"], dep, ctx)
+      let v_e = emit_expr(mp["value"], dep, ctx)
+      ms = "(call $rt_map_set " + ms + " " + k_e + " " + v_e + ")"
+    }
+    ret ms
+  }
+  if etag == "Interpolation" {
+    let iparts = node["parts"]
+    let mut is = "(call $rt_string (i32.const " + to_str(_intern_string(ctx, "")) + "))"
+    for ip in iparts {
+      let pe = emit_expr(ip, dep, ctx)
+      is = "(call $rt_str_concat " + is + " (call $rt_to_str " + pe + "))"
+    }
+    ret is
+  }
+  if etag == "IfExpr" {
+    let ic = emit_expr(node["cond"], dep, ctx)
+    let it = emit_expr(node["then"], dep, ctx)
+    let ie = emit_expr(node["else"], dep, ctx)
+    ret "(if (result i64) (call $rt_truthy " + ic + ") (then " + it + ") (else " + ie + "))"
+  }
+
+  ret "(call $rt_void) ;; unsupported: " + etag
+}
+
+fn emit_stmt(node, dep, ctx) -> str {
+  let stag = node["tag"]
+  let ind = _indent(dep)
+
+  if stag == "ExprStmt" {
+    let e = emit_expr(node["expr"], dep, ctx)
+    ret ind + "(drop " + e + ")\n"
+  }
+  if stag == "Let" {
+    let vn = _mangle(node["name"])
+    let val = emit_expr(node["value"], dep, ctx)
+    ret ind + "(local.set $" + vn + " " + val + ")\n"
+  }
+  if stag == "Assign" {
+    let tgt = node["target"]
+    let mut an = ""
+    if type_of(tgt) == "map" && tgt["tag"] == "Ident" {
+      an = _mangle(tgt["name"])
+    }
+    if type_of(tgt) == "str" {
+      an = _mangle(tgt)
+    }
+    let av = emit_expr(node["value"], dep, ctx)
+    ret ind + "(local.set $" + an + " " + av + ")\n"
+  }
+  if stag == "Return" {
+    if map.has(node, "expr") {
+      let rv = emit_expr(node["expr"], dep, ctx)
+      ret ind + "(return " + rv + ")\n"
+    }
+    ret ind + "(return (call $rt_void))\n"
+  }
+  if stag == "If" {
+    let cond_e = emit_expr(node["cond"], dep, ctx)
+    let mut si = ind + "(if (call $rt_truthy " + cond_e + ")\n"
+    si = si + ind + "  (then\n"
+    let then_stmts = _unwrap_body(node["then"])
+    for tb in then_stmts {
+      si = si + emit_stmt(tb, dep + 2, ctx)
+    }
+    si = si + ind + "  )\n"
+    if map.has(node, "else") {
+      let else_node = node["else"]
+      if type_of(else_node) == "map" && map.has(else_node, "stmts") {
+        si = si + ind + "  (else\n"
+        let else_stmts = else_node["stmts"]
+        for eb in else_stmts {
+          si = si + emit_stmt(eb, dep + 2, ctx)
+        }
+        si = si + ind + "  )\n"
+      }
+    }
+    si = si + ind + ")\n"
+    ret si
+  }
+  if stag == "While" {
+    let wc = emit_expr(node["cond"], dep, ctx)
+    let mut sw = ind + "(block $break\n"
+    sw = sw + ind + "  (loop $cont\n"
+    sw = sw + ind + "    (br_if $break (i32.eqz (call $rt_truthy " + wc + ")))\n"
+    let w_stmts = _unwrap_body(node["body"])
+    for wb in w_stmts {
+      sw = sw + emit_stmt(wb, dep + 2, ctx)
+    }
+    sw = sw + ind + "    (br $cont)\n"
+    sw = sw + ind + "  )\n"
+    sw = sw + ind + ")\n"
+    ret sw
+  }
+  if stag == "For" {
+    let fi_expr = emit_expr(node["iter"], dep, ctx)
+    let fvar = _mangle(node["var"])
+    let mut sf_for = ind + "(local.set $__iter " + fi_expr + ")\n"
+    sf_for = sf_for + ind + "(local.set $__fi (i32.const 0))\n"
+    sf_for = sf_for + ind + "(block $break\n"
+    sf_for = sf_for + ind + "  (loop $cont\n"
+    sf_for = sf_for + ind + "    (br_if $break (i32.ge_s (local.get $__fi) (i32.wrap_i64 (call $rt_len (local.get $__iter)))))\n"
+    sf_for = sf_for + ind + "    (local.set $" + fvar + " (call $rt_index (local.get $__iter) (call $rt_int (i64.extend_i32_s (local.get $__fi)))))\n"
+    let f_stmts = _unwrap_body(node["body"])
+    for fb in f_stmts {
+      sf_for = sf_for + emit_stmt(fb, dep + 2, ctx)
+    }
+    sf_for = sf_for + ind + "    (local.set $__fi (i32.add (local.get $__fi) (i32.const 1)))\n"
+    sf_for = sf_for + ind + "    (br $cont)\n"
+    sf_for = sf_for + ind + "  )\n"
+    sf_for = sf_for + ind + ")\n"
+    ret sf_for
+  }
+  if stag == "Break" {
+    ret ind + "(br $break)\n"
+  }
+  if stag == "Continue" {
+    ret ind + "(br $cont)\n"
+  }
+
+  if map.has(node, "expr") {
+    ret ind + "(drop " + emit_expr(node["expr"], dep, ctx) + ")\n"
+  }
+  ret ind + ";; unsupported stmt: " + stag + "\n"
+}
+
+fn _unwrap_body(body_node) -> [map] {
+  if type_of(body_node) == "array" {
+    ret body_node
+  }
+  if type_of(body_node) == "map" {
+    if map.has(body_node, "stmts") {
+      ret body_node["stmts"]
+    }
+    if map.has(body_node, "block") {
+      let blk = body_node["block"]
+      if map.has(blk, "stmts") {
+        ret blk["stmts"]
+      }
+    }
+  }
+  ret []
+}
+
+fn emit_fn(node, pfx, ctx) -> str {
+  let fname = node["name"]
+  let full = _prefixed(fname, pfx)
+  let fparams = node["params"]
+  let fbody = _unwrap_body(node["body"])
+
+  let mut sf = "  (func $fn_" + _mangle(full) + " "
+  let mut pnames = []
+  for fp in fparams {
+    let pn = fp["name"]
+    sf = sf + "(param $" + _mangle(pn) + " i64) "
+    pnames = push(pnames, pn)
+  }
+  sf = sf + "(result i64)\n"
+
+  let locs = _collect_locals(fbody)
+  for lv in locs {
+    if !contains(pnames, lv) {
+      sf = sf + "    (local $" + _mangle(lv) + " i64)\n"
+    }
+  }
+  sf = sf + "    (local $__iter i64)\n"
+  sf = sf + "    (local $__fi i32)\n"
+
+  for stmt in fbody {
+    sf = sf + emit_stmt(stmt, 2, ctx)
+  }
+
+  sf = sf + "    (call $rt_void)\n"
+  sf = sf + "  )\n"
+  ret sf
+}
+
+fn _emit_imports() -> str {
+  let mut si = ""
+  let q = from_code(34)
+  let imports = [
+    ["rt_println", 1], ["rt_print", 1], ["rt_to_str", 1], ["rt_len", 1],
+    ["rt_to_int", 1], ["rt_to_float", 1], ["rt_type_of", 1], ["rt_void", 0],
+    ["rt_int", -5], ["rt_bool", -1], ["rt_float", -2], ["rt_string", -1],
+    ["rt_add", 2], ["rt_sub", 2], ["rt_mul", 2], ["rt_div", 2], ["rt_mod", 2],
+    ["rt_eq", 2], ["rt_neq", 2], ["rt_lt", 2], ["rt_gt", 2],
+    ["rt_lte", 2], ["rt_gte", 2], ["rt_and", 2], ["rt_or", 2],
+    ["rt_neg", 1], ["rt_not", 1], ["rt_truthy", -3],
+    ["rt_push", 2], ["rt_concat", 2], ["rt_index", 2], ["rt_field", -4],
+    ["rt_array_new", 0], ["rt_map_new", 0], ["rt_map_set", 3], ["rt_map_get", 2],
+    ["rt_map_has", 2], ["rt_map_delete", 2], ["rt_map_keys", 1], ["rt_map_values", 1],
+    ["rt_map_merge", 2], ["rt_contains", 2],
+    ["rt_str_concat", 2], ["rt_str_len", 1], ["rt_str_slice", 3],
+    ["rt_str_find", 2], ["rt_str_contains", 2], ["rt_str_replace", 3],
+    ["rt_str_split", 2], ["rt_str_trim", 1],
+    ["rt_str_starts_with", 2], ["rt_str_ends_with", 2],
+    ["rt_str_join", 2], ["rt_str_lines", 1],
+    ["rt_str_upper", 1], ["rt_str_lower", 1],
+    ["rt_json_parse", 1], ["rt_json_stringify", 1], ["rt_json_pretty", 1],
+    ["rt_read_file", 1], ["rt_write_file", 2],
+    ["rt_fs_exists", 1], ["rt_fs_mkdir", 1], ["rt_fs_rm", 1], ["rt_fs_ls", 1],
+    ["rt_time_now", 0], ["rt_ok", 1], ["rt_err", 1],
+    ["rt_unwrap", 1], ["rt_unwrap_or", 2], ["rt_is_ok", 1], ["rt_is_err", 1],
+    ["rt_fail", 1], ["rt_exit", 1], ["rt_exec", 1],
+    ["rt_from_code", 1], ["rt_char_code", 1],
+    ["rt_sha256", 1], ["rt_md5", 1],
+    ["rt_env_get", 1], ["rt_env_set", 2]
+  ]
+
+  for imp in imports {
+    let iname = imp[0]
+    let arity = imp[1]
+    si = si + "  (import " + q + "env" + q + " " + q + iname + q + " (func $" + iname
+    if arity == -1 {
+      si = si + " (param i32) (result i64)"
+    }
+    if arity == -2 {
+      si = si + " (param f64) (result i64)"
+    }
+    if arity == -3 {
+      si = si + " (param i64) (result i32)"
+    }
+    if arity == -4 {
+      si = si + " (param i64 i32) (result i64)"
+    }
+    if arity == -5 {
+      si = si + " (param i64) (result i64)"
+    }
+    if arity >= 0 {
+      let mut pi = 0
+      while pi < arity {
+        si = si + " (param i64)"
+        pi = pi + 1
+      }
+      si = si + " (result i64)"
+    }
+    si = si + "))\n"
+  }
+  ret si
+}
+
+fn _emit_data(ctx) -> str {
+  let strs = ctx["strings"]
+  if len(strs) == 0 {
+    ret ""
+  }
+  let mut sd = "  ;; string table\n"
+  let mut offset = 1024
+  let mut i = 0
+  let bslash = from_code(92)
+  while i < len(strs) {
+    let sv = strs[i]
+    sd = sd + "  (data (i32.const " + to_str(offset) + ") " + from_code(34) + sv + bslash + "00" + from_code(34) + ")\n"
+    offset = offset + len(sv) + 1
+    i = i + 1
+  }
+  ret sd
+}
+
+fn emit_program(prog_ast) -> str {
+  let items = prog_ast["items"]
+  let mut ctx = #{ "builtins": _builtin_map(), "strings": [], "prefix": "" }
+
+  let mut fns_wat = ""
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      fns_wat = fns_wat + emit_fn(item, "", ctx) + "\n"
+    }
+  }
+
+  let q = from_code(34)
+  let mut wat = "(module\n"
+  wat = wat + "  ;; Memory: 1 page (64KB) minimum\n"
+  wat = wat + "  (memory (export " + q + "memory" + q + ") 1)\n\n"
+  wat = wat + "  ;; Runtime imports\n"
+  wat = wat + _emit_imports()
+  wat = wat + "\n"
+  wat = wat + "  ;; Functions\n"
+  wat = wat + fns_wat
+  wat = wat + "  ;; Entry point\n"
+  wat = wat + "  (export " + q + "_start" + q + " (func $fn_main))\n\n"
+  wat = wat + _emit_data(ctx)
+  wat = wat + ")\n"
+  ret wat
+}
+
+fn compile(source) -> str {
+  let prog_ast = parser.parse(source)
+  ret emit_program(prog_ast)
+}

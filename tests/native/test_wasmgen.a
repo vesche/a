@@ -1,0 +1,106 @@
+use std.testing
+use std.compiler.wasmgen
+use std.compiler.parser
+
+fn main() {
+  ; --- Test 1: simple println ---
+  let src1 = io.read_file("tests/native/fixtures/wasm_hello.a")
+  let wat1 = wasmgen.compile(src1)
+  testing.assert_eq(type_of(wat1), "str")
+  testing.assert_eq(str.contains(wat1, "(module"), true)
+  testing.assert_eq(str.contains(wat1, "(func $fn_main"), true)
+  testing.assert_eq(str.contains(wat1, "(export "), true)
+  testing.assert_eq(str.contains(wat1, "_start"), true)
+  println("PASS: simple println WAT")
+
+  ; --- Test 2: runtime imports ---
+  testing.assert_eq(str.contains(wat1, "(import "), true)
+  testing.assert_eq(str.contains(wat1, "rt_println"), true)
+  testing.assert_eq(str.contains(wat1, "rt_void"), true)
+  testing.assert_eq(str.contains(wat1, "rt_add"), true)
+  println("PASS: runtime imports")
+
+  ; --- Test 3: function parameters ---
+  let src3 = io.read_file("tests/native/fixtures/wasm_funcs.a")
+  let wat3 = wasmgen.compile(src3)
+  testing.assert_eq(str.contains(wat3, "(func $fn_add (param $a i64) (param $b i64)"), true)
+  testing.assert_eq(str.contains(wat3, "(call $fn_add"), true)
+  println("PASS: function parameters")
+
+  ; --- Test 4: if/else ---
+  let src4 = io.read_file("tests/native/fixtures/wasm_control.a")
+  let wat4 = wasmgen.compile(src4)
+  testing.assert_eq(str.contains(wat4, "(if (call $rt_truthy"), true)
+  testing.assert_eq(str.contains(wat4, "(then"), true)
+  println("PASS: if/else control flow")
+
+  ; --- Test 5: while loop ---
+  testing.assert_eq(str.contains(wat4, "(block $break"), true)
+  testing.assert_eq(str.contains(wat4, "(loop $cont"), true)
+  testing.assert_eq(str.contains(wat4, "(br_if $break"), true)
+  testing.assert_eq(str.contains(wat4, "(br $cont)"), true)
+  println("PASS: while loop")
+
+  ; --- Test 6: binary ops ---
+  testing.assert_eq(str.contains(wat4, "rt_add"), true)
+  testing.assert_eq(str.contains(wat4, "rt_lt"), true)
+  testing.assert_eq(str.contains(wat4, "rt_eq"), true)
+  println("PASS: binary operations")
+
+  ; --- Test 7: local variables ---
+  testing.assert_eq(str.contains(wat4, "(local $x i64)"), true)
+  testing.assert_eq(str.contains(wat4, "(local $i i64)"), true)
+  testing.assert_eq(str.contains(wat4, "(local.set $x"), true)
+  testing.assert_eq(str.contains(wat4, "(local.get $x)"), true)
+  println("PASS: local variables")
+
+  ; --- Test 8: return ---
+  testing.assert_eq(str.contains(wat3, "(return (call $rt_add"), true)
+  println("PASS: return statement")
+
+  ; --- Test 9: string literals ---
+  let src9 = io.read_file("tests/native/fixtures/wasm_strings.a")
+  let wat9 = wasmgen.compile(src9)
+  testing.assert_eq(str.contains(wat9, "rt_string"), true)
+  testing.assert_eq(str.contains(wat9, "rt_str_concat"), true)
+  println("PASS: string literals")
+
+  ; --- Test 10: arrays ---
+  testing.assert_eq(str.contains(wat9, "rt_array_new"), true)
+  testing.assert_eq(str.contains(wat9, "rt_push"), true)
+  println("PASS: arrays")
+
+  ; --- Test 11: memory export ---
+  testing.assert_eq(str.contains(wat1, "(memory (export "), true)
+  println("PASS: memory export")
+
+  ; --- Test 12: emit_program returns valid module ---
+  let prog = parser.parse(src1)
+  let wat_direct = wasmgen.emit_program(prog)
+  testing.assert_eq(str.starts_with(wat_direct, "(module"), true)
+  testing.assert_eq(str.ends_with(str.trim(wat_direct), ")"), true)
+  println("PASS: emit_program module structure")
+
+  ; --- Test 13: cross-compilation targets ---
+  let targets_r = exec("./a targets 2>&1")
+  testing.assert_eq(str.contains(targets_r["stdout"], "wasm32-wasi"), true)
+  testing.assert_eq(str.contains(targets_r["stdout"], "linux-x86_64"), true)
+  testing.assert_eq(str.contains(targets_r["stdout"], "windows-x86_64"), true)
+  testing.assert_eq(str.contains(targets_r["stdout"], "macos-x86_64"), true)
+  println("PASS: cross-compilation targets listed")
+
+  ; --- Test 14: WAT CLI subcommand ---
+  let wat_r = exec("./a wat tests/native/fixtures/wasm_hello.a 2>&1")
+  testing.assert_eq(wat_r["code"], 0)
+  testing.assert_eq(str.contains(wat_r["stdout"], "(module"), true)
+  println("PASS: wat CLI subcommand")
+
+  ; --- Test 15: WAT output to file ---
+  let out_f = "/tmp/a_test_wat_out.wat"
+  let r15 = exec("./a wat tests/native/fixtures/wasm_hello.a -o " + out_f + " 2>&1")
+  testing.assert_eq(r15["code"], 0)
+  let content = io.read_file(out_f)
+  testing.assert_eq(str.contains(content, "(module"), true)
+  fs.rm(out_f)
+  println("PASS: WAT output to file")
+}

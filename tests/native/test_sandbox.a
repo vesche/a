@@ -1,0 +1,93 @@
+use std.testing
+use std.sandbox
+
+fn main() {
+  ; --- Test 1: capabilities defaults ---
+  let c1 = sandbox.capabilities(#{})
+  testing.assert_eq(to_str(c1["exec"]), "false")
+  testing.assert_eq(to_str(c1["db"]), "false")
+  testing.assert_eq(to_str(c1["env"]), "false")
+  testing.assert_eq(to_str(c1["timeout_ms"]), "5000")
+  testing.assert_eq(to_str(c1["max_output"]), "65536")
+  testing.assert_eq(to_str(len(c1["fs_read"])), "0")
+  testing.assert_eq(to_str(len(c1["net"])), "0")
+  println("PASS: capabilities defaults")
+
+  ; --- Test 2: capabilities override ---
+  let c2 = sandbox.capabilities(#{ "exec": true, "timeout_ms": 10000 })
+  testing.assert_eq(to_str(c2["exec"]), "true")
+  testing.assert_eq(to_str(c2["timeout_ms"]), "10000")
+  testing.assert_eq(to_str(c2["db"]), "false")
+  println("PASS: capabilities override")
+
+  ; --- Test 3: deny_all ---
+  let c3 = sandbox.deny_all()
+  testing.assert_eq(to_str(c3["exec"]), "false")
+  testing.assert_eq(to_str(c3["env"]), "false")
+  testing.assert_eq(to_str(c3["db"]), "false")
+  testing.assert_eq(to_str(len(c3["fs_read"])), "0")
+  println("PASS: deny_all")
+
+  ; --- Test 4: allow_all ---
+  let c4 = sandbox.allow_all()
+  testing.assert_eq(to_str(c4["exec"]), "true")
+  testing.assert_eq(to_str(c4["env"]), "true")
+  testing.assert_eq(to_str(c4["db"]), "true")
+  testing.assert_eq(to_str(c4["timeout_ms"]), "30000")
+  println("PASS: allow_all")
+
+  ; --- Test 5: allow_read_only ---
+  let c5 = sandbox.allow_read_only(["/data", "/tmp"])
+  testing.assert_eq(to_str(len(c5["fs_read"])), "2")
+  testing.assert_eq(to_str(c5["exec"]), "false")
+  println("PASS: allow_read_only")
+
+  ; --- Test 6: allow_network ---
+  let c6 = sandbox.allow_network(["api.example.com"])
+  testing.assert_eq(to_str(len(c6["net"])), "1")
+  testing.assert_eq(to_str(c6["exec"]), "false")
+  println("PASS: allow_network")
+
+  ; --- Test 7: validate safe code ---
+  let v1 = sandbox.validate("let x = 1 + 2\nprintln(to_str(x))")
+  testing.assert_eq(to_str(v1["safe"]), "true")
+  testing.assert_eq(to_str(v1["issue_count"]), "0")
+  println("PASS: validate safe code")
+
+  ; --- Test 8: validate unsafe code ---
+  let q = from_code(34)
+  let unsafe_src = "exec(" + q + "ls" + q + ")\nio.write_file(" + q + "/x" + q + ", " + q + "y" + q + ")"
+  let v2 = sandbox.validate(unsafe_src)
+  testing.assert_eq(to_str(v2["safe"]), "false")
+  testing.assert_eq(to_str(v2["issue_count"] >= 2), "true")
+  println("PASS: validate unsafe code")
+
+  ; --- Test 9: run simple code ---
+  let c9 = sandbox.deny_all()
+  let r9 = sandbox.run("println(to_str(1 + 2))", c9)
+  testing.assert_eq(to_str(r9["ok"]), "true")
+  testing.assert_eq(str.trim(r9["stdout"]), "3")
+  println("PASS: run simple code")
+
+  ; --- Test 10: run code with exec denied ---
+  let c10 = sandbox.deny_all()
+  let src10 = "let r = exec(" + q + "echo hi" + q + ")\nprintln(r)"
+  let r10 = sandbox.run(src10, c10)
+  testing.assert_eq(to_str(r10["ok"]), "false")
+  println("PASS: run exec denied")
+
+  ; --- Test 11: run arithmetic ---
+  let c11 = sandbox.deny_all()
+  let r11 = sandbox.run("let a = 10\nlet b = 20\nprintln(to_str(a + b))", c11)
+  testing.assert_eq(to_str(r11["ok"]), "true")
+  testing.assert_eq(str.trim(r11["stdout"]), "30")
+  println("PASS: run arithmetic")
+
+  ; --- Test 12: max_output setting ---
+  let c12 = sandbox.capabilities(#{ "max_output": 5 })
+  testing.assert_eq(to_str(c12["max_output"]), "5")
+  println("PASS: max_output setting")
+
+  println("")
+  println("12 passed, 0 failed")
+}

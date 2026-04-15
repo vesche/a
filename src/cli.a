@@ -1,10 +1,12 @@
 use std.compiler.cgen
+use std.compiler.wasmgen
 use std.compiler.parser
 use std.compiler.emitter
 use std.compiler.checker
 use std.path
 use std.cli
 use std.pkg
+use std.plugin
 
 fn _die(msg) {
   eprintln(cli.red(str.concat("error: ", msg)))
@@ -83,6 +85,7 @@ fn _ensure_runtime_objs(runtime_dir) -> str {
   let sf = _sqlite_flags()
   let sources = [
     ["runtime.c", "gcc -c " + runtime_dir + "/runtime.c " + inc + " -O2 " + sf + " -o " + obj_dir + "/runtime.o"],
+    ["gguf.c", "gcc -c " + runtime_dir + "/gguf.c " + inc + " -O2 -o " + obj_dir + "/gguf.o"],
     ["sqlite3.c", "gcc -c " + runtime_dir + "/sqlite3.c " + inc + " -O2 " + sf + " -o " + obj_dir + "/sqlite3.o"],
     ["miniz.c", "gcc -c " + runtime_dir + "/miniz.c " + inc + " -O2 -o " + obj_dir + "/miniz.o"],
     ["stb_impl.c", "gcc -c " + runtime_dir + "/stb_impl.c " + inc + " -O2 -o " + obj_dir + "/stb_impl.o"],
@@ -115,7 +118,7 @@ fn _gcc_try(c_path, out_path, runtime_dir) -> int {
     }
     let link = str.join([
       "gcc", user_o,
-      obj_dir + "/runtime.o", obj_dir + "/sqlite3.o",
+      obj_dir + "/runtime.o", obj_dir + "/gguf.o", obj_dir + "/sqlite3.o",
       obj_dir + "/miniz.o", obj_dir + "/stb_impl.o",
       obj_dir + "/embedded.o",
       "-o", out_path, flags
@@ -126,7 +129,7 @@ fn _gcc_try(c_path, out_path, runtime_dir) -> int {
   }
   let cmd = str.join([
     "gcc", c_path,
-    runtime_dir + "/runtime.c", runtime_dir + "/sqlite3.c",
+    runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
     runtime_dir + "/miniz.c", runtime_dir + "/stb_impl.c",
     runtime_dir + "/embedded.c",
     "-o", out_path, inc, flags, sf
@@ -157,6 +160,17 @@ fn cmd_cc(source_path, out_file) {
   }
 }
 
+fn cmd_wat(source_path, out_file) {
+  let source = io.read_file(source_path)
+  let wat_code = wasmgen.compile(source)
+  if len(out_file) > 0 {
+    io.write_file(out_file, wat_code)
+    eprintln(cli.green("generated") + " " + out_file)
+  } else {
+    print(wat_code)
+  }
+}
+
 fn _codegen_subprocess(source_path, c_path) {
   let self = argv0()
   let cmd = str.join([self, "cc", source_path, "-o", c_path], " ")
@@ -181,6 +195,162 @@ fn cmd_build(source_path, out_path) {
   _gcc(c_path, out_path, runtime_dir)
   fs.rm(c_path)
   eprintln(str.concat(cli.green("built"), str.concat(" ", out_path)))
+}
+
+; --- Cross-compilation targets ---
+
+fn _known_targets() -> [str] {
+  ret ["wasm32-wasi", "linux-x86_64", "linux-aarch64", "windows-x86_64", "macos-x86_64", "macos-aarch64"]
+}
+
+fn _target_compiler(tgt) -> str {
+  if tgt == "wasm32-wasi" {
+    let has_emcc = exec("which emcc 2>/dev/null")
+    if has_emcc["code"] == 0 { ret "emcc" }
+    let has_clang = exec("which clang 2>/dev/null")
+    if has_clang["code"] == 0 { ret "clang" }
+    ret ""
+  }
+  if tgt == "linux-x86_64" {
+    let ccs = ["x86_64-linux-musl-gcc", "x86_64-linux-gnu-gcc", "x86_64-unknown-linux-gnu-gcc"]
+    for cc in ccs {
+      let r = exec("which " + cc + " 2>/dev/null")
+      if r["code"] == 0 { ret cc }
+    }
+    let uname = str.trim(exec("uname -s")["stdout"])
+    if uname == "Linux" {
+      let arch = str.trim(exec("uname -m")["stdout"])
+      if arch == "x86_64" { ret "gcc" }
+    }
+    ret ""
+  }
+  if tgt == "linux-aarch64" {
+    let ccs = ["aarch64-linux-musl-gcc", "aarch64-linux-gnu-gcc"]
+    for cc in ccs {
+      let r = exec("which " + cc + " 2>/dev/null")
+      if r["code"] == 0 { ret cc }
+    }
+    let uname = str.trim(exec("uname -s")["stdout"])
+    if uname == "Linux" {
+      let arch = str.trim(exec("uname -m")["stdout"])
+      if arch == "aarch64" { ret "gcc" }
+    }
+    ret ""
+  }
+  if tgt == "windows-x86_64" {
+    let ccs = ["x86_64-w64-mingw32-gcc", "i686-w64-mingw32-gcc"]
+    for cc in ccs {
+      let r = exec("which " + cc + " 2>/dev/null")
+      if r["code"] == 0 { ret cc }
+    }
+    ret ""
+  }
+  if tgt == "macos-x86_64" || tgt == "macos-aarch64" {
+    let uname = str.trim(exec("uname -s")["stdout"])
+    if uname == "Darwin" { ret "gcc" }
+    ret ""
+  }
+  ret ""
+}
+
+fn _target_flags(tgt) -> str {
+  if tgt == "wasm32-wasi" {
+    ret "-O2 -DWASM_BUILD -DNO_FORK -DNO_SIGNAL -DNO_IMAGE"
+  }
+  if tgt == "linux-x86_64" {
+    ret "-lm -O2 -ldl -DLINUX_BUILD"
+  }
+  if tgt == "linux-aarch64" {
+    ret "-lm -O2 -ldl -DLINUX_BUILD"
+  }
+  if tgt == "windows-x86_64" {
+    ret "-lm -O2 -lws2_32 -DWINDOWS_BUILD"
+  }
+  if tgt == "macos-x86_64" {
+    ret "-lm -O2 -target x86_64-apple-macos11 -framework Security -framework CoreFoundation"
+  }
+  if tgt == "macos-aarch64" {
+    ret "-lm -O2 -target arm64-apple-macos11 -framework Security -framework CoreFoundation"
+  }
+  ret "-lm -O2"
+}
+
+fn _target_ext(tgt) -> str {
+  if tgt == "wasm32-wasi" { ret ".wasm" }
+  if tgt == "windows-x86_64" { ret ".exe" }
+  ret ""
+}
+
+fn _target_emcc_flags() -> str {
+  ret "-s WASI=1 -s STANDALONE_WASM=1 -s TOTAL_MEMORY=67108864 --no-entry"
+}
+
+fn cmd_build_target(source_path, out_path, tgt) {
+  let runtime_dir = _find_runtime_dir()
+  let c_path = _tmp_path(".c")
+  _codegen_subprocess(source_path, c_path)
+
+  let cc = _target_compiler(tgt)
+  if len(cc) == 0 {
+    fs.rm(c_path)
+    _die("no compiler found for target: " + tgt + ". Install the appropriate cross-compilation toolchain.")
+  }
+
+  let flags = _target_flags(tgt)
+  let sf = _sqlite_flags()
+  let inc = "-I " + runtime_dir
+
+  let mut cmd = ""
+  if tgt == "wasm32-wasi" && cc == "emcc" {
+    let emcc_extra = _target_emcc_flags()
+    cmd = str.join([
+      cc, c_path,
+      runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
+      runtime_dir + "/miniz.c",
+      runtime_dir + "/embedded.c",
+      "-o", out_path, inc, flags, sf, emcc_extra
+    ], " ")
+  } else {
+    if tgt == "wasm32-wasi" && cc == "clang" {
+      cmd = str.join([
+        cc, "--target=wasm32-wasi", "--sysroot=/opt/wasi-sdk/share/wasi-sysroot",
+        c_path,
+        runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
+        runtime_dir + "/miniz.c",
+        runtime_dir + "/embedded.c",
+        "-o", out_path, inc, flags, sf
+      ], " ")
+    } else {
+      cmd = str.join([
+        cc, c_path,
+        runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
+        runtime_dir + "/miniz.c", runtime_dir + "/stb_impl.c",
+        runtime_dir + "/embedded.c",
+        "-o", out_path, inc, flags, sf
+      ], " ")
+    }
+  }
+
+  let r = exec(cmd)
+  fs.rm(c_path)
+  if r["code"] != 0 {
+    if len(r["stderr"]) > 0 { eprintln(r["stderr"]) }
+    _die("cross-compilation failed for target: " + tgt)
+  }
+  eprintln(cli.green("built") + " " + out_path + " (" + tgt + ")")
+}
+
+fn cmd_targets() {
+  let targets = _known_targets()
+  eprintln("supported cross-compilation targets:")
+  for tgt in targets {
+    let cc = _target_compiler(tgt)
+    let mut status = cli.dim("(not available)")
+    if len(cc) > 0 {
+      status = cli.green("available") + " via " + cc
+    }
+    eprintln("  " + cli.bold(tgt) + "  " + status)
+  }
 }
 
 fn _cache_dir() -> str {
@@ -639,21 +809,130 @@ fn cmd_watch(source_path) {
   }
 }
 
+fn cmd_spawn(source, agent_name) {
+  if !fs.exists(source) {
+    _die("spawn: file not found: " + source)
+  }
+  let self = argv0()
+  let bin_name = ".a_cache/agent_" + agent_name
+  let build_result = exec(self + " build " + source + " -o " + bin_name)
+  if build_result["code"] != 0 {
+    eprintln(build_result["stderr"])
+    _die("spawn: build failed")
+  }
+
+  ; Ensure registry directory exists
+  if !fs.exists("/tmp/a_agents") {
+    fs.mkdir("/tmp/a_agents")
+  }
+
+  ; Launch in background with agent name in environment
+  let run_cmd = "A_AGENT_NAME=" + agent_name + " " + bin_name + " &"
+  let r = exec(run_cmd)
+
+  eprintln(cli.green("[spawn]") + " launched agent " + cli.bold(agent_name) + " from " + source)
+}
+
+fn cmd_plugin(argv) {
+  if len(argv) < 1 { _die("usage: a plugin <install|list|remove|init|run>") }
+  let sub = argv[0]
+
+  if sub == "install" {
+    if len(argv) < 2 { _die("usage: a plugin install <dir|git:user/repo>") }
+    let source = argv[1]
+    let mut result = Err("unknown")
+    if str.starts_with(source, "git:") || str.starts_with(source, "github:") {
+      let repo = str.replace(str.replace(source, "git:", ""), "github:", "")
+      result = plugin.install_git(repo)
+    } else {
+      result = plugin.install(source)
+    }
+    if is_ok(result) {
+      let info = unwrap(result)
+      eprintln(cli.green("[plugin]") + " installed " + cli.bold(info["name"]) + " v" + info["version"])
+    } else {
+      _die(unwrap_or(result, "install failed"))
+    }
+    ret
+  }
+
+  if sub == "list" {
+    let plugins = plugin.list()
+    if len(plugins) == 0 {
+      eprintln("no plugins installed")
+      ret
+    }
+    let mut i = 0
+    while i < len(plugins) {
+      let p = plugins[i]
+      eprintln("  " + cli.bold(p["name"]) + " v" + p["version"] + "  " + cli.dim(p["dir"]))
+      i = i + 1
+    }
+    ret
+  }
+
+  if sub == "remove" {
+    if len(argv) < 2 { _die("usage: a plugin remove <name>") }
+    let result = plugin.remove(argv[1])
+    if is_ok(result) {
+      eprintln(cli.green("[plugin]") + " removed " + cli.bold(argv[1]))
+    } else {
+      _die(unwrap_or(result, "remove failed"))
+    }
+    ret
+  }
+
+  if sub == "init" {
+    if len(argv) < 3 { _die("usage: a plugin init <dir> <name>") }
+    let result = plugin.init(argv[1], argv[2])
+    if is_ok(result) {
+      eprintln(cli.green("[plugin]") + " created plugin scaffold at " + argv[1])
+    } else {
+      _die("plugin init failed")
+    }
+    ret
+  }
+
+  if sub == "run" {
+    if len(argv) < 2 { _die("usage: a plugin run <name>") }
+    let result = plugin.run(argv[1])
+    if is_ok(result) {
+      let r = unwrap(result)
+      if len(r["stdout"]) > 0 { print(r["stdout"]) }
+      if r["code"] != 0 { exit(r["code"]) }
+    } else {
+      _die(unwrap_or(result, "plugin run failed"))
+    }
+    ret
+  }
+
+  _die("usage: a plugin <install|list|remove|init|run>")
+}
+
 fn _usage() {
   eprintln("a -- the a language native toolchain")
   eprintln("")
   eprintln("usage:")
   eprintln("  a run <file.a> [args...]    compile and run (cached)")
   eprintln("  a build <file.a> [-o out]   compile to native binary")
+  eprintln("  a build <file.a> --target T cross-compile (wasm32-wasi, linux-x86_64, ...)")
+  eprintln("  a targets                  list available cross-compilation targets")
   eprintln("  a eval <expr>              evaluate an expression")
   eprintln("  a repl                     interactive read-eval-print loop")
   eprintln("  a cc <file.a>              emit C to stdout")
+  eprintln("  a wat <file.a>             emit WebAssembly Text Format to stdout")
   eprintln("  a fmt <file.a|dir/>        format source code")
   eprintln("  a ast <file.a>             dump parsed AST as JSON")
   eprintln("  a check <file.a>           type-check source file")
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a watch <file.a>           recompile and run on file change")
+  eprintln("  a spawn <file.a> --name N  launch named agent process (background)")
+  eprintln("  a plugin install <dir>     install a plugin from directory")
+  eprintln("  a plugin list              list installed plugins")
+  eprintln("  a plugin remove <name>     uninstall a plugin")
+  eprintln("  a plugin init <dir> <name> scaffold a new plugin")
+  eprintln("  a plugin run <name>        run an installed plugin")
   eprintln("  a cache clean              clear the compilation cache")
   eprintln("  a pkg init                 create pkg.toml in current directory")
   eprintln("  a pkg add <name> <source>  add a dependency")
@@ -682,20 +961,49 @@ fn main() {
     ret
   }
 
+  if subcmd == "wat" {
+    if len(argv) < 2 { _die("wat requires a source file") }
+    let mut wat_out = ""
+    if len(argv) >= 4 && argv[2] == "-o" {
+      wat_out = argv[3]
+    }
+    cmd_wat(argv[1], wat_out)
+    ret
+  }
+
   if subcmd == "build" {
     if len(argv) < 2 { _die("build requires a source file") }
     let source = argv[1]
     let mut out = path.stem(source)
+    let mut tgt = ""
     let mut i = 2
     while i < len(argv) {
       if argv[i] == "-o" && i + 1 < len(argv) {
         out = argv[i + 1]
         i = i + 2
       } else {
-        i = i + 1
+        if argv[i] == "--target" && i + 1 < len(argv) {
+          tgt = argv[i + 1]
+          i = i + 2
+        } else {
+          i = i + 1
+        }
       }
     }
-    cmd_build(source, out)
+    if len(tgt) > 0 {
+      let ext = _target_ext(tgt)
+      if len(ext) > 0 && !str.ends_with(out, ext) {
+        out = out + ext
+      }
+      cmd_build_target(source, out, tgt)
+    } else {
+      cmd_build(source, out)
+    }
+    ret
+  }
+
+  if subcmd == "targets" {
+    cmd_targets()
     ret
   }
 
@@ -757,6 +1065,17 @@ fn main() {
     ret
   }
 
+  if subcmd == "plugin" {
+    let mut plugin_argv = []
+    let mut i = 1
+    while i < len(argv) {
+      plugin_argv = push(plugin_argv, argv[i])
+      i = i + 1
+    }
+    cmd_plugin(plugin_argv)
+    ret
+  }
+
   if subcmd == "pkg" {
     if len(argv) < 2 { _die("usage: a pkg <init|add|install>") }
     if argv[1] == "init" {
@@ -788,6 +1107,23 @@ fn main() {
   if subcmd == "watch" {
     if len(argv) < 2 { _die("watch requires a source file") }
     cmd_watch(argv[1])
+    ret
+  }
+
+  if subcmd == "spawn" {
+    if len(argv) < 2 { _die("spawn requires a source file") }
+    let source = argv[1]
+    let mut agent_name = path.stem(source)
+    let mut i = 2
+    while i < len(argv) {
+      if argv[i] == "--name" && i + 1 < len(argv) {
+        agent_name = argv[i + 1]
+        i = i + 2
+      } else {
+        i = i + 1
+      }
+    }
+    cmd_spawn(source, agent_name)
     ret
   }
 

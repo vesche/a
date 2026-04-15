@@ -1,0 +1,142 @@
+use std.testing
+use std.channel
+
+fn main() {
+  ; Clean up any leftover test channels
+  channel.destroy("test_ch1")
+  channel.destroy("test_ch2")
+  channel.destroy("test_ch3")
+  channel.destroy("test_cursor")
+
+  ; --- Test 1: create and close ---
+  let ch = channel.create("test_ch1")
+  testing.assert_eq(ch["name"], "test_ch1")
+  channel.close(ch)
+  println("PASS: create and close")
+
+  ; --- Test 2: send and recv ---
+  let ch2 = channel.open("test_ch1")
+  channel.send(ch2, "hello")
+  let msg = channel.try_recv(ch2)
+  testing.assert_eq(is_ok(msg), true)
+  testing.assert_eq(unwrap(msg), "hello")
+  println("PASS: send and try_recv")
+
+  ; --- Test 3: try_recv on empty returns Err ---
+  let empty = channel.try_recv(ch2)
+  testing.assert_eq(is_err(empty), true)
+  println("PASS: try_recv on empty returns Err")
+
+  ; --- Test 4: send multiple, drain ---
+  channel.send(ch2, "a")
+  channel.send(ch2, "b")
+  channel.send(ch2, "c")
+  let all = channel.drain(ch2)
+  testing.assert_eq(to_str(len(all)), "3")
+  testing.assert_eq(all[0], "a")
+  testing.assert_eq(all[1], "b")
+  testing.assert_eq(all[2], "c")
+  println("PASS: send multiple and drain")
+
+  ; --- Test 5: count ---
+  channel.send(ch2, "x")
+  channel.send(ch2, "y")
+  let c = channel.count(ch2)
+  testing.assert_eq(to_str(c), "2")
+  println("PASS: count returns unread messages")
+
+  ; --- Test 6: total ---
+  let t = channel.total(ch2)
+  ; total includes: hello, a, b, c, x, y = 6
+  testing.assert_eq(to_str(t), "6")
+  println("PASS: total returns all messages")
+
+  ; drain remaining
+  channel.drain(ch2)
+
+  ; --- Test 7: peek does not consume ---
+  channel.send(ch2, "peek_test")
+  let p = channel.peek(ch2)
+  testing.assert_eq(is_ok(p), true)
+  testing.assert_eq(unwrap(p), "peek_test")
+  let c2 = channel.count(ch2)
+  testing.assert_eq(to_str(c2), "1")
+  channel.drain(ch2)
+  println("PASS: peek does not consume")
+
+  ; --- Test 8: purge clears all ---
+  channel.send(ch2, "z")
+  channel.purge(ch2)
+  let t2 = channel.total(ch2)
+  testing.assert_eq(to_str(t2), "0")
+  println("PASS: purge clears all messages")
+
+  channel.close(ch2)
+
+  ; --- Test 9: complex messages (maps, arrays) ---
+  let ch3 = channel.create("test_ch2")
+  channel.send(ch3, #{ "type": "task", "data": [1, 2, 3] })
+  let complex = channel.try_recv(ch3)
+  testing.assert_eq(is_ok(complex), true)
+  let cm = unwrap(complex)
+  testing.assert_eq(cm["type"], "task")
+  testing.assert_eq(to_str(len(cm["data"])), "3")
+  channel.close(ch3)
+  println("PASS: complex messages (maps, arrays)")
+
+  ; --- Test 10: independent cursors ---
+  let ch4 = channel.create("test_cursor")
+  channel.send(ch4, "msg1")
+  channel.send(ch4, "msg2")
+  channel.send(ch4, "msg3")
+  channel.close(ch4)
+
+  let reader1 = channel.open_as("test_cursor", "r1")
+  let reader2 = channel.open_as("test_cursor", "r2")
+
+  let r1a = channel.try_recv(reader1)
+  testing.assert_eq(unwrap(r1a), "msg1")
+  let r1b = channel.try_recv(reader1)
+  testing.assert_eq(unwrap(r1b), "msg2")
+
+  ; reader2 starts from beginning independently
+  let r2a = channel.try_recv(reader2)
+  testing.assert_eq(unwrap(r2a), "msg1")
+
+  channel.close(reader1)
+  channel.close(reader2)
+  println("PASS: independent cursors")
+
+  ; --- Test 11: persistence across open/close ---
+  let ch5 = channel.create("test_ch3")
+  channel.send(ch5, "persist")
+  channel.close(ch5)
+  let ch6 = channel.open("test_ch3")
+  let pm = channel.try_recv(ch6)
+  testing.assert_eq(is_ok(pm), true)
+  testing.assert_eq(unwrap(pm), "persist")
+  channel.close(ch6)
+  println("PASS: persistence across open/close")
+
+  ; --- Test 12: recv_timeout ---
+  let ch7 = channel.open("test_ch3")
+  channel.purge(ch7)
+  let to = channel.recv_timeout(ch7, 50)
+  testing.assert_eq(is_err(to), true)
+  channel.close(ch7)
+  println("PASS: recv_timeout returns Err on timeout")
+
+  ; --- Test 13: destroy removes channel ---
+  channel.destroy("test_ch3")
+  let exists = fs.exists("/tmp/a_channels/test_ch3.db")
+  testing.assert_eq(to_str(exists), "false")
+  println("PASS: destroy removes channel")
+
+  ; Clean up
+  channel.destroy("test_ch1")
+  channel.destroy("test_ch2")
+  channel.destroy("test_cursor")
+
+  println("")
+  println("All channel tests passed!")
+}

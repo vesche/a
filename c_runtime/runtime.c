@@ -1,27 +1,51 @@
 #include "runtime.h"
 #include "miniz.h"
+#ifndef NO_IMAGE
 #include "stb_image.h"
 #include "stb_image_write.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 #include <math.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <sys/wait.h>
-#include <unistd.h>
 #include <time.h>
-#include <poll.h>
-#include <fcntl.h>
-#ifdef __APPLE__
-#include <sys/event.h>
+
+#ifdef _WIN32
+  #include <windows.h>
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #include <io.h>
+  #include <direct.h>
+  #include <process.h>
+  #define popen _popen
+  #define pclose _pclose
+  #define mkdir(d,m) _mkdir(d)
+  #define access _access
+  #define F_OK 0
+  #define usleep(us) Sleep((us)/1000)
+  typedef int pid_t;
 #else
-#include <sys/inotify.h>
+  #include <dirent.h>
+  #include <sys/stat.h>
+  #include <unistd.h>
+  #include <fcntl.h>
+  #ifndef WASM_BUILD
+    #include <sys/wait.h>
+    #include <poll.h>
+    #include <sys/resource.h>
+    #ifdef __APPLE__
+      #include <sys/event.h>
+      #include <mach/mach.h>
+    #else
+      #include <sys/inotify.h>
+    #endif
+  #endif
 #endif
 
 int g_argc = 0;
 char** g_argv = NULL;
+static struct timeval g_process_start_tv;
 
 jmp_buf a_try_stack[A_TRY_STACK_MAX];
 AValue a_try_err;
@@ -832,6 +856,7 @@ AValue a_exec(AValue cmd) {
 
 /* --- Subprocess pipes (proc.*) --- */
 
+#if !defined(_WIN32) && !defined(WASM_BUILD)
 #include <signal.h>
 
 typedef struct {
@@ -1189,6 +1214,21 @@ AValue a_timeout(AValue ms_val, AValue func) {
     }
     return task_read_result(pipefd[0], pid);
 }
+
+#else /* _WIN32 || WASM_BUILD: stub out proc/spawn */
+AValue a_proc_spawn(AValue cmd) { return a_err(a_string("proc.spawn: not available on this platform")); }
+AValue a_proc_write(AValue h, AValue d) { return a_err(a_string("proc: not available")); }
+AValue a_proc_read_line(AValue h) { return a_err(a_string("proc: not available")); }
+AValue a_proc_kill(AValue h) { return a_err(a_string("proc: not available")); }
+AValue a_proc_wait(AValue h) { return a_err(a_string("proc: not available")); }
+AValue a_proc_is_running(AValue h) { return a_bool(0); }
+AValue a_spawn(AValue c) { return a_err(a_string("spawn: not available on this platform")); }
+AValue a_await(AValue h) { return a_err(a_string("await: not available")); }
+AValue a_await_all(AValue h) { return a_err(a_string("await_all: not available")); }
+AValue a_parallel_map(AValue a, AValue f) { return a_err(a_string("parallel_map: not available")); }
+AValue a_parallel_each(AValue a, AValue f) { return a_err(a_string("parallel_each: not available")); }
+AValue a_timeout(AValue ms, AValue f) { return a_err(a_string("timeout: not available")); }
+#endif /* !_WIN32 && !WASM_BUILD */
 
 AValue a_env_get(AValue key) {
     if (key.tag != TAG_STRING) return a_void();
@@ -1986,6 +2026,7 @@ AValue a_uuid_v4(void) {
 
 /* --- Signal handling --- */
 
+#if !defined(_WIN32) && !defined(NO_SIGNAL)
 #include <signal.h>
 
 static AValue signal_handlers[32];
@@ -2031,9 +2072,69 @@ AValue a_signal_on(AValue name, AValue handler) {
     sigaction(signum, &sa, NULL);
     return a_void();
 }
+#else /* _WIN32 || NO_SIGNAL */
+void a_signal_check(void) {}
+AValue a_signal_on(AValue name, AValue handler) { return a_err(a_string("signal: not available on this platform")); }
+#endif
+
+/* --- Reflect / introspection --- */
+
+#if !defined(_WIN32) && !defined(WASM_BUILD)
+#include <sys/time.h>
+__attribute__((constructor))
+static void a_reflect_init(void) {
+    gettimeofday(&g_process_start_tv, NULL);
+}
+
+AValue a_reflect_uptime_ms(void) {
+    struct timeval now;
+    gettimeofday(&now, NULL);
+    int64_t ms = ((int64_t)now.tv_sec - g_process_start_tv.tv_sec) * 1000
+               + ((int64_t)now.tv_usec - g_process_start_tv.tv_usec) / 1000;
+    return a_int(ms);
+}
+
+AValue a_reflect_memory_usage(void) {
+#ifdef __APPLE__
+    struct mach_task_basic_info info;
+    mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO,
+                  (task_info_t)&info, &count) == KERN_SUCCESS) {
+        return a_int((int64_t)info.resident_size);
+    }
+    return a_int(0);
+#else
+    FILE* f = fopen("/proc/self/status", "r");
+    if (!f) return a_int(0);
+    char line[256];
+    int64_t rss_kb = 0;
+    while (fgets(line, sizeof(line), f)) {
+        if (strncmp(line, "VmRSS:", 6) == 0) {
+            rss_kb = atoll(line + 6);
+            break;
+        }
+    }
+    fclose(f);
+    return a_int(rss_kb * 1024);
+#endif
+}
+
+AValue a_reflect_pid(void) {
+    return a_int((int64_t)getpid());
+}
+#elif defined(_WIN32)
+AValue a_reflect_uptime_ms(void) { return a_int((int64_t)GetTickCount64()); }
+AValue a_reflect_memory_usage(void) { return a_int(0); }
+AValue a_reflect_pid(void) { return a_int((int64_t)_getpid()); }
+#else /* WASM_BUILD */
+AValue a_reflect_uptime_ms(void) { return a_int(0); }
+AValue a_reflect_memory_usage(void) { return a_int(0); }
+AValue a_reflect_pid(void) { return a_int(0); }
+#endif
 
 /* --- Image processing --- */
 
+#ifndef NO_IMAGE
 typedef struct {
     unsigned char* data;
     int width, height, channels;
@@ -2198,6 +2299,16 @@ AValue a_image_pixels(AValue image) {
     }
     return arr;
 }
+#else /* NO_IMAGE */
+AValue a_image_decode(AValue b) { return a_err(a_string("image: not available")); }
+AValue a_image_load(AValue p) { return a_err(a_string("image: not available")); }
+AValue a_image_save(AValue i, AValue p) { return a_err(a_string("image: not available")); }
+AValue a_image_encode(AValue i, AValue f) { return a_err(a_string("image: not available")); }
+AValue a_image_width(AValue i) { return a_int(0); }
+AValue a_image_height(AValue i) { return a_int(0); }
+AValue a_image_resize(AValue i, AValue w, AValue h) { return a_err(a_string("image: not available")); }
+AValue a_image_pixels(AValue i) { return a_err(a_string("image: not available")); }
+#endif /* !NO_IMAGE */
 
 /* --- JSON extras --- */
 
@@ -2287,12 +2398,19 @@ AValue a_json_pretty(AValue v) {
 
 /* --- HTTP client (in-process, POSIX sockets + platform TLS) --- */
 
+#if !defined(WASM_BUILD)
+#ifndef _WIN32
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netdb.h>
 #include <poll.h>
 #include <fcntl.h>
+#else
+#pragma comment(lib, "ws2_32.lib")
+#define close closesocket
+typedef int socklen_t;
+#endif
 #include <errno.h>
 
 #ifdef __APPLE__
@@ -4196,6 +4314,24 @@ AValue a_async_gather(AValue handles) {
     free(err_vals);
     return results;
 }
+
+#else /* WASM_BUILD: stub out HTTP/socket/async */
+AValue a_http_request(AValue url, AValue method, AValue hdr, AValue body) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_get(AValue url, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_post(AValue url, AValue body, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_put(AValue url, AValue body, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_patch(AValue url, AValue body, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_delete(AValue url, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_serve(AValue port, AValue handler) { return a_err(a_string("http.serve: not available in WASM")); }
+AValue a_http_static_serve(AValue port, AValue dir, AValue p) { return a_err(a_string("http: not available in WASM")); }
+AValue a_async_http_get(AValue u, AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_http_post(AValue u, AValue b, AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_http_put(AValue u, AValue b, AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_http_patch(AValue u, AValue b, AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_http_delete(AValue u, AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_await(AValue h) { return a_err(a_string("async: not available in WASM")); }
+AValue a_async_gather(AValue h) { return a_err(a_string("async: not available in WASM")); }
+#endif /* !WASM_BUILD */
 
 /* --- Database (SQLite) --- */
 

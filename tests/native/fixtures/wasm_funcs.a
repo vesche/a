@@ -1,0 +1,8 @@
+fn add(a, b) {
+  ret a + b
+}
+
+fn main() {
+  let x = add(10, 20)
+  println(x)
+}

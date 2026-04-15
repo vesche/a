@@ -1,0 +1,172 @@
+; std/channel.a -- Inter-process message channels backed by SQLite
+; Enables decoupled producer/consumer communication between agents.
+; Multiple writers, multiple readers (each with independent cursor).
+;
+; Usage:
+;   let ch = channel.create("tasks")
+;   channel.send(ch, #{ "type": "build", "target": "app.a" })
+;   let msg = channel.recv(ch)            ; blocks until message available
+;   let msg = channel.try_recv(ch)        ; returns Err("empty") immediately
+;   channel.close(ch)
+;   channel.destroy("tasks")              ; deletes the channel entirely
+
+fn _channel_dir() -> str {
+  ret "/tmp/a_channels"
+}
+
+fn _channel_path(name) -> str {
+  ret _channel_dir() + "/" + name + ".db"
+}
+
+fn _ensure_dir() {
+  let d = _channel_dir()
+  if !fs.exists(d) {
+    fs.mkdir(d)
+  }
+}
+
+fn create(name) -> map {
+  _ensure_dir()
+  let p = _channel_path(name)
+  let handle = db.open(p)
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL, ts INTEGER NOT NULL)")
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS cursors (name TEXT PRIMARY KEY, pos INTEGER NOT NULL)")
+  ret #{ "db": handle, "name": name, "cursor": "_default" }
+}
+
+fn open(name) -> map {
+  let p = _channel_path(name)
+  if !fs.exists(p) {
+    ret create(name)
+  }
+  let handle = db.open(p)
+  ret #{ "db": handle, "name": name, "cursor": "_default" }
+}
+
+fn open_as(name, cursor_name) -> map {
+  let p = _channel_path(name)
+  if !fs.exists(p) {
+    let ch = create(name)
+    ret map.set(ch, "cursor", cursor_name)
+  }
+  let handle = db.open(p)
+  ret #{ "db": handle, "name": name, "cursor": cursor_name }
+}
+
+fn send(ch, msg) {
+  let data = json.stringify(msg)
+  let now = time.now()
+  db.exec(ch["db"], "INSERT INTO messages (data, ts) VALUES ('" + str.replace(data, "'", "''") + "', " + to_str(now) + ")")
+}
+
+fn _get_cursor_pos(ch) -> int {
+  let cursor = ch["cursor"]
+  let rows = db.query(ch["db"], "SELECT pos FROM cursors WHERE name = ?", [cursor])
+  if len(rows) > 0 {
+    ret rows[0]["pos"]
+  }
+  ret 0
+}
+
+fn _set_cursor_pos(ch, pos) {
+  let cursor = ch["cursor"]
+  db.exec(ch["db"], "INSERT OR REPLACE INTO cursors (name, pos) VALUES ('" + str.replace(cursor, "'", "''") + "', " + to_str(pos) + ")")
+}
+
+fn try_recv(ch) {
+  let pos = _get_cursor_pos(ch)
+  let rows = db.query(ch["db"], "SELECT id, data FROM messages WHERE id > ? ORDER BY id ASC LIMIT 1", [pos])
+  if len(rows) == 0 {
+    ret Err("empty")
+  }
+  let row = rows[0]
+  _set_cursor_pos(ch, row["id"])
+  ret Ok(json.parse(row["data"]))
+}
+
+fn recv(ch) {
+  let mut attempts = 0
+  while attempts < 6000 {
+    let result = try_recv(ch)
+    if is_ok(result) {
+      ret result
+    }
+    time.sleep(10)
+    attempts = attempts + 1
+  }
+  ret Err("timeout")
+}
+
+fn recv_timeout(ch, timeout_ms) {
+  let start = time.now()
+  while true {
+    let result = try_recv(ch)
+    if is_ok(result) {
+      ret result
+    }
+    let elapsed = time.now() - start
+    if elapsed >= timeout_ms {
+      ret Err("timeout")
+    }
+    time.sleep(10)
+  }
+  ret Err("timeout")
+}
+
+fn peek(ch) {
+  let pos = _get_cursor_pos(ch)
+  let rows = db.query(ch["db"], "SELECT id, data FROM messages WHERE id > ? ORDER BY id ASC LIMIT 1", [pos])
+  if len(rows) == 0 {
+    ret Err("empty")
+  }
+  ret Ok(json.parse(rows[0]["data"]))
+}
+
+fn count(ch) -> int {
+  let pos = _get_cursor_pos(ch)
+  let rows = db.query(ch["db"], "SELECT COUNT(*) as cnt FROM messages WHERE id > ?", [pos])
+  if len(rows) > 0 {
+    ret rows[0]["cnt"]
+  }
+  ret 0
+}
+
+fn total(ch) -> int {
+  let rows = db.query(ch["db"], "SELECT COUNT(*) as cnt FROM messages", [])
+  if len(rows) > 0 {
+    ret rows[0]["cnt"]
+  }
+  ret 0
+}
+
+fn drain(ch) -> [map] {
+  let mut msgs = []
+  while true {
+    let result = try_recv(ch)
+    if is_err(result) {
+      ret msgs
+    }
+    msgs = push(msgs, unwrap(result))
+  }
+  ret msgs
+}
+
+fn purge(ch) {
+  db.exec(ch["db"], "DELETE FROM messages")
+  db.exec(ch["db"], "DELETE FROM cursors")
+}
+
+fn close(ch) {
+  db.close(ch["db"])
+}
+
+fn destroy(name) {
+  let p = _channel_path(name)
+  if fs.exists(p) {
+    fs.rm(p)
+  }
+  let wal = p + "-wal"
+  if fs.exists(wal) { fs.rm(wal) }
+  let shm = p + "-shm"
+  if fs.exists(shm) { fs.rm(shm) }
+}

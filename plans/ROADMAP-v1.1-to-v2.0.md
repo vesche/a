@@ -56,49 +56,51 @@ Fork-based concurrency (v0.67) works for parallelism but is too heavy for I/O-bo
 
 ## Phase 2: The Collaborative Agent (v1.4 -- v1.6)
 
-### v1.4 -- Agent-to-Agent Communication
+### v1.4 -- Agent-to-Agent Communication [DONE]
 
 Agents need to talk to each other. Not through files on disk -- through structured messages.
 
-- **`std/channel.a`** -- typed message channels between "a" processes. `channel.create(name)`, `channel.send(ch, msg)`, `channel.recv(ch)`, `channel.broadcast(ch, msg)`. Built on Unix domain sockets or named pipes. For: supervisor/worker patterns, pipeline stages, fan-out/fan-in.
-- **`std/rpc.a`** -- lightweight RPC over TCP or stdio. `rpc.serve(port, handlers)`, `rpc.call(addr, method, params)`. JSON-RPC but simpler. An agent exposes capabilities; other agents call them. This is MCP generalized -- not just tool-call protocol, but agent-to-agent protocol.
-- **`a spawn program.a --name worker1`** -- named agent processes with automatic service discovery. `rpc.discover("worker1")` returns the connection handle.
+- **`std/channel.a`** -- SQLite-backed message channels between "a" processes. `channel.create(name)`, `channel.send(ch, msg)`, `channel.recv(ch)`, `channel.try_recv(ch)`, `channel.drain(ch)`, `channel.peek(ch)`. Independent cursors for multiple consumers (`channel.open_as(name, cursor)`). Persistent across process restarts.
+- **`std/rpc.a`** -- JSON-RPC 2.0 over HTTP with file-based service discovery. `rpc.serve(name, port, handlers)` registers and runs an agent. `rpc.call(target, method, params)` discovers and calls by name. `rpc.discover(name)`, `rpc.list_agents()`. Built-in `_ping` and `_methods` introspection. Health endpoint at `/health`.
+- **`a spawn program.a --name worker1`** -- named agent processes. Builds and launches in background with `A_AGENT_NAME` environment variable. Automatic service discovery via `/tmp/a_agents/` registry.
 
-### v1.5 -- Planning and Reflection
+### v1.5 -- Planning and Reflection [DONE]
 
 The self-improvement loop (v0.68) gave us mechanical refactoring. This version adds *deliberation*.
 
-- **`std/plan.a`** -- structured task decomposition. `plan.create(goal)`, `plan.add_step(p, description, dependencies)`, `plan.execute(p, step_fn)`, `plan.status(p)`. The plan is data -- serializable, inspectable, resumable. A failed step doesn't crash the plan; it marks the step as failed and lets the agent decide what to do.
-- **`std/trace.a`** -- execution tracing and structured logging. Every function call, every decision, every API response -- captured as a structured timeline. `trace.begin(name)`, `trace.end(name, result)`, `trace.event(name, data)`, `trace.export(format)`. Formats: JSON, Chrome trace viewer, OpenTelemetry. For: debugging agent behavior, performance analysis, audit trails.
-- **`std/reflect.a`** -- runtime self-inspection. `reflect.memory_usage()`, `reflect.uptime()`, `reflect.call_count(fn_name)`, `reflect.hot_paths()`. The agent can monitor its own health and performance, trigger GC, or decide to restart.
+- **`std/plan.a`** -- DAG-based task decomposition. `plan.create(goal)`, `plan.add_step(p, id, description, deps)`, `plan.execute(p, step_fn)`, `plan.status(p)`, `plan.summary(p)`. Plans are data -- serializable via `plan.serialize`/`plan.deserialize`, resumable via `plan.mark_done`/`plan.mark_failed`/`plan.reset_step`. Failed steps don't crash the plan; they cascade to skip dependent steps while the agent decides what to do.
+- **`std/trace.a`** -- execution tracing and structured timeline. `trace.begin(t, name)`, `trace.end(t, name, data)`, `trace.event(t, name, data)`, `trace.counter(t, name, values)`, `trace.measure(t, name, fn)`. Export to JSON (`trace.export_json`), Chrome trace viewer format (`trace.export_chrome`), and OpenTelemetry (`trace.export_otel`). Span extraction, nested spans, event filtering.
+- **`std/reflect.a`** -- runtime self-inspection. C builtins: `reflect.memory_usage()` (RSS bytes via mach_task_basic_info/procfs), `reflect.uptime_ms()`, `reflect.pid()`. Pure-"a" profiler: `reflect.profiler()`, `reflect.tick(p, name)`, `reflect.tick_ms(p, name, ms)`, `reflect.hot_paths(p, limit)`, `reflect.stats(p)`. Health check: `reflect.health()` returns status, pid, uptime, memory.
 
-### v1.6 -- Sandboxed Extensibility
+### v1.6 -- Sandboxed Extensibility [DONE]
 
 Let agents install new capabilities at runtime without recompilation.
 
-- **Plugin system** -- `a plugin install path/to/plugin.a`. Plugins are "a" modules that register new tools, builtins, or MCP handlers. Loaded dynamically, sandboxed (no filesystem access beyond declared paths, no network access beyond declared hosts).
-- **Capability-based security** -- `#![capabilities: fs.read("/data"), http("api.example.com")]` at the top of a module declares what it's allowed to do. The runtime enforces this. An agent can run untrusted code safely.
-- **`std/sandbox.a`** -- programmatic sandboxing. `sandbox.run(source, capabilities)` executes code with restricted permissions. Building on `codegen.run_in_sandbox` but with fine-grained capability control instead of just process isolation.
+- **`std/sandbox.a`** [DONE] -- Capability-based sandboxed execution. `sandbox.run(source, caps)` generates guard functions that intercept fs/net/exec/db/env calls, rewrites the user source to use the guards, wraps in `fn main()`, and runs in a subprocess. Helpers: `capabilities()`, `deny_all()`, `allow_all()`, `allow_read_only()`, `allow_network()`, `validate()`, `run_file()`.
+- **`std/plugin.a`** [DONE] -- Plugin discovery, installation, loading, and registry. Plugins live in `~/.a/plugins/` with `plugin.toml` manifests. Functions: `install()`, `install_git()`, `remove()`, `list()`, `get()`, `load()`, `run()`, `init()`, `create_manifest()`, `is_installed()`.
+- **`a plugin` CLI** [DONE] -- `a plugin install <dir>`, `a plugin list`, `a plugin remove <name>`, `a plugin init <dir> <name>`, `a plugin run <name>`. Also supports `git:user/repo` for GitHub installs.
 
 ---
 
 ## Phase 3: The Universal Agent (v1.7 -- v2.0)
 
-### v1.7 -- Multi-Target Compilation
+### v1.7 -- Multi-Target Compilation [DONE]
 
-The agent should run everywhere, not just Linux and macOS.
+Ship the same program to WASM and multiple OS/arch pairs from one machine.
 
-- **WebAssembly target** -- `std/compiler/wasmgen.a`. The C code generator is ~1,800 lines; a Wasm backend would be comparable. Unlocks: browser execution, Cloudflare Workers, Fastly Compute, any Wasm runtime. The agent deploys itself to the edge.
-- **Windows support** -- MinGW cross-compilation from Linux/macOS. The C runtime needs Win32 equivalents for: sockets (Winsock), filesystem (Win32 API), process spawning (CreateProcess), TLS (SChannel). Significant but mechanical.
-- **Cross-compilation** -- `a build program.a --target linux-x86_64` from macOS. Pre-compiled C runtime objects per target. Ship binaries to any platform from any platform.
+- **`std/compiler/wasmgen.a`** [DONE] -- WAT (WebAssembly Text Format) emitter from the "a" AST (~500+ lines). Covers functions, control flow, binary/unary ops, calls, arrays, maps, string interpolation, field access, and indexing; runtime builtins are imported from an `env` module.
+- **Cross-compilation** [DONE] -- `a build program.a --target wasm32-wasi|linux-x86_64|linux-aarch64|windows-x86_64|macos-x86_64|macos-aarch64`. Uses detected toolchains: emcc/clang for WASM, mingw for Windows, musl-gcc for Linux musl targets, and appropriate clang for macOS targets.
+- **`a targets`** [DONE] -- Prints available `--target` values and which toolchains are present on this host.
+- **`a wat`** [DONE] -- Emits WAT to stdout or an output file for inspection and WASM toolchains.
+- **Runtime portability** [DONE] -- `c_runtime/runtime.c` uses `#ifdef _WIN32` (Winsock, Windows paths/process APIs where applicable) and `#ifdef WASM_BUILD` (stubs for fork/spawn, signals, HTTP/sockets, image I/O) so the same C runtime compiles across hosts; unsupported operations return structured errors instead of failing the build.
 
-### v1.8 -- Local Intelligence
+### v1.8 -- Local Intelligence [DONE]
 
 Remove the last dependency on external services for core agent capability: reasoning.
 
-- **GGUF model loading** -- load quantized LLMs directly. The C runtime already has 4,000 lines of systems code; a minimal GGUF inference engine (CPU-only, Q4/Q8 quantization) would add ~2,000 lines. Not competing with llama.cpp -- providing a minimal inference path for small models (1-7B) that runs without any external process.
-- **`llm.local(model_path, prompt, opts)`** -- same API as `llm.chat` but runs locally. For: classification, summarization, code review, embedding generation. The agent doesn't need GPT-4 for every decision.
-- **Embedding generation** -- `llm.embed_local(model_path, text)` returns a vector. Combined with `std/vector.a`, this gives fully offline semantic search and memory.
+- **`c_runtime/gguf.c`** [DONE] -- complete GGUF file format parser (~700 lines) with LLaMA/Mistral/Gemma-style transformer support; quantization types Q4_0, Q8_0, F16, F32; BPE tokenizer; forward pass (multi-head attention with KV cache, RoPE, SwiGLU FFN, RMS norm); nucleus (top-p) sampling with temperature.
+- **`std/local_llm.a`** [DONE] -- high-level module: `load`, `generate`, `chat`, `embed`, `info`, `unload`, `tokenize`, `detokenize`, `vocab_size`, `complete`, `classify`, `summarize`, `is_loaded`.
+- **Runtime builtins** [DONE] -- eight C entry points: `a_llm_load`, `a_llm_generate`, `a_llm_embed`, `a_llm_unload`, `a_llm_info`, `a_llm_tokenize`, `a_llm_detokenize`, `a_llm_vocab_size`; WASM builds use graceful stubs.
 
 ### v1.9 -- Self-Optimization
 
@@ -130,8 +132,8 @@ The convergence point. Not a language with agent libraries -- an operating syste
 | **v1.4** | Agent Comms | Channels, RPC, named agents | Multi-agent systems, delegation |
 | **v1.5** | Planning | Task planner, tracing, self-reflection | Deliberate agents, debuggable behavior |
 | **v1.6** | Sandboxing | Plugins, capabilities, sandboxed execution | Safe extensibility, untrusted code |
-| **v1.7** | Multi-Target | WebAssembly, Windows, cross-compilation | Deploy anywhere |
-| **v1.8** | Local Intelligence | GGUF inference, local embeddings | Offline agents, no API dependency |
+| **v1.7** | Multi-Target [DONE] | WASM WAT codegen, `a build --target`, `a wat`/`a targets`, portable C runtime | Deploy anywhere (WASM + cross-native) |
+| **v1.8** | Local Intelligence [DONE] | GGUF parser + CPU inference (Q4_0/Q8_0/F16/F32), BPE + transformer forward pass, nucleus sampling, `std/local_llm.a`, 8 `a_llm_*` builtins | Offline agents, no API dependency for local reasoning |
 | **v1.9** | Self-Optimization | PGO, auto test gen, compiler self-improvement | The language improves itself |
 | **v2.0** | The Agent OS | Agent supervision, registry, swarms, self-update | Autonomous multi-agent systems |
 

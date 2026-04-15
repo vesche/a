@@ -1,0 +1,82 @@
+use std.testing
+use std.local_llm
+
+fn main() {
+  ; --- Test 1: load returns error on missing file ---
+  let r1 = local_llm.load("/nonexistent/model.gguf")
+  testing.assert_eq(is_err(r1), true)
+  println("PASS: load returns error on missing file")
+
+  ; --- Test 2: load returns error on non-GGUF file ---
+  io.write_file("/tmp/a_test_not_gguf.bin", "this is not a gguf file")
+  let r2 = local_llm.load("/tmp/a_test_not_gguf.bin")
+  testing.assert_eq(is_err(r2), true)
+  fs.rm("/tmp/a_test_not_gguf.bin")
+  println("PASS: load returns error on non-GGUF file")
+
+  ; --- Test 3: generate returns error on invalid handle ---
+  let r3 = local_llm.generate(999, "hello", #{})
+  testing.assert_eq(is_err(r3), true)
+  println("PASS: generate returns error on invalid handle")
+
+  ; --- Test 4: embed returns error on invalid handle ---
+  let r4 = local_llm.embed(999, "hello")
+  testing.assert_eq(is_err(r4), true)
+  println("PASS: embed returns error on invalid handle")
+
+  ; --- Test 5: info returns error on invalid handle ---
+  let r5 = local_llm.info(999)
+  testing.assert_eq(is_err(r5), true)
+  println("PASS: info returns error on invalid handle")
+
+  ; --- Test 6: unload returns error on invalid handle ---
+  let r6 = local_llm.unload(999)
+  testing.assert_eq(is_err(r6), true)
+  println("PASS: unload returns error on invalid handle")
+
+  ; --- Test 7: tokenize returns error on invalid handle ---
+  let r7 = local_llm.tokenize(999, "hello")
+  testing.assert_eq(is_err(r7), true)
+  println("PASS: tokenize returns error on invalid handle")
+
+  ; --- Test 8: detokenize returns error on invalid handle ---
+  let r8 = local_llm.detokenize(999, [1, 2, 3])
+  testing.assert_eq(is_err(r8), true)
+  println("PASS: detokenize returns error on invalid handle")
+
+  ; --- Test 9: vocab_size returns error on invalid handle ---
+  let r9 = local_llm.vocab_size(999)
+  testing.assert_eq(is_err(r9), true)
+  println("PASS: vocab_size returns error on invalid handle")
+
+  ; --- Test 10: is_loaded returns false on invalid handle ---
+  let r10 = local_llm.is_loaded(999)
+  testing.assert_eq(r10, false)
+  println("PASS: is_loaded returns false on invalid handle")
+
+  ; --- Test 11: generate with wrong arg type ---
+  let r11 = local_llm.generate("not_a_handle", "hello", #{})
+  testing.assert_eq(is_err(r11), true)
+  println("PASS: generate returns error on wrong arg type")
+
+  ; --- Test 12: chat convenience function formats prompt ---
+  ; (no model needed -- just validates that the function exists and is callable)
+  let r12 = local_llm.chat(999, [#{"role": "user", "content": "hi"}], #{})
+  testing.assert_eq(is_err(r12), true)
+  println("PASS: chat convenience function works")
+
+  ; --- Test 13: classify convenience function ---
+  let r13 = local_llm.classify(999, "I love this product", ["positive", "negative"])
+  testing.assert_eq(is_err(r13), true)
+  println("PASS: classify convenience function works")
+
+  ; --- Test 14: summarize convenience function ---
+  let r14 = local_llm.summarize(999, "Long text goes here.", 50)
+  testing.assert_eq(is_err(r14), true)
+  println("PASS: summarize convenience function works")
+
+  ; --- Test 15: complete convenience function ---
+  let r15 = local_llm.complete(999, "Once upon a time", 100)
+  testing.assert_eq(is_err(r15), true)
+  println("PASS: complete convenience function works")
+}

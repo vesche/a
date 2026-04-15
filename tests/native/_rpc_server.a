@@ -1,0 +1,11 @@
+use std.rpc
+
+fn main() {
+  let handlers = #{
+    "add": fn(params) { ret params["a"] + params["b"] },
+    "echo": fn(params) { ret params },
+    "greet": fn(params) { ret "hello, " + params["name"] },
+    "fail": fn(params) { ret Err("intentional error") }
+  }
+  rpc.serve("test-rpc-agent", 9881, handlers)
+}

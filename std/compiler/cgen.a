@@ -82,7 +82,13 @@ fn _builtin_map() -> map {
     "async.http_get": "a_async_http_get", "async.http_post": "a_async_http_post",
     "async.http_put": "a_async_http_put", "async.http_patch": "a_async_http_patch",
     "async.http_delete": "a_async_http_delete",
-    "async.await": "a_async_await", "async.gather": "a_async_gather"
+    "async.await": "a_async_await", "async.gather": "a_async_gather",
+    "reflect.uptime_ms": "a_reflect_uptime_ms", "reflect.memory_usage": "a_reflect_memory_usage",
+    "reflect.pid": "a_reflect_pid",
+    "local_llm.load": "a_llm_load", "local_llm.generate": "a_llm_generate",
+    "local_llm.embed": "a_llm_embed", "local_llm.unload": "a_llm_unload",
+    "local_llm.info": "a_llm_info", "local_llm.tokenize": "a_llm_tokenize",
+    "local_llm.detokenize": "a_llm_detokenize", "local_llm.vocab_size": "a_llm_vocab_size"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }

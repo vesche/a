@@ -1,0 +1,174 @@
+; std/sandbox.a -- Capability-based sandboxed code execution
+; Run untrusted "a" code with restricted permissions.
+
+fn capabilities(opts) -> map {
+  let mut c = #{
+    "fs_read": [],
+    "fs_write": [],
+    "net": [],
+    "exec": false,
+    "db": false,
+    "env": false,
+    "max_output": 65536,
+    "timeout_ms": 5000
+  }
+  let kk = map.keys(opts)
+  let mut i = 0
+  while i < len(kk) {
+    c = map.set(c, kk[i], opts[kk[i]])
+    i = i + 1
+  }
+  ret c
+}
+
+fn _lb() -> str { ret from_code(123) }
+fn _rb() -> str { ret from_code(125) }
+fn _q() -> str { ret from_code(34) }
+
+fn _block(body) -> str {
+  ret _lb() + " " + body + " " + _rb()
+}
+
+fn _fn_line(name, params, body) -> str {
+  ret "fn " + name + "(" + params + ") " + _block(body) + "\n"
+}
+
+fn _deny(msg) -> str {
+  ret "fail(" + _q() + msg + _q() + ")"
+}
+
+fn _generate_guard(caps) -> str {
+  let mut g = ""
+
+  if len(caps["fs_read"]) == 0 {
+    g = g + _fn_line("__sb_io_read_file", "p", _deny("sandbox - fs read denied"))
+  } else {
+    g = g + _fn_line("__sb_io_read_file", "p", "ret io.read_file(p)")
+  }
+
+  if len(caps["fs_write"]) == 0 {
+    g = g + _fn_line("__sb_io_write_file", "p, d", _deny("sandbox - fs write denied"))
+    g = g + _fn_line("__sb_fs_mkdir", "p", _deny("sandbox - fs write denied"))
+    g = g + _fn_line("__sb_fs_rm", "p", _deny("sandbox - fs write denied"))
+  } else {
+    g = g + _fn_line("__sb_io_write_file", "p, d", "io.write_file(p, d)")
+    g = g + _fn_line("__sb_fs_mkdir", "p", "fs.mkdir(p)")
+    g = g + _fn_line("__sb_fs_rm", "p", "fs.rm(p)")
+  }
+
+  if len(caps["net"]) == 0 {
+    g = g + _fn_line("__sb_http_get", "u, h", _deny("sandbox - net denied"))
+    g = g + _fn_line("__sb_http_post", "u, b, h", _deny("sandbox - net denied"))
+  } else {
+    g = g + _fn_line("__sb_http_get", "u, h", "ret http.get(u, h)")
+    g = g + _fn_line("__sb_http_post", "u, b, h", "ret http.post(u, b, h)")
+  }
+
+  if !caps["exec"] {
+    g = g + _fn_line("__sb_exec", "cmd", _deny("sandbox - exec denied"))
+  } else {
+    g = g + _fn_line("__sb_exec", "cmd", "ret exec(cmd)")
+  }
+
+  if !caps["db"] {
+    g = g + _fn_line("__sb_db_open", "p", _deny("sandbox - db denied"))
+  } else {
+    g = g + _fn_line("__sb_db_open", "p", "ret db.open(p)")
+  }
+
+  if !caps["env"] {
+    g = g + _fn_line("__sb_env_get", "k", _deny("sandbox - env denied"))
+    g = g + _fn_line("__sb_env_set", "k, v", _deny("sandbox - env denied"))
+  } else {
+    g = g + _fn_line("__sb_env_get", "k", "ret env.get(k)")
+    g = g + _fn_line("__sb_env_set", "k, v", "env.set(k, v)")
+  }
+
+  ret g
+}
+
+fn _rewrite_source(source) -> str {
+  let mut s = source
+  s = str.replace(s, "io.read_file(", "__sb_io_read_file(")
+  s = str.replace(s, "io.write_file(", "__sb_io_write_file(")
+  s = str.replace(s, "fs.mkdir(", "__sb_fs_mkdir(")
+  s = str.replace(s, "fs.rm(", "__sb_fs_rm(")
+  s = str.replace(s, "http.get(", "__sb_http_get(")
+  s = str.replace(s, "http.post(", "__sb_http_post(")
+  s = str.replace(s, "exec(", "__sb_exec(")
+  s = str.replace(s, "db.open(", "__sb_db_open(")
+  s = str.replace(s, "env.get(", "__sb_env_get(")
+  s = str.replace(s, "env.set(", "__sb_env_set(")
+  ret s
+}
+
+fn run(source, caps) -> map {
+  let sb_guard = _generate_guard(caps)
+  let rewritten = _rewrite_source(source)
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let needs_main = !str.contains(source, "fn main(")
+  let mut body = rewritten
+  if needs_main {
+    body = "fn main() " + lb + "\n" + rewritten + "\n" + rb + "\n"
+  }
+  let full = sb_guard + "\n" + body
+
+  let ts = to_str(time.now())
+  let tmp_file = "/tmp/a_sandbox_" + ts + ".a"
+  io.write_file(tmp_file, full)
+
+  let cli = _find_cli()
+  let r = exec(cli + " run " + tmp_file + " 2>&1")
+  fs.rm(tmp_file)
+
+  let stdout = r["stdout"]
+  let max_out = caps["max_output"]
+  let mut trimmed = stdout
+  if len(stdout) > max_out {
+    trimmed = str.slice(stdout, 0, max_out)
+  }
+
+  ret #{ "stdout": trimmed, "stderr": r["stderr"], "code": r["code"], "ok": r["code"] == 0 }
+}
+
+fn _find_cli() -> str {
+  if fs.exists("./a") { ret "./a" }
+  let which = exec("which a")
+  if which["code"] == 0 { ret str.trim(which["stdout"]) }
+  ret "a"
+}
+
+fn run_file(fpath, caps) -> map {
+  ret run(io.read_file(fpath), caps)
+}
+
+fn validate(source) -> map {
+  let mut issues = []
+  if str.contains(source, "exec(") {
+    issues = push(issues, #{ "severity": "warning", "message": "uses exec" })
+  }
+  if str.contains(source, "io.write_file(") || str.contains(source, "fs.rm(") {
+    issues = push(issues, #{ "severity": "warning", "message": "writes to filesystem" })
+  }
+  if str.contains(source, "http.get(") || str.contains(source, "http.post(") {
+    issues = push(issues, #{ "severity": "warning", "message": "makes network requests" })
+  }
+  if str.contains(source, "db.open(") {
+    issues = push(issues, #{ "severity": "warning", "message": "opens database" })
+  }
+  if str.contains(source, "env.get(") || str.contains(source, "env.set(") {
+    issues = push(issues, #{ "severity": "warning", "message": "accesses env vars" })
+  }
+  ret #{ "safe": len(issues) == 0, "issues": issues, "issue_count": len(issues) }
+}
+
+fn deny_all() -> map { ret capabilities(#{}) }
+
+fn allow_all() -> map {
+  ret capabilities(#{ "fs_read": ["*"], "fs_write": ["*"], "net": ["*"], "exec": true, "db": true, "env": true, "timeout_ms": 30000 })
+}
+
+fn allow_read_only(paths) -> map { ret capabilities(#{ "fs_read": paths }) }
+
+fn allow_network(hosts) -> map { ret capabilities(#{ "net": hosts }) }

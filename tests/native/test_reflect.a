@@ -1,0 +1,95 @@
+use std.testing
+use std.reflect
+
+fn main() {
+  ; --- Test 1: uptime_ms returns positive ---
+  let up = reflect.uptime_ms()
+  testing.assert_eq(to_str(up >= 0), "true")
+  println("PASS: uptime_ms returns non-negative")
+
+  ; --- Test 2: memory_usage returns positive ---
+  let mem = reflect.memory_usage()
+  testing.assert_eq(to_str(mem > 0), "true")
+  println("PASS: memory_usage returns positive bytes")
+
+  ; --- Test 3: pid returns positive ---
+  let pid = reflect.pid()
+  testing.assert_eq(to_str(pid > 0), "true")
+  println("PASS: pid returns positive")
+
+  ; --- Test 4: memory_mb ---
+  let mb = reflect.memory_mb()
+  testing.assert_eq(to_str(mb > 0.0), "true")
+  println("PASS: memory_mb returns positive float")
+
+  ; --- Test 5: memory_kb ---
+  let kb = reflect.memory_kb()
+  testing.assert_eq(to_str(kb > 0), "true")
+  println("PASS: memory_kb returns positive")
+
+  ; --- Test 6: info map ---
+  let i = reflect.info()
+  testing.assert_eq(to_str(i["pid"] > 0), "true")
+  testing.assert_eq(to_str(i["uptime_ms"] >= 0), "true")
+  testing.assert_eq(to_str(i["memory_bytes"] > 0), "true")
+  println("PASS: info map has expected keys")
+
+  ; --- Test 7: health check ---
+  let h = reflect.health()
+  testing.assert_eq(h["status"], "ok")
+  testing.assert_eq(to_str(h["pid"] > 0), "true")
+  testing.assert_eq(to_str(h["uptime_ms"] >= 0), "true")
+  testing.assert_eq(to_str(h["memory_mb"] > 0.0), "true")
+  println("PASS: health check")
+
+  ; --- Test 8: profiler create ---
+  let p = reflect.profiler()
+  testing.assert_eq(to_str(reflect.call_count(p, "foo")), "0")
+  println("PASS: profiler create")
+
+  ; --- Test 9: tick increments count ---
+  let p2 = reflect.tick(p, "fetch")
+  let p3 = reflect.tick(p2, "fetch")
+  let p4 = reflect.tick(p3, "process")
+  testing.assert_eq(to_str(reflect.call_count(p4, "fetch")), "2")
+  testing.assert_eq(to_str(reflect.call_count(p4, "process")), "1")
+  println("PASS: tick increments count")
+
+  ; --- Test 10: tick_ms tracks timing ---
+  let p5 = reflect.tick_ms(p4, "fetch", 50)
+  let p6 = reflect.tick_ms(p5, "fetch", 30)
+  testing.assert_eq(to_str(reflect.total_time(p6, "fetch")), "80")
+  testing.assert_eq(to_str(reflect.call_count(p6, "fetch")), "4")
+  println("PASS: tick_ms tracks timing")
+
+  ; --- Test 11: avg_time ---
+  let avg = reflect.avg_time(p6, "fetch")
+  testing.assert_eq(to_str(avg == 20.0 || avg == 20), "true")
+  println("PASS: avg_time")
+
+  ; --- Test 12: hot_paths ---
+  let hot = reflect.hot_paths(p6, 10)
+  testing.assert_eq(to_str(len(hot)), "2")
+  testing.assert_eq(hot[0]["name"], "fetch")
+  testing.assert_eq(to_str(hot[0]["count"]), "4")
+  println("PASS: hot_paths sorted by count")
+
+  ; --- Test 13: hot_paths limit ---
+  let hot1 = reflect.hot_paths(p6, 1)
+  testing.assert_eq(to_str(len(hot1)), "1")
+  println("PASS: hot_paths respects limit")
+
+  ; --- Test 14: stats ---
+  let s = reflect.stats(p6)
+  testing.assert_eq(to_str(s["unique_functions"]), "2")
+  testing.assert_eq(to_str(s["total_calls"]), "5")
+  println("PASS: profiler stats")
+
+  ; --- Test 15: reset ---
+  let p7 = reflect.reset(p6)
+  testing.assert_eq(to_str(reflect.call_count(p7, "fetch")), "0")
+  println("PASS: profiler reset")
+
+  println("")
+  println("All reflect tests passed!")
+}

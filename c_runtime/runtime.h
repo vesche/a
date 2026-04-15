@@ -303,6 +303,11 @@ AValue a_uuid_v4(void);
 AValue a_signal_on(AValue name, AValue handler);
 void a_signal_check(void);
 
+/* Reflect / introspection */
+AValue a_reflect_uptime_ms(void);
+AValue a_reflect_memory_usage(void);
+AValue a_reflect_pid(void);
+
 /* Image processing */
 AValue a_image_load(AValue path);
 AValue a_image_decode(AValue bytes);
@@ -372,6 +377,16 @@ void    a_arena_free(AArena* arena);
 void*   a_arena_alloc(AArena* arena, int bytes);
 int     a_arena_save(AArena* arena);
 void    a_arena_restore(AArena* arena, int saved_pos);
+
+/* Local LLM inference (GGUF) */
+AValue a_llm_load(AValue path);
+AValue a_llm_generate(AValue handle, AValue prompt, AValue opts);
+AValue a_llm_embed(AValue handle, AValue text);
+AValue a_llm_unload(AValue handle);
+AValue a_llm_info(AValue handle);
+AValue a_llm_tokenize(AValue handle, AValue text);
+AValue a_llm_detokenize(AValue handle, AValue tokens);
+AValue a_llm_vocab_size(AValue handle);
 
 /* Pattern matching helpers (inline for zero overhead) */
 static inline int a_is_ok_raw(AValue v) { return v.tag == TAG_RESULT && v.rval.is_ok; }

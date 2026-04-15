@@ -1,0 +1,184 @@
+; std/rpc.a -- Lightweight RPC over HTTP with service discovery
+; JSON-RPC 2.0 over HTTP POST. Agents register by name, discover each other.
+;
+; Server:
+;   let handlers = #{ "add": fn(params) { ret params["a"] + params["b"] } }
+;   rpc.serve("math-agent", 9900, handlers)    ; blocks, handling requests
+;
+; Client:
+;   let result = rpc.call("math-agent", "add", #{ "a": 2, "b": 3 })
+;   ; result = Ok(5) or Err("...")
+;
+; Direct call (by address, no discovery):
+;   let result = rpc.call_addr("http://127.0.0.1:9900", "add", #{ "a": 2, "b": 3 })
+
+fn _registry_dir() -> str {
+  ret "/tmp/a_agents"
+}
+
+fn _registry_path(name) -> str {
+  ret _registry_dir() + "/" + name + ".json"
+}
+
+fn _ensure_registry() {
+  let d = _registry_dir()
+  if !fs.exists(d) {
+    fs.mkdir(d)
+  }
+}
+
+fn register(name, port) {
+  _ensure_registry()
+  let info = #{
+    "name": name,
+    "host": "127.0.0.1",
+    "port": port,
+    "addr": "http://127.0.0.1:" + to_str(port),
+    "pid": to_str(time.now())
+  }
+  io.write_file(_registry_path(name), json.stringify(info))
+}
+
+fn unregister(name) {
+  let p = _registry_path(name)
+  if fs.exists(p) {
+    fs.rm(p)
+  }
+}
+
+fn discover(name) {
+  let p = _registry_path(name)
+  if !fs.exists(p) {
+    ret Err("agent not found: " + name)
+  }
+  ret Ok(json.parse(io.read_file(p)))
+}
+
+fn list_agents() -> [map] {
+  _ensure_registry()
+  let d = _registry_dir()
+  let entries = fs.ls(d)
+  let mut agents = []
+  let mut i = 0
+  while i < len(entries) {
+    let e = entries[i]
+    if str.ends_with(e["name"], ".json") {
+      let data = io.read_file(d + "/" + e["name"])
+      let info = json.parse(data)
+      agents = push(agents, info)
+    }
+    i = i + 1
+  }
+  ret agents
+}
+
+fn _jsonrpc_request(id, method, params) -> str {
+  ret json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": id,
+    "method": method,
+    "params": params
+  })
+}
+
+fn _jsonrpc_response(id, result) -> str {
+  ret json.stringify(#{ "jsonrpc": "2.0", "id": id, "result": result })
+}
+
+fn _jsonrpc_error(id, code, message) -> str {
+  ret json.stringify(#{
+    "jsonrpc": "2.0",
+    "id": id,
+    "error": #{ "code": code, "message": message }
+  })
+}
+
+fn call_addr(addr, method, params) {
+  let body = _jsonrpc_request(1, method, params)
+  let resp = http.post(addr + "/rpc", body, #{ "Content-Type": "application/json" })
+  if type_of(resp) == "map" {
+    if resp["status"] != 200 {
+      ret Err("rpc: HTTP " + to_str(resp["status"]))
+    }
+    let parsed = json.parse(resp["body"])
+    if map.has(parsed, "error") {
+      ret Err(parsed["error"]["message"])
+    }
+    ret Ok(parsed["result"])
+  }
+  ret Err("rpc: request failed")
+}
+
+fn call(target, method, params) {
+  let info = discover(target)
+  if is_err(info) {
+    ret info
+  }
+  let agent = unwrap(info)
+  ret call_addr(agent["addr"], method, params)
+}
+
+fn notify_addr(addr, method, params) {
+  let body = json.stringify(#{
+    "jsonrpc": "2.0",
+    "method": method,
+    "params": params
+  })
+  http.post(addr + "/rpc", body, #{ "Content-Type": "application/json" })
+}
+
+fn notify(target, method, params) {
+  let info = discover(target)
+  if is_err(info) { ret info }
+  let agent = unwrap(info)
+  notify_addr(agent["addr"], method, params)
+  ret Ok(true)
+}
+
+fn _run_handler(handlers, method, params) {
+  let keys = map.keys(handlers)
+  let mut i = 0
+  while i < len(keys) {
+    if keys[i] == method {
+      let h = handlers[keys[i]]
+      ret #{ "ok": true, "result": h(params) }
+    }
+    i = i + 1
+  }
+  ret #{ "ok": false, "error": "method not found: " + method }
+}
+
+fn serve(name, port, handlers) {
+  register(name, port)
+
+  http.serve(port, fn(req) {
+    if req["path"] == "/rpc" && req["method"] == "POST" {
+      let msg = json.parse(req["body"])
+      let method = msg["method"]
+      let params = msg["params"]
+      let id = msg["id"]
+
+      if method == "_ping" {
+        ret #{ "status": 200, "body": _jsonrpc_response(id, "pong"), "headers": #{ "content-type": "application/json" } }
+      }
+      if method == "_methods" {
+        ret #{ "status": 200, "body": _jsonrpc_response(id, map.keys(handlers)), "headers": #{ "content-type": "application/json" } }
+      }
+
+      let result = _run_handler(handlers, method, params)
+      if result["ok"] {
+        let resp_body = _jsonrpc_response(id, result["result"])
+        ret #{ "status": 200, "body": resp_body, "headers": #{ "content-type": "application/json" } }
+      }
+
+      let err_body = _jsonrpc_error(id, -32601, result["error"])
+      ret #{ "status": 200, "body": err_body, "headers": #{ "content-type": "application/json" } }
+    }
+
+    if req["path"] == "/health" {
+      ret #{ "status": 200, "body": json.stringify(#{ "status": "ok", "name": name }), "headers": #{ "content-type": "application/json" } }
+    }
+
+    ret #{ "status": 404, "body": "not found", "headers": #{} }
+  })
+}

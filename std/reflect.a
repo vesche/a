@@ -1,0 +1,139 @@
+; std/reflect.a -- Runtime self-inspection for agents
+; Combines C builtins (memory, uptime, pid) with pure-"a" instrumentation
+; (call counters, hot path tracking).
+;
+; Usage:
+;   println("uptime: " + to_str(reflect.uptime_ms()) + "ms")
+;   println("memory: " + to_str(reflect.memory_mb()) + "MB")
+;   let p = reflect.profiler()
+;   let p = reflect.tick(p, "fetch_data")
+;   let p = reflect.tick(p, "fetch_data")
+;   println(reflect.hot_paths(p, 5))
+
+; --- Built-in wrappers (C runtime) ---
+
+fn memory_mb() -> float {
+  ret float(reflect.memory_usage()) / 1048576.0
+}
+
+fn memory_kb() -> int {
+  ret reflect.memory_usage() / 1024
+}
+
+fn info() -> map {
+  ret #{
+    "pid": reflect.pid(),
+    "uptime_ms": reflect.uptime_ms(),
+    "memory_bytes": reflect.memory_usage(),
+    "memory_mb": memory_mb()
+  }
+}
+
+; --- Profiler: call counters and timing ---
+
+fn profiler() -> map {
+  ret #{
+    "counts": #{},
+    "times": #{},
+    "started_at": time.now()
+  }
+}
+
+fn tick(p, name) -> map {
+  let counts = p["counts"]
+  let mut c = 0
+  if map.has(counts, name) {
+    c = counts[name]
+  }
+  ret map.set(p, "counts", map.set(counts, name, c + 1))
+}
+
+fn tick_ms(p, name, elapsed_ms) -> map {
+  let p2 = tick(p, name)
+  let times = p2["times"]
+  let mut total = 0
+  if map.has(times, name) {
+    total = times[name]
+  }
+  ret map.set(p2, "times", map.set(times, name, total + elapsed_ms))
+}
+
+fn call_count(p, name) -> int {
+  if map.has(p["counts"], name) {
+    ret p["counts"][name]
+  }
+  ret 0
+}
+
+fn total_time(p, name) -> int {
+  if map.has(p["times"], name) {
+    ret p["times"][name]
+  }
+  ret 0
+}
+
+fn avg_time(p, name) -> float {
+  let c = call_count(p, name)
+  if c == 0 { ret 0.0 }
+  ret float(total_time(p, name)) / float(c)
+}
+
+fn hot_paths(p, limit) -> [map] {
+  let keys = map.keys(p["counts"])
+  let counts = p["counts"]
+
+  ; Build entries
+  let mut entries = []
+  let mut i = 0
+  while i < len(keys) {
+    let k = keys[i]
+    let mut t = 0
+    if map.has(p["times"], k) {
+      t = p["times"][k]
+    }
+    entries = push(entries, #{ "name": k, "count": counts[k], "total_ms": t })
+    i = i + 1
+  }
+
+  ; Sort descending by count
+  entries = sort_by(entries, fn(a, b) { ret b["count"] - a["count"] })
+
+  if len(entries) > limit {
+    ret slice(entries, 0, limit)
+  }
+  ret entries
+}
+
+fn stats(p) -> map {
+  let keys = map.keys(p["counts"])
+  let mut total_calls = 0
+  let mut i = 0
+  while i < len(keys) {
+    total_calls = total_calls + p["counts"][keys[i]]
+    i = i + 1
+  }
+  ret #{
+    "unique_functions": len(keys),
+    "total_calls": total_calls,
+    "profiler_uptime_ms": time.now() - p["started_at"]
+  }
+}
+
+fn reset(p) -> map {
+  ret map.set(map.set(p, "counts", #{}), "times", #{})
+}
+
+; --- Health check ---
+
+fn health() -> map {
+  let mem = reflect.memory_usage()
+  let up = reflect.uptime_ms()
+  ret #{
+    "status": "ok",
+    "pid": reflect.pid(),
+    "uptime_ms": up,
+    "uptime_s": up / 1000,
+    "memory_bytes": mem,
+    "memory_mb": float(mem) / 1048576.0
+  }
+}

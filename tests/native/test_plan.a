@@ -1,0 +1,123 @@
+use std.testing
+use std.plan
+
+fn main() {
+  ; --- Test 1: create a plan ---
+  let p = plan.create("deploy app")
+  testing.assert_eq(p["goal"], "deploy app")
+  testing.assert_eq(to_str(len(p["steps"])), "0")
+  println("PASS: create a plan")
+
+  ; --- Test 2: add steps ---
+  let p2 = plan.add_step(p, "build", "compile the source", [])
+  let p3 = plan.add_step(p2, "test", "run tests", ["build"])
+  let p4 = plan.add_step(p3, "deploy", "push to prod", ["test"])
+  testing.assert_eq(to_str(len(p4["steps"])), "3")
+  println("PASS: add steps")
+
+  ; --- Test 3: status before execution ---
+  let s1 = plan.status(p4)
+  testing.assert_eq(to_str(s1["total"]), "3")
+  testing.assert_eq(to_str(s1["pending"]), "3")
+  testing.assert_eq(to_str(s1["done"]), "0")
+  testing.assert_eq(to_str(s1["complete"]), "false")
+  println("PASS: status before execution")
+
+  ; --- Test 4: execute all steps successfully ---
+  let results_log = []
+  let p5 = plan.execute(p4, fn(step) {
+    ret Ok("done: " + step["id"])
+  })
+  let s2 = plan.status(p5)
+  testing.assert_eq(to_str(s2["done"]), "3")
+  testing.assert_eq(to_str(s2["failed"]), "0")
+  testing.assert_eq(to_str(s2["complete"]), "true")
+  println("PASS: execute all steps successfully")
+
+  ; --- Test 5: get_result ---
+  let r1 = plan.get_result(p5, "build")
+  testing.assert_eq(is_ok(r1), true)
+  let build_result = unwrap(r1)
+  testing.assert_eq(build_result["status"], "done")
+  testing.assert_eq(build_result["value"], "done: build")
+  println("PASS: get_result")
+
+  ; --- Test 6: failed step cascades to dependents ---
+  let pf = plan.add_step(plan.create("fail test"), "a", "step a", [])
+  let pf = plan.add_step(pf, "b", "step b (depends on a)", ["a"])
+  let pf = plan.add_step(pf, "c", "step c (depends on b)", ["b"])
+  let pf = plan.execute(pf, fn(step) {
+    if step["id"] == "a" {
+      ret Err("intentional failure")
+    }
+    ret Ok("ok")
+  })
+  let sf = plan.status(pf)
+  testing.assert_eq(to_str(sf["failed"]), "1")
+  testing.assert_eq(to_str(sf["skipped"]), "2")
+  testing.assert_eq(to_str(sf["done"]), "0")
+  println("PASS: failed step cascades to dependents")
+
+  ; --- Test 7: summary string ---
+  let sum = plan.summary(pf)
+  testing.assert_eq(str.contains(sum, "1 failed"), true)
+  testing.assert_eq(str.contains(sum, "2 skipped"), true)
+  println("PASS: summary string")
+
+  ; --- Test 8: serialize / deserialize ---
+  let json = plan.serialize(p5)
+  let p6 = plan.deserialize(json)
+  testing.assert_eq(p6["goal"], "deploy app")
+  testing.assert_eq(to_str(len(p6["steps"])), "3")
+  println("PASS: serialize / deserialize roundtrip")
+
+  ; --- Test 9: step_ids ---
+  let ids = plan.step_ids(p5)
+  testing.assert_eq(to_str(len(ids)), "3")
+  testing.assert_eq(ids[0], "build")
+  testing.assert_eq(ids[1], "test")
+  testing.assert_eq(ids[2], "deploy")
+  println("PASS: step_ids")
+
+  ; --- Test 10: is_complete ---
+  testing.assert_eq(to_str(plan.is_complete(p5)), "true")
+  testing.assert_eq(to_str(plan.is_complete(p4)), "false")
+  println("PASS: is_complete")
+
+  ; --- Test 11: mark_done / mark_failed manual ---
+  let pm = plan.add_step(plan.create("manual"), "x", "step x", [])
+  let pm = plan.mark_done(pm, "x", "manual ok")
+  testing.assert_eq(pm["steps"][0]["status"], "done")
+  let rm = plan.get_result(pm, "x")
+  testing.assert_eq(unwrap(rm)["value"], "manual ok")
+  println("PASS: mark_done manual")
+
+  ; --- Test 12: reset_step ---
+  let pr = plan.reset_step(pm, "x")
+  testing.assert_eq(pr["steps"][0]["status"], "pending")
+  let rr = plan.get_result(pr, "x")
+  testing.assert_eq(is_err(rr), true)
+  println("PASS: reset_step")
+
+  ; --- Test 13: failed_steps ---
+  let fs = plan.failed_steps(pf)
+  testing.assert_eq(to_str(len(fs)), "1")
+  testing.assert_eq(fs[0]["id"], "a")
+  println("PASS: failed_steps")
+
+  ; --- Test 14: parallel-ready steps (no deps) ---
+  let pp = plan.add_step(plan.create("parallel"), "a", "task a", [])
+  let pp = plan.add_step(pp, "b", "task b", [])
+  let pp = plan.add_step(pp, "c", "task c", [])
+  let pp = plan.add_step(pp, "final", "join", ["a", "b", "c"])
+  let mut exec_order = []
+  let pp = plan.execute(pp, fn(step) {
+    ret Ok(step["id"])
+  })
+  let sp = plan.status(pp)
+  testing.assert_eq(to_str(sp["done"]), "4")
+  println("PASS: parallel-ready steps all complete")
+
+  println("")
+  println("All plan tests passed!")
+}

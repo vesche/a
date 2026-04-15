@@ -1,0 +1,90 @@
+use std.testing
+use std.plugin
+
+fn main() {
+  let test_dir = "/tmp/a_test_plugin_" + to_str(time.now())
+
+  ; --- Test 1: init creates scaffold ---
+  let r1 = plugin.init(test_dir, "test_plug")
+  testing.assert_eq(to_str(is_ok(r1)), "true")
+  testing.assert_eq(to_str(fs.exists(test_dir + "/plugin.toml")), "true")
+  testing.assert_eq(to_str(fs.exists(test_dir + "/main.a")), "true")
+  println("PASS: init creates scaffold")
+
+  ; --- Test 2: create_manifest format ---
+  let m = plugin.create_manifest("foo", "1.0.0", "A test", "main.a")
+  testing.assert_eq(to_str(str.contains(m, "foo")), "true")
+  testing.assert_eq(to_str(str.contains(m, "1.0.0")), "true")
+  println("PASS: create_manifest format")
+
+  ; --- Test 3: not installed initially ---
+  testing.assert_eq(to_str(plugin.is_installed("test_plug")), "false")
+  println("PASS: not installed initially")
+
+  ; --- Test 4: install from directory ---
+  let r4 = plugin.install(test_dir)
+  testing.assert_eq(to_str(is_ok(r4)), "true")
+  let info4 = unwrap(r4)
+  testing.assert_eq(info4["name"], "test_plug")
+  testing.assert_eq(info4["version"], "0.1.0")
+  println("PASS: install from directory")
+
+  ; --- Test 5: is_installed after install ---
+  testing.assert_eq(to_str(plugin.is_installed("test_plug")), "true")
+  println("PASS: is_installed after install")
+
+  ; --- Test 6: list shows plugin ---
+  let pl6 = plugin.list()
+  testing.assert_eq(to_str(len(pl6) >= 1), "true")
+  testing.assert_eq(pl6[0]["name"], "test_plug")
+  println("PASS: list shows plugin")
+
+  ; --- Test 7: get returns info ---
+  let r7 = plugin.get("test_plug")
+  testing.assert_eq(to_str(is_ok(r7)), "true")
+  let info7 = unwrap(r7)
+  testing.assert_eq(info7["name"], "test_plug")
+  println("PASS: get returns info")
+
+  ; --- Test 8: get unknown returns Err ---
+  let r8 = plugin.get("nonexistent")
+  testing.assert_eq(to_str(is_err(r8)), "true")
+  println("PASS: get unknown returns Err")
+
+  ; --- Test 9: load returns source ---
+  let r9 = plugin.load("test_plug")
+  testing.assert_eq(to_str(is_ok(r9)), "true")
+  let pl9 = unwrap(r9)
+  testing.assert_eq(pl9["name"], "test_plug")
+  testing.assert_eq(to_str(len(pl9["source"]) > 0), "true")
+  println("PASS: load returns source")
+
+  ; --- Test 10: run executes plugin ---
+  let r10 = plugin.run("test_plug")
+  testing.assert_eq(to_str(is_ok(r10)), "true")
+  let out10 = unwrap(r10)
+  testing.assert_eq(to_str(str.contains(out10["stdout"], "hello from")), "true")
+  println("PASS: run executes plugin")
+
+  ; --- Test 11: remove plugin ---
+  let r11 = plugin.remove("test_plug")
+  testing.assert_eq(to_str(is_ok(r11)), "true")
+  testing.assert_eq(to_str(plugin.is_installed("test_plug")), "false")
+  println("PASS: remove plugin")
+
+  ; --- Test 12: remove nonexistent returns Err ---
+  let r12 = plugin.remove("not_here")
+  testing.assert_eq(to_str(is_err(r12)), "true")
+  println("PASS: remove nonexistent returns Err")
+
+  ; --- Test 13: list empty after removal ---
+  let pl13 = plugin.list()
+  testing.assert_eq(to_str(len(pl13)), "0")
+  println("PASS: list empty after removal")
+
+  ; Cleanup
+  exec("rm -rf " + test_dir)
+
+  println("")
+  println("13 passed, 0 failed")
+}

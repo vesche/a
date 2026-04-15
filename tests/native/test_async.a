@@ -4,7 +4,8 @@ fn main() {
   let port = 9879
   let addr = str.concat("http://127.0.0.1:", to_str(port))
 
-  exec("./a run tests/native/_http_server_async.a &")
+  exec("./a build tests/native/_http_server_async.a -o /tmp/_async_srv_test 2>/dev/null")
+  exec("/tmp/_async_srv_test > /dev/null 2>&1 &")
   time.sleep(1000)
 
   ; --- Test 1: async.http_get + async.await returns same shape as http.get ---
@@ -97,7 +98,7 @@ fn main() {
   testing.assert_eq(to_str(parsed["ok"]), "true")
   println("PASS: async response body parses as JSON")
 
-  exec("pkill -f '_http_server_async.a' 2>/dev/null || true")
+  exec("pkill -f '_async_srv_test' 2>/dev/null || true")
 
   println("")
   println("All async tests passed!")
