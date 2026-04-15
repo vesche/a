@@ -17,25 +17,19 @@ Every design choice -- grammar, keywords, type system, builtins -- optimizes for
 
 ## Build
 
-**Requirements:** gcc (or any C99 compiler). Supported platforms: Linux x86_64, Linux arm64, macOS arm64.
+**Requirements:** gcc (or any C99 compiler). That's it. Supported platforms: Linux x86_64, Linux arm64, macOS arm64.
 
 Pre-built binaries are available on the [Releases](../../releases) page.
 
 ```bash
-# Option 1: Bootstrap from C (no Rust required)
-./bootstrap/build.sh        # gcc only -- builds ./a from pre-generated C
-
-# Option 2: Full build (requires Rust)
-./build.sh                  # builds ./a from source via the Rust VM
-
-# Option 3: Rust VM only
-cargo build --release
+./build.sh                  # gcc bootstrap + self-host (no Rust, no cargo)
 ```
+
+The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: `./a` compiles its own source to produce the final binary. No Rust or cargo required.
 
 ## Usage
 
 ```
-# Native CLI (fast, self-contained)
 ./a run program.a           # compile and run (cached -- instant on repeat)
 ./a build program.a         # compile to native binary
 ./a build program.a -o out  # compile to native binary with custom name
@@ -56,13 +50,6 @@ cargo build --release
 
 # Shebang support
 #!/usr/bin/env a run        # add to top of .a file, chmod +x, run directly
-
-# Rust VM
-a run program.a             # execute (bytecode VM)
-a test tests/test_re.a      # run test_* functions with pass/fail reporting
-a check program.a           # type check
-a fmt program.a             # format
-a ast program.a             # dump AST as JSON
 ```
 
 ## The language in 60 seconds
@@ -138,7 +125,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Image** | `image.load(path)`, `image.decode(bytes)`, `image.encode(image, fmt)`, `image.save(image, path)`, `image.width`, `image.height`, `image.resize(image, w, h)`, `image.pixels(image)` -- PNG/JPEG/BMP/GIF decode, PNG/BMP/JPEG encode, bilinear resize (native CLI only, via bundled stb_image) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 31 modules:
+**Standard library** with 33 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -177,6 +164,8 @@ use std.compiler.cgen          # compile ASTs to C source code (native compilati
 use std.compiler.emitter      # pretty-print ASTs back to "a" source
 use std.compiler.checker      # static analysis: undefined vars, arity, unused, unreachable
 use std.compiler.serialize    # serialize/deserialize compiled programs
+use std.codegen               # compile_check, run_in_sandbox, test, generate -- self-improvement loop
+use std.refactor              # rename, extract_fn, inline_fn -- AST-level refactoring
 use std.lexer                 # legacy tokenizer
 ```
 
@@ -185,13 +174,13 @@ use std.lexer                 # legacy tokenizer
 The "a" compiler and CLI are fully self-hosting. The native `./a` binary compiles its own source code to produce a working copy of itself:
 
 ```bash
-./build.sh                            # bootstrap: VM -> C -> native ./a
+./build.sh                            # gcc bootstrap -> self-host -> done
 ./a build src/cli.a -o a2             # self-hosting: ./a compiles itself
 ./a2 build src/cli.a -o a3            # a2 compiles itself too
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~11,700 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 145+ native builtins. gcc compiles that C into a freestanding native binary with **zero Rust dependency**. A pre-generated `bootstrap/cli.c` is committed to the repo, so a clean checkout can build the language with just `gcc` -- no Rust or cargo required. All 22 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~12,600 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 160+ native builtins. All 33 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -201,13 +190,13 @@ The C code generator compiles itself -- including the lexer, parser, checker, an
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~3,700 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~3,900 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, fork-based concurrency (spawn/await/parallel_map/timeout), JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
 ## Concurrency
 
-Structured concurrency with isolated task parallelism. No shared mutable state -- each spawned task runs in its own VM with a copy of the program:
+Structured concurrency with isolated task parallelism. No shared mutable state -- each spawned task runs in complete isolation (own VM thread in the bytecode path, fork'd process in the native path):
 
 ```
 fn fib(n: int) -> int {
@@ -272,6 +261,7 @@ fn main() -> void {
 | `examples/agent.a` | 60 | **agentic loop** -- tool-using LLM agent: define tools, handle calls, iterate |
 | `examples/test_llm.a` | 130 | tests for LLM module internals -- request building, response parsing, tool calls |
 | `examples/gen_tests.a` | 46 | metaprogramming: auto-generate test scaffolds from source |
+| `examples/self_extend.a` | ~130 | **self-improvement loop** -- analyze, compile-check, sandbox, test, refactor, LLM generate |
 | `src/cli.a` | ~500 | **native CLI driver** -- `run`, `build`, `cc`, `fmt`, `ast`, `check`, `repl`, `test`, `lsp`, `pkg` subcommands; self-hosting (compiles itself) |
 | `src/lsp.a` | ~1,100 | **language server** -- LSP over stdio with diagnostics, completion, hover, go-to-definition, semantic tokens, rename, code actions, workspace symbols |
 | `std/compiler/cgen.a` | ~1,870 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
@@ -280,12 +270,11 @@ fn main() -> void {
 
 | | |
 |---|---|
-| **Rust runtime** | ~10,000 lines across 8 modules |
-| **C runtime** | ~3,800 lines (runtime.h + runtime.c) + bundled SQLite3, miniz |
-| **"a" source** | ~20,700 lines across 105 files |
-| **Standard library** | 31 modules, 490+ functions, ~10,000 lines |
-| **Test suites** | 37 suites + cgen test script, 590+ native tests, ~5,100 lines |
-| **Examples & tools** | 38 programs, ~6,400 lines |
+| **C runtime** | ~4,100 lines (runtime.h + runtime.c) + bundled SQLite3, miniz, stb_image |
+| **"a" source** | ~21,000 lines across 110+ files |
+| **Standard library** | 33 modules, 510+ functions, ~10,600 lines |
+| **Test suites** | 33 suites + cgen test script, 700+ native tests, ~6,000 lines |
+| **Examples & tools** | 39 programs, ~6,600 lines |
 
 ## Editor support
 

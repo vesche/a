@@ -1,0 +1,397 @@
+; std/refactor.a -- AST-level refactoring: rename, extract function, inline function.
+; All functions take source strings and return transformed source strings.
+
+use std.meta
+use std.compiler.parser
+use std.compiler.emitter
+use std.compiler.ast
+
+; --- Deep AST rewriting ---
+; Recursively transform an AST node, replacing names where appropriate.
+
+fn _rename_node(node, old_name, new_name) {
+  if type_of(node) == "array" {
+    let mut result = []
+    let mut i = 0
+    while i < len(node) {
+      result = push(result, _rename_node(node[i], old_name, new_name))
+      i = i + 1
+    }
+    ret result
+  }
+  if type_of(node) != "map" { ret node }
+  if !map.has(node, "tag") { ret node }
+  let tag = node["tag"]
+
+  if tag == "FnDecl" {
+    let name = node["name"]
+    if name == old_name { name = new_name }
+    ret ast.mk_fn_decl(name,
+      _rename_node(node["params"], old_name, new_name),
+      node["ret_type"], node["effects"],
+      node["pre"], node["post"],
+      _rename_node(node["body"], old_name, new_name))
+  }
+  if tag == "Ident" {
+    if node["name"] == old_name { ret ast.mk_ident(new_name) }
+    ret node
+  }
+  if tag == "Param" {
+    let name = node["name"]
+    if name == old_name { name = new_name }
+    ret ast.mk_param(name, node["type"])
+  }
+  if tag == "Let" {
+    let name = node["name"]
+    if name == old_name { name = new_name }
+    ret ast.mk_let(node["mutable"], name, node["type"],
+      _rename_node(node["value"], old_name, new_name))
+  }
+  if tag == "Assign" {
+    ret ast.mk_assign(
+      _rename_node(node["target"], old_name, new_name),
+      _rename_node(node["value"], old_name, new_name))
+  }
+  if tag == "Return" {
+    ret ast.mk_return(_rename_node(node["expr"], old_name, new_name))
+  }
+  if tag == "ExprStmt" {
+    ret ast.mk_expr_stmt(_rename_node(node["expr"], old_name, new_name))
+  }
+  if tag == "Call" {
+    ret ast.mk_call(
+      _rename_node(node["func"], old_name, new_name),
+      _rename_node(node["args"], old_name, new_name))
+  }
+  if tag == "BinOp" {
+    ret ast.mk_binop(node["op"],
+      _rename_node(node["left"], old_name, new_name),
+      _rename_node(node["right"], old_name, new_name))
+  }
+  if tag == "UnaryOp" {
+    ret ast.mk_unary(node["op"], _rename_node(node["expr"], old_name, new_name))
+  }
+  if tag == "Block" {
+    ret ast.mk_block(_rename_node(node["stmts"], old_name, new_name))
+  }
+  if tag == "If" {
+    ret ast.mk_if_stmt(
+      _rename_node(node["cond"], old_name, new_name),
+      _rename_node(node["then"], old_name, new_name),
+      _rename_node(node["else"], old_name, new_name))
+  }
+  if tag == "While" {
+    ret ast.mk_while_stmt(
+      _rename_node(node["cond"], old_name, new_name),
+      _rename_node(node["body"], old_name, new_name))
+  }
+  if tag == "For" {
+    let var_name = node["var"]
+    if var_name == old_name { var_name = new_name }
+    ret ast.mk_for_stmt(var_name, node["type"],
+      _rename_node(node["iter"], old_name, new_name),
+      _rename_node(node["body"], old_name, new_name))
+  }
+  if tag == "FieldAccess" {
+    ret ast.mk_field_access(
+      _rename_node(node["expr"], old_name, new_name),
+      node["field"])
+  }
+  if tag == "Index" {
+    ret ast.mk_index(
+      _rename_node(node["expr"], old_name, new_name),
+      _rename_node(node["index"], old_name, new_name))
+  }
+  if tag == "Lambda" {
+    ret ast.mk_lambda(
+      _rename_node(node["params"], old_name, new_name),
+      _rename_node(node["body"], old_name, new_name))
+  }
+  if tag == "Array" {
+    ret ast.mk_array(_rename_node(node["elems"], old_name, new_name))
+  }
+  if tag == "Pipe" {
+    ret ast.mk_pipe(
+      _rename_node(node["left"], old_name, new_name),
+      _rename_node(node["right"], old_name, new_name))
+  }
+  if tag == "Program" {
+    ret ast.mk_program(_rename_node(node["items"], old_name, new_name))
+  }
+  if tag == "Match" {
+    ret ast.mk_match_stmt(
+      _rename_node(node["expr"], old_name, new_name),
+      _rename_node(node["arms"], old_name, new_name))
+  }
+  if tag == "MatchArm" {
+    ret ast.mk_match_arm(node["pattern"],
+      _rename_node(node["guard"], old_name, new_name),
+      _rename_node(node["body"], old_name, new_name))
+  }
+  if tag == "UseDecl" || tag == "ExternFn" { ret node }
+  if tag == "Interpolation" {
+    ret ast.mk_interpolation(_rename_node(node["parts"], old_name, new_name))
+  }
+  if tag == "InterpExpr" {
+    ret ast.mk_interp_expr(_rename_node(node["expr"], old_name, new_name))
+  }
+  if tag == "MapLiteral" {
+    ret ast.mk_map_literal(_rename_node(node["entries"], old_name, new_name))
+  }
+  if tag == "MapEntry" {
+    ret ast.mk_map_entry(
+      _rename_node(node["key"], old_name, new_name),
+      _rename_node(node["value"], old_name, new_name))
+  }
+  if tag == "Spread" {
+    ret ast.mk_spread(_rename_node(node["expr"], old_name, new_name))
+  }
+  if tag == "BlockExpr" {
+    ret ast.mk_block_expr(_rename_node(node["block"], old_name, new_name))
+  }
+  if tag == "Try" {
+    ret ast.mk_try(_rename_node(node["expr"], old_name, new_name))
+  }
+  ret node
+}
+
+; --- Public API ---
+
+fn rename(source, old_name, new_name) -> str {
+  let prog_ast = meta.parse(source)
+  let renamed = _rename_node(prog_ast, old_name, new_name)
+  ret meta.emit(renamed)
+}
+
+fn extract_fn(source, start_line, end_line, fn_name) -> str {
+  let lines = str.lines(source)
+  let total = len(lines)
+  if start_line < 1 || end_line > total || start_line > end_line {
+    ret source
+  }
+  ; Collect the extracted lines
+  let mut extracted = []
+  let mut i = start_line - 1
+  while i < end_line {
+    extracted = push(extracted, lines[i])
+    i = i + 1
+  }
+  let extracted_text = str.join(extracted, "\n")
+
+  ; Parse the extracted block to find free variables (identifiers used but not bound)
+  let prog_ast = meta.parse(source)
+  let mut all_let_names = #{}
+  let extracted_calls = meta.find_all(prog_ast, fn(n) => n["tag"] == "Ident")
+  ; Scan extracted text for identifiers by parsing it as a function body
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let wrap = "fn _tmp() " + lb + "\n" + extracted_text + "\n" + rb
+  let wrap_ast = parser.parse(wrap)
+  let mut free_vars = []
+  let mut seen = #{}
+  if type_of(wrap_ast) == "map" && map.has(wrap_ast, "items") {
+    let fns = meta.find_fns(wrap_ast)
+    if len(fns) > 0 {
+      let body = fns[0]["body"]
+      ; Collect let-bound names
+      let lets = meta.find_all(body, fn(n) => n["tag"] == "Let")
+      let mut i = 0
+      while i < len(lets) {
+        all_let_names = map.set(all_let_names, lets[i]["name"], true)
+        i = i + 1
+      }
+      ; Collect identifiers not locally bound
+      let idents = meta.find_all(body, fn(n) => n["tag"] == "Ident")
+      let mut j = 0
+      while j < len(idents) {
+        let name = idents[j]["name"]
+        if !map.has(all_let_names, name) && !map.has(seen, name) {
+          free_vars = push(free_vars, name)
+          seen = map.set(seen, name, true)
+        }
+        j = j + 1
+      }
+    }
+  }
+
+  ; Build the call to the new function
+  let arg_str = str.join(free_vars, ", ")
+  let call_line = "  " + fn_name + "(" + arg_str + ")"
+
+  ; Build new function source
+  let param_str = str.join(free_vars, ", ")
+  let fn_src = "fn " + fn_name + "(" + param_str + ") " + lb + "\n" + extracted_text + "\n" + rb
+
+  ; Replace the extracted lines with the call, and append the new function
+  let mut new_lines = []
+  let mut k = 0
+  while k < total {
+    if k == start_line - 1 {
+      new_lines = push(new_lines, call_line)
+      k = end_line
+      continue
+    }
+    new_lines = push(new_lines, lines[k])
+    k = k + 1
+  }
+  new_lines = push(new_lines, "")
+  new_lines = push(new_lines, fn_src)
+  ret str.join(new_lines, "\n")
+}
+
+fn inline_fn(source, fn_name) -> str {
+  let prog_ast = meta.parse(source)
+  ; Find the target function
+  let fns = meta.find_fns(prog_ast)
+  let mut target = #{}
+  let mut found = false
+  let mut i = 0
+  while i < len(fns) {
+    if fns[i]["name"] == fn_name {
+      target = fns[i]
+      found = true
+    }
+    i = i + 1
+  }
+  if !found { ret source }
+
+  let body = target["body"]
+  let params = target["params"]
+  let stmts = body["stmts"]
+
+  ; Only inline single-return-expression functions
+  if len(stmts) != 1 { ret source }
+  let stmt = stmts[0]
+  let mut inline_expr = #{}
+  if stmt["tag"] == "Return" {
+    inline_expr = stmt["expr"]
+  }
+  if stmt["tag"] == "ExprStmt" {
+    inline_expr = stmt["expr"]
+  }
+  if !map.has(inline_expr, "tag") { ret source }
+
+  ; Replace calls to fn_name with the body, substituting params
+  let new_prog = _inline_calls(prog_ast, fn_name, params, inline_expr)
+  ; Remove the function definition
+  let filtered = meta.filter_items(new_prog, fn(item) {
+    if item["tag"] == "FnDecl" && item["name"] == fn_name { ret false }
+    ret true
+  })
+  ret meta.emit(filtered)
+}
+
+fn _inline_calls(node, fn_name, params, body_expr) {
+  if type_of(node) == "array" {
+    let mut result = []
+    let mut i = 0
+    while i < len(node) {
+      result = push(result, _inline_calls(node[i], fn_name, params, body_expr))
+      i = i + 1
+    }
+    ret result
+  }
+  if type_of(node) != "map" { ret node }
+  if !map.has(node, "tag") { ret node }
+  let tag = node["tag"]
+
+  if tag == "Call" {
+    let func = node["func"]
+    if type_of(func) == "map" && func["tag"] == "Ident" && func["name"] == fn_name {
+      let call_args = node["args"]
+      let mut final_result = body_expr
+      let mut j = 0
+      while j < len(params) && j < len(call_args) {
+        final_result = _subst_ident(final_result, params[j]["name"], call_args[j])
+        j = j + 1
+      }
+      ret final_result
+    }
+    ret ast.mk_call(
+      _inline_calls(node["func"], fn_name, params, body_expr),
+      _inline_calls(node["args"], fn_name, params, body_expr))
+  }
+
+  ; Recurse into known node types
+  if tag == "Program" { ret ast.mk_program(_inline_calls(node["items"], fn_name, params, body_expr)) }
+  if tag == "FnDecl" {
+    ret ast.mk_fn_decl(node["name"],
+      node["params"], node["ret_type"], node["effects"],
+      node["pre"], node["post"],
+      _inline_calls(node["body"], fn_name, params, body_expr))
+  }
+  if tag == "Block" { ret ast.mk_block(_inline_calls(node["stmts"], fn_name, params, body_expr)) }
+  if tag == "Return" { ret ast.mk_return(_inline_calls(node["expr"], fn_name, params, body_expr)) }
+  if tag == "ExprStmt" { ret ast.mk_expr_stmt(_inline_calls(node["expr"], fn_name, params, body_expr)) }
+  if tag == "Let" {
+    ret ast.mk_let(node["mutable"], node["name"], node["type"],
+      _inline_calls(node["value"], fn_name, params, body_expr))
+  }
+  if tag == "If" {
+    ret ast.mk_if_stmt(
+      _inline_calls(node["cond"], fn_name, params, body_expr),
+      _inline_calls(node["then"], fn_name, params, body_expr),
+      _inline_calls(node["else"], fn_name, params, body_expr))
+  }
+  if tag == "BinOp" {
+    ret ast.mk_binop(node["op"],
+      _inline_calls(node["left"], fn_name, params, body_expr),
+      _inline_calls(node["right"], fn_name, params, body_expr))
+  }
+  if tag == "Assign" {
+    ret ast.mk_assign(
+      _inline_calls(node["target"], fn_name, params, body_expr),
+      _inline_calls(node["value"], fn_name, params, body_expr))
+  }
+  if tag == "Array" { ret ast.mk_array(_inline_calls(node["elems"], fn_name, params, body_expr)) }
+  if tag == "Pipe" {
+    ret ast.mk_pipe(
+      _inline_calls(node["left"], fn_name, params, body_expr),
+      _inline_calls(node["right"], fn_name, params, body_expr))
+  }
+  ret node
+}
+
+fn _subst_ident(node, name, replacement) {
+  if type_of(node) == "array" {
+    let mut result = []
+    let mut i = 0
+    while i < len(node) {
+      result = push(result, _subst_ident(node[i], name, replacement))
+      i = i + 1
+    }
+    ret result
+  }
+  if type_of(node) != "map" { ret node }
+  if !map.has(node, "tag") { ret node }
+  let tag = node["tag"]
+  if tag == "Ident" && node["name"] == name { ret replacement }
+  if tag == "BinOp" {
+    ret ast.mk_binop(node["op"],
+      _subst_ident(node["left"], name, replacement),
+      _subst_ident(node["right"], name, replacement))
+  }
+  if tag == "Call" {
+    ret ast.mk_call(
+      _subst_ident(node["func"], name, replacement),
+      _subst_ident(node["args"], name, replacement))
+  }
+  if tag == "UnaryOp" {
+    ret ast.mk_unary(node["op"], _subst_ident(node["expr"], name, replacement))
+  }
+  if tag == "FieldAccess" {
+    ret ast.mk_field_access(_subst_ident(node["expr"], name, replacement), node["field"])
+  }
+  if tag == "Index" {
+    ret ast.mk_index(
+      _subst_ident(node["expr"], name, replacement),
+      _subst_ident(node["index"], name, replacement))
+  }
+  if tag == "Array" { ret ast.mk_array(_subst_ident(node["elems"], name, replacement)) }
+  if tag == "Pipe" {
+    ret ast.mk_pipe(
+      _subst_ident(node["left"], name, replacement),
+      _subst_ident(node["right"], name, replacement))
+  }
+  ret node
+}

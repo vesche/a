@@ -1,6 +1,16 @@
 #!/bin/bash
 set -e
 
+# Build the "a" language from pure C + self-hosting. No Rust, no cargo.
+#
+# Steps:
+#   1. Compile bootstrap/cli.c + C runtime -> bootstrap ./a
+#   2. Self-host: ./a builds itself from src/cli.a -> a2
+#   3. Verify a2 works, replace ./a
+#   4. Build language server (a-lsp)
+#
+# Requirements: gcc (or any C99 compiler). That's it.
+
 OS=$(uname -s)
 if [ "$OS" = "Darwin" ]; then
     STACK_FLAGS="-Wl,-stack_size,0x10000000"
@@ -10,48 +20,48 @@ else
     TLS_FLAGS="-ldl"
 fi
 
-echo "=== Building the 'a' language native CLI ==="
-echo ""
-
+SQLITE_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
 RUNTIME_DIR="c_runtime"
-CLI_SRC="src/cli.a"
-CGEN="std/compiler/cgen.a"
 OUTPUT="./a"
 
-if [ ! -f "$RUNTIME_DIR/runtime.c" ]; then
-    echo "error: cannot find $RUNTIME_DIR/runtime.c"
-    echo "run this script from the project root."
-    exit 1
-fi
+echo "=== Building the 'a' language (gcc only, no Rust) ==="
+echo ""
 
-if [ ! -f "$CLI_SRC" ]; then
-    echo "error: cannot find $CLI_SRC"
-    exit 1
-fi
+for f in bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c"; do
+    if [ ! -f "$f" ]; then
+        echo "error: missing $f"
+        echo "run this script from the project root."
+        exit 1
+    fi
+done
 
-echo "Step 1: Compile CLI to C via VM..."
-TMP_C=$(mktemp /tmp/a_cli_XXXXXX.c)
-cargo run --quiet -- run "$CGEN" -- "$CLI_SRC" > "$TMP_C" 2>/dev/null
-echo "  generated $(wc -l < "$TMP_C" | tr -d ' ') lines of C"
-
-SQLITE_FLAGS="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
-
-EMBEDDED="${EMBEDDED:-$RUNTIME_DIR/embedded.c}"
-
-echo "Step 2: Build native binary..."
-gcc "$TMP_C" "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$EMBEDDED" \
+echo "Step 1: Bootstrap from pre-generated C..."
+gcc bootstrap/cli.c "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$RUNTIME_DIR/embedded.c" \
     -o "$OUTPUT" -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS $TLS_FLAGS $SQLITE_FLAGS
-rm "$TMP_C"
-echo "  built $OUTPUT ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
+echo "  built bootstrap ./a ($(wc -c < "$OUTPUT" | tr -d ' ') bytes)"
+
+echo "Step 2: Self-host (./a builds itself)..."
+$OUTPUT build src/cli.a -o a2 2>&1
+echo "  built a2 ($(wc -c < a2 | tr -d ' ') bytes)"
+
+echo "Step 3: Verify self-hosted binary..."
+VERIFY=$(./a2 run examples/hello.a 2>&1)
+if echo "$VERIFY" | grep -q "hello from a"; then
+    echo "  verified: a2 works"
+else
+    echo "  error: a2 verification failed"
+    echo "  output: $VERIFY"
+    rm -f a2
+    exit 1
+fi
+
+mv a2 "$OUTPUT"
+echo "  replaced ./a with self-hosted binary"
 
 LSP_SRC="src/lsp.a"
 if [ -f "$LSP_SRC" ]; then
-    echo "Step 3: Build language server..."
-    TMP_LSP_C=$(mktemp /tmp/a_lsp_XXXXXX.c)
-    cargo run --quiet -- run "$CGEN" -- "$LSP_SRC" > "$TMP_LSP_C" 2>/dev/null
-    gcc "$TMP_LSP_C" "$RUNTIME_DIR/runtime.c" "$RUNTIME_DIR/sqlite3.c" "$RUNTIME_DIR/miniz.c" "$RUNTIME_DIR/stb_impl.c" "$EMBEDDED" \
-        -o "./a-lsp" -I "$RUNTIME_DIR" -lm -O2 $STACK_FLAGS $TLS_FLAGS $SQLITE_FLAGS
-    rm "$TMP_LSP_C"
+    echo "Step 4: Build language server..."
+    $OUTPUT build "$LSP_SRC" -o "./a-lsp" 2>&1
     echo "  built ./a-lsp ($(wc -c < "./a-lsp" | tr -d ' ') bytes)"
 fi
 

@@ -1,0 +1,61 @@
+; Tests for std/refactor.a -- rename, extract_fn, inline_fn
+
+use std.refactor
+
+fn _lb() { ret from_code(123) }
+fn _rb() { ret from_code(125) }
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  let lb = _lb()
+  let rb = _rb()
+
+  ; --- rename variable ---
+  let src1 = "fn main() " + lb + "\n  let x = 42\n  println(x)\n" + rb
+  let r1 = refactor.rename(src1, "x", "answer")
+  assert(str.contains(r1, "answer"), "rename: should contain 'answer'")
+  assert(!str.contains(r1, " x "), "rename: should not contain standalone ' x '")
+  assert(str.contains(r1, "let answer"), "rename: should have 'let answer'")
+
+  ; --- rename function ---
+  let src2 = "fn add(a, b) " + lb + "\n  ret a + b\n" + rb + "\n\nfn main() " + lb + "\n  println(add(1, 2))\n" + rb
+  let r2 = refactor.rename(src2, "add", "sum")
+  assert(str.contains(r2, "fn sum("), "rename fn: should have 'fn sum('")
+  assert(str.contains(r2, "sum(1"), "rename fn: call should use 'sum'")
+  assert(!str.contains(r2, "add"), "rename fn: should not contain 'add'")
+
+  ; --- rename parameter ---
+  let src3 = "fn greet(name) " + lb + "\n  println(name)\n" + rb
+  let r3 = refactor.rename(src3, "name", "who")
+  assert(str.contains(r3, "fn greet(who"), "rename param: should have 'who' param")
+  assert(str.contains(r3, "println(who"), "rename param: body should use 'who'")
+
+  ; --- extract function ---
+  let src4 = "fn main() " + lb + "\n  let x = 10\n  let y = 20\n  let sum = x + y\n  println(sum)\n" + rb
+  let r4 = refactor.extract_fn(src4, 3, 4, "compute")
+  assert(str.contains(r4, "fn compute("), "extract: should have new function")
+  assert(str.contains(r4, "compute("), "extract: should call new function")
+  assert(str.contains(r4, "let y = 20"), "extract: function should contain extracted code")
+  assert(str.contains(r4, "let sum = "), "extract: function should contain sum assignment")
+
+  ; --- extract preserves surrounding lines ---
+  let lines4 = str.lines(r4)
+  assert(str.contains(lines4[0], "fn main()"), "extract: first line should be fn main")
+  assert(str.contains(r4, "println(sum)"), "extract: println should remain in main")
+
+  ; --- inline single-expression function ---
+  let src5 = "fn double(x) " + lb + "\n  ret x * 2\n" + rb + "\n\nfn main() " + lb + "\n  println(double(5))\n" + rb
+  let r5 = refactor.inline_fn(src5, "double")
+  assert(!str.contains(r5, "fn double"), "inline: should remove double definition")
+  assert(str.contains(r5, "(5 * 2)") || str.contains(r5, "5 * 2"), "inline: should substitute body, got: " + r5)
+
+  ; --- inline non-existent function returns source unchanged ---
+  let src6 = "fn main() " + lb + "\n  println(42)\n" + rb
+  let r6 = refactor.inline_fn(src6, "nonexistent")
+  assert(str.contains(r6, "println"), "inline missing: should return original source")
+
+  println("all refactor tests passed")
+}

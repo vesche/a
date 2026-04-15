@@ -265,6 +265,14 @@ AValue a_proc_kill(AValue handle);
 AValue a_proc_wait(AValue handle);
 AValue a_proc_is_running(AValue handle);
 
+/* Concurrency (fork-based) */
+AValue a_spawn(AValue closure);
+AValue a_await(AValue handle);
+AValue a_await_all(AValue handles);
+AValue a_parallel_map(AValue arr, AValue func);
+AValue a_parallel_each(AValue arr, AValue func);
+AValue a_timeout(AValue ms, AValue func);
+
 /* Database (SQLite) */
 AValue a_db_open(AValue path);
 AValue a_db_close(AValue db);

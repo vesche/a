@@ -1,0 +1,56 @@
+; Tests for maps: literals, builtins, iteration, field access
+
+fn main() {
+  ; Map literal
+  let m = #{"a": 1, "b": 2, "c": 3}
+  if m["a"] != 1 { fail("literal: m['a'] should be 1") }
+  if m["c"] != 3 { fail("literal: m['c'] should be 3") }
+
+  ; map.has
+  if !map.has(m, "b") { fail("has: should have 'b'") }
+  if map.has(m, "z") { fail("has: should not have 'z'") }
+
+  ; map.set
+  let m2 = map.set(m, "d", 4)
+  if m2["d"] != 4 { fail("set: m2['d'] should be 4") }
+  if map.has(m, "d") { fail("set: original should not have 'd' (immutable)") }
+
+  ; map.keys / map.values / map.entries
+  let keys = map.keys(m)
+  if len(keys) != 3 { fail("keys: expected 3") }
+  let vals = map.values(m)
+  if len(vals) != 3 { fail("values: expected 3") }
+  let entries = map.entries(m)
+  if len(entries) != 3 { fail("entries: expected 3") }
+
+  ; map.delete
+  let m3 = map.delete(m, "b")
+  if map.has(m3, "b") { fail("delete: should not have 'b'") }
+  if len(map.keys(m3)) != 2 { fail("delete: should have 2 keys") }
+
+  ; map.from_entries
+  let e = [["x", 10], ["y", 20]]
+  let m4 = map.from_entries(e)
+  if m4["x"] != 10 { fail("from_entries: x should be 10") }
+  if m4["y"] != 20 { fail("from_entries: y should be 20") }
+
+  ; Map iteration with for
+  let mut key_list = []
+  let mut val_total = 0
+  for [k, v] in map.entries(m) {
+    key_list = push(key_list, k)
+    val_total = val_total + v
+  }
+  if val_total != 6 { fail("iteration: val_total should be 6, got " + to_str(val_total)) }
+  if len(key_list) != 3 { fail("iteration: should visit 3 keys") }
+
+  ; Missing key returns void
+  let missing = m["nonexistent"]
+  if type_of(missing) != "void" { fail("missing key: should return void, got " + type_of(missing)) }
+
+  ; Nested maps
+  let nested = #{"outer": #{"inner": 42}}
+  if nested["outer"]["inner"] != 42 { fail("nested: expected 42") }
+
+  println("all map tests passed")
+}

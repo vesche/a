@@ -1,0 +1,80 @@
+; Tests for pattern matching
+
+fn main() {
+  ; Match on integer
+  let x = 2
+  let mut r = ""
+  match x {
+    1 => { r = "one" }
+    2 => { r = "two" }
+    3 => { r = "three" }
+    _ => { r = "other" }
+  }
+  if r != "two" { fail("match int: expected 'two', got '" + r + "'") }
+
+  ; Match with wildcard
+  let y = 99
+  let mut r2 = ""
+  match y {
+    1 => { r2 = "one" }
+    _ => { r2 = "wildcard" }
+  }
+  if r2 != "wildcard" { fail("match wildcard: expected 'wildcard'") }
+
+  ; Match on string
+  let s = "hello"
+  let mut r3 = 0
+  match s {
+    "hi" => { r3 = 1 }
+    "hello" => { r3 = 2 }
+    _ => { r3 = 0 }
+  }
+  if r3 != 2 { fail("match string: expected 2") }
+
+  ; Match on Result (Ok/Err)
+  let ok_val = Ok(42)
+  let mut r4 = ""
+  match ok_val {
+    Ok(v) => { r4 = "ok:" + to_str(v) }
+    Err(e) => { r4 = "err:" + to_str(e) }
+  }
+  if r4 != "ok:42" { fail("match Ok: expected 'ok:42', got '" + r4 + "'") }
+
+  let err_val = Err("oops")
+  let mut r5 = ""
+  match err_val {
+    Ok(v) => { r5 = "ok:" + to_str(v) }
+    Err(e) => { r5 = "err:" + e }
+  }
+  if r5 != "err:oops" { fail("match Err: expected 'err:oops', got '" + r5 + "'") }
+
+  ; Match with guard
+  let n = 15
+  let mut r6 = ""
+  match n {
+    x if x > 10 => { r6 = "big" }
+    x if x > 5 => { r6 = "medium" }
+    _ => { r6 = "small" }
+  }
+  if r6 != "big" { fail("match guard: expected 'big', got '" + r6 + "'") }
+
+  ; Match on array pattern
+  let arr = [1, 2, 3]
+  let mut r7 = 0
+  match arr {
+    [a, b, c] => { r7 = a + b + c }
+    _ => { r7 = 0 }
+  }
+  if r7 != 6 { fail("match array: expected 6, got " + to_str(r7)) }
+
+  ; Match with literal in array
+  let arr2 = [1, 2]
+  let mut r8 = ""
+  match arr2 {
+    [1, x] => { r8 = "starts with 1, second is " + to_str(x) }
+    _ => { r8 = "other" }
+  }
+  if r8 != "starts with 1, second is 2" { fail("match array literal: got '" + r8 + "'") }
+
+  println("all match tests passed")
+}

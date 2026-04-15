@@ -1,0 +1,83 @@
+; Tests for std/codegen.a -- compile_check, run_in_sandbox, test runner
+; Does NOT test codegen.generate (requires LLM API key)
+
+use std.codegen
+
+fn _src_good() {
+  let lb = from_code(123)
+  let rb = from_code(125)
+  ret "fn main() " + lb + " println(42) " + rb
+}
+
+fn _src_echo() {
+  let lb = from_code(123)
+  let rb = from_code(125)
+  ret "fn main() " + lb + "\n  let a = args()\n  if len(a) > 0 " + lb + " println(a[0]) " + rb + " else " + lb + " println(\"none\") " + rb + "\n" + rb
+}
+
+fn _src_bad() {
+  ret "this is not valid a code at all"
+}
+
+fn _src_bad_parse() {
+  let lb = from_code(123)
+  ret "fn main() " + lb + " ~~~ " + lb
+}
+
+fn assert(cond, msg) {
+  if !cond { fail(msg) }
+}
+
+fn main() {
+  ; --- compile_check: valid source ---
+  let r1 = codegen.compile_check(_src_good())
+  assert(r1["ok"] == true, "compile_check: good source should be ok")
+  assert(type_of(r1["ast"]) == "map", "compile_check: should return ast")
+  assert(len(r1["errors"]) == 0, "compile_check: no errors expected")
+
+  ; --- compile_check: parse error ---
+  let r2 = codegen.compile_check(_src_bad_parse())
+  assert(r2["ok"] == false, "compile_check: bad parse should fail")
+  assert(len(r2["errors"]) > 0, "compile_check: should have errors")
+
+  ; --- compile_check: top-level parse error ---
+  let r3 = codegen.compile_check(_src_bad())
+  assert(r3["ok"] == false, "compile_check: invalid code should fail")
+
+  ; --- run_in_sandbox: success ---
+  let r4 = codegen.run_in_sandbox(_src_good(), #{})
+  assert(r4["ok"] == true, "sandbox: good source should succeed")
+  assert(str.trim(r4["stdout"]) == "42", "sandbox: stdout should be 42, got: " + r4["stdout"])
+  assert(r4["code"] == 0, "sandbox: exit code should be 0")
+
+  ; --- run_in_sandbox: runtime error ---
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let crash_src = "fn main() " + lb + " fail(\"boom\") " + rb
+  let r5 = codegen.run_in_sandbox(crash_src, #{})
+  assert(r5["ok"] == false, "sandbox: crash should fail")
+  assert(r5["code"] != 0, "sandbox: crash exit code should be non-zero")
+
+  ; --- test: passing tests ---
+  let r6 = codegen.test(_src_echo(), [
+    #{"input": "hello", "expected": "hello"},
+    #{"input": "world", "expected": "world"}
+  ])
+  assert(r6["passed"] == 2, "test: expected 2 passed, got " + to_str(r6["passed"]))
+  assert(r6["failed"] == 0, "test: expected 0 failed")
+
+  ; --- test: failing test ---
+  let r7 = codegen.test(_src_echo(), [
+    #{"input": "hello", "expected": "WRONG"}
+  ])
+  assert(r7["passed"] == 0, "test: expected 0 passed for failing")
+  assert(r7["failed"] == 1, "test: expected 1 failed")
+
+  ; --- test: bad source ---
+  let r8 = codegen.test(_src_bad_parse(), [#{"input": "", "expected": ""}])
+  assert(r8["passed"] == 0, "test: bad source should have 0 passed")
+  assert(r8["failed"] == 1, "test: bad source should count as failed")
+  assert(map.has(r8, "error"), "test: bad source should have error field")
+
+  println("all codegen tests passed")
+}

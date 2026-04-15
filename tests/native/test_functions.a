@@ -1,0 +1,58 @@
+; Tests for functions, recursion, closures, lambdas
+
+fn add(a, b) { ret a + b }
+fn identity(x) { ret x }
+
+fn fib(n) {
+  if n <= 1 { ret n }
+  ret fib(n - 1) + fib(n - 2)
+}
+
+fn apply(f, x) { ret f(x) }
+
+fn main() {
+  ; Basic function call
+  if add(3, 4) != 7 { fail("add(3,4) should be 7") }
+  if identity(42) != 42 { fail("identity(42) should be 42") }
+
+  ; Recursion
+  if fib(0) != 0 { fail("fib(0) should be 0") }
+  if fib(1) != 1 { fail("fib(1) should be 1") }
+  if fib(10) != 55 { fail("fib(10) should be 55") }
+
+  ; Lambda basic
+  let double = fn(x) => x * 2
+  if double(5) != 10 { fail("lambda double: expected 10") }
+
+  ; Lambda closure capture
+  let offset = 100
+  let add_offset = fn(x) => x + offset
+  if add_offset(5) != 105 { fail("closure capture: expected 105") }
+
+  ; Higher-order function
+  if apply(double, 7) != 14 { fail("apply(double, 7) should be 14") }
+
+  ; Nested function calls
+  if add(add(1, 2), add(3, 4)) != 10 { fail("nested calls: expected 10") }
+
+  ; Multiple closures with different captures
+  let mut closures = []
+  let mut i = 0
+  while i < 3 {
+    let val = i * 10
+    closures = push(closures, fn() => val)
+    i = i + 1
+  }
+
+  ; Lambda as argument to sort_by
+  let words = ["banana", "apple", "cherry"]
+  let sorted = sort_by(words, fn(a, b) => len(a) - len(b))
+  if sorted[0] != "apple" { fail("sort_by lambda: shortest first") }
+
+  ; Lambda in filter
+  let nums = [1, 2, 3, 4, 5, 6]
+  let evens = filter(nums, fn(x) => x % 2 == 0)
+  if len(evens) != 3 { fail("filter lambda: expected 3 evens") }
+
+  println("all function tests passed")
+}

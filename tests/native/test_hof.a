@@ -1,0 +1,100 @@
+; Tests for higher-order functions on arrays
+
+fn main() {
+  ; map
+  let arr = [1, 2, 3, 4]
+  let doubled = map(arr, fn(x) => x * 2)
+  if doubled[0] != 2 { fail("map: first should be 2") }
+  if doubled[3] != 8 { fail("map: last should be 8") }
+
+  ; filter
+  let evens = filter(arr, fn(x) => x % 2 == 0)
+  if len(evens) != 2 { fail("filter: expected 2 evens") }
+  if evens[0] != 2 { fail("filter: first even should be 2") }
+
+  ; reduce
+  let sum = reduce(arr, 0, fn(acc, x) => acc + x)
+  if sum != 10 { fail("reduce: expected 10, got " + to_str(sum)) }
+
+  ; each (side-effect only, verify it runs without error)
+  let mut ran_each = false
+  each(arr, fn(x) { ran_each = true })
+  ; Note: mutable closure capture in each may not propagate back, just verify no crash
+
+  ; sort_by
+  let words = ["banana", "apple", "cherry"]
+  let sorted = sort_by(words, fn(a, b) => len(a) - len(b))
+  if sorted[0] != "apple" { fail("sort_by: shortest first should be 'apple'") }
+
+  ; find
+  let found = find(arr, fn(x) => x > 2)
+  if unwrap(found) != 3 { fail("find: expected Ok(3), got " + to_str(found)) }
+
+  ; any / all
+  let has_big = any(arr, fn(x) => x > 3)
+  if !has_big { fail("any: should find x > 3") }
+  let all_pos = all(arr, fn(x) => x > 0)
+  if !all_pos { fail("all: should all be positive") }
+  let all_big = all(arr, fn(x) => x > 2)
+  if all_big { fail("all: should not all be > 2") }
+
+  ; flat_map
+  let nested = [1, 2, 3]
+  let expanded = flat_map(nested, fn(x) => [x, x * 10])
+  if len(expanded) != 6 { fail("flat_map: expected 6 elements") }
+  if expanded[0] != 1 { fail("flat_map: first should be 1") }
+  if expanded[1] != 10 { fail("flat_map: second should be 10") }
+
+  ; min_by / max_by return Ok-wrapped results
+  let items = [3, 1, 4, 1, 5]
+  let smallest = min_by(items, fn(a, b) => a - b)
+  if !is_ok(smallest) { fail("min_by: should return Ok") }
+  let largest = max_by(items, fn(a, b) => a - b)
+  if !is_ok(largest) { fail("max_by: should return Ok") }
+
+  ; enumerate
+  let letters = ["a", "b", "c"]
+  let indexed = enumerate(letters)
+  if len(indexed) != 3 { fail("enumerate: expected 3") }
+  let first = indexed[0]
+  if first[0] != 0 { fail("enumerate: first index should be 0") }
+  if first[1] != "a" { fail("enumerate: first value should be 'a'") }
+
+  ; zip
+  let xs = [1, 2, 3]
+  let ys = ["a", "b", "c"]
+  let zipped = zip(xs, ys)
+  if len(zipped) != 3 { fail("zip: expected 3 pairs") }
+  if zipped[0][0] != 1 { fail("zip: first pair[0] should be 1") }
+  if zipped[0][1] != "a" { fail("zip: first pair[1] should be 'a'") }
+
+  ; take / drop
+  let nums = [10, 20, 30, 40, 50]
+  let first_three = take(nums, 3)
+  if len(first_three) != 3 { fail("take: expected 3") }
+  if first_three[2] != 30 { fail("take: third should be 30") }
+  let last_two = drop(nums, 3)
+  if len(last_two) != 2 { fail("drop: expected 2") }
+  if last_two[0] != 40 { fail("drop: first should be 40") }
+
+  ; unique
+  let dupes = [1, 2, 2, 3, 1, 3]
+  let uniq = unique(dupes)
+  if len(uniq) != 3 { fail("unique: expected 3, got " + to_str(len(uniq))) }
+
+  ; chunk
+  let big = [1, 2, 3, 4, 5]
+  let chunks = chunk(big, 2)
+  if len(chunks) != 3 { fail("chunk: expected 3 chunks") }
+  if len(chunks[0]) != 2 { fail("chunk: first chunk should have 2 elements") }
+  if len(chunks[2]) != 1 { fail("chunk: last chunk should have 1 element") }
+
+  ; sort / reverse_arr / contains
+  let unsorted = [3, 1, 2]
+  let s = sort(unsorted)
+  if s[0] != 1 { fail("sort: first should be 1") }
+  if !contains(s, 2) { fail("contains: should find 2") }
+  if contains(s, 99) { fail("contains: should not find 99") }
+
+  println("all hof tests passed")
+}

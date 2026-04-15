@@ -71,25 +71,74 @@ fn _sqlite_flags() -> str {
   ret "-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
 }
 
-fn _gcc(c_path, out_path, runtime_dir) {
-  let runtime_c = str.concat(runtime_dir, "/runtime.c")
-  let sqlite_c = str.concat(runtime_dir, "/sqlite3.c")
-  let miniz_c = str.concat(runtime_dir, "/miniz.c")
-  let stb_impl_c = str.concat(runtime_dir, "/stb_impl.c")
-  let embedded_c = str.concat(runtime_dir, "/embedded.c")
-  let include_flag = str.concat("-I ", runtime_dir)
+fn _ensure_runtime_objs(runtime_dir) -> str {
+  let sentinel = io.read_file(runtime_dir + "/runtime.c")
+  if type_of(sentinel) == "void" || len(sentinel) == 0 { ret "" }
+  let h = hash.sha256(sentinel)
+  let obj_dir = "/tmp/a_obj/" + h
+  if fs.exists(obj_dir + "/runtime.o") { ret obj_dir }
+  eprintln("precompiling runtime (one-time)...")
+  exec("mkdir -p " + obj_dir)
+  let inc = "-I " + runtime_dir
+  let sf = _sqlite_flags()
+  let sources = [
+    ["runtime.c", "gcc -c " + runtime_dir + "/runtime.c " + inc + " -O2 " + sf + " -o " + obj_dir + "/runtime.o"],
+    ["sqlite3.c", "gcc -c " + runtime_dir + "/sqlite3.c " + inc + " -O2 " + sf + " -o " + obj_dir + "/sqlite3.o"],
+    ["miniz.c", "gcc -c " + runtime_dir + "/miniz.c " + inc + " -O2 -o " + obj_dir + "/miniz.o"],
+    ["stb_impl.c", "gcc -c " + runtime_dir + "/stb_impl.c " + inc + " -O2 -o " + obj_dir + "/stb_impl.o"],
+    ["embedded.c", "gcc -c " + runtime_dir + "/embedded.c " + inc + " -O2 -o " + obj_dir + "/embedded.o"]
+  ]
+  for pair in sources {
+    let r = exec(pair[1])
+    if r["code"] != 0 {
+      eprintln(cli.red("failed to precompile " + pair[0]))
+      if len(r["stderr"]) > 0 { eprintln(r["stderr"]) }
+      exec("rm -rf " + obj_dir)
+      ret ""
+    }
+  }
+  ret obj_dir
+}
+
+fn _gcc_try(c_path, out_path, runtime_dir) -> int {
+  let obj_dir = _ensure_runtime_objs(runtime_dir)
+  let inc = "-I " + runtime_dir
+  let flags = _gcc_flags()
+  let sf = _sqlite_flags()
+  if len(obj_dir) > 0 {
+    let user_o = _tmp_path(".o")
+    let compile = str.join(["gcc -c", c_path, inc, "-O2", sf, "-o", user_o], " ")
+    let cr = exec(compile)
+    if cr["code"] != 0 {
+      fs.rm(user_o)
+      ret cr["code"]
+    }
+    let link = str.join([
+      "gcc", user_o,
+      obj_dir + "/runtime.o", obj_dir + "/sqlite3.o",
+      obj_dir + "/miniz.o", obj_dir + "/stb_impl.o",
+      obj_dir + "/embedded.o",
+      "-o", out_path, flags
+    ], " ")
+    let lr = exec(link)
+    fs.rm(user_o)
+    ret lr["code"]
+  }
   let cmd = str.join([
-    "gcc", c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c, embedded_c,
-    "-o", out_path,
-    include_flag,
-    _gcc_flags(),
-    _sqlite_flags()
+    "gcc", c_path,
+    runtime_dir + "/runtime.c", runtime_dir + "/sqlite3.c",
+    runtime_dir + "/miniz.c", runtime_dir + "/stb_impl.c",
+    runtime_dir + "/embedded.c",
+    "-o", out_path, inc, flags, sf
   ], " ")
   let result = exec(cmd)
-  if result["code"] != 0 {
-    eprintln(cli.red("gcc compilation failed:"))
-    if len(result["stdout"]) > 0 { eprintln(result["stdout"]) }
-    if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+  ret result["code"]
+}
+
+fn _gcc(c_path, out_path, runtime_dir) {
+  let code = _gcc_try(c_path, out_path, runtime_dir)
+  if code != 0 {
+    eprintln(cli.red("gcc compilation failed"))
     exit(1)
   }
 }
@@ -223,8 +272,6 @@ fn cmd_test(test_dir) {
   test_files = sort(test_files)
   let mut passed = 0
   let mut failed = 0
-  let flags = _gcc_flags()
-  let sflags = _sqlite_flags()
 
   for src in test_files {
     let name = path.basename(src)
@@ -234,20 +281,10 @@ fn cmd_test(test_dir) {
     let c_code = _generate_c(src)
     io.write_file(c_path, c_code)
 
-    let gcc_result = exec(str.join([
-      "gcc", c_path, str.concat(runtime_dir, "/runtime.c"),
-      str.concat(runtime_dir, "/sqlite3.c"),
-      str.concat(runtime_dir, "/miniz.c"),
-      str.concat(runtime_dir, "/stb_impl.c"),
-      str.concat(runtime_dir, "/embedded.c"),
-      "-o", bin_path,
-      str.concat("-I ", runtime_dir),
-      flags, sflags
-    ], " "))
-
+    let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
     fs.rm(c_path)
 
-    if gcc_result["code"] != 0 {
+    if gcc_code != 0 {
       println(str.concat("  ", str.concat(cli.red("FAIL"), str.concat(" ", str.concat(name, " (compile error)")))))
       failed = failed + 1
     } else {
@@ -475,10 +512,10 @@ fn cmd_repl() {
       let c_path = _tmp_path("_repl.c")
       let bin_path = _tmp_path("_repl")
       _codegen_subprocess(tmp, c_path)
-      let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), str.concat(runtime_dir, "/embedded.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+      let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
       fs.rm(tmp)
       fs.rm(c_path)
-      if gcc_result["code"] != 0 {
+      if gcc_code != 0 {
         eprintln(cli.red("error: ") + "invalid binding")
       } else {
         fs.rm(bin_path)
@@ -494,10 +531,10 @@ fn cmd_repl() {
     let c_path = _tmp_path("_repl.c")
     let bin_path = _tmp_path("_repl")
     _codegen_subprocess(tmp, c_path)
-    let gcc_result = exec(str.join(["gcc", c_path, str.concat(runtime_dir, "/runtime.c"), str.concat(runtime_dir, "/sqlite3.c"), str.concat(runtime_dir, "/miniz.c"), str.concat(runtime_dir, "/stb_impl.c"), str.concat(runtime_dir, "/embedded.c"), "-o", bin_path, str.concat("-I ", runtime_dir), _gcc_flags(), _sqlite_flags()], " "))
+    let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
     fs.rm(tmp)
     fs.rm(c_path)
-    if gcc_result["code"] != 0 {
+    if gcc_code != 0 {
       eprintln(cli.red("error: ") + "cannot evaluate expression")
     } else {
       let result = exec(bin_path)

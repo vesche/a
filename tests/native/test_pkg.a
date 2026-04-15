@@ -34,8 +34,9 @@ fn main() {
   assert_eq(map.get(info, "name"), "a_test_pkg_native")
   assert_eq(map.get(info, "version"), "0.1.0")
 
-  ; add_dep + re-read
-  pkg.add_dep(dir, "mylib", "github:test/mylib@^1.0")
+  ; write_manifest with deps + re-read (avoids git by not calling add_dep/install)
+  let with_deps = map.set(m, "deps", #{"mylib": "github:test/mylib@^1.0"})
+  pkg.write_manifest(dir, with_deps)
   let m2 = pkg.read_manifest(dir)
   let deps = map.get(m2, "deps")
   assert_eq(map.get(deps, "mylib"), "github:test/mylib@^1.0")

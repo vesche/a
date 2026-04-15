@@ -1,0 +1,144 @@
+; self_extend.a -- Self-improvement loop demonstration.
+;
+; Shows how the "a" language can analyze, generate, test, and refactor its own code.
+; This example works in two modes:
+;   1. Without LLM: demonstrates compile_check, sandbox, test runner, and refactoring
+;   2. With LLM (set ANTHROPIC_API_KEY): also demonstrates codegen.generate
+;
+; Usage: a run examples/self_extend.a
+
+use std.codegen
+use std.refactor
+use std.meta
+
+fn _lb() { ret from_code(123) }
+fn _rb() { ret from_code(125) }
+
+fn _print_header(title) {
+  println("")
+  println("=== " + title + " ===")
+}
+
+fn _demo_analyze() {
+  _print_header("Step 1: Analyze existing code")
+  let lb = _lb()
+  let rb = _rb()
+  let source = "fn add(a, b) " + lb + "\n  ret a + b\n" + rb + "\n\nfn multiply(x, y) " + lb + "\n  ret x * y\n" + rb + "\n\nfn main() " + lb + "\n  println(add(1, 2))\n  println(multiply(3, 4))\n" + rb
+  println("Source:")
+  println(source)
+  let prog = meta.parse(source)
+  let sigs = meta.fn_signatures(prog)
+  println("\nFound " + to_str(len(sigs)) + " functions:")
+  let mut i = 0
+  while i < len(sigs) {
+    let s = sigs[i]
+    println("  - " + s["name"] + "(" + str.join(s["params"], ", ") + ")")
+    i = i + 1
+  }
+  let graph = meta.call_graph(prog)
+  println("\nCall graph:")
+  let keys = map.keys(graph)
+  let mut j = 0
+  while j < len(keys) {
+    let k = keys[j]
+    println("  " + k + " -> " + str.join(graph[k], ", "))
+    j = j + 1
+  }
+}
+
+fn _demo_compile_check() {
+  _print_header("Step 2: Compile-check code")
+  let lb = _lb()
+  let rb = _rb()
+  let good = "fn greet(name) " + lb + "\n  println(\"hello \" + name)\n" + rb
+  let r1 = codegen.compile_check(good)
+  println("Valid code: ok=" + to_str(r1["ok"]) + ", errors=" + to_str(len(r1["errors"])))
+  let bad = "fn broken( " + lb + " ~~~ " + rb
+  let r2 = codegen.compile_check(bad)
+  println("Invalid code: ok=" + to_str(r2["ok"]) + ", errors=" + to_str(len(r2["errors"])))
+}
+
+fn _demo_sandbox() {
+  _print_header("Step 3: Run in sandbox")
+  let lb = _lb()
+  let rb = _rb()
+  let source = "fn main() " + lb + "\n  let mut sum = 0\n  let mut i = 1\n  while i <= 10 " + lb + "\n    sum = sum + i\n    i = i + 1\n  " + rb + "\n  println(\"Sum 1..10 = \" + to_str(sum))\n" + rb
+  let r = codegen.run_in_sandbox(source, #{})
+  println("Sandbox result: ok=" + to_str(r["ok"]) + ", code=" + to_str(r["code"]))
+  println("Output: " + str.trim(r["stdout"]))
+}
+
+fn _demo_test_runner() {
+  _print_header("Step 4: Test runner")
+  let lb = _lb()
+  let rb = _rb()
+  let source = "fn main() " + lb + "\n  let a = args()\n  if len(a) > 0 " + lb + "\n    let n = int(a[0])\n    println(n * n)\n  " + rb + "\n" + rb
+  let cases = [
+    #{"input": "3", "expected": "9"},
+    #{"input": "5", "expected": "25"},
+    #{"input": "0", "expected": "0"}
+  ]
+  let r = codegen.test(source, cases)
+  println("Test results: " + to_str(r["passed"]) + "/" + to_str(r["passed"] + r["failed"]) + " passed")
+  let mut i = 0
+  while i < len(r["results"]) {
+    let t = r["results"][i]
+    let status = "PASS"
+    if t["ok"] == false { status = "FAIL" }
+    println("  " + status + ": input=" + t["input"] + " expected=" + t["expected"] + " actual=" + t["actual"])
+    i = i + 1
+  }
+}
+
+fn _demo_refactor() {
+  _print_header("Step 5: Refactor code")
+  let lb = _lb()
+  let rb = _rb()
+  let source = "fn calculate(x) " + lb + "\n  ret x * 2 + 1\n" + rb + "\n\nfn main() " + lb + "\n  println(calculate(5))\n  println(calculate(10))\n" + rb
+  println("Original:")
+  println(source)
+
+  println("\nAfter rename (calculate -> transform):")
+  let renamed = refactor.rename(source, "calculate", "transform")
+  println(renamed)
+
+  println("After inline (transform):")
+  let inlined = refactor.inline_fn(renamed, "transform")
+  println(inlined)
+}
+
+fn _demo_generate() {
+  _print_header("Step 6: LLM code generation")
+  let key = env.get("ANTHROPIC_API_KEY")
+  if type_of(key) != "str" || len(key) == 0 {
+    println("Skipped (set ANTHROPIC_API_KEY to enable)")
+    ret
+  }
+  println("Generating a function to compute Fibonacci numbers...")
+  let lb = _lb()
+  let rb = _rb()
+  let desc = "Write a complete program with a fn fibonacci(n) that returns the nth Fibonacci number (0-indexed, fib(0)=0, fib(1)=1), and a fn main() that prints fibonacci(10). Use a while loop, not recursion."
+  let context = #{"functions": ["println", "to_str"]}
+  let r = codegen.generate(desc, context, #{})
+  if r["ok"] {
+    println("Generated code:")
+    println(r["source"])
+    println("\nRunning generated code in sandbox...")
+    let run = codegen.run_in_sandbox(r["source"], #{})
+    println("Output: " + str.trim(run["stdout"]))
+  } else {
+    println("Generation failed: " + to_str(r["errors"]))
+  }
+}
+
+fn main() {
+  println("Self-Improvement Loop Demo")
+  println("==========================")
+  _demo_analyze()
+  _demo_compile_check()
+  _demo_sandbox()
+  _demo_test_runner()
+  _demo_refactor()
+  _demo_generate()
+  println("\n=== Done ===")
+}

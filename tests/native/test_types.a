@@ -1,0 +1,65 @@
+; Tests for type_of, casting, arithmetic, boolean logic
+
+fn main() {
+  ; type_of
+  if type_of(42) != "int" { fail("type_of int") }
+  if type_of(3.14) != "float" { fail("type_of float") }
+  if type_of("hi") != "str" { fail("type_of str") }
+  if type_of(true) != "bool" { fail("type_of bool") }
+  if type_of(false) != "bool" { fail("type_of false") }
+  if type_of([]) != "array" { fail("type_of array") }
+  if type_of(#{}) != "map" { fail("type_of map") }
+  if type_of(Ok(1)) != "result" { fail("type_of result") }
+
+  ; int cast
+  if int("42") != 42 { fail("int('42') should be 42") }
+  if int(3.7) != 3 { fail("int(3.7) should be 3") }
+  if int(true) != 1 { fail("int(true) should be 1") }
+  if int(false) != 0 { fail("int(false) should be 0") }
+
+  ; float cast
+  if float("3.14") != 3.14 { fail("float('3.14') should be 3.14") }
+  if float(42) != 42.0 { fail("float(42) should be 42.0") }
+
+  ; to_str
+  if to_str(42) != "42" { fail("to_str(42)") }
+  if to_str(true) != "true" { fail("to_str(true)") }
+
+  ; Arithmetic
+  if 2 + 3 != 5 { fail("2+3") }
+  if 10 - 3 != 7 { fail("10-3") }
+  if 4 * 5 != 20 { fail("4*5") }
+  if 10 / 3 != 3 { fail("10/3 int division") }
+  if 10 % 3 != 1 { fail("10%3 modulo") }
+
+  ; Comparison
+  if !(1 < 2) { fail("1 < 2") }
+  if !(2 > 1) { fail("2 > 1") }
+  if !(1 <= 1) { fail("1 <= 1") }
+  if !(1 >= 1) { fail("1 >= 1") }
+  if 1 == 2 { fail("1 == 2") }
+  if !(1 != 2) { fail("1 != 2") }
+
+  ; Boolean logic
+  if !(true && true) { fail("true && true") }
+  if true && false { fail("true && false") }
+  if !true { fail("!true") }
+  if !!false { fail("!!false") }
+  if !(true || false) { fail("true || false") }
+  if false || false { fail("false || false") }
+
+  ; Negative numbers
+  let neg = -5
+  if neg + 5 != 0 { fail("negative: -5 + 5 should be 0") }
+
+  ; Float arithmetic
+  let f = 1.5 + 2.5
+  if f != 4.0 { fail("float add: 1.5+2.5 should be 4.0") }
+
+  ; math builtins
+  if math.abs(-3) != 3 { fail("math.abs(-3)") }
+  if math.min(1, 2) != 1 { fail("math.min") }
+  if math.max(1, 2) != 2 { fail("math.max") }
+
+  println("all type tests passed")
+}

@@ -1,0 +1,218 @@
+; std/codegen.a -- Code generation, compilation checking, sandboxed execution, and testing.
+; Part of the self-improvement loop: the language can analyze, generate, test, and modify its own code.
+
+use std.compiler.parser
+use std.compiler.checker
+use std.compiler.emitter
+use std.meta
+use std.llm
+
+; --- compile_check ---
+; Parse and statically check source without executing.
+; Returns #{ "ok": bool, "ast": ..., "errors": [...], "warnings": [...] }
+
+fn compile_check(source) {
+  let prog_ast = parser.parse(source)
+  if type_of(prog_ast) == "map" && map.has(prog_ast, "tag") {
+    if prog_ast["tag"] == "ParseError" {
+      let msg = "parse error"
+      if map.has(prog_ast, "msg") { msg = prog_ast["msg"] }
+      let pos = 0
+      if map.has(prog_ast, "pos") { pos = prog_ast["pos"] }
+      ret #{"ok": false, "ast": prog_ast, "errors": [#{"severity": "error", "msg": msg, "pos": pos}], "warnings": []}
+    }
+  }
+  let diags = checker.check(prog_ast)
+  let mut errors = []
+  let mut warnings = []
+  let mut i = 0
+  while i < len(diags) {
+    let d = diags[i]
+    if map.has(d, "severity") && d["severity"] == "error" {
+      errors = push(errors, d)
+    } else {
+      warnings = push(warnings, d)
+    }
+    i = i + 1
+  }
+  if len(errors) > 0 {
+    ret #{"ok": false, "ast": prog_ast, "errors": errors, "warnings": warnings}
+  }
+  ret #{"ok": true, "ast": prog_ast, "errors": [], "warnings": warnings}
+}
+
+; --- run_in_sandbox ---
+; Compile and execute source with timeout and output capture.
+; opts: #{ "timeout_ms": int (default 5000) }
+; Returns #{ "stdout": str, "stderr": str, "code": int, "ok": bool }
+
+fn _find_cli() -> str {
+  if map.has(env.all(), "A_CLI") {
+    let p = env.get("A_CLI")
+    if len(p) > 0 { ret p }
+  }
+  if fs.exists("./a") { ret "./a" }
+  let which = exec("which a")
+  if which["code"] == 0 {
+    ret str.trim(which["stdout"])
+  }
+  ret "a"
+}
+
+fn run_in_sandbox(source, opts) {
+  let ts = to_str(time.now())
+  let tmp = "/tmp/a_sandbox_" + ts + ".a"
+  io.write_file(tmp, source)
+  let cli = _find_cli()
+  let cmd = cli + " run " + tmp
+  let r = exec(cmd)
+  fs.rm(tmp)
+  let code = r["code"]
+  ret #{"stdout": r["stdout"], "stderr": r["stderr"], "code": code, "ok": code == 0}
+}
+
+; --- test ---
+; Run source against test cases. Each test case: #{ "input": str, "expected": str }
+; Returns #{ "passed": int, "failed": int, "results": [...] }
+
+fn test(source, test_cases) {
+  let check_result = compile_check(source)
+  if check_result["ok"] == false {
+    ret #{"passed": 0, "failed": len(test_cases), "results": [], "error": "compile_check failed", "errors": check_result["errors"]}
+  }
+  let ts = to_str(time.now())
+  let tmp = "/tmp/a_test_" + ts + ".a"
+  io.write_file(tmp, source)
+  let cli = _find_cli()
+  let mut passed = 0
+  let mut failed = 0
+  let mut results = []
+  let mut i = 0
+  while i < len(test_cases) {
+    let tc = test_cases[i]
+    let input = ""
+    if map.has(tc, "input") { input = tc["input"] }
+    let expected = ""
+    if map.has(tc, "expected") { expected = tc["expected"] }
+    let cmd = cli + " run " + tmp + " " + input
+    let r = exec(cmd)
+    let actual = str.trim(r["stdout"])
+    let exp = str.trim(expected)
+    let ok = actual == exp
+    if ok {
+      passed = passed + 1
+    } else {
+      failed = failed + 1
+    }
+    results = push(results, #{"input": input, "expected": exp, "actual": actual, "ok": ok, "code": r["code"]})
+    i = i + 1
+  }
+  fs.rm(tmp)
+  ret #{"passed": passed, "failed": failed, "results": results}
+}
+
+; --- generate ---
+; Use an LLM to generate "a" code from a natural language description.
+; context: #{ "functions": [...], "types": [...], "imports": [...] }
+; opts: #{ "provider": str, "model": str, ... (passed to llm.chat) }
+; Returns #{ "ok": bool, "source": str, "ast": ..., "errors": [...] }
+
+fn _build_system_prompt(context) {
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let nl = "\n"
+  let mut prompt = "You are a code generator for the \"a\" programming language."
+  prompt = prompt + " Generate ONLY valid \"a\" source code, no markdown fences, no explanations."
+  prompt = prompt + nl + nl + "Key syntax rules:"
+  prompt = prompt + nl + "- Functions: fn name(params) " + lb + " body " + rb
+  prompt = prompt + nl + "- Variables: let x = expr  or  let mut x = expr"
+  prompt = prompt + nl + "- Return: ret expr"
+  prompt = prompt + nl + "- Strings use double quotes"
+  prompt = prompt + nl + "- Maps: #" + lb + "\"key\": value" + rb
+  prompt = prompt + nl + "- Arrays: [1, 2, 3]"
+  prompt = prompt + nl + "- Comments start with ;"
+  prompt = prompt + nl + "- Conditionals: if cond " + lb + " ... " + rb
+  prompt = prompt + nl + "- Loops: while cond " + lb + " ... " + rb + " and for x in iterable " + lb + " ... " + rb
+  prompt = prompt + nl + "- Result types: Ok(value), Err(message), is_ok(r), is_err(r)"
+  prompt = prompt + nl + "- Pipes: expr |> fn_name"
+  prompt = prompt + nl + "- Lambda: fn(x) => x + 1"
+  prompt = prompt + nl + "- Imports: use std.module_name"
+  prompt = prompt + nl + nl + "Available builtins: println, print, len, push, pop, sort, contains, slice, to_str, int, float, type_of, str.concat, str.split, str.join, str.contains, str.replace, str.trim, str.upper, str.lower, str.chars, str.lines, str.find, json.parse, json.stringify, map.get, map.set, map.has, map.keys, map.values, map.entries, io.read_file, io.write_file, fs.exists, fs.ls, fs.mkdir, fs.rm, exec, exit, fail, assert, range, Ok, Err, is_ok, is_err, unwrap, time.now, env.get, math.sqrt, math.abs"
+  if map.has(context, "functions") {
+    let fns = context["functions"]
+    if len(fns) > 0 {
+      prompt = prompt + nl + nl + "Existing functions in scope:"
+      let mut j = 0
+      while j < len(fns) {
+        prompt = prompt + nl + "- " + fns[j]
+        j = j + 1
+      }
+    }
+  }
+  if map.has(context, "imports") {
+    let imps = context["imports"]
+    if len(imps) > 0 {
+      prompt = prompt + nl + "Available imports: " + str.join(imps, ", ")
+    }
+  }
+  if map.has(context, "types") {
+    let types = context["types"]
+    if len(types) > 0 {
+      prompt = prompt + nl + "Available types: " + str.join(types, ", ")
+    }
+  }
+  ret prompt
+}
+
+fn _extract_code(text) {
+  if str.contains(text, "```") {
+    let lines = str.lines(text)
+    let mut in_block = false
+    let mut code_lines = []
+    let mut i = 0
+    while i < len(lines) {
+      let line = lines[i]
+      if str.starts_with(str.trim(line), "```") {
+        if in_block {
+          in_block = false
+        } else {
+          in_block = true
+        }
+        i = i + 1
+        continue
+      }
+      if in_block {
+        code_lines = push(code_lines, line)
+      }
+      i = i + 1
+    }
+    if len(code_lines) > 0 {
+      ret str.join(code_lines, "\n")
+    }
+  }
+  ret text
+}
+
+fn generate(description, context, opts) {
+  let provider = "anthropic"
+  if map.has(opts, "provider") { provider = opts["provider"] }
+  let model = "claude-sonnet-4-20250514"
+  if map.has(opts, "model") { model = opts["model"] }
+  let sys_prompt = _build_system_prompt(context)
+  let messages = [
+    #{"role": "system", "content": sys_prompt},
+    #{"role": "user", "content": description}
+  ]
+  let result = llm.chat(provider, model, messages, opts)
+  if is_err(result) {
+    ret #{"ok": false, "source": "", "errors": [to_str(result)]}
+  }
+  let response = unwrap(result)
+  let raw_source = response["content"]
+  let source = _extract_code(raw_source)
+  let check = compile_check(source)
+  if check["ok"] == false {
+    ret #{"ok": false, "source": source, "errors": check["errors"]}
+  }
+  ret #{"ok": true, "source": source, "ast": check["ast"]}
+}

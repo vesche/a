@@ -1,0 +1,40 @@
+; Tests for pipe operator |>
+
+fn main() {
+  ; Pipe to lambda
+  let r1 = 5 |> fn(x) => x * 2
+  if r1 != 10 { fail("pipe to lambda: expected 10, got " + to_str(r1)) }
+
+  ; Pipe chain with lambdas
+  let r2 = 3 |> fn(x) => x * 2 |> fn(x) => x + 1
+  if r2 != 7 { fail("pipe chain: expected 7, got " + to_str(r2)) }
+
+  ; Longer chain
+  let r3 = 2 |> fn(x) => x * 2 |> fn(x) => x * 2 |> fn(x) => x + 1
+  if r3 != 9 { fail("long chain: expected 9, got " + to_str(r3)) }
+
+  ; Pipe to negate
+  let r4 = 5 |> fn(x) => 0 - x
+  if r4 != -5 { fail("pipe negate: expected -5, got " + to_str(r4)) }
+
+  ; Pipe to string operation
+  let r5 = "  hello  " |> fn(s) => str.trim(s)
+  if r5 != "hello" { fail("pipe trim: expected 'hello'") }
+
+  ; Pipe with named lambda
+  let square = fn(x) => x * x
+  let r6 = 4 |> square
+  if r6 != 16 { fail("pipe named lambda: expected 16, got " + to_str(r6)) }
+
+  ; Pipe chain with named lambdas
+  let double = fn(x) => x * 2
+  let inc = fn(x) => x + 1
+  let r7 = 3 |> double |> inc
+  if r7 != 7 { fail("pipe named chain: expected 7, got " + to_str(r7)) }
+
+  ; Pipe with data transformation
+  let r8 = "hello world" |> fn(s) => str.split(s, " ") |> fn(arr) => len(arr)
+  if r8 != 2 { fail("pipe transform: expected 2 words, got " + to_str(r8)) }
+
+  println("all pipe tests passed")
+}

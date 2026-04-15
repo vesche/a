@@ -1,0 +1,82 @@
+; Tests for strings, interpolation, and string builtins
+
+fn main() {
+  ; String concatenation with +
+  let s = "hello" + " " + "world"
+  if s != "hello world" { fail("concat: expected 'hello world'") }
+
+  ; String interpolation
+  let name = "alice"
+  let greeting = "hi {name}!"
+  if greeting != "hi alice!" { fail("interpolation: expected 'hi alice!', got '" + greeting + "'") }
+
+  ; Multi-interpolation
+  let a = 1
+  let b = 2
+  let msg = "{a} + {b} = {a + b}"
+  if msg != "1 + 2 = 3" { fail("multi interp: expected '1 + 2 = 3', got '" + msg + "'") }
+
+  ; str.split
+  let parts = str.split("a,b,c", ",")
+  if len(parts) != 3 { fail("split: expected 3 parts") }
+  if parts[1] != "b" { fail("split: parts[1] should be 'b'") }
+
+  ; str.join
+  let joined = str.join(["x", "y", "z"], "-")
+  if joined != "x-y-z" { fail("join: expected 'x-y-z'") }
+
+  ; str.contains
+  if !str.contains("hello world", "world") { fail("contains: should find 'world'") }
+  if str.contains("hello", "xyz") { fail("contains: should not find 'xyz'") }
+
+  ; str.starts_with / str.ends_with
+  if !str.starts_with("hello", "hel") { fail("starts_with failed") }
+  if !str.ends_with("hello", "llo") { fail("ends_with failed") }
+
+  ; str.replace
+  let replaced = str.replace("aabaa", "a", "x")
+  if replaced != "xxbxx" { fail("replace: expected 'xxbxx', got '" + replaced + "'") }
+
+  ; str.trim / str.upper / str.lower
+  if str.trim("  hi  ") != "hi" { fail("trim failed") }
+  if str.upper("hello") != "HELLO" { fail("upper failed") }
+  if str.lower("HELLO") != "hello" { fail("lower failed") }
+
+  ; str.chars
+  let chars = str.chars("abc")
+  if len(chars) != 3 { fail("chars: expected 3") }
+  if chars[0] != "a" { fail("chars: first should be 'a'") }
+
+  ; str.lines
+  let lines = str.lines("a\nb\nc")
+  if len(lines) != 3 { fail("lines: expected 3") }
+  if lines[1] != "b" { fail("lines: second should be 'b'") }
+
+  ; str.slice
+  let sliced = str.slice("hello", 1, 4)
+  if sliced != "ell" { fail("slice: expected 'ell', got '" + sliced + "'") }
+
+  ; str.find
+  let pos = str.find("hello world", "world")
+  if pos != 6 { fail("find: expected 6, got " + to_str(pos)) }
+
+  ; str.count
+  let cnt = str.count("banana", "a")
+  if cnt != 3 { fail("count: expected 3, got " + to_str(cnt)) }
+
+  ; char_code / from_code
+  let code = char_code("A")
+  if code != 65 { fail("char_code: expected 65") }
+  let ch = from_code(65)
+  if ch != "A" { fail("from_code: expected 'A'") }
+
+  ; is_alpha / is_digit / is_alnum
+  if !is_alpha("a") { fail("is_alpha('a') should be true") }
+  if is_alpha("1") { fail("is_alpha('1') should be false") }
+  if !is_digit("5") { fail("is_digit('5') should be true") }
+  if !is_alnum("a") { fail("is_alnum('a') should be true") }
+  if !is_alnum("1") { fail("is_alnum('1') should be true") }
+  if is_alnum(" ") { fail("is_alnum(' ') should be false") }
+
+  println("all string tests passed")
+}

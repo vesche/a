@@ -253,19 +253,22 @@ Everything the Rust CLI does, "a" does natively.
 - The Rust CLI becomes optional -- everything bootstraps from C.
 - Bump to `0.66.0`.
 
-### v0.67 -- Native Concurrency
+### v0.67 -- Native Concurrency [DONE]
 
-The VM has `spawn`, `await`, `parallel_map`, `timeout`. The native path has none.
+Fork-based concurrency primitives in the C runtime, matching the Rust VM's thread-based equivalents.
 
-#### Deliverables
+#### Delivered
 
-- **`fork`-based concurrency** in `runtime.c`: `a_spawn(closure)` forks a child process, serializes the closure's captured environment, and returns a handle. `a_await(handle)` reads the result from a pipe.
-- **`a_parallel_map(array, closure)`**: Fork N children (capped at CPU count), collect results.
-- **`a_timeout(ms, closure)`**: Fork + `alarm` signal for deadline enforcement.
-- **Codegen support** in `cgen.a` for `spawn`, `await`, `parallel_map`, `timeout`.
-- Bump to `0.67.0`.
+- **`fork`+pipe+JSON concurrency** in `runtime.c`: `a_spawn(closure)` forks a child, runs the closure, serializes the result as JSON through a pipe. `a_await(handle)` reads and deserializes the result.
+- **`a_await_all(handles)`**: Await multiple task handles, returning an array of results.
+- **`a_parallel_map(array, closure)`**: Fork N children (capped at CPU count via `sysconf`), collect results in order.
+- **`a_parallel_each(array, closure)`**: Like `parallel_map` but discards results.
+- **`a_timeout(ms, closure)`**: Fork + `poll()` on pipe fd with deadline; `kill(SIGKILL)` on expiry, returns `Err("timeout")`.
+- **Codegen support** in `cgen.a` for `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout`.
+- **Native test suite**: `tests/native/test_concurrency.a` with 21 tests covering all primitives.
+- Bumped to `0.67.0`.
 
-### v0.68 -- Self-Improvement Loop
+### v0.68 -- Self-Improvement Loop [DONE]
 
 This is the version where the language becomes aware of itself as a tool.
 
@@ -321,9 +324,9 @@ What v1.0 means:
 | **v0.64** | Image Processing | stb_image/stb_image_write, 8 image builtins, bilinear resize | **DONE** |
 | **v0.65** | Package Manager | `a pkg`, semver, git-based registry | **DONE** |
 | **v0.66** | Native Toolchain | fmt/check/ast/repl in "a", enhanced LSP | Full self-sufficiency, Rust no longer needed |
-| **v0.67** | Native Concurrency | spawn/await/parallel_map in C path | Fast parallel native execution |
+| **v0.67** | Native Concurrency | spawn/await/parallel_map in C path [DONE] | Fast parallel native execution |
 | **v0.68** | Self-Improvement | codegen, refactor, sandbox execution | The language extends itself |
-| **v1.0** | The Agent Runtime | Everything in "a", bootstrap from C | Complete independence |
+| **v1.0** | The Agent Runtime | Curl removed, gcc-only bootstrap, native test parity [DONE] | Complete independence |
 
 ---
 

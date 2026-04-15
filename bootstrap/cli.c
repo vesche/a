@@ -87,7 +87,7 @@ AValue fn_ast_mk_void_lit(void);
 AValue fn_parser_tk(AValue toks, AValue i);
 AValue fn_parser_tv(AValue toks, AValue i);
 AValue fn_parser_err(AValue msg, AValue pos);
-AValue fn_parser_is_err(AValue r);
+AValue fn_parser__is_perr(AValue r);
 AValue fn_parser_skip_nl(AValue toks, AValue pos);
 AValue fn_parser_expect(AValue toks, AValue pos, AValue kind);
 AValue fn_parser_expect_ident(AValue toks, AValue pos);
@@ -292,6 +292,8 @@ AValue fn__find_runtime_dir(void);
 AValue fn__generate_c(AValue source_path);
 AValue fn__gcc_flags(void);
 AValue fn__sqlite_flags(void);
+AValue fn__ensure_runtime_objs(AValue runtime_dir);
+AValue fn__gcc_try(AValue c_path, AValue out_path, AValue runtime_dir);
 AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir);
 AValue fn__tmp_path(AValue suffix);
 AValue fn_cmd_cc(AValue source_path, AValue out_file);
@@ -1841,7 +1843,7 @@ __fn_cleanup:
     return __ret;
 }
 
-AValue fn_parser_is_err(AValue r) {
+AValue fn_parser__is_perr(AValue r) {
     AValue __ret = a_void();
     r = a_retain(r);
     if (a_truthy(a_eq(a_type_of(a_array_get(r, a_int(0))), a_string("map")))) {
@@ -1941,7 +1943,7 @@ AValue fn_parser_parse_program(AValue toks, AValue pos) {
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
     while (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("Eof")))) {
         { AValue __old = r; r = fn_parser_parse_top_level(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = items; items = a_array_push(items, a_array_get(r, a_int(0))); a_release(__old); }
@@ -1991,32 +1993,32 @@ AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwFn")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LParen")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = params; params = a_array_new(0); a_release(__old); }
     if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
         { AValue __old = r; r = fn_parser_parse_param_list(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = params; params = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2024,7 +2026,7 @@ AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Arrow")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = ret_type; ret_type = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2034,7 +2036,7 @@ AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     { AValue __old = effs; effs = a_array_new(0); a_release(__old); }
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwEffects")))) {
         { AValue __old = r; r = fn_parser_parse_effects(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = effs; effs = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2045,18 +2047,18 @@ AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwPre")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = precond; precond = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
@@ -2065,24 +2067,24 @@ AValue fn_parser_parse_fn_decl(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwPost")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = postcond; postcond = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = body; body = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2108,37 +2110,37 @@ AValue fn_parser_parse_extern_fn(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwExtern")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwFn")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LParen")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = params; params = a_array_new(0); a_release(__old); }
     if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
         { AValue __old = r; r = fn_parser_parse_param_list(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = params; params = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2146,14 +2148,14 @@ AValue fn_parser_parse_extern_fn(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Arrow")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = ret_type; ret_type = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2175,7 +2177,7 @@ AValue fn_parser_parse_param_list(AValue toks, AValue pos) {
     pos = a_retain(pos);
     { AValue __old = params; params = a_array_new(0); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_param(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2183,7 +2185,7 @@ AValue fn_parser_parse_param_list(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_param(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2204,7 +2206,7 @@ AValue fn_parser_parse_param(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2213,7 +2215,7 @@ AValue fn_parser_parse_param(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Colon")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = typ; typ = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2235,18 +2237,18 @@ AValue fn_parser_parse_effects(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwEffects")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = effs; effs = a_array_new(0); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = effs; effs = a_array_push(effs, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2254,14 +2256,14 @@ AValue fn_parser_parse_effects(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = effs; effs = a_array_push(effs, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2280,32 +2282,32 @@ AValue fn_parser_parse_mod_decl(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwMod")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = items; items = a_array_new(0); a_release(__old); }
     while (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBrace")))) {
         { AValue __old = r; r = fn_parser_parse_top_level(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = items; items = a_array_push(items, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2325,12 +2327,12 @@ AValue fn_parser_parse_use_decl(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwUse")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = path; path = a_array_new(1, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2338,14 +2340,14 @@ AValue fn_parser_parse_use_decl(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Dot")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = path; path = a_array_push(path, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2364,12 +2366,12 @@ AValue fn_parser_parse_type_decl(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwTy")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2377,25 +2379,25 @@ AValue fn_parser_parse_type_decl(AValue toks, AValue pos) {
     { AValue __old = type_params; type_params = a_array_new(0); a_release(__old); }
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Lt")))) {
         { AValue __old = r; r = fn_parser_parse_type_params(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = type_params; type_params = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Eq")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_type_body(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = body; body = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2416,13 +2418,13 @@ AValue fn_parser_parse_type_params(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Lt")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = params; params = a_array_new(0); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2430,14 +2432,14 @@ AValue fn_parser_parse_type_params(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Gt")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2490,7 +2492,7 @@ AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
     pos = a_retain(pos);
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("LBrace")))) {
         { AValue __old = r; r = fn_parser_parse_record_fields(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_type_record(a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2498,7 +2500,7 @@ AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
     if (a_truthy(fn_parser_looks_like_sum(toks, pos))) {
         { AValue __old = variants; variants = a_array_new(0); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_variant(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = variants; variants = a_array_push(variants, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2506,7 +2508,7 @@ AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
         while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Pipe")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_variant(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = variants; variants = a_array_push(variants, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2515,7 +2517,7 @@ AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
         __ret = a_array_new(2, fn_ast_mk_type_sum(variants), pos); goto __fn_cleanup;
     }
     { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = alias_ty; alias_ty = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2524,18 +2526,18 @@ AValue fn_parser_parse_type_body(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwWhere")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = where_expr; where_expr = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2557,7 +2559,7 @@ AValue fn_parser_parse_variant(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2566,7 +2568,7 @@ AValue fn_parser_parse_variant(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("LParen")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = fields; fields = a_array_push(fields, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2574,14 +2576,14 @@ AValue fn_parser_parse_variant(AValue toks, AValue pos) {
         while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = fields; fields = a_array_push(fields, a_array_get(r, a_int(0))); a_release(__old); }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2602,14 +2604,14 @@ AValue fn_parser_parse_record_fields(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = fields; fields = a_array_new(0); a_release(__old); }
     if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBrace")))) {
         { AValue __old = r; r = fn_parser_parse_field(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = fields; fields = a_array_push(fields, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2620,7 +2622,7 @@ AValue fn_parser_parse_record_fields(AValue toks, AValue pos) {
                 break;
             }
             { AValue __old = r; r = fn_parser_parse_field(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = fields; fields = a_array_push(fields, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2629,7 +2631,7 @@ AValue fn_parser_parse_record_fields(AValue toks, AValue pos) {
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2648,18 +2650,18 @@ AValue fn_parser_parse_field(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Colon")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_field(name, a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2725,13 +2727,13 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("LBracket")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = inner; inner = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_ty_array(inner), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2741,7 +2743,7 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
         { AValue __old = types; types = a_array_new(0); a_release(__old); }
         if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
             { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = types; types = a_array_push(types, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2749,7 +2751,7 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
             while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = types; types = a_array_push(types, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2757,7 +2759,7 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
             }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2766,14 +2768,14 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("KwFn")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = params; params = a_array_new(0); a_release(__old); }
         if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
             { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2781,7 +2783,7 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
             while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = params; params = a_array_push(params, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2789,17 +2791,17 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
             }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Arrow")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_ty_fn(params, a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2807,29 +2809,29 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("Hash")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = key_ty; key_ty = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Colon")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = val_ty; val_ty = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_ty_map(key_ty, val_ty), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2841,7 +2843,7 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Lt")))) {
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = type_args; type_args = a_array_push(type_args, a_array_get(r, a_int(0))); a_release(__old); }
@@ -2849,14 +2851,14 @@ AValue fn_parser_parse_type_expr(AValue toks, AValue pos) {
             while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = type_args; type_args = a_array_push(type_args, a_array_get(r, a_int(0))); a_release(__old); }
                 { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
             }
             { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Gt")); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2885,7 +2887,7 @@ AValue fn_parser_parse_block(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
@@ -2895,14 +2897,14 @@ AValue fn_parser_parse_block(AValue toks, AValue pos) {
             __ret = fn_parser_err(a_string("unexpected end of file in block"), pos); goto __fn_cleanup;
         }
         { AValue __old = r; r = fn_parser_parse_stmt(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = stmts; stmts = a_array_push(stmts, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -2942,7 +2944,7 @@ AValue fn_parser_parse_stmt(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("KwBreak")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_break(), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2950,13 +2952,13 @@ AValue fn_parser_parse_stmt(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("KwContinue")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_continue(), a_array_get(r, a_int(1))); goto __fn_cleanup;
     }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = expr; expr = a_array_get(r, a_int(0)); a_release(__old); }
@@ -2964,19 +2966,19 @@ AValue fn_parser_parse_stmt(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Eq")))) {
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = value; value = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_assign(expr, value), a_array_get(r, a_int(1))); goto __fn_cleanup;
     }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_expr_stmt(expr), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -2996,7 +2998,7 @@ AValue fn_parser_parse_let_stmt(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwLet")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -3009,7 +3011,7 @@ AValue fn_parser_parse_let_stmt(AValue toks, AValue pos) {
         __ret = fn_parser_parse_let_destructure(toks, pos); goto __fn_cleanup;
     }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = name; name = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3018,25 +3020,25 @@ AValue fn_parser_parse_let_stmt(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Colon")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = typ; typ = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Eq")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = value; value = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_let(mutable, name, typ, value), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3057,7 +3059,7 @@ AValue fn_parser_parse_let_destructure(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
@@ -3071,7 +3073,7 @@ AValue fn_parser_parse_let_destructure(AValue toks, AValue pos) {
             if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBracket")))) {
                 if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = rest; rest = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3088,7 +3090,7 @@ AValue fn_parser_parse_let_destructure(AValue toks, AValue pos) {
             { AValue __old = bindings; bindings = a_array_push(bindings, a_string("_")); a_release(__old); }
         } else {
             { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = bindings; bindings = a_array_push(bindings, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3102,23 +3104,23 @@ AValue fn_parser_parse_let_destructure(AValue toks, AValue pos) {
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Eq")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = value; value = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = rest_val; rest_val = a_string(""); a_release(__old); }
@@ -3139,28 +3141,37 @@ __fn_cleanup:
 }
 
 AValue fn_parser_parse_ret_stmt(AValue toks, AValue pos) {
-    AValue r = {0}, expr = {0};
+    AValue r = {0}, k = {0}, expr = {0};
     AValue __ret = a_void();
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwRet")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
+    { AValue __old = k; k = fn_parser_tk(toks, pos); a_release(__old); }
+    if (a_truthy(a_or(a_or(a_eq(k, a_string("Newline")), a_eq(k, a_string("RBrace"))), a_eq(k, a_string("Eof"))))) {
+        { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
+        if (a_truthy(fn_parser__is_perr(r))) {
+            __ret = a_retain(r); goto __fn_cleanup;
+        }
+        __ret = a_array_new(2, fn_ast_mk_return(fn_ast_mk_void_lit()), a_array_get(r, a_int(1))); goto __fn_cleanup;
+    }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = expr; expr = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect_nl_or_eof(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_return(expr), a_array_get(r, a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(r);
+    a_release(k);
     a_release(expr);
     a_release(toks);
     a_release(pos);
@@ -3173,18 +3184,18 @@ AValue fn_parser_parse_if_stmt(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwIf")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = cond; cond = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = then_block; then_block = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3194,14 +3205,14 @@ AValue fn_parser_parse_if_stmt(AValue toks, AValue pos) {
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
         if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwIf")))) {
             { AValue __old = r; r = fn_parser_parse_if_stmt(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = else_branch; else_branch = fn_ast_mk_else_if(a_array_get(r, a_int(0))); a_release(__old); }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         } else {
             { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = else_branch; else_branch = fn_ast_mk_else_block(a_array_get(r, a_int(0))); a_release(__old); }
@@ -3225,32 +3236,32 @@ AValue fn_parser_parse_match_stmt(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwMatch")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = expr; expr = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = arms; arms = a_array_new(0); a_release(__old); }
     while (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBrace")))) {
         { AValue __old = r; r = fn_parser_parse_match_arm(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = arms; arms = a_array_push(arms, a_array_get(r, a_int(0))); a_release(__old); }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -3270,7 +3281,7 @@ AValue fn_parser_parse_match_arm(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pattern; pattern = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3279,28 +3290,28 @@ AValue fn_parser_parse_match_arm(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("KwIf")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = guard; guard = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("FatArrow")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = body; body = fn_ast_mk_void_lit(); a_release(__old); }
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("LBrace")))) {
         { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = body; body = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     } else {
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = body; body = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3324,7 +3335,7 @@ AValue fn_parser_parse_for_stmt(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwFor")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -3332,7 +3343,7 @@ AValue fn_parser_parse_for_stmt(AValue toks, AValue pos) {
         __ret = fn_parser_parse_for_destructure(toks, pos); goto __fn_cleanup;
     }
     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = var; var = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3341,25 +3352,25 @@ AValue fn_parser_parse_for_stmt(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Colon")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_type_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = typ; typ = a_array_get(r, a_int(0)); a_release(__old); }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwIn")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = iter; iter = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_for_stmt(var, typ, iter, a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3379,14 +3390,14 @@ AValue fn_parser_parse_for_destructure(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = bindings; bindings = a_array_new(0); a_release(__old); }
     while (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBracket")))) {
         { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = bindings; bindings = a_array_push(bindings, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3399,23 +3410,23 @@ AValue fn_parser_parse_for_destructure(AValue toks, AValue pos) {
     }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwIn")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = iter; iter = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_for_destructure(bindings, iter, a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3434,18 +3445,18 @@ AValue fn_parser_parse_while_stmt(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("KwWhile")); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = cond; cond = a_array_get(r, a_int(0)); a_release(__old); }
     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
     { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     __ret = a_array_new(2, fn_ast_mk_while_stmt(cond, a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3488,7 +3499,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
             if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("DotDotDot")))) {
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = elems; elems = a_array_push(elems, fn_ast_mk_pat_rest(a_array_get(r, a_int(0)))); a_release(__old); }
@@ -3496,7 +3507,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
                 break;
             }
             { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = elems; elems = a_array_push(elems, fn_ast_mk_pat_array_elem(a_array_get(r, a_int(0)))); a_release(__old); }
@@ -3508,7 +3519,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
             }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_pat_array(elems), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3516,7 +3527,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("Hash")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -3535,12 +3546,12 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
                 }
             }
             { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Colon")); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = entries; entries = a_array_push(entries, fn_ast_mk_pat_map_entry(key, a_array_get(r, a_int(0)))); a_release(__old); }
@@ -3552,7 +3563,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
             }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_pat_map(entries), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3565,7 +3576,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
             { AValue __old = pats; pats = a_array_new(0); a_release(__old); }
             if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
                 { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = pats; pats = a_array_push(pats, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3573,7 +3584,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
                 while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                     { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_pattern(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = pats; pats = a_array_push(pats, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3581,7 +3592,7 @@ AValue fn_parser_parse_pattern(AValue toks, AValue pos) {
                 }
             }
             { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             __ret = a_array_new(2, fn_ast_mk_pat_constructor(name, pats), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3629,7 +3640,7 @@ AValue fn_parser_parse_pipe_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_or_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3639,7 +3650,7 @@ AValue fn_parser_parse_pipe_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("PipeArrow")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_or_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = left; left = fn_ast_mk_pipe(left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3651,7 +3662,7 @@ AValue fn_parser_parse_pipe_expr(AValue toks, AValue pos) {
                 if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("PipeArrow")))) {
                     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_or_expr(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = left; left = fn_ast_mk_pipe(left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3682,7 +3693,7 @@ AValue fn_parser_parse_or_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_and_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3690,7 +3701,7 @@ AValue fn_parser_parse_or_expr(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("PipePipe")))) {
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_and_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = left; left = fn_ast_mk_binop(a_string("||"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3711,7 +3722,7 @@ AValue fn_parser_parse_and_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_eq_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3719,7 +3730,7 @@ AValue fn_parser_parse_and_expr(AValue toks, AValue pos) {
     while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("AmpAmp")))) {
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_eq_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = left; left = fn_ast_mk_binop(a_string("&&"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3740,7 +3751,7 @@ AValue fn_parser_parse_eq_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_cmp_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3751,7 +3762,7 @@ AValue fn_parser_parse_eq_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(k, a_string("EqEq")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_cmp_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = left; left = fn_ast_mk_binop(a_string("=="), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3760,7 +3771,7 @@ AValue fn_parser_parse_eq_expr(AValue toks, AValue pos) {
             if (a_truthy(a_eq(k, a_string("NotEq")))) {
                 { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_cmp_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = left; left = fn_ast_mk_binop(a_string("!="), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3787,7 +3798,7 @@ AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3798,7 +3809,7 @@ AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(k, a_string("Lt")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = left; left = fn_ast_mk_binop(a_string("<"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3807,7 +3818,7 @@ AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
             if (a_truthy(a_eq(k, a_string("Gt")))) {
                 { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = left; left = fn_ast_mk_binop(a_string(">"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3816,7 +3827,7 @@ AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
                 if (a_truthy(a_eq(k, a_string("LtEq")))) {
                     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = left; left = fn_ast_mk_binop(a_string("<="), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3825,7 +3836,7 @@ AValue fn_parser_parse_cmp_expr(AValue toks, AValue pos) {
                     if (a_truthy(a_eq(k, a_string("GtEq")))) {
                         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                         { AValue __old = r; r = fn_parser_parse_add_expr(toks, pos); a_release(__old); }
-                        if (a_truthy(a_is_err(r))) {
+                        if (a_truthy(fn_parser__is_perr(r))) {
                             __ret = a_retain(r); goto __fn_cleanup;
                         }
                         { AValue __old = left; left = fn_ast_mk_binop(a_string(">="), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3854,7 +3865,7 @@ AValue fn_parser_parse_add_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_mul_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3865,7 +3876,7 @@ AValue fn_parser_parse_add_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(k, a_string("Plus")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_mul_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = left; left = fn_ast_mk_binop(a_string("+"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3874,7 +3885,7 @@ AValue fn_parser_parse_add_expr(AValue toks, AValue pos) {
             if (a_truthy(a_eq(k, a_string("Minus")))) {
                 { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_mul_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = left; left = fn_ast_mk_binop(a_string("-"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3901,7 +3912,7 @@ AValue fn_parser_parse_mul_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = left; left = a_array_get(r, a_int(0)); a_release(__old); }
@@ -3912,7 +3923,7 @@ AValue fn_parser_parse_mul_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(k, a_string("Star")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = left; left = fn_ast_mk_binop(a_string("*"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3921,7 +3932,7 @@ AValue fn_parser_parse_mul_expr(AValue toks, AValue pos) {
             if (a_truthy(a_eq(k, a_string("Slash")))) {
                 { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = left; left = fn_ast_mk_binop(a_string("/"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3930,7 +3941,7 @@ AValue fn_parser_parse_mul_expr(AValue toks, AValue pos) {
                 if (a_truthy(a_eq(k, a_string("Percent")))) {
                     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = left; left = fn_ast_mk_binop(a_string("%"), left, a_array_get(r, a_int(0))); a_release(__old); }
@@ -3961,7 +3972,7 @@ AValue fn_parser_parse_unary_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("Minus")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_unary(a_string("-"), a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3969,7 +3980,7 @@ AValue fn_parser_parse_unary_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("Bang")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_unary(a_string("!"), a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -3978,13 +3989,13 @@ AValue fn_parser_parse_unary_expr(AValue toks, AValue pos) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("LBrace")))) {
             { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             __ret = a_array_new(2, fn_ast_mk_try_block(a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
         }
         { AValue __old = r; r = fn_parser_parse_unary_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_try(a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -4004,7 +4015,7 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
     toks = a_retain(toks);
     pos = a_retain(pos);
     { AValue __old = r; r = fn_parser_parse_primary_expr(toks, pos); a_release(__old); }
-    if (a_truthy(a_is_err(r))) {
+    if (a_truthy(fn_parser__is_perr(r))) {
         __ret = a_retain(r); goto __fn_cleanup;
     }
     { AValue __old = expr; expr = a_array_get(r, a_int(0)); a_release(__old); }
@@ -4017,7 +4028,7 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
             { AValue __old = args; args = a_array_new(0); a_release(__old); }
             if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
                 { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = args; args = a_array_push(args, a_array_get(r, a_int(0))); a_release(__old); }
@@ -4025,7 +4036,7 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
                 while (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("Comma")))) {
                     { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = args; args = a_array_push(args, a_array_get(r, a_int(0))); a_release(__old); }
@@ -4034,7 +4045,7 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
             }
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
             { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -4047,7 +4058,7 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
                     { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 } else {
                     { AValue __old = r; r = fn_parser_expect_ident(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = expr; expr = fn_ast_mk_field_access(expr, a_array_get(r, a_int(0))); a_release(__old); }
@@ -4057,13 +4068,13 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos) {
                 if (a_truthy(a_eq(k, a_string("LBracket")))) {
                     { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                     { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = idx; idx = a_array_get(r, a_int(0)); a_release(__old); }
                     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
                     { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-                    if (a_truthy(a_is_err(r))) {
+                    if (a_truthy(fn_parser__is_perr(r))) {
                         __ret = a_retain(r); goto __fn_cleanup;
                     }
                     { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
@@ -4128,21 +4139,21 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("KwFn")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         { AValue __old = params; params = a_array_new(0); a_release(__old); }
         if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RParen")))) {
             { AValue __old = r; r = fn_parser_parse_param_list(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = params; params = a_array_get(r, a_int(0)); a_release(__old); }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
@@ -4150,14 +4161,14 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
         if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("FatArrow")))) {
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = body; body = a_array_get(r, a_int(0)); a_release(__old); }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
         } else {
             { AValue __old = r; r = fn_parser_parse_block(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = body; body = fn_ast_mk_block_expr(a_array_get(r, a_int(0))); a_release(__old); }
@@ -4171,25 +4182,25 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("Hash")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("LBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = entries; entries = a_array_new(0); a_release(__old); }
         if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBrace")))) {
             { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = key; key = a_array_get(r, a_int(0)); a_release(__old); }
             { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
             { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Colon")); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
             { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = entries; entries = a_array_push(entries, fn_ast_mk_map_entry(key, a_array_get(r, a_int(0)))); a_release(__old); }
@@ -4200,18 +4211,18 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
                     break;
                 }
                 { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = key; key = a_array_get(r, a_int(0)); a_release(__old); }
                 { AValue __old = pos; pos = a_array_get(r, a_int(1)); a_release(__old); }
                 { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("Colon")); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
                 { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = entries; entries = a_array_push(entries, fn_ast_mk_map_entry(key, a_array_get(r, a_int(0)))); a_release(__old); }
@@ -4220,7 +4231,7 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBrace")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_map_literal(entries), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -4228,12 +4239,12 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
     if (a_truthy(a_eq(k, a_string("LParen")))) {
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_add(pos, a_int(1))); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, a_array_get(r, a_int(1))); a_release(__old); }
         { AValue __old = r2; r2 = fn_parser_expect(toks, pos, a_string("RParen")); a_release(__old); }
-        if (a_truthy(a_is_err(r2))) {
+        if (a_truthy(fn_parser__is_perr(r2))) {
             __ret = a_retain(r2); goto __fn_cleanup;
         }
         __ret = a_array_new(2, a_array_get(r, a_int(0)), a_array_get(r2, a_int(1))); goto __fn_cleanup;
@@ -4243,7 +4254,7 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
         { AValue __old = elems; elems = a_array_new(0); a_release(__old); }
         if (a_truthy(a_neq(fn_parser_tk(toks, pos), a_string("RBracket")))) {
             { AValue __old = r; r = fn_parser_parse_array_element(toks, pos); a_release(__old); }
-            if (a_truthy(a_is_err(r))) {
+            if (a_truthy(fn_parser__is_perr(r))) {
                 __ret = a_retain(r); goto __fn_cleanup;
             }
             { AValue __old = elems; elems = a_array_push(elems, a_array_get(r, a_int(0))); a_release(__old); }
@@ -4254,7 +4265,7 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
                     break;
                 }
                 { AValue __old = r; r = fn_parser_parse_array_element(toks, pos); a_release(__old); }
-                if (a_truthy(a_is_err(r))) {
+                if (a_truthy(fn_parser__is_perr(r))) {
                     __ret = a_retain(r); goto __fn_cleanup;
                 }
                 { AValue __old = elems; elems = a_array_push(elems, a_array_get(r, a_int(0))); a_release(__old); }
@@ -4263,7 +4274,7 @@ AValue fn_parser_parse_primary_expr(AValue toks, AValue pos) {
         }
         { AValue __old = pos; pos = fn_parser_skip_nl(toks, pos); a_release(__old); }
         { AValue __old = r; r = fn_parser_expect(toks, pos, a_string("RBracket")); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_array(elems), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -4292,7 +4303,7 @@ AValue fn_parser_parse_array_element(AValue toks, AValue pos) {
     if (a_truthy(a_eq(fn_parser_tk(toks, pos), a_string("DotDotDot")))) {
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         __ret = a_array_new(2, fn_ast_mk_spread(a_array_get(r, a_int(0))), a_array_get(r, a_int(1))); goto __fn_cleanup;
@@ -4319,7 +4330,7 @@ AValue fn_parser_parse_interp_string(AValue toks, AValue pos) {
     { AValue __old = cont; cont = a_bool(1); a_release(__old); }
     while (a_truthy(cont)) {
         { AValue __old = r; r = fn_parser_parse_expr(toks, pos); a_release(__old); }
-        if (a_truthy(a_is_err(r))) {
+        if (a_truthy(fn_parser__is_perr(r))) {
             __ret = a_retain(r); goto __fn_cleanup;
         }
         { AValue __old = parts; parts = a_array_push(parts, fn_ast_mk_interp_expr(a_array_get(r, a_int(0)))); a_release(__old); }
@@ -4362,7 +4373,7 @@ AValue fn_cgen__builtin_map(void) {
     { AValue __old = m; m = a_map_new(27, "println", a_string("a_println"), "print", a_string("a_print"), "eprintln", a_string("a_eprintln"), "len", a_string("a_len"), "push", a_string("a_array_push"), "to_str", a_string("a_to_str"), "fail", a_string("a_fail"), "type_of", a_string("a_type_of"), "int", a_string("a_to_int"), "float", a_string("a_to_float"), "sort", a_string("a_sort"), "contains", a_string("a_contains"), "reverse_arr", a_string("a_reverse_arr"), "concat_arr", a_string("a_concat_arr"), "args", a_string("a_args"), "slice", a_string("a_array_slice"), "char_code", a_string("a_char_code"), "from_code", a_string("a_from_code"), "is_alpha", a_string("a_is_alpha"), "is_digit", a_string("a_is_digit"), "is_alnum", a_string("a_is_alnum"), "Ok", a_string("a_ok"), "Err", a_string("a_err"), "unwrap", a_string("a_unwrap"), "is_ok", a_string("a_is_ok"), "is_err", a_string("a_is_err"), "unwrap_or", a_string("a_unwrap_or")); a_release(__old); }
     { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
     { AValue __old = m3; m3 = a_map_new(29, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "exec", a_string("a_exec"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
-    { AValue __old = m4; m4 = a_map_new(65, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip")); a_release(__old); }
+    { AValue __old = m4; m4 = a_map_new(71, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip"), "spawn", a_string("a_spawn"), "await", a_string("a_await"), "await_all", a_string("a_await_all"), "parallel_map", a_string("a_parallel_map"), "parallel_each", a_string("a_parallel_each"), "timeout", a_string("a_timeout")); a_release(__old); }
     __ret = a_map_merge(a_map_merge(a_map_merge(m, m2), m3), m4); goto __fn_cleanup;
 __fn_cleanup:
     a_release(m);
@@ -4374,7 +4385,7 @@ __fn_cleanup:
 
 AValue fn_cgen__void_builtins(void) {
     AValue __ret = a_void();
-    __ret = a_array_new(11, a_string("println"), a_string("print"), a_string("eprintln"), a_string("fail"), a_string("each"), a_string("env.set"), a_string("time.sleep"), a_string("io.flush"), a_string("http.serve"), a_string("http.serve_static"), a_string("db.close")); goto __fn_cleanup;
+    __ret = a_array_new(12, a_string("println"), a_string("print"), a_string("eprintln"), a_string("fail"), a_string("each"), a_string("parallel_each"), a_string("env.set"), a_string("time.sleep"), a_string("io.flush"), a_string("http.serve"), a_string("http.serve_static"), a_string("db.close")); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
 }
@@ -11653,39 +11664,113 @@ __fn_cleanup:
     return __ret;
 }
 
-AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
-    AValue runtime_c = {0}, sqlite_c = {0}, miniz_c = {0}, stb_impl_c = {0}, embedded_c = {0}, include_flag = {0}, cmd = {0}, result = {0};
+AValue fn__ensure_runtime_objs(AValue runtime_dir) {
+    AValue sentinel = {0}, h = {0}, obj_dir = {0}, inc = {0}, sf = {0}, sources = {0}, r = {0};
+    AValue __ret = a_void();
+    runtime_dir = a_retain(runtime_dir);
+    { AValue __old = sentinel; sentinel = a_io_read_file(a_add(runtime_dir, a_string("/runtime.c"))); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(sentinel), a_string("void")), a_eq(a_len(sentinel), a_int(0))))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = h; h = a_hash_sha256(sentinel); a_release(__old); }
+    { AValue __old = obj_dir; obj_dir = a_add(a_string("/tmp/a_obj/"), h); a_release(__old); }
+    if (a_truthy(a_fs_exists(a_add(obj_dir, a_string("/runtime.o"))))) {
+        __ret = a_retain(obj_dir); goto __fn_cleanup;
+    }
+    a_eprintln(a_string("precompiling runtime (one-time)..."));
+    a_exec(a_add(a_string("mkdir -p "), obj_dir));
+    { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
+    { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
+    { AValue __old = sources; sources = a_array_new(5, a_array_new(2, a_string("runtime.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/runtime.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/runtime.o"))), a_array_new(2, a_string("sqlite3.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/sqlite3.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/sqlite3.o"))), a_array_new(2, a_string("miniz.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/miniz.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/miniz.o"))), a_array_new(2, a_string("stb_impl.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/stb_impl.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/stb_impl.o"))), a_array_new(2, a_string("embedded.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/embedded.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/embedded.o")))); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(sources);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue pair = {0}, r = {0};
+            pair = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = r; r = a_exec(a_array_get(pair, a_int(1))); a_release(__old); }
+            if (a_truthy(a_neq(a_array_get(r, a_string("code")), a_int(0)))) {
+                a_eprintln(fn_cli_red(a_add(a_string("failed to precompile "), a_array_get(pair, a_int(0)))));
+                if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stderr"))), a_int(0)))) {
+                    a_eprintln(a_array_get(r, a_string("stderr")));
+                }
+                a_exec(a_add(a_string("rm -rf "), obj_dir));
+                __ret = a_string(""); goto __fn_cleanup;
+            }
+            a_release(pair);
+            a_release(r);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(obj_dir); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(sentinel);
+    a_release(h);
+    a_release(obj_dir);
+    a_release(inc);
+    a_release(sf);
+    a_release(sources);
+    a_release(r);
+    a_release(runtime_dir);
+    return __ret;
+}
+
+AValue fn__gcc_try(AValue c_path, AValue out_path, AValue runtime_dir) {
+    AValue obj_dir = {0}, inc = {0}, flags = {0}, sf = {0}, user_o = {0}, compile = {0}, cr = {0}, link = {0}, lr = {0}, cmd = {0}, result = {0};
     AValue __ret = a_void();
     c_path = a_retain(c_path);
     out_path = a_retain(out_path);
     runtime_dir = a_retain(runtime_dir);
-    { AValue __old = runtime_c; runtime_c = a_str_concat(runtime_dir, a_string("/runtime.c")); a_release(__old); }
-    { AValue __old = sqlite_c; sqlite_c = a_str_concat(runtime_dir, a_string("/sqlite3.c")); a_release(__old); }
-    { AValue __old = miniz_c; miniz_c = a_str_concat(runtime_dir, a_string("/miniz.c")); a_release(__old); }
-    { AValue __old = stb_impl_c; stb_impl_c = a_str_concat(runtime_dir, a_string("/stb_impl.c")); a_release(__old); }
-    { AValue __old = embedded_c; embedded_c = a_str_concat(runtime_dir, a_string("/embedded.c")); a_release(__old); }
-    { AValue __old = include_flag; include_flag = a_str_concat(a_string("-I "), runtime_dir); a_release(__old); }
-    { AValue __old = cmd; cmd = a_str_join(a_array_new(12, a_string("gcc"), c_path, runtime_c, sqlite_c, miniz_c, stb_impl_c, embedded_c, a_string("-o"), out_path, include_flag, fn__gcc_flags(), fn__sqlite_flags()), a_string(" ")); a_release(__old); }
+    { AValue __old = obj_dir; obj_dir = fn__ensure_runtime_objs(runtime_dir); a_release(__old); }
+    { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
+    { AValue __old = flags; flags = fn__gcc_flags(); a_release(__old); }
+    { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
+    if (a_truthy(a_gt(a_len(obj_dir), a_int(0)))) {
+        { AValue __old = user_o; user_o = fn__tmp_path(a_string(".o")); a_release(__old); }
+        { AValue __old = compile; compile = a_str_join(a_array_new(7, a_string("gcc -c"), c_path, inc, a_string("-O2"), sf, a_string("-o"), user_o), a_string(" ")); a_release(__old); }
+        { AValue __old = cr; cr = a_exec(compile); a_release(__old); }
+        if (a_truthy(a_neq(a_array_get(cr, a_string("code")), a_int(0)))) {
+            a_fs_rm(user_o);
+            __ret = a_array_get(cr, a_string("code")); goto __fn_cleanup;
+        }
+        { AValue __old = link; link = a_str_join(a_array_new(10, a_string("gcc"), user_o, a_add(obj_dir, a_string("/runtime.o")), a_add(obj_dir, a_string("/sqlite3.o")), a_add(obj_dir, a_string("/miniz.o")), a_add(obj_dir, a_string("/stb_impl.o")), a_add(obj_dir, a_string("/embedded.o")), a_string("-o"), out_path, flags), a_string(" ")); a_release(__old); }
+        { AValue __old = lr; lr = a_exec(link); a_release(__old); }
+        a_fs_rm(user_o);
+        __ret = a_array_get(lr, a_string("code")); goto __fn_cleanup;
+    }
+    { AValue __old = cmd; cmd = a_str_join(a_array_new(12, a_string("gcc"), c_path, a_add(runtime_dir, a_string("/runtime.c")), a_add(runtime_dir, a_string("/sqlite3.c")), a_add(runtime_dir, a_string("/miniz.c")), a_add(runtime_dir, a_string("/stb_impl.c")), a_add(runtime_dir, a_string("/embedded.c")), a_string("-o"), out_path, inc, flags, sf), a_string(" ")); a_release(__old); }
     { AValue __old = result; result = a_exec(cmd); a_release(__old); }
-    if (a_truthy(a_neq(a_array_get(result, a_string("code")), a_int(0)))) {
-        a_eprintln(fn_cli_red(a_string("gcc compilation failed:")));
-        if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-            a_eprintln(a_array_get(result, a_string("stdout")));
-        }
-        if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
-            a_eprintln(a_array_get(result, a_string("stderr")));
-        }
+    __ret = a_array_get(result, a_string("code")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(obj_dir);
+    a_release(inc);
+    a_release(flags);
+    a_release(sf);
+    a_release(user_o);
+    a_release(compile);
+    a_release(cr);
+    a_release(link);
+    a_release(lr);
+    a_release(cmd);
+    a_release(result);
+    a_release(c_path);
+    a_release(out_path);
+    a_release(runtime_dir);
+    return __ret;
+}
+
+AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
+    AValue code = {0};
+    AValue __ret = a_void();
+    c_path = a_retain(c_path);
+    out_path = a_retain(out_path);
+    runtime_dir = a_retain(runtime_dir);
+    { AValue __old = code; code = fn__gcc_try(c_path, out_path, runtime_dir); a_release(__old); }
+    if (a_truthy(a_neq(code, a_int(0)))) {
+        a_eprintln(fn_cli_red(a_string("gcc compilation failed")));
         (exit((int)a_int(1).ival), a_void());
     }
 __fn_cleanup:
-    a_release(runtime_c);
-    a_release(sqlite_c);
-    a_release(miniz_c);
-    a_release(stb_impl_c);
-    a_release(embedded_c);
-    a_release(include_flag);
-    a_release(cmd);
-    a_release(result);
+    a_release(code);
     a_release(c_path);
     a_release(out_path);
     a_release(runtime_dir);
@@ -11734,7 +11819,7 @@ AValue fn__codegen_subprocess(AValue source_path, AValue c_path) {
     while (a_truthy(a_lt(attempts, max_attempts))) {
         { AValue __old = result; result = a_exec(cmd); a_release(__old); }
         if (a_truthy(a_eq(a_array_get(result, a_string("code")), a_int(0)))) {
-            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+            __ret = a_void(); goto __fn_cleanup;
         }
         { AValue __old = attempts; attempts = a_add(attempts, a_int(1)); a_release(__old); }
         if (a_truthy(a_eq(attempts, max_attempts))) {
@@ -11898,7 +11983,7 @@ __fn_cleanup:
 }
 
 AValue fn_cmd_test(AValue test_dir) {
-    AValue runtime_dir = {0}, self = {0}, entries = {0}, test_files = {0}, name = {0}, passed = {0}, failed = {0}, flags = {0}, sflags = {0}, c_path = {0}, bin_path = {0}, c_code = {0}, gcc_result = {0}, run_result = {0};
+    AValue runtime_dir = {0}, self = {0}, entries = {0}, test_files = {0}, name = {0}, passed = {0}, failed = {0}, c_path = {0}, bin_path = {0}, c_code = {0}, gcc_code = {0}, run_result = {0};
     AValue __ret = a_void();
     test_dir = a_retain(test_dir);
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
@@ -11926,21 +12011,19 @@ AValue fn_cmd_test(AValue test_dir) {
     { AValue __old = test_files; test_files = a_sort(test_files); a_release(__old); }
     { AValue __old = passed; passed = a_int(0); a_release(__old); }
     { AValue __old = failed; failed = a_int(0); a_release(__old); }
-    { AValue __old = flags; flags = fn__gcc_flags(); a_release(__old); }
-    { AValue __old = sflags; sflags = fn__sqlite_flags(); a_release(__old); }
     {
         AValue __iter_arr = a_iterable(test_files);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-            AValue src = {0}, name = {0}, c_path = {0}, bin_path = {0}, c_code = {0}, gcc_result = {0}, run_result = {0};
+            AValue src = {0}, name = {0}, c_path = {0}, bin_path = {0}, c_code = {0}, gcc_code = {0}, run_result = {0};
             src = a_array_get(__iter_arr, a_int(__fi));
             { AValue __old = name; name = fn_path_basename(src); a_release(__old); }
             { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
             { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("")); a_release(__old); }
             { AValue __old = c_code; c_code = fn__generate_c(src); a_release(__old); }
             a_io_write_file(c_path, c_code);
-            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), flags, sflags), a_string(" "))); a_release(__old); }
+            { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
             a_fs_rm(c_path);
-            if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {
+            if (a_truthy(a_neq(gcc_code, a_int(0)))) {
                 a_println(a_str_concat(a_string("  "), a_str_concat(fn_cli_red(a_string("FAIL")), a_str_concat(a_string(" "), a_str_concat(name, a_string(" (compile error)"))))));
                 { AValue __old = failed; failed = a_add(failed, a_int(1)); a_release(__old); }
             } else {
@@ -11962,7 +12045,7 @@ AValue fn_cmd_test(AValue test_dir) {
             a_release(c_path);
             a_release(bin_path);
             a_release(c_code);
-            a_release(gcc_result);
+            a_release(gcc_code);
             a_release(run_result);
         }
         a_release(__iter_arr);
@@ -11980,12 +12063,10 @@ __fn_cleanup:
     a_release(name);
     a_release(passed);
     a_release(failed);
-    a_release(flags);
-    a_release(sflags);
     a_release(c_path);
     a_release(bin_path);
     a_release(c_code);
-    a_release(gcc_result);
+    a_release(gcc_code);
     a_release(run_result);
     a_release(test_dir);
     return __ret;
@@ -12127,7 +12208,7 @@ AValue fn_cmd_fmt(AValue target) {
     if (a_truthy(fn__is_dir(target))) {
         fn__fmt_dir(target);
         a_println(a_add(a_add(fn_cli_green(a_string("formatted")), a_string(" ")), target));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_and(a_str_ends_with(target, a_string(".a")), a_fs_exists(target)))) {
         fn__fmt_file(target);
@@ -12160,7 +12241,7 @@ AValue fn_cmd_check(AValue source_path) {
     { AValue __old = diagnostics; diagnostics = fn_checker_check(ast); a_release(__old); }
     if (a_truthy(a_eq(a_len(diagnostics), a_int(0)))) {
         a_println(fn_cli_green(a_string("no issues found")));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     { AValue __old = errors; errors = a_int(0); a_release(__old); }
     { AValue __old = warnings; warnings = a_int(0); a_release(__old); }
@@ -12235,7 +12316,7 @@ __fn_cleanup:
 }
 
 AValue fn_cmd_repl(void) {
-    AValue runtime_dir = {0}, bindings = {0}, fns = {0}, line_buf = {0}, brace_depth = {0}, line = {0}, trimmed = {0}, bi = {0}, chars = {0}, ci = {0}, ch = {0}, input = {0}, src = {0}, tmp = {0}, c_path = {0}, bin_path = {0}, gcc_result = {0}, expr_line = {0}, result = {0};
+    AValue runtime_dir = {0}, bindings = {0}, fns = {0}, line_buf = {0}, brace_depth = {0}, line = {0}, trimmed = {0}, bi = {0}, chars = {0}, ci = {0}, ch = {0}, input = {0}, src = {0}, tmp = {0}, c_path = {0}, bin_path = {0}, gcc_code = {0}, expr_line = {0}, result = {0};
     AValue __ret = a_void();
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
     { AValue __old = bindings; bindings = a_array_new(0); a_release(__old); }
@@ -12306,10 +12387,10 @@ AValue fn_cmd_repl(void) {
             { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
             { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
             fn__codegen_subprocess(tmp, c_path);
-            { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
+            { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
             a_fs_rm(tmp);
             a_fs_rm(c_path);
-            if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {
+            if (a_truthy(a_neq(gcc_code, a_int(0)))) {
                 a_eprintln(a_add(fn_cli_red(a_string("error: ")), a_string("invalid binding")));
             } else {
                 a_fs_rm(bin_path);
@@ -12324,10 +12405,10 @@ AValue fn_cmd_repl(void) {
         { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
         { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
         fn__codegen_subprocess(tmp, c_path);
-        { AValue __old = gcc_result; gcc_result = a_exec(a_str_join(a_array_new(12, a_string("gcc"), c_path, a_str_concat(runtime_dir, a_string("/runtime.c")), a_str_concat(runtime_dir, a_string("/sqlite3.c")), a_str_concat(runtime_dir, a_string("/miniz.c")), a_str_concat(runtime_dir, a_string("/stb_impl.c")), a_str_concat(runtime_dir, a_string("/embedded.c")), a_string("-o"), bin_path, a_str_concat(a_string("-I "), runtime_dir), fn__gcc_flags(), fn__sqlite_flags()), a_string(" "))); a_release(__old); }
+        { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
         a_fs_rm(tmp);
         a_fs_rm(c_path);
-        if (a_truthy(a_neq(a_array_get(gcc_result, a_string("code")), a_int(0)))) {
+        if (a_truthy(a_neq(gcc_code, a_int(0)))) {
             a_eprintln(a_add(fn_cli_red(a_string("error: ")), a_string("cannot evaluate expression")));
         } else {
             { AValue __old = result; result = a_exec(bin_path); a_release(__old); }
@@ -12357,7 +12438,7 @@ __fn_cleanup:
     a_release(tmp);
     a_release(c_path);
     a_release(bin_path);
-    a_release(gcc_result);
+    a_release(gcc_code);
     a_release(expr_line);
     a_release(result);
     return __ret;
@@ -12444,7 +12525,7 @@ AValue fn_main(void) {
             { AValue __old = cc_out; cc_out = a_array_get(argv, a_int(3)); a_release(__old); }
         }
         fn_cmd_cc(a_array_get(argv, a_int(1)), cc_out);
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("build")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
@@ -12462,7 +12543,7 @@ AValue fn_main(void) {
             }
         }
         fn_cmd_build(source, out);
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("run")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
@@ -12478,14 +12559,14 @@ AValue fn_main(void) {
             }
         }
         fn_cmd_run(source, extra);
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("test")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("test requires a directory"));
         }
         fn_cmd_test(a_array_get(argv, a_int(1)));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("eval")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
@@ -12500,32 +12581,32 @@ AValue fn_main(void) {
             }
         }
         fn_cmd_eval(a_array_get(argv, a_int(1)), extra);
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("fmt")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("fmt requires a file or directory"));
         }
         fn_cmd_fmt(a_array_get(argv, a_int(1)));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("ast")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("ast requires a source file"));
         }
         fn_cmd_ast(a_array_get(argv, a_int(1)));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("check")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("check requires a source file"));
         }
         fn_cmd_check(a_array_get(argv, a_int(1)));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("repl")))) {
         fn_cmd_repl();
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("pkg")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
@@ -12533,33 +12614,33 @@ AValue fn_main(void) {
         }
         if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("init")))) {
             fn_cmd_pkg_init();
-            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+            __ret = a_void(); goto __fn_cleanup;
         }
         if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("add")))) {
             if (a_truthy(a_lt(a_len(argv), a_int(4)))) {
                 fn__die(a_string("usage: a pkg add <name> <source>"));
             }
             fn_cmd_pkg_add(a_array_get(argv, a_int(2)), a_array_get(argv, a_int(3)));
-            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+            __ret = a_void(); goto __fn_cleanup;
         }
         if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("install")))) {
             fn_cmd_pkg_install();
-            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+            __ret = a_void(); goto __fn_cleanup;
         }
         fn__die(a_string("usage: a pkg <init|add|install>"));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("cache")))) {
         if (a_truthy(a_and(a_gteq(a_len(argv), a_int(2)), a_eq(a_array_get(argv, a_int(1)), a_string("clean"))))) {
             fn_cmd_cache_clean();
-            __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+            __ret = a_void(); goto __fn_cleanup;
         }
         fn__die(a_string("usage: a cache clean"));
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("lsp")))) {
         fn_cmd_lsp();
-        __ret = /* unhandled expr: ParseError */a_void(); goto __fn_cleanup;
+        __ret = a_void(); goto __fn_cleanup;
     }
     fn__die(a_str_concat(a_string("unknown command: "), subcmd));
 __fn_cleanup:

@@ -1,0 +1,52 @@
+; Tests for destructuring, spread, for-destructure
+
+fn main() {
+  ; Let destructure array
+  let [a, b, c] = [10, 20, 30]
+  if a != 10 { fail("destructure: a should be 10") }
+  if b != 20 { fail("destructure: b should be 20") }
+  if c != 30 { fail("destructure: c should be 30") }
+
+  ; Let destructure with rest
+  let [first, ...rest] = [1, 2, 3, 4, 5]
+  if first != 1 { fail("destructure rest: first should be 1") }
+  if len(rest) != 4 { fail("destructure rest: rest should have 4 elements") }
+  if rest[0] != 2 { fail("destructure rest: rest[0] should be 2") }
+
+  ; For destructure (iterating pairs)
+  let pairs = [[1, "one"], [2, "two"], [3, "three"]]
+  let mut names = ""
+  for [num, name] in pairs {
+    names = names + name + " "
+  }
+  if str.trim(names) != "one two three" { fail("for destructure: expected 'one two three', got '" + str.trim(names) + "'") }
+
+  ; Spread in array literal
+  let arr1 = [1, 2, 3]
+  let arr2 = [0, ...arr1, 4]
+  if len(arr2) != 5 { fail("spread: expected 5 elements, got " + to_str(len(arr2))) }
+  if arr2[0] != 0 { fail("spread: first should be 0") }
+  if arr2[1] != 1 { fail("spread: second should be 1") }
+  if arr2[4] != 4 { fail("spread: last should be 4") }
+
+  ; Destructure from split
+  let parts = str.split("hello world foo", " ")
+  let [h, w, ...tail] = parts
+  if h != "hello" { fail("destructure split: h should be 'hello'") }
+  if w != "world" { fail("destructure split: w should be 'world'") }
+  if len(tail) != 1 { fail("destructure split: tail should have 1 element") }
+  if tail[0] != "foo" { fail("destructure split: tail[0] should be 'foo'") }
+
+  ; For destructure with map entries
+  let m = #{"x": 1, "y": 2}
+  let entries = map.entries(m)
+  let mut key_sum = ""
+  let mut val_sum = 0
+  for [k, v] in entries {
+    key_sum = key_sum + k
+    val_sum = val_sum + v
+  }
+  if val_sum != 3 { fail("map entries destructure: val_sum should be 3, got " + to_str(val_sum)) }
+
+  println("all destructure tests passed")
+}

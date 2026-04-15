@@ -2538,3 +2538,120 @@ All 5 build paths updated to include `stb_impl.c`:
 | `src/lsp.a` | Added semantic tokens, rename, code actions, workspace symbols handlers; updated capabilities and version to 0.66.0 |
 | `Cargo.toml` | Version bump to 0.66.0 |
 | `README.md` | Updated usage, stdlib count (31), self-hosting paragraph (~11,700 lines C), stats, editor support section |
+
+## v0.67.0 -- Native Concurrency
+
+**Theme:** Fork-based concurrency primitives in the C runtime, bringing `spawn`/`await`/`parallel_map`/`timeout` to the native path.
+
+### New runtime primitives (C runtime)
+- `a_spawn(closure)` -- fork a child process, execute the closure, serialize result as JSON through a pipe
+- `a_await(handle)` -- read result from pipe, waitpid, parse JSON; double-await returns Err
+- `a_await_all(handles)` -- await multiple task handles, return array of results
+- `a_parallel_map(array, closure)` -- fork per element capped at CPU count (`sysconf`), collect results in order
+- `a_parallel_each(array, closure)` -- like parallel_map but discards results
+- `a_timeout(ms, closure)` -- fork + `poll()` on pipe with deadline; `SIGKILL` on expiry, returns `Err("timeout")`
+
+### Design decisions
+- **Fork + pipe + JSON**: After `fork()`, closures (function pointers + captured env) work without serialization since the child gets a full memory copy. Only the result crosses the process boundary, serialized as JSON.
+- **`fflush` before fork**: Flush stdout/stderr before every `fork()` to prevent duplicate output from buffered writes.
+- **Task table**: Global `a_tasks[64]` table (pid + pipe_fd + active flag), matching the subprocess `subprocs[]` pattern.
+- **CPU-aware batching**: `parallel_map` uses `sysconf(_SC_NPROCESSORS_ONLN)` to limit concurrent forks.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `c_runtime/runtime.c` | Added ~200 lines: task table, `task_read_result`, `task_child_run`, `a_spawn`, `a_await`, `a_await_all`, `a_parallel_map`, `a_parallel_each`, `a_timeout`; added `#include <poll.h>` |
+| `c_runtime/runtime.h` | Added declarations for 6 concurrency functions |
+| `std/compiler/cgen.a` | Registered `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout` in builtin map; added `parallel_each` to void builtins |
+| `tests/native/test_concurrency.a` | NEW -- 21 tests covering spawn/await, closures, error propagation, double-await, await_all, parallel_map (order, closures, strings, empty, single), parallel_each, timeout (success + expiry), task independence |
+| `Cargo.toml` | Version bump to 0.67.0 |
+| `src/lsp.a` | Version bump to 0.67.0 |
+| `README.md` | Updated concurrency section, native compilation section, C runtime line count (~4,200), test counts (38 suites, 610+ tests) |
+
+## v0.68.0 -- Self-Improvement Loop
+
+**Theme:** The language becomes self-aware -- able to analyze, generate, test, and refactor its own code through two new stdlib modules.
+
+### New modules
+
+- **`std/codegen.a`** -- Code generation, compile-checking, sandboxed execution, and LLM-powered generation
+  - `compile_check(source)` -- parse + static analysis without execution, returns `#{ "ok": bool, "errors": [...], "warnings": [...] }`
+  - `run_in_sandbox(source, opts)` -- compile and execute with output capture, returns `#{ "stdout", "stderr", "code", "ok" }`
+  - `test(source, test_cases)` -- run source against input/expected pairs, returns pass/fail results
+  - `generate(description, context, opts)` -- LLM code generation with automatic compile-check validation
+
+- **`std/refactor.a`** -- AST-level refactoring operations
+  - `rename(source, old_name, new_name)` -- rename any symbol (function, variable, parameter) across a source file
+  - `extract_fn(source, start_line, end_line, fn_name)` -- extract lines into a new function, auto-detecting free variables as parameters
+  - `inline_fn(source, fn_name)` -- inline a single-expression function at all call sites, removing the definition
+
+### Design decisions
+- **Plain maps over Result types**: API returns `#{ "ok": bool, ... }` maps instead of `Ok/Err` wrappers since the language lacks `unwrap_err` for extracting error payloads
+- **CLI discovery**: Sandbox/test functions use `_find_cli()` (checks `A_CLI` env var, `./a`, `which a`) since `argv0()` returns the compiled temp binary, not the CLI
+- **Deep AST rewriting**: `_rename_node` and `_inline_calls` do full recursive tree traversal covering all AST node types for correct symbol substitution
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/codegen.a` | NEW -- compile_check, run_in_sandbox, test, generate, CLI discovery |
+| `std/refactor.a` | NEW -- rename, extract_fn, inline_fn with deep AST rewriting |
+| `tests/native/test_codegen.a` | NEW -- 8 tests: compile_check (valid, parse error, invalid), sandbox (success, crash), test runner (pass, fail, bad source) |
+| `tests/native/test_refactor.a` | NEW -- 7 tests: rename variable/function/parameter, extract_fn, inline, inline missing |
+| `examples/self_extend.a` | NEW -- demo of full self-improvement loop: analyze, compile-check, sandbox, test, refactor, LLM generate |
+| `Cargo.toml` | Version bump to 0.68.0 |
+| `src/lsp.a` | Version bump to 0.68.0 |
+| `plans/ROADMAP-v0.57-to-v1.0.md` | Marked v0.68 as DONE |
+
+## v1.0.0 -- The Agent Runtime
+
+**Theme:** Seal the last three cracks -- remove the curl dependency, make gcc-only bootstrap the default, and reach native test parity -- to ship a hermetic, self-sufficient v1.0.
+
+### Curl removal
+- Removed `http_request_curl()` entirely from `c_runtime/runtime.c` (~80 lines). When in-process TLS fails, the error is returned directly: `"https: TLS connection failed (no TLS library available)"`. The binary no longer forks, execs, or references curl.
+
+### gcc-only bootstrap
+- Rewrote `build.sh` to use the gcc-only bootstrap path: compile `bootstrap/cli.c` + C runtime, then self-host (`./a build src/cli.a`), verify, and replace. No Rust, no cargo.
+- Previous Rust-based build moved to `build_rust.sh` (development only, not required).
+- Fixed `bootstrap/build.sh` to include `c_runtime/embedded.c` in the compilation.
+
+### Native test parity
+- Audited `tests/integration_tests.rs` (200+ Rust tests) against native test coverage. Identified 4 major gaps: pattern matching, pipes, destructuring, and for loops.
+- Added 10 new native test files (tests/native/):
+  - `test_for_loops.a` -- for-in, break, continue, nested loops, while variants
+  - `test_match.a` -- integer/string/Result matching, guards, array patterns
+  - `test_pipes.a` -- pipe operator with lambdas, named closures, chains
+  - `test_destructure.a` -- array destructuring, rest patterns, spread, for-destructure
+  - `test_strings.a` -- interpolation, split/join/contains/replace/trim/upper/lower/chars/lines/slice/find/count, char_code/from_code, is_alpha/is_digit/is_alnum
+  - `test_hof.a` -- map/filter/reduce/each/sort_by/find/any/all/flat_map/min_by/max_by/enumerate/zip/take/drop/unique/chunk
+  - `test_maps.a` -- literals, has/set/delete/keys/values/entries/from_entries, iteration, nested, missing key
+  - `test_types.a` -- type_of, int/float casting, arithmetic, comparisons, boolean logic, math builtins
+  - `test_functions.a` -- recursion, lambdas, closure capture, HOFs, nested calls
+  - `test_json.a` -- JSON parse/stringify/roundtrip/pretty, exec, env.get/set, fs operations
+- Added `test_self_host.a` -- verifies full self-hosting chain: `./a -> a2 -> a3`, each producing a working binary.
+- Native test suite grew from 22 to 33 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `c_runtime/runtime.c` | Removed `http_request_curl()` (~80 lines), replaced TLS fallback with error return |
+| `build.sh` | Rewritten: gcc-only bootstrap + self-host, no Rust |
+| `build_rust.sh` | NEW -- previous Rust-based build preserved for development |
+| `bootstrap/build.sh` | Added `embedded.c` to compilation sources |
+| `tests/native/test_for_loops.a` | NEW -- for loops, break, continue |
+| `tests/native/test_match.a` | NEW -- pattern matching |
+| `tests/native/test_pipes.a` | NEW -- pipe operator |
+| `tests/native/test_destructure.a` | NEW -- destructuring and spread |
+| `tests/native/test_strings.a` | NEW -- string builtins and interpolation |
+| `tests/native/test_hof.a` | NEW -- higher-order functions |
+| `tests/native/test_maps.a` | NEW -- map operations |
+| `tests/native/test_types.a` | NEW -- type system and casting |
+| `tests/native/test_functions.a` | NEW -- functions, recursion, closures |
+| `tests/native/test_json.a` | NEW -- JSON, exec, env, fs |
+| `tests/native/test_self_host.a` | NEW -- self-hosting chain verification |
+| `Cargo.toml` | Version bump to 1.0.0 |
+| `src/lsp.a` | Version bump to 1.0.0 |
+| `plans/ROADMAP-v0.57-to-v1.0.md` | Marked v1.0 as DONE |
+| `README.md` | Updated for v1.0: gcc-only build, removed Rust references, updated stats |

@@ -1,0 +1,64 @@
+; Self-hosting regression test
+; Verifies: ./a build src/cli.a produces a working binary that can
+; itself compile and run programs.
+
+fn main() {
+  let cli = "./a"
+  if !fs.exists(cli) {
+    fail("./a binary not found -- run from project root")
+  }
+  if !fs.exists("src/cli.a") {
+    fail("src/cli.a not found -- run from project root")
+  }
+
+  let ts = to_str(time.now())
+  let out1 = "/tmp/a_self_host_1_" + ts
+  let out2 = "/tmp/a_self_host_2_" + ts
+
+  ; Step 1: ./a builds itself
+  println("step 1: building a2 from src/cli.a ...")
+  let r1 = exec(cli + " build src/cli.a -o " + out1)
+  if r1["code"] != 0 {
+    println("stderr: " + r1["stderr"])
+    fail("self-host step 1 failed: ./a build src/cli.a exited " + to_str(r1["code"]))
+  }
+  println("  built a2 (" + to_str(len(io.read_file(out1))) + " bytes)")
+
+  ; Step 2: a2 runs hello.a
+  println("step 2: verifying a2 runs hello.a ...")
+  let r2 = exec(out1 + " run examples/hello.a")
+  if r2["code"] != 0 {
+    println("stderr: " + r2["stderr"])
+    fail("self-host step 2 failed: a2 run hello.a exited " + to_str(r2["code"]))
+  }
+  if !str.contains(r2["stdout"], "hello") {
+    fail("self-host step 2: expected 'hello' in output, got: " + r2["stdout"])
+  }
+  println("  a2 output: " + str.trim(r2["stdout"]))
+
+  ; Step 3: a2 builds itself (two-generation chain)
+  println("step 3: a2 builds a3 ...")
+  let r3 = exec(out1 + " build src/cli.a -o " + out2)
+  if r3["code"] != 0 {
+    println("stderr: " + r3["stderr"])
+    fail("self-host step 3 failed: a2 build src/cli.a exited " + to_str(r3["code"]))
+  }
+  println("  built a3 (" + to_str(len(io.read_file(out2))) + " bytes)")
+
+  ; Step 4: a3 runs hello.a
+  println("step 4: verifying a3 runs hello.a ...")
+  let r4 = exec(out2 + " run examples/hello.a")
+  if r4["code"] != 0 {
+    println("stderr: " + r4["stderr"])
+    fail("self-host step 4 failed: a3 run hello.a exited " + to_str(r4["code"]))
+  }
+  if !str.contains(r4["stdout"], "hello") {
+    fail("self-host step 4: expected 'hello' in output, got: " + r4["stdout"])
+  }
+  println("  a3 output: " + str.trim(r4["stdout"]))
+
+  ; Cleanup
+  exec("rm -f " + out1 + " " + out2)
+
+  println("PASS: self-hosting chain verified (./a -> a2 -> a3)")
+}

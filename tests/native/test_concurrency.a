@@ -1,0 +1,162 @@
+; tests/native/test_concurrency.a — fork-based concurrency primitives
+
+fn assert(cond, msg) {
+  if !cond { fail("FAIL: " + msg) }
+}
+
+fn assert_eq(a, b) {
+  if to_str(a) != to_str(b) {
+    fail("FAIL: expected " + to_str(b) + ", got " + to_str(a))
+  }
+}
+
+fn helper_add(a, b) {
+  ret a + b
+}
+
+fn slow_value() {
+  time.sleep(5000)
+  ret 42
+}
+
+fn main() {
+  ; --- spawn + await ---
+
+  let h = spawn(fn() => 1 + 2)
+  let r = await(h)
+  assert_eq(unwrap(r), 3)
+  println("PASS spawn_await_basic")
+
+  let x = 10
+  let y = 5
+  let hc = spawn(fn() => x * y)
+  assert_eq(unwrap(await(hc)), 50)
+  println("PASS spawn_closure_captures")
+
+  let hf = spawn(fn() => helper_add(3, 7))
+  assert_eq(unwrap(await(hf)), 10)
+  println("PASS spawn_calls_other_functions")
+
+  let he = spawn(fn() => fail("boom"))
+  let re = await(he)
+  assert(is_err(re), "should be Err")
+  println("PASS await_error_propagation")
+
+  let hd = spawn(fn() => 99)
+  let r1 = await(hd)
+  let r2 = await(hd)
+  assert_eq(unwrap(r1), 99)
+  assert(is_err(r2), "double await should be Err")
+  println("PASS await_double_returns_err")
+
+  let h1 = spawn(fn() => 10)
+  let h2 = spawn(fn() => 20)
+  let h3 = spawn(fn() => 30)
+  assert_eq(unwrap(await(h1)), 10)
+  assert_eq(unwrap(await(h2)), 20)
+  assert_eq(unwrap(await(h3)), 30)
+  println("PASS spawn_multiple_sequential")
+
+  let prefix = "hello"
+  let hs = spawn(fn() => prefix + " world")
+  assert_eq(unwrap(await(hs)), "hello world")
+  println("PASS spawn_string_operations")
+
+  ; --- await_all ---
+
+  let handles = [
+    spawn(fn() => 1),
+    spawn(fn() => 2),
+    spawn(fn() => 3)
+  ]
+  let results = await_all(handles)
+  assert_eq(len(results), 3)
+  assert_eq(unwrap(results[0]), 1)
+  assert_eq(unwrap(results[1]), 2)
+  assert_eq(unwrap(results[2]), 3)
+  println("PASS await_all_basic")
+
+  let handles2 = [
+    spawn(fn() => "a"),
+    spawn(fn() => "b"),
+    spawn(fn() => "c")
+  ]
+  let results2 = await_all(handles2)
+  assert_eq(unwrap(results2[0]), "a")
+  assert_eq(unwrap(results2[1]), "b")
+  assert_eq(unwrap(results2[2]), "c")
+  println("PASS await_all_preserves_order")
+
+  let results3 = await_all([])
+  assert_eq(len(results3), 0)
+  println("PASS await_all_empty")
+
+  ; --- parallel_map ---
+
+  let pm1 = parallel_map([1, 2, 3, 4], fn(v) => v * 2)
+  assert_eq(len(pm1), 4)
+  assert_eq(pm1[0], 2)
+  assert_eq(pm1[1], 4)
+  assert_eq(pm1[2], 6)
+  assert_eq(pm1[3], 8)
+  println("PASS parallel_map_basic")
+
+  let pm2 = parallel_map([10, 20, 30], fn(v) => v + 1)
+  assert_eq(pm2[0], 11)
+  assert_eq(pm2[1], 21)
+  assert_eq(pm2[2], 31)
+  println("PASS parallel_map_preserves_order")
+
+  let factor = 3
+  let pm3 = parallel_map([1, 2, 3], fn(v) => v * factor)
+  assert_eq(pm3[0], 3)
+  assert_eq(pm3[1], 6)
+  assert_eq(pm3[2], 9)
+  println("PASS parallel_map_with_closures")
+
+  let pm4 = parallel_map(["a", "b", "c"], fn(s) => s + "!")
+  assert_eq(pm4[0], "a!")
+  assert_eq(pm4[1], "b!")
+  assert_eq(pm4[2], "c!")
+  println("PASS parallel_map_strings")
+
+  let pm5 = parallel_map([], fn(v) => v)
+  assert_eq(len(pm5), 0)
+  println("PASS parallel_map_empty")
+
+  let pm6 = parallel_map([42], fn(v) => v * 2)
+  assert_eq(len(pm6), 1)
+  assert_eq(pm6[0], 84)
+  println("PASS parallel_map_single")
+
+  ; --- parallel_each ---
+
+  parallel_each([1, 2, 3], fn(v) => v * 2)
+  println("PASS parallel_each_runs")
+
+  ; --- timeout ---
+
+  let rt = timeout(5000, fn() => 42)
+  assert(is_ok(rt), "should complete within timeout")
+  assert_eq(unwrap(rt), 42)
+  println("PASS timeout_completes")
+
+  let rt2 = timeout(5000, fn() => 10 + 20 + 30)
+  assert_eq(unwrap(rt2), 60)
+  println("PASS timeout_with_computation")
+
+  let rt3 = timeout(100, fn() => slow_value())
+  assert(is_err(rt3), "should timeout")
+  println("PASS timeout_expires")
+
+  ; --- independence ---
+
+  let shared = [1, 2, 3]
+  let hi = spawn(fn() => len(shared))
+  let ri = unwrap(await(hi))
+  assert_eq(ri, 3)
+  assert_eq(len(shared), 3)
+  println("PASS spawned_tasks_independent")
+
+  println("all concurrency tests passed")
+}

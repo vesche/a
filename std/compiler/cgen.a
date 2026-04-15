@@ -74,13 +74,16 @@ fn _builtin_map() -> map {
     "argv0": "a_argv0",
     "embedded_file": "a_embedded_file",
     "compress.deflate": "a_compress_deflate", "compress.inflate": "a_compress_inflate",
-    "compress.gzip": "a_compress_gzip", "compress.gunzip": "a_compress_gunzip"
+    "compress.gzip": "a_compress_gzip", "compress.gunzip": "a_compress_gunzip",
+    "spawn": "a_spawn", "await": "a_await", "await_all": "a_await_all",
+    "parallel_map": "a_parallel_map", "parallel_each": "a_parallel_each",
+    "timeout": "a_timeout"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail", "each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static", "db.close"]
+  ret ["println", "print", "eprintln", "fail", "each", "parallel_each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static", "db.close"]
 }
 
 fn _c_keywords() -> [str] {

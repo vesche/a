@@ -1,0 +1,65 @@
+; Tests for JSON, exec, env, fs operations
+
+fn _json_obj() {
+  let lb = from_code(123)
+  let rb = from_code(125)
+  ret lb + "\"name\": \"alice\", \"age\": 30" + rb
+}
+
+fn main() {
+  ; json.parse object
+  let obj = json.parse(_json_obj())
+  if obj["name"] != "alice" { fail("json parse: name should be alice") }
+  if obj["age"] != 30 { fail("json parse: age should be 30") }
+
+  ; json.parse array
+  let arr = json.parse("[1, 2, 3]")
+  if len(arr) != 3 { fail("json parse array: expected 3 elements") }
+  if arr[1] != 2 { fail("json parse array: second should be 2") }
+
+  ; json.stringify
+  let m = #{"key": "value"}
+  let s = json.stringify(m)
+  if !str.contains(s, "key") { fail("stringify: should contain 'key'") }
+  if !str.contains(s, "value") { fail("stringify: should contain 'value'") }
+
+  ; json roundtrip
+  let original = #{"x": [1, 2, 3], "y": true}
+  let text = json.stringify(original)
+  let restored = json.parse(text)
+  if restored["y"] != true { fail("roundtrip: y should be true") }
+  if len(restored["x"]) != 3 { fail("roundtrip: x should have 3 elements") }
+
+  ; json.pretty
+  let pretty = json.pretty(#{"a": 1})
+  if !str.contains(pretty, "\n") { fail("pretty: should contain newlines") }
+
+  ; exec
+  let r = exec("echo hello")
+  if r["code"] != 0 { fail("exec: exit code should be 0") }
+  if str.trim(r["stdout"]) != "hello" { fail("exec: stdout should be 'hello'") }
+
+  ; exec with exit code
+  let r2 = exec("exit 1")
+  if r2["code"] != 1 { fail("exec: exit 1 should give code 1") }
+
+  ; env.get / env.set
+  env.set("TEST_A_VAR", "test_value")
+  let val = env.get("TEST_A_VAR")
+  if val != "test_value" { fail("env: should get 'test_value', got '" + to_str(val) + "'") }
+
+  ; fs operations
+  let tmp = "/tmp/a_test_fs_" + to_str(time.now())
+  fs.mkdir(tmp)
+  if !fs.exists(tmp) { fail("fs.mkdir: directory should exist") }
+  io.write_file(tmp + "/test.txt", "hello")
+  if !fs.exists(tmp + "/test.txt") { fail("fs: file should exist") }
+  let content = io.read_file(tmp + "/test.txt")
+  if content != "hello" { fail("fs: content should be 'hello'") }
+  let listing = fs.ls(tmp)
+  if len(listing) != 1 { fail("fs.ls: expected 1 entry") }
+  fs.rm(tmp + "/test.txt")
+  fs.rm(tmp)
+
+  println("all json/exec/env/fs tests passed")
+}

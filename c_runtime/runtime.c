@@ -12,6 +12,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <time.h>
+#include <poll.h>
 
 int g_argc = 0;
 char** g_argv = NULL;
@@ -966,6 +967,221 @@ AValue a_proc_is_running(AValue handle) {
     if (r == 0) return a_bool(1);
     subprocs[h].active = 0;
     return a_bool(0);
+}
+
+/* --- Task concurrency (spawn/await/parallel_map/timeout) --- */
+
+typedef struct {
+    pid_t pid;
+    int pipe_fd;
+    int active;
+} ATask;
+
+#define MAX_TASKS 64
+static ATask a_tasks[MAX_TASKS];
+
+static AValue task_read_result(int fd, pid_t pid) {
+    char* buf = malloc(4096);
+    int len = 0, cap = 4096, n;
+    while ((n = (int)read(fd, buf + len, cap - len)) > 0) {
+        len += n;
+        if (len >= cap - 1) { cap *= 2; buf = realloc(buf, cap); }
+    }
+    close(fd);
+    int status = 0;
+    waitpid(pid, &status, 0);
+    if (len == 0) {
+        free(buf);
+        if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+            return a_err(a_string("task failed"));
+        return a_ok(a_void());
+    }
+    buf[len] = '\0';
+    AValue json_str = a_string_len(buf, len);
+    free(buf);
+    AValue result = a_json_parse(json_str);
+    a_release(json_str);
+    if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        return a_ok(result);
+    return a_err(result);
+}
+
+static void task_child_run(int write_fd, AValue closure, int argc, AValue* argv) {
+    AValue result = a_closure_call_arr(closure, argc, argv);
+    AValue json = a_json_stringify(result);
+    if (json.tag == TAG_STRING && json.sval->len > 0) {
+        int written = 0;
+        while (written < json.sval->len) {
+            int w = (int)write(write_fd, json.sval->data + written, json.sval->len - written);
+            if (w <= 0) break;
+            written += w;
+        }
+    }
+    close(write_fd);
+    _exit(0);
+}
+
+AValue a_spawn(AValue closure) {
+    if (closure.tag != TAG_CLOSURE) return a_err(a_string("spawn: expected closure"));
+    int slot = -1;
+    for (int i = 0; i < MAX_TASKS; i++) {
+        if (!a_tasks[i].active) { slot = i; break; }
+    }
+    if (slot < 0) return a_err(a_string("spawn: too many tasks"));
+    int pipefd[2];
+    if (pipe(pipefd) < 0) return a_err(a_string("spawn: pipe failed"));
+    fflush(stdout); fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]); close(pipefd[1]);
+        return a_err(a_string("spawn: fork failed"));
+    }
+    if (pid == 0) {
+        close(pipefd[0]);
+        task_child_run(pipefd[1], closure, 0, NULL);
+    }
+    close(pipefd[1]);
+    a_tasks[slot].pid = pid;
+    a_tasks[slot].pipe_fd = pipefd[0];
+    a_tasks[slot].active = 1;
+    return a_int(slot);
+}
+
+AValue a_await(AValue handle) {
+    if (handle.tag != TAG_INT) return a_err(a_string("await: expected task handle"));
+    int slot = (int)handle.ival;
+    if (slot < 0 || slot >= MAX_TASKS || !a_tasks[slot].active)
+        return a_err(a_string("invalid or already-awaited task handle"));
+    a_tasks[slot].active = 0;
+    return task_read_result(a_tasks[slot].pipe_fd, a_tasks[slot].pid);
+}
+
+AValue a_await_all(AValue handles) {
+    if (handles.tag != TAG_ARRAY) return a_array_new(0);
+    int n = handles.aval->len;
+    AArray* arr = malloc(sizeof(AArray));
+    arr->rc = 1; arr->len = n; arr->cap = n > 0 ? n : 1;
+    arr->items = malloc(sizeof(AValue) * arr->cap);
+    for (int i = 0; i < n; i++) {
+        arr->items[i] = a_await(handles.aval->items[i]);
+    }
+    return (AValue){.tag = TAG_ARRAY, .aval = arr};
+}
+
+AValue a_parallel_map(AValue arr, AValue func) {
+    if (arr.tag != TAG_ARRAY) return a_array_new(0);
+    int n = arr.aval->len;
+    if (n == 0) return a_array_new(0);
+
+    long ncpu = sysconf(_SC_NPROCESSORS_ONLN);
+    if (ncpu < 1) ncpu = 4;
+
+    pid_t* pids = calloc(n, sizeof(pid_t));
+    int* fds = calloc(n, sizeof(int));
+
+    int active = 0;
+    int launched = 0;
+
+    AArray* results = malloc(sizeof(AArray));
+    results->rc = 1; results->len = n; results->cap = n;
+    results->items = calloc(n, sizeof(AValue));
+
+    while (launched < n || active > 0) {
+        while (launched < n && active < ncpu) {
+            int pipefd[2];
+            if (pipe(pipefd) < 0) {
+                results->items[launched] = a_err(a_string("parallel_map: pipe failed"));
+                pids[launched] = -1; fds[launched] = -1;
+                launched++; continue;
+            }
+            fflush(stdout); fflush(stderr);
+            pid_t pid = fork();
+            if (pid < 0) {
+                close(pipefd[0]); close(pipefd[1]);
+                results->items[launched] = a_err(a_string("parallel_map: fork failed"));
+                pids[launched] = -1; fds[launched] = -1;
+                launched++; continue;
+            }
+            if (pid == 0) {
+                close(pipefd[0]);
+                AValue arg = arr.aval->items[launched];
+                task_child_run(pipefd[1], func, 1, &arg);
+            }
+            close(pipefd[1]);
+            pids[launched] = pid;
+            fds[launched] = pipefd[0];
+            launched++; active++;
+        }
+        if (active > 0) {
+            int status; pid_t done = waitpid(-1, &status, 0);
+            if (done > 0) {
+                for (int i = 0; i < launched; i++) {
+                    if (pids[i] == done) {
+                        char* buf = malloc(4096);
+                        int blen = 0, bcap = 4096, rd;
+                        while ((rd = (int)read(fds[i], buf + blen, bcap - blen)) > 0) {
+                            blen += rd;
+                            if (blen >= bcap - 1) { bcap *= 2; buf = realloc(buf, bcap); }
+                        }
+                        close(fds[i]); fds[i] = -1; pids[i] = -1;
+                        if (blen > 0) {
+                            buf[blen] = '\0';
+                            AValue js = a_string_len(buf, blen);
+                            results->items[i] = a_json_parse(js);
+                            a_release(js);
+                        } else {
+                            if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+                                results->items[i] = a_err(a_string("task failed"));
+                            else
+                                results->items[i] = a_void();
+                        }
+                        free(buf);
+                        active--;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    free(pids); free(fds);
+    return (AValue){.tag = TAG_ARRAY, .aval = results};
+}
+
+AValue a_parallel_each(AValue arr, AValue func) {
+    AValue result = a_parallel_map(arr, func);
+    a_release(result);
+    return a_void();
+}
+
+AValue a_timeout(AValue ms_val, AValue func) {
+    if (func.tag != TAG_CLOSURE) return a_err(a_string("timeout: expected closure"));
+    int ms = 0;
+    if (ms_val.tag == TAG_INT) ms = (int)ms_val.ival;
+    else if (ms_val.tag == TAG_FLOAT) ms = (int)ms_val.fval;
+
+    int pipefd[2];
+    if (pipe(pipefd) < 0) return a_err(a_string("timeout: pipe failed"));
+    fflush(stdout); fflush(stderr);
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(pipefd[0]); close(pipefd[1]);
+        return a_err(a_string("timeout: fork failed"));
+    }
+    if (pid == 0) {
+        close(pipefd[0]);
+        task_child_run(pipefd[1], func, 0, NULL);
+    }
+    close(pipefd[1]);
+
+    struct pollfd pfd = { .fd = pipefd[0], .events = POLLIN };
+    int ready = poll(&pfd, 1, ms);
+    if (ready <= 0) {
+        kill(pid, SIGKILL);
+        waitpid(pid, NULL, 0);
+        close(pipefd[0]);
+        return a_err(a_string("timeout"));
+    }
+    return task_read_result(pipefd[0], pid);
 }
 
 AValue a_env_get(AValue key) {
@@ -2200,89 +2416,6 @@ static void http_conn_close(HttpConn* c) {
     c->fd = -1;
 }
 
-/* --- Curl fallback for HTTPS when TLS unavailable --- */
-
-static AValue http_request_curl(const char* method, const char* url, const char* body, AValue headers) {
-    int out_pipe[2], err_pipe[2];
-    if (pipe(out_pipe) < 0 || pipe(err_pipe) < 0)
-        return a_err(a_string("http: pipe failed"));
-    pid_t pid = fork();
-    if (pid < 0) {
-        close(out_pipe[0]); close(out_pipe[1]);
-        close(err_pipe[0]); close(err_pipe[1]);
-        return a_err(a_string("http: fork failed"));
-    }
-    if (pid == 0) {
-        close(out_pipe[0]); close(err_pipe[0]);
-        dup2(out_pipe[1], STDOUT_FILENO);
-        dup2(err_pipe[1], STDERR_FILENO);
-        close(out_pipe[1]); close(err_pipe[1]);
-        int ac = 0; char* av[64];
-        av[ac++] = "curl"; av[ac++] = "-s";
-        av[ac++] = "-D"; av[ac++] = "/dev/stderr";
-        av[ac++] = "-w"; av[ac++] = "\n__HTTP_STATUS__%{http_code}";
-        av[ac++] = "-X"; av[ac++] = (char*)method;
-        if (headers.tag == TAG_MAP) {
-            for (int i = 0; i < headers.mval->len && ac < 56; i++) {
-                if (headers.mval->vals[i].tag != TAG_STRING) continue;
-                char* h = malloc(strlen(headers.mval->keys[i]) + headers.mval->vals[i].sval->len + 4);
-                sprintf(h, "%s: %s", headers.mval->keys[i], headers.mval->vals[i].sval->data);
-                av[ac++] = "-H"; av[ac++] = h;
-            }
-        }
-        if (body && strlen(body) > 0) { av[ac++] = "-d"; av[ac++] = (char*)body; }
-        av[ac++] = (char*)url; av[ac] = NULL;
-        execvp("curl", av); _exit(127);
-    }
-    close(out_pipe[1]); close(err_pipe[1]);
-    size_t bcap = 4096, blen = 0;
-    char* bbuf = malloc(bcap);
-    ssize_t n;
-    while ((n = read(out_pipe[0], bbuf + blen, bcap - blen)) > 0) {
-        blen += n;
-        if (blen >= bcap - 1) { bcap *= 2; bbuf = realloc(bbuf, bcap); }
-    }
-    bbuf[blen] = '\0'; close(out_pipe[0]);
-    size_t hcap = 4096, hlen = 0;
-    char* hbuf = malloc(hcap);
-    while ((n = read(err_pipe[0], hbuf + hlen, hcap - hlen)) > 0) {
-        hlen += n;
-        if (hlen >= hcap - 1) { hcap *= 2; hbuf = realloc(hbuf, hcap); }
-    }
-    hbuf[hlen] = '\0'; close(err_pipe[0]);
-    int st; waitpid(pid, &st, 0);
-    if (!WIFEXITED(st) || WEXITSTATUS(st) == 127) {
-        free(bbuf); free(hbuf);
-        return a_err(a_string("http: curl not found (no TLS library available; install openssl or curl)"));
-    }
-    int http_status = 0;
-    char* marker = strstr(bbuf, "\n__HTTP_STATUS__");
-    if (marker) { http_status = atoi(marker + 16); *marker = '\0'; blen = marker - bbuf; }
-    AValue resp_headers = a_map_new(0);
-    char* line = hbuf;
-    while (line && *line) {
-        char* eol = strstr(line, "\r\n");
-        if (!eol) eol = line + strlen(line);
-        char* colon = strchr(line, ':');
-        if (colon && colon < eol && line[0] != 'H') {
-            *colon = '\0';
-            char* val = colon + 1;
-            while (*val == ' ') val++;
-            int vlen = (int)(eol - val);
-            for (char* pp = line; *pp; pp++) *pp = (char)tolower((unsigned char)*pp);
-            resp_headers = a_map_set(resp_headers, a_string(line), a_string_len(val, vlen));
-        }
-        if (*eol) line = eol + 2; else break;
-    }
-    free(hbuf);
-    AValue result = a_map_new(0);
-    result = a_map_set(result, a_string("status"), a_int(http_status));
-    result = a_map_set(result, a_string("body"), a_string_len(bbuf, (int)blen));
-    result = a_map_set(result, a_string("headers"), resp_headers);
-    free(bbuf);
-    return result;
-}
-
 /* --- HTTP/1.1 request/response --- */
 
 static int http_io_write_all(HttpConn* c, const char* buf, int len) {
@@ -2311,7 +2444,7 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
     if (need_tls) {
         if (http_tls_connect(&conn, url.host) != 0) {
             close(fd);
-            return http_request_curl(method, url_str, body, req_headers);
+            return a_err(a_string("https: TLS connection failed (no TLS library available)"));
         }
     }
 

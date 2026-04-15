@@ -1,0 +1,78 @@
+; Tests for `for` loops, break, continue
+
+fn main() {
+  ; Basic for-in over array
+  let arr = [10, 20, 30]
+  let mut sum = 0
+  for x in arr {
+    sum = sum + x
+  }
+  if sum != 60 { fail("for-in sum: expected 60, got " + to_str(sum)) }
+
+  ; For-in over string chars
+  let mut chars_count = 0
+  for c in str.chars("hello") {
+    chars_count = chars_count + 1
+  }
+  if chars_count != 5 { fail("for-in chars: expected 5") }
+
+  ; Break in for loop
+  let mut last = 0
+  for x in [1, 2, 3, 4, 5] {
+    if x == 3 { break }
+    last = x
+  }
+  if last != 2 { fail("break in for: expected last=2, got " + to_str(last)) }
+
+  ; Continue in for loop
+  let mut evens = 0
+  for x in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] {
+    if x % 2 != 0 { continue }
+    evens = evens + 1
+  }
+  if evens != 5 { fail("continue in for: expected 5 evens, got " + to_str(evens)) }
+
+  ; Nested for loops
+  let mut total = 0
+  for i in [0, 1, 2] {
+    for j in [0, 1, 2] {
+      total = total + 1
+    }
+  }
+  if total != 9 { fail("nested for: expected 9, got " + to_str(total)) }
+
+  ; While with break
+  let mut n = 0
+  while true {
+    n = n + 1
+    if n >= 5 { break }
+  }
+  if n != 5 { fail("while break: expected 5") }
+
+  ; While with continue
+  let mut odd_sum = 0
+  let mut k = 0
+  while k < 10 {
+    k = k + 1
+    if k % 2 == 0 { continue }
+    odd_sum = odd_sum + k
+  }
+  if odd_sum != 25 { fail("while continue: expected 25, got " + to_str(odd_sum)) }
+
+  ; While false never executes
+  let mut ran = false
+  while false {
+    ran = true
+  }
+  if ran { fail("while false should not execute") }
+
+  ; For with map.entries (destructuring)
+  let m = #{"x": 1, "y": 2, "z": 3}
+  let mut val_sum = 0
+  for [k, v] in map.entries(m) {
+    val_sum = val_sum + v
+  }
+  if val_sum != 6 { fail("for map entries: expected 6, got " + to_str(val_sum)) }
+
+  println("all for loop tests passed")
+}
