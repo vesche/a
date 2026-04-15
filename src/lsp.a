@@ -452,7 +452,7 @@ fn _handle_initialize(id) {
   }
   let result = #{
     "capabilities": capabilities,
-    "serverInfo": #{"name": "a-lsp", "version": "1.8.0"}
+    "serverInfo": #{"name": "a-lsp", "version": "1.9.0"}
   }
   _respond(id, result)
 }

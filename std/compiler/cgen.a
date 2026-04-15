@@ -88,7 +88,9 @@ fn _builtin_map() -> map {
     "local_llm.load": "a_llm_load", "local_llm.generate": "a_llm_generate",
     "local_llm.embed": "a_llm_embed", "local_llm.unload": "a_llm_unload",
     "local_llm.info": "a_llm_info", "local_llm.tokenize": "a_llm_tokenize",
-    "local_llm.detokenize": "a_llm_detokenize", "local_llm.vocab_size": "a_llm_vocab_size"
+    "local_llm.detokenize": "a_llm_detokenize", "local_llm.vocab_size": "a_llm_vocab_size",
+    "profile.dump": "a_profile_dump_json", "profile.get_counters": "a_profile_get_counters",
+    "profile.reset": "a_profile_reset"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }

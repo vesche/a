@@ -53,6 +53,9 @@ The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: 
 ./a plugin install ./my_ext # install a plugin from directory
 ./a plugin list             # list installed plugins
 ./a plugin run my_ext       # execute an installed plugin
+./a profile program.a       # profile-guided: instrument, run, dump JSON
+./a gentests program.a      # auto-generate tests from source analysis
+./a optimize prog.a prof.json  # optimization report from profile data
 ./a cache clean             # clear the compilation cache
 ./a pkg init                # create pkg.toml manifest
 ./a pkg add name source     # add a dependency
@@ -106,7 +109,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**178+ builtins** covering everything an agent needs (plus native compilation to C and optional WASM WAT output):
+**181+ builtins** covering everything an agent needs (plus native compilation to C and optional WASM WAT output):
 
 | Domain | Operations |
 |--------|-----------|
@@ -124,6 +127,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Data formats** | `yaml.parse`/`stringify`, `toml.parse`/`stringify`, `html.parse`/`select`/`text`, `url.parse`/`build`/`encode`/`decode` (via stdlib modules) |
 | **LLM client** | `llm.chat(provider, model, messages, options)` -- unified API for OpenAI, Anthropic, Google AI with retry, tool use, normalized responses; `llm.stream(provider, model, messages, on_chunk, options)` for token-by-token streaming (via stdlib) |
 | **Local LLM** | `std.local_llm` -- GGUF model load/inference in-process (CPU-only): Q4_0, Q8_0, F16, F32; `local_llm.load`, `generate`, `chat`, `embed`, `tokenize`/`detokenize`; eight `a_llm_*` runtime builtins (stubs on WASM) |
+| **Self-Optimization** | `a profile prog.a` instruments and profiles; `a optimize prog.a prof.json` analyzes hot paths and suggests inlining/unrolling; `a gentests prog.a` auto-generates edge-case tests from AST; `std.compiler.optimizer`, `std.compiler.profiler`, `std.testgen` |
 | **Strings** | `str.split`, `str.join`, `str.contains`, `str.replace`, `str.trim`, `str.upper`, `str.lower`, `str.starts_with`, `str.ends_with`, `str.chars`, `str.slice`, `str.lines` (14 ops) |
 | **Arrays** | `sort`, `reverse_arr`, `contains`, `push`, `slice`, `map`, `filter`, `reduce`, `each`, `sort_by`, `find`, `any`, `all`, `flat_map`, `min_by`, `max_by`, `enumerate`, `zip`, `take`, `drop`, `unique`, `chunk`, `len` |
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
@@ -157,7 +161,7 @@ fn main() -> void effects [io] {
 }
 ```
 
-**Standard library** with 44 modules:
+**Standard library** with 47 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -177,6 +181,9 @@ use std.html                  # parse, select, text -- HTML DOM tree with CSS se
 use std.url                   # parse, encode, decode, build -- full URL structure parsing
 use std.llm                   # chat(provider, model, msgs, opts) -- unified LLM client (OpenAI, Anthropic, Google)
 use std.local_llm             # load, generate, chat, embed -- GGUF inference (CPU, Q4_0/Q8_0/F16/F32)
+use std.testgen               # gen_tests, analyze -- automatic test generation from AST analysis
+use std.compiler.profiler     # instrument, analyze_profile -- profile-guided optimization
+use std.compiler.optimizer    # analyze_profile, suggest, measure_binary, benchmark, report
 use std.mcp                   # MCP server + client -- JSON-RPC 2.0 over stdio, tool/resource registration
 use std.agent                 # retry, batch, pipeline, timeout, rate_limit -- operational primitives
 use std.log                   # info, warn, error, debug, set_level -- structured JSON logging to stderr
@@ -226,7 +233,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~13,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 178+ native builtins. All 44 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~16,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 181+ native builtins. All 47 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), profile-guided optimization (`profile`/`optimize`/`gentests`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -312,15 +319,18 @@ fn main() -> void {
 | `src/lsp.a` | ~1,100 | **language server** -- LSP over stdio with diagnostics, completion, hover, go-to-definition, semantic tokens, rename, code actions, workspace symbols |
 | `std/compiler/cgen.a` | ~1,920 | **C code generator** -- self-hosting native compiler via C with memory management (closures, HOFs, pipes, try/catch, destructuring, spread, pattern matching, I/O, module inlining, import aliases, retain/release, goto cleanup, 105+ builtins, three-stage bootstrap) |
 | `std/compiler/wasmgen.a` | ~640 | **WAT code generator** -- emits WebAssembly Text from AST for `a wat` / `a build --target wasm32-wasi` |
+| `std/compiler/profiler.a` | ~240 | **Profile instrumentation** -- generates instrumented C code with `a_profile_hit()` counters at functions, branches, loops |
+| `std/compiler/optimizer.a` | ~210 | **Optimization analysis** -- loads profile data, identifies hot paths, suggests inlining and loop unrolling |
+| `std/testgen.a` | ~220 | **Test generation** -- parses source, infers param types, generates edge-case tests for all public functions |
 
 ## Stats
 
 | | |
 |---|---|
-| **C runtime** | ~5,350 lines (runtime.h + runtime.c) + ~700 lines (`gguf.c`) + bundled SQLite3, miniz, stb_image |
-| **"a" source** | ~42,400 lines across 200+ `.a` files |
-| **Standard library** | 44 modules, 650+ functions, ~13,100 lines |
-| **Test suites** | 49 suites + cgen test script, 875+ native tests, ~8,500 lines |
+| **C runtime** | ~5,420 lines (runtime.h + runtime.c) + ~700 lines (`gguf.c`) + bundled SQLite3, miniz, stb_image |
+| **"a" source** | ~43,100 lines across 200+ `.a` files |
+| **Standard library** | 47 modules, 680+ functions, ~13,800 lines |
+| **Test suites** | 50 suites + cgen test script, 890+ native tests, ~8,700 lines |
 | **Examples & tools** | 39 programs, ~6,600 lines |
 
 ## Editor support

@@ -1,0 +1,228 @@
+; std/testgen.a -- Automatic test generation from source analysis
+;
+; Analyzes "a" source code using the self-hosted parser, then generates
+; test source that exercises each function with edge-case inputs.
+;
+; Usage:
+;   use std.testgen
+;   let tests = testgen.gen_tests(source_code)
+;   io.write_file("test_generated.a", tests)
+
+use std.compiler.parser
+
+fn _edge_values_for_type(hint) -> [str] {
+  if hint == "int" || hint == "number" {
+    ret ["0", "1", "-1", "42", "100"]
+  }
+  if hint == "str" || hint == "string" {
+    let q = from_code(34)
+    ret [q + q, q + "hello" + q, q + "a" + q, q + "test string" + q]
+  }
+  if hint == "bool" {
+    ret ["true", "false"]
+  }
+  if hint == "array" || hint == "list" {
+    ret ["[]", "[1]", "[1, 2, 3]"]
+  }
+  if hint == "map" {
+    ret ["#" + from_code(123) + from_code(125), "#" + from_code(123) + from_code(34) + "a" + from_code(34) + ": 1" + from_code(125)]
+  }
+  ret ["0", from_code(34) + "test" + from_code(34), "true", "[]"]
+}
+
+fn _guess_param_type(pname) -> str {
+  let nm = str.lower(pname)
+  if str.contains(nm, "count") || str.contains(nm, "num") || str.contains(nm, "size") || str.contains(nm, "len") || str.contains(nm, "idx") || str.contains(nm, "index") || nm == "n" || nm == "i" || nm == "x" || nm == "y" {
+    ret "int"
+  }
+  if str.contains(nm, "name") || str.contains(nm, "text") || str.contains(nm, "msg") || str.contains(nm, "str") || str.contains(nm, "label") || str.contains(nm, "desc") || nm == "s" {
+    ret "str"
+  }
+  if str.contains(nm, "flag") || str.contains(nm, "enabled") || str.contains(nm, "active") || str.contains(nm, "is_") || str.contains(nm, "has_") {
+    ret "bool"
+  }
+  if str.contains(nm, "items") || str.contains(nm, "list") || str.contains(nm, "arr") || str.contains(nm, "elems") {
+    ret "array"
+  }
+  if str.contains(nm, "opts") || str.contains(nm, "config") || str.contains(nm, "options") || str.contains(nm, "settings") {
+    ret "map"
+  }
+  ret "any"
+}
+
+fn _extract_functions(prog_ast) -> [map] {
+  let items = prog_ast["items"]
+  let mut fns = []
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      let fname = item["name"]
+      if str.starts_with(fname, "_") {
+        ; skip private functions
+      } else {
+        if fname != "main" {
+          let params = item["params"]
+          let mut param_info = []
+          for p in params {
+            let pname = p["name"]
+            let ptype = _guess_param_type(pname)
+            param_info = push(param_info, #{ "name": pname, "type": ptype })
+          }
+          let body = item["body"]
+          let mut has_return = false
+          if type_of(body) == "map" && map.has(body, "stmts") {
+            let stmts = body["stmts"]
+            for st in stmts {
+              if st["tag"] == "Return" {
+                has_return = true
+              }
+            }
+          }
+          fns = push(fns, #{ "name": fname, "params": param_info, "has_return": has_return, "param_count": len(params) })
+        }
+      }
+    }
+  }
+  ret fns
+}
+
+fn _gen_arg_combos(params) -> [array] {
+  if len(params) == 0 {
+    ret [[]]
+  }
+  if len(params) == 1 {
+    let p = params[0]
+    let vals = _edge_values_for_type(p["type"])
+    let mut combos = []
+    for v in vals {
+      combos = push(combos, [v])
+    }
+    ret combos
+  }
+  let first = params[0]
+  let rest_params = drop(params, 1)
+  let first_vals = _edge_values_for_type(first["type"])
+  let rest_combos = _gen_arg_combos(rest_params)
+  let mut combos = []
+  for fv in first_vals {
+    for rc in rest_combos {
+      let combo = concat_arr([fv], rc)
+      if len(combos) < 20 {
+        combos = push(combos, combo)
+      }
+    }
+  }
+  ret combos
+}
+
+fn _gen_test_for_fn(func_info, test_num) -> str {
+  let fname = func_info["name"]
+  let params = func_info["params"]
+  let has_ret = func_info["has_return"]
+  let combos = _gen_arg_combos(params)
+
+  let mut code = ""
+  let mut tn = test_num
+  for combo in combos {
+    let arg_str = str.join(combo, ", ")
+    code = code + "  ; --- Test " + to_str(tn) + ": " + fname + "(" + arg_str + ") ---\n"
+    if has_ret {
+      code = code + "  let r_" + to_str(tn) + " = " + fname + "(" + arg_str + ")\n"
+      code = code + "  println(" + from_code(34) + "PASS: " + fname + "(" + arg_str + ") = " + from_code(34) + " + to_str(r_" + to_str(tn) + "))\n"
+    } else {
+      code = code + "  " + fname + "(" + arg_str + ")\n"
+      code = code + "  println(" + from_code(34) + "PASS: " + fname + "(" + arg_str + ")" + from_code(34) + ")\n"
+    }
+    code = code + "\n"
+    tn = tn + 1
+  }
+  ret code
+}
+
+fn gen_tests(source) -> str {
+  let prog = parser.parse(source)
+  if type_of(prog) != "map" || prog["tag"] != "Program" {
+    ret "; error: could not parse source\nfn main() " + from_code(123) + "\n  println(" + from_code(34) + "ERROR: parse failure" + from_code(34) + ")\n" + from_code(125) + "\n"
+  }
+
+  let fns = _extract_functions(prog)
+  if len(fns) == 0 {
+    ret "; no testable functions found\nfn main() " + from_code(123) + "\n  println(" + from_code(34) + "no tests generated" + from_code(34) + ")\n" + from_code(125) + "\n"
+  }
+
+  let mut test_code = "; Auto-generated tests by std/testgen.a\n\n"
+
+  ; Include the source (as imports would be needed in real usage)
+  test_code = test_code + "; Source functions under test:\n"
+  test_code = test_code + source + "\n\n"
+  test_code = test_code + "fn main() " + from_code(123) + "\n"
+
+  let mut test_num = 1
+  for func in fns {
+    let fn_tests = _gen_test_for_fn(func, test_num)
+    test_code = test_code + fn_tests
+    let combos = _gen_arg_combos(func["params"])
+    test_num = test_num + len(combos)
+  }
+
+  test_code = test_code + "  println(" + from_code(34) + "All " + to_str(test_num - 1) + " generated tests passed" + from_code(34) + ")\n"
+  test_code = test_code + from_code(125) + "\n"
+  ret test_code
+}
+
+fn gen_tests_for_file(filepath) -> str {
+  let source = io.read_file(filepath)
+  if type_of(source) == "void" || len(source) == 0 {
+    ret "; error: could not read " + filepath + "\n"
+  }
+  ret gen_tests(source)
+}
+
+fn analyze(source) -> map {
+  let prog = parser.parse(source)
+  if type_of(prog) != "map" || prog["tag"] != "Program" {
+    ret #{ "error": "parse failure", "functions": 0, "lines": 0 }
+  }
+
+  let fns = _extract_functions(prog)
+  let all_items = prog["items"]
+  let mut total_fns = 0
+  let mut private_fns = 0
+  let mut total_params = 0
+
+  for item in all_items {
+    if item["tag"] == "FnDecl" {
+      total_fns = total_fns + 1
+      if str.starts_with(item["name"], "_") {
+        private_fns = private_fns + 1
+      }
+      total_params = total_params + len(item["params"])
+    }
+  }
+
+  let src_lines = str.split(source, "\n")
+  let mut code_lines = 0
+  let mut comment_lines = 0
+  for ln in src_lines {
+    let trimmed = str.trim(ln)
+    if len(trimmed) == 0 {
+      ; blank
+    } else {
+      if str.starts_with(trimmed, ";") {
+        comment_lines = comment_lines + 1
+      } else {
+        code_lines = code_lines + 1
+      }
+    }
+  }
+
+  ret #{
+    "total_functions": total_fns,
+    "public_functions": total_fns - private_fns,
+    "private_functions": private_fns,
+    "testable_functions": len(fns),
+    "total_parameters": total_params,
+    "total_lines": len(src_lines),
+    "code_lines": code_lines,
+    "comment_lines": comment_lines
+  }
+}

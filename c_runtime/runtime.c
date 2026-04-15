@@ -4944,3 +4944,69 @@ AValue a_compress_gunzip(AValue data) {
     if (out) mz_free(out);
     return result;
 }
+
+/* --- Profiling counters --- */
+
+#define A_PROFILE_MAX 8192
+
+static int64_t a_profile_counters[A_PROFILE_MAX];
+static char*   a_profile_labels[A_PROFILE_MAX];
+static int     a_profile_count = 0;
+static int     a_profile_active = 0;
+
+void a_profile_init(void) {
+    memset(a_profile_counters, 0, sizeof(a_profile_counters));
+    for (int i = 0; i < A_PROFILE_MAX; i++) {
+        if (a_profile_labels[i]) { free(a_profile_labels[i]); a_profile_labels[i] = NULL; }
+    }
+    a_profile_count = 0;
+    a_profile_active = 1;
+}
+
+int a_profile_register(const char* label) {
+    if (a_profile_count >= A_PROFILE_MAX) return -1;
+    int id = a_profile_count++;
+    a_profile_labels[id] = strdup(label);
+    a_profile_counters[id] = 0;
+    return id;
+}
+
+void a_profile_hit(int id) {
+    if (id >= 0 && id < A_PROFILE_MAX && a_profile_active) a_profile_counters[id]++;
+}
+
+AValue a_profile_dump_json(AValue path_val) {
+    if (!a_profile_active) return a_err(a_string("profile: not active"));
+    if (path_val.tag != TAG_STRING) return a_err(a_string("profile.dump: expected string path"));
+
+    FILE* f = fopen(path_val.sval->data, "w");
+    if (!f) return a_err(a_string("profile.dump: cannot open output file"));
+
+    fprintf(f, "{\n  \"counters\": [\n");
+    for (int i = 0; i < a_profile_count; i++) {
+        const char* lbl = a_profile_labels[i] ? a_profile_labels[i] : "";
+        fprintf(f, "    {\"id\": %d, \"label\": \"%s\", \"count\": %lld}%s\n",
+                i, lbl, (long long)a_profile_counters[i],
+                i < a_profile_count - 1 ? "," : "");
+    }
+    fprintf(f, "  ],\n  \"total_points\": %d\n}\n", a_profile_count);
+    fclose(f);
+    return a_ok(a_string(path_val.sval->data));
+}
+
+AValue a_profile_get_counters(void) {
+    AValue arr = a_array_new(0);
+    for (int i = 0; i < a_profile_count; i++) {
+        AValue entry = a_map_new(0);
+        entry = a_map_set(entry, a_string("id"), a_int(i));
+        entry = a_map_set(entry, a_string("label"), a_string(a_profile_labels[i] ? a_profile_labels[i] : ""));
+        entry = a_map_set(entry, a_string("count"), a_int(a_profile_counters[i]));
+        arr = a_array_push(arr, entry);
+    }
+    return arr;
+}
+
+AValue a_profile_reset(void) {
+    for (int i = 0; i < A_PROFILE_MAX; i++) a_profile_counters[i] = 0;
+    return a_void();
+}

@@ -1,0 +1,265 @@
+; std/compiler/optimizer.a -- Compiler self-improvement and optimization analysis
+;
+; Analyzes profile data and codegen output to identify optimization opportunities.
+; Measures code quality (binary size, compilation time, runtime performance)
+; and proposes patches to improve the compiler's output.
+;
+; Usage:
+;   use std.compiler.optimizer
+;   let report = optimizer.analyze_profile("profile.json")
+;   let suggestions = optimizer.suggest(source, report)
+
+use std.compiler.parser
+
+fn load_profile(profile_path) -> map {
+  let raw = io.read_file(profile_path)
+  if type_of(raw) == "void" || len(raw) == 0 {
+    ret #{ "error": "cannot read profile" }
+  }
+  let data = json.parse(raw)
+  if type_of(data) != "map" {
+    ret #{ "error": "invalid profile JSON" }
+  }
+  ret data
+}
+
+fn _find_hot_functions(counters) -> [map] {
+  let mut hot = []
+  let mut max_count = 0
+  for c in counters {
+    let cnt = c["count"]
+    if cnt > max_count {
+      max_count = cnt
+    }
+  }
+  if max_count == 0 {
+    ret []
+  }
+  let threshold = max_count / 10
+  for c in counters {
+    let lbl = c["label"]
+    let cnt = c["count"]
+    if cnt >= threshold && str.starts_with(lbl, "fn:") {
+      hot = push(hot, #{ "label": lbl, "count": cnt, "name": str.slice(lbl, 3, len(lbl)), "hot_ratio": cnt * 100 / max_count })
+    }
+  }
+  ret hot
+}
+
+fn _find_hot_branches(counters) -> [map] {
+  let mut branches = []
+  for c in counters {
+    let lbl = c["label"]
+    let cnt = c["count"]
+    if str.starts_with(lbl, "if:") || str.starts_with(lbl, "else:") || str.starts_with(lbl, "while:") || str.starts_with(lbl, "for:") {
+      if cnt > 0 {
+        branches = push(branches, #{ "label": lbl, "count": cnt })
+      }
+    }
+  }
+  ret branches
+}
+
+fn analyze_profile(profile_path) -> map {
+  let data = load_profile(profile_path)
+  if map.has(data, "error") {
+    ret data
+  }
+
+  let counters = data["counters"]
+  if type_of(counters) != "array" {
+    ret #{ "error": "no counters in profile" }
+  }
+
+  let hot_fns = _find_hot_functions(counters)
+  let hot_branches = _find_hot_branches(counters)
+
+  let total_pts = data["total_points"]
+  let mut total_hits = 0
+  for c in counters {
+    total_hits = total_hits + c["count"]
+  }
+
+  ret #{
+    "total_points": total_pts,
+    "total_hits": total_hits,
+    "hot_functions": hot_fns,
+    "hot_branches": hot_branches,
+    "counters": counters
+  }
+}
+
+fn _count_fn_body_stmts(body) -> int {
+  if type_of(body) == "map" && map.has(body, "stmts") {
+    ret len(body["stmts"])
+  }
+  ret 0
+}
+
+fn _is_small_fn(func_node) -> bool {
+  let stmts = _count_fn_body_stmts(func_node["body"])
+  ret stmts <= 5
+}
+
+fn _extract_fn_map(source) -> map {
+  let prog = parser.parse(source)
+  if type_of(prog) != "map" || prog["tag"] != "Program" {
+    ret #{}
+  }
+  let mut fm = #{}
+  let items = prog["items"]
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      fm = map.set(fm, item["name"], item)
+    }
+  }
+  ret fm
+}
+
+fn suggest(source, profile_report) -> [map] {
+  let mut suggestions = []
+
+  if map.has(profile_report, "error") {
+    ret suggestions
+  }
+
+  let fn_map = _extract_fn_map(source)
+  let hot_fns = profile_report["hot_functions"]
+
+  for hf in hot_fns {
+    let fname = hf["name"]
+    let cnt = hf["count"]
+    let ratio = hf["hot_ratio"]
+
+    if map.has(fn_map, fname) {
+      let fn_node = fn_map[fname]
+      let is_small = _is_small_fn(fn_node)
+      let n_params = len(fn_node["params"])
+
+      if is_small && n_params <= 3 && ratio >= 50 {
+        suggestions = push(suggestions, #{
+          "type": "inline",
+          "function": fname,
+          "reason": "hot function (" + to_str(cnt) + " calls, " + to_str(ratio) + "% of max) with small body (" + to_str(_count_fn_body_stmts(fn_node["body"])) + " stmts)",
+          "priority": "high"
+        })
+      }
+      if !is_small && ratio >= 80 {
+        suggestions = push(suggestions, #{
+          "type": "optimize",
+          "function": fname,
+          "reason": "dominant hot function (" + to_str(cnt) + " calls, " + to_str(ratio) + "% of max), review for algorithmic improvements",
+          "priority": "high"
+        })
+      }
+    }
+  }
+
+  let hot_branches = profile_report["hot_branches"]
+  for hb in hot_branches {
+    let lbl = hb["label"]
+    let cnt = hb["count"]
+    if str.starts_with(lbl, "while:") && cnt > 10000 {
+      suggestions = push(suggestions, #{
+        "type": "loop_unroll",
+        "label": lbl,
+        "reason": "hot loop with " + to_str(cnt) + " iterations, consider unrolling",
+        "priority": "medium"
+      })
+    }
+  }
+
+  ret suggestions
+}
+
+fn measure_binary(bin_path) -> map {
+  if !fs.exists(bin_path) {
+    ret #{ "error": "binary not found" }
+  }
+  let stat_r = exec("wc -c < " + bin_path)
+  let mut sz = 0
+  if stat_r["code"] == 0 {
+    sz = int(str.trim(stat_r["stdout"]))
+  }
+  ret #{ "path": bin_path, "size_bytes": sz, "size_kb": sz / 1024, "size_mb": sz / 1048576 }
+}
+
+fn measure_compile_time(source_path) -> map {
+  let t0 = time.now()
+  let self = argv0()
+  let tmp_bin = "/tmp/a_opt_bench_" + to_str(time.now())
+  let r = exec(self + " build " + source_path + " -o " + tmp_bin + " 2>&1")
+  let t1 = time.now()
+  let elapsed = t1 - t0
+  if fs.exists(tmp_bin) {
+    fs.rm(tmp_bin)
+  }
+  ret #{ "source": source_path, "compile_ms": elapsed, "success": r["code"] == 0 }
+}
+
+fn benchmark(source_path, runs) -> map {
+  let self = argv0()
+  let tmp_bin = "/tmp/a_opt_bench_" + to_str(time.now())
+  let build_r = exec(self + " build " + source_path + " -o " + tmp_bin + " 2>&1")
+  if build_r["code"] != 0 {
+    ret #{ "error": "build failed" }
+  }
+
+  let mut times = []
+  let mut ri = 0
+  while ri < runs {
+    let t0 = time.now()
+    let run_r = exec(tmp_bin + " 2>&1")
+    let t1 = time.now()
+    times = push(times, t1 - t0)
+    ri = ri + 1
+  }
+  fs.rm(tmp_bin)
+
+  let mut total = 0
+  let mut min_t = times[0]
+  let mut max_t = times[0]
+  for t in times {
+    total = total + t
+    if t < min_t {
+      min_t = t
+    }
+    if t > max_t {
+      max_t = t
+    }
+  }
+
+  ret #{
+    "source": source_path,
+    "runs": runs,
+    "avg_ms": total / runs,
+    "min_ms": min_t,
+    "max_ms": max_t,
+    "total_ms": total
+  }
+}
+
+fn report(source_path, profile_path) -> str {
+  let source = io.read_file(source_path)
+  let prof = analyze_profile(profile_path)
+  let suggs = suggest(source, prof)
+  let bin_info = measure_binary(source_path)
+
+  let mut out = "=== Optimization Report ===\n\n"
+  out = out + "Profile: " + profile_path + "\n"
+  out = out + "Total instrumentation points: " + to_str(prof["total_points"]) + "\n"
+  out = out + "Total hits: " + to_str(prof["total_hits"]) + "\n\n"
+
+  let hf = prof["hot_functions"]
+  out = out + "Hot Functions (" + to_str(len(hf)) + "):\n"
+  for f in hf {
+    out = out + "  " + f["name"] + ": " + to_str(f["count"]) + " calls (" + to_str(f["hot_ratio"]) + "% of max)\n"
+  }
+
+  out = out + "\nSuggestions (" + to_str(len(suggs)) + "):\n"
+  for sg in suggs {
+    out = out + "  [" + sg["priority"] + "] " + sg["type"] + " -- " + sg["reason"] + "\n"
+  }
+  out = out + "\n"
+  ret out
+}

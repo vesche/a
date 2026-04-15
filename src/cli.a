@@ -3,6 +3,9 @@ use std.compiler.wasmgen
 use std.compiler.parser
 use std.compiler.emitter
 use std.compiler.checker
+use std.compiler.profiler
+use std.compiler.optimizer
+use std.testgen
 use std.path
 use std.cli
 use std.pkg
@@ -486,6 +489,245 @@ fn cmd_cache_clean() {
   }
 }
 
+fn _profile_insert_fn_hits(c_code, fn_names, fn_hit_map) -> str {
+  let nl = from_code(10)
+  let lbr = from_code(123)
+  let lines = str.split(c_code, nl)
+  let mut new_lines = []
+  for ln in lines {
+    new_lines = push(new_lines, ln)
+    let trimmed = str.trim(ln)
+    for fn2 in fn_names {
+      let mangled = str.replace(str.replace(str.replace(fn2, ".", "_"), "-", "_"), "!", "_bang")
+      let sig_start = "AValue fn_" + mangled + "("
+      if str.starts_with(trimmed, sig_start) {
+        if str.ends_with(trimmed, ") " + lbr) {
+          let hit_id = fn_hit_map[fn2]
+          new_lines = push(new_lines, "    a_profile_hit(" + to_str(hit_id) + ");")
+        }
+      }
+    }
+  }
+  ret str.join(new_lines, nl)
+}
+
+fn _profile_insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base) -> str {
+  let nl = from_code(10)
+  let lbr = from_code(123)
+  let src_lines = str.split(c_code, nl)
+  let mut new_lines = []
+  let mut idx_if = 0
+  let mut idx_wh = 0
+  let mut idx_fo = 0
+  for ln in src_lines {
+    new_lines = push(new_lines, ln)
+    let trimmed = str.trim(ln)
+    if str.starts_with(trimmed, "if (a_truthy(") {
+      if str.ends_with(trimmed, ") " + lbr) {
+        if idx_if < n_ifs {
+          let cid = hit_base + idx_if
+          new_lines = push(new_lines, "        a_profile_hit(" + to_str(cid) + ");")
+          idx_if = idx_if + 1
+        }
+      }
+    }
+    if str.starts_with(trimmed, "while (a_truthy(") {
+      if str.ends_with(trimmed, ") " + lbr) {
+        let cid = hit_base + n_ifs + idx_wh
+        new_lines = push(new_lines, "        a_profile_hit(" + to_str(cid) + ");")
+        idx_wh = idx_wh + 1
+      }
+    }
+    if str.starts_with(trimmed, "for (int __fi") {
+      let cid = hit_base + n_ifs + n_whiles + idx_fo
+      new_lines = push(new_lines, "            a_profile_hit(" + to_str(cid) + ");")
+      idx_fo = idx_fo + 1
+    }
+  }
+  ret str.join(new_lines, nl)
+}
+
+fn _profile_count_branches(stmts, counts) -> map {
+  for st in stmts {
+    let tag = st["tag"]
+    if tag == "If" {
+      counts = map.set(counts, "ifs", counts["ifs"] + 1)
+      let then_stmts = st["then"]["stmts"]
+      counts = _profile_count_branches(then_stmts, counts)
+      let else_br = st["else"]
+      if type_of(else_br) != "void" {
+        if else_br["tag"] == "ElseBlock" {
+          counts = map.set(counts, "elses", counts["elses"] + 1)
+          counts = _profile_count_branches(else_br["block"]["stmts"], counts)
+        }
+        if else_br["tag"] == "ElseIf" {
+          counts = _profile_count_branches([else_br["stmt"]], counts)
+        }
+      }
+    }
+    if tag == "While" {
+      counts = map.set(counts, "whiles", counts["whiles"] + 1)
+      counts = _profile_count_branches(st["body"]["stmts"], counts)
+    }
+    if tag == "For" || tag == "ForDestructure" {
+      counts = map.set(counts, "fors", counts["fors"] + 1)
+      counts = _profile_count_branches(st["body"]["stmts"], counts)
+    }
+  }
+  ret counts
+}
+
+fn cmd_profile(source_path, profile_out) {
+  let runtime_dir = _find_runtime_dir()
+  let prof_out = profile_out
+  if len(prof_out) == 0 {
+    prof_out = "profile.json"
+  }
+
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    _die("profiler: could not read source file")
+  }
+  let prog = _parse_source(source_path)
+  let items = prog["items"]
+
+  let mut fn_names = []
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      fn_names = push(fn_names, item["name"])
+    }
+  }
+
+  let mut branch_counts = #{ "ifs": 0, "elses": 0, "whiles": 0, "fors": 0 }
+  for item2 in items {
+    if item2["tag"] == "FnDecl" {
+      let body = item2["body"]
+      if type_of(body) == "map" {
+        if map.has(body, "stmts") {
+          branch_counts = _profile_count_branches(body["stmts"], branch_counts)
+        }
+      }
+    }
+  }
+
+  let base_c = _generate_c(source_path)
+  let nl = from_code(10)
+  let q = from_code(34)
+  let mut counter_id = 0
+  let mut reg_lines = ""
+  let mut fn_hit_map = #{}
+  for fname in fn_names {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "fn:" + fname + q + ");" + nl
+    fn_hit_map = map.set(fn_hit_map, fname, counter_id)
+    counter_id = counter_id + 1
+  }
+
+  let mut c_code = _profile_insert_fn_hits(base_c, fn_names, fn_hit_map)
+
+  let n_ifs = branch_counts["ifs"]
+  let n_whiles = branch_counts["whiles"]
+  let n_fors = branch_counts["fors"]
+
+  let mut bi = 0
+  while bi < n_ifs {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "if:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+  bi = 0
+  while bi < n_whiles {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "while:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+  bi = 0
+  while bi < n_fors {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "for:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+
+  let hit_base = len(fn_names)
+  c_code = _profile_insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base)
+
+  let old_main = "g_argc = argc; g_argv = argv;"
+  let new_main = "g_argc = argc; g_argv = argv;" + nl + "    a_profile_init();" + nl + reg_lines
+  c_code = str.replace(c_code, old_main, new_main)
+
+  let old_end = "fn_main();" + nl + "    return 0;"
+  let new_end = "fn_main();" + nl + "    a_profile_dump_json(a_string(" + q + prof_out + q + "));" + nl + "    return 0;"
+  c_code = str.replace(c_code, old_end, new_end)
+
+  let c_path = _tmp_path("_prof.c")
+  io.write_file(c_path, c_code)
+  let bin_path = _tmp_path("_prof_bin")
+  _ensure_runtime_objs(runtime_dir)
+  let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
+  fs.rm(c_path)
+  if gcc_code != 0 {
+    _die("profiler: gcc compilation failed")
+  }
+
+  eprintln("running instrumented binary...")
+  let run_result = exec(bin_path)
+  fs.rm(bin_path)
+
+  if fs.exists(prof_out) {
+    eprintln(cli.green("profile written to " + prof_out))
+    let report = optimizer.analyze_profile(prof_out)
+    if !map.has(report, "error") {
+      eprintln("  total instrumentation points: " + to_str(report["total_points"]))
+      eprintln("  total hits: " + to_str(report["total_hits"]))
+      let hf = report["hot_functions"]
+      if len(hf) > 0 {
+        eprintln("  hot functions:")
+        for hfn in hf {
+          eprintln("    " + hfn["name"] + ": " + to_str(hfn["count"]) + " calls (" + to_str(hfn["hot_ratio"]) + "% of max)")
+        }
+      }
+    }
+  } else {
+    eprintln(cli.red("profile file not generated"))
+  }
+}
+
+fn cmd_gentests(source_path, out_path) {
+  let tests_str = testgen.gen_tests_for_file(source_path)
+  if len(out_path) > 0 {
+    io.write_file(out_path, tests_str)
+    eprintln(cli.green("tests written to " + out_path))
+  } else {
+    print(tests_str)
+  }
+}
+
+fn cmd_optimize_report(source_path, profile_path) {
+  let source = io.read_file(source_path)
+  let report = optimizer.analyze_profile(profile_path)
+  if map.has(report, "error") {
+    _die("optimizer: " + report["error"])
+  }
+
+  let suggs = optimizer.suggest(source, report)
+  eprintln("=== Optimization Report ===")
+  eprintln("")
+  eprintln("Total instrumentation points: " + to_str(report["total_points"]))
+  eprintln("Total hits: " + to_str(report["total_hits"]))
+  eprintln("")
+
+  let hf = report["hot_functions"]
+  eprintln("Hot Functions (" + to_str(len(hf)) + "):")
+  for f in hf {
+    eprintln("  " + f["name"] + ": " + to_str(f["count"]) + " calls (" + to_str(f["hot_ratio"]) + "% of max)")
+  }
+  eprintln("")
+
+  eprintln("Suggestions (" + to_str(len(suggs)) + "):")
+  for sg in suggs {
+    eprintln("  [" + sg["priority"] + "] " + sg["type"] + " -- " + sg["reason"])
+  }
+}
+
 fn cmd_eval(expr, extra_args) {
   let wrapped = str.concat("fn main() \{\n  println(", str.concat(expr, ")\n\}"))
   let tmp = _tmp_path("_eval.a")
@@ -933,6 +1175,9 @@ fn _usage() {
   eprintln("  a plugin remove <name>     uninstall a plugin")
   eprintln("  a plugin init <dir> <name> scaffold a new plugin")
   eprintln("  a plugin run <name>        run an installed plugin")
+  eprintln("  a profile <file.a> [-o p]   profile-guided: instrument, run, dump JSON")
+  eprintln("  a gentests <file.a> [-o f]  auto-generate tests from source analysis")
+  eprintln("  a optimize <file.a> <prof>  optimization report from profile data")
   eprintln("  a cache clean              clear the compilation cache")
   eprintln("  a pkg init                 create pkg.toml in current directory")
   eprintln("  a pkg add <name> <source>  add a dependency")
@@ -1129,6 +1374,52 @@ fn main() {
 
   if subcmd == "lsp" {
     cmd_lsp()
+    ret
+  }
+
+  if subcmd == "profile" {
+    if len(argv) < 2 {
+      _die("profile requires a source file")
+    }
+    let source = argv[1]
+    let mut prof_out = ""
+    let mut i = 2
+    while i < len(argv) {
+      if argv[i] == "-o" && i + 1 < len(argv) {
+        prof_out = argv[i + 1]
+        i = i + 2
+      } else {
+        i = i + 1
+      }
+    }
+    cmd_profile(source, prof_out)
+    ret
+  }
+
+  if subcmd == "gentests" {
+    if len(argv) < 2 {
+      _die("gentests requires a source file")
+    }
+    let source = argv[1]
+    let mut test_out = ""
+    let mut i = 2
+    while i < len(argv) {
+      if argv[i] == "-o" && i + 1 < len(argv) {
+        test_out = argv[i + 1]
+        i = i + 2
+      } else {
+        i = i + 1
+      }
+    }
+    cmd_gentests(source, test_out)
+    ret
+  }
+
+  if subcmd == "optimize" {
+    if len(argv) < 3 {
+      _die("optimize requires a source file and profile path")
+    }
+    cmd_optimize_report(argv[1], argv[2])
     ret
   }
 

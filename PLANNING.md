@@ -2911,3 +2911,43 @@ Agents gain deliberation: structured task planning, execution tracing, and runti
 - 49 native tests total, all passing
 
 **Files changed:** c_runtime/gguf.c (new), c_runtime/runtime.h, std/local_llm.a (new), std/compiler/cgen.a, src/cli.a, build.sh, tests/native/test_local_llm.a (new), bootstrap/cli.c
+
+## v1.9.0 -- Self-Optimization
+
+The language optimizes itself: profile-guided optimization, automatic test generation, and compiler self-improvement.
+
+**Profile-guided optimization:**
+- C runtime profiling: `a_profile_init()`, `a_profile_register(label)`, `a_profile_hit(id)`, `a_profile_dump_json(path)`, `a_profile_get_counters()`, `a_profile_reset()` -- up to 8192 counters
+- `a profile program.a [-o profile.json]` -- instruments generated C with counters at function entry, if/while/for branch points, compiles, runs, dumps JSON profile
+- Instrumentation works by post-processing cgen C output: inserts `a_profile_hit(N)` after function signatures and after branch/loop headers
+- Profile JSON contains `{"counters": [{"id": N, "label": "fn:name", "count": N}, ...], "total_points": N}`
+
+**Automatic test generation (`std/testgen.a`):**
+- `testgen.gen_tests(source)` -- parses source, extracts public non-main functions, infers param types by name heuristics (n/i/x -> int, name/text -> str, flag -> bool, etc.), generates edge-case test combinations
+- `testgen.analyze(source)` -- returns code metrics: total/public/private/testable function counts, code/comment lines
+- `testgen.gen_tests_for_file(path)` -- convenience for file-based generation
+- CLI: `a gentests file.a [-o output.a]`
+
+**Compiler self-improvement (`std/compiler/optimizer.a`):**
+- `optimizer.analyze_profile(path)` -- loads profile JSON, identifies hot functions (>10% of max count), hot branches
+- `optimizer.suggest(source, report)` -- proposes inlining (small body, <=3 params, >=50% hot ratio), loop unrolling (>10K iterations)
+- `optimizer.measure_binary(path)` -- reports binary size in bytes/KB/MB
+- `optimizer.measure_compile_time(source)` -- benchmarks compilation
+- `optimizer.benchmark(source, runs)` -- benchmarks runtime (avg/min/max)
+- `optimizer.report(source, profile)` -- full optimization report
+- CLI: `a optimize file.a profile.json`
+
+**Profiler module (`std/compiler/profiler.a`):**
+- `profiler.instrument(source_path, profile_out)` -- generates instrumented C code via subprocess
+- `profiler.analyze_profile(path)` -- parses profile JSON, computes hot functions/branches
+- AST analysis: `_count_branches_inner()` recursively counts if/while/for in function bodies
+
+**Runtime builtins added:** `profile.dump`, `profile.get_counters`, `profile.reset` (mapped to `a_profile_dump_json`, `a_profile_get_counters`, `a_profile_reset` in cgen.a)
+
+**CLI commands added:** `a profile`, `a gentests`, `a optimize`
+
+**Tests:**
+- `tests/native/test_selfopt.a` (15 tests): profiling builtins, profile JSON parsing, counter fields, hot function detection, branch counter types, total hits, hot ratio, CLI error handling, suggestion logic
+- 50 native tests total
+
+**Files changed:** c_runtime/runtime.c, c_runtime/runtime.h, std/compiler/profiler.a (new), std/compiler/optimizer.a (new), std/testgen.a (new), std/compiler/cgen.a, src/cli.a, tests/native/test_selfopt.a (new), bootstrap/cli.c

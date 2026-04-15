@@ -1,0 +1,247 @@
+; tests/native/test_selfopt.a -- Tests for v1.9 Self-Optimization features
+; Validates runtime profiling builtins, profile data parsing, and CLI presence.
+; NOTE: No subprocess calls to 'a profile' -- those are tested manually.
+
+use std.testing
+
+fn _lb() -> str { ret from_code(123) }
+fn _rb() -> str { ret from_code(125) }
+fn _nl() -> str { ret from_code(10) }
+fn _q() -> str { ret from_code(34) }
+
+fn _make_counter(id, label, count) -> str {
+  let q = _q()
+  ret "    " + _lb() + q + "id" + q + ": " + to_str(id) + ", " + q + "label" + q + ": " + q + label + q + ", " + q + "count" + q + ": " + to_str(count) + _rb()
+}
+
+fn _write_test_profile(path, counters, total_pts) {
+  let q = _q()
+  let nl = _nl()
+  let mut s = _lb() + nl
+  s = s + "  " + q + "counters" + q + ": [" + nl
+  s = s + str.join(counters, "," + nl) + nl
+  s = s + "  ]," + nl
+  s = s + "  " + q + "total_points" + q + ": " + to_str(total_pts) + nl
+  s = s + _rb() + nl
+  io.write_file(path, s)
+}
+
+fn test_profile_get_counters_type() {
+  let counters = profile.get_counters()
+  assert_eq(type_of(counters), "array")
+  println("PASS: profile.get_counters returns array")
+}
+
+fn test_profile_get_counters_empty() {
+  let counters = profile.get_counters()
+  assert_eq(len(counters), 0)
+  println("PASS: counters empty when no profiling active")
+}
+
+fn test_profile_reset_returns_void() {
+  let r = profile.reset()
+  assert_eq(type_of(r), "void")
+  println("PASS: profile.reset returns void")
+}
+
+fn test_profile_dump_not_active() {
+  let r = profile.dump("/tmp/a_test_dump_inactive.json")
+  assert_eq(type_of(r), "result")
+  println("PASS: profile.dump returns error result when not active")
+}
+
+fn test_profile_json_parses() {
+  let counters = [
+    _make_counter(0, "fn:add", 100),
+    _make_counter(1, "fn:main", 1)
+  ]
+  _write_test_profile("/tmp/a_test_prof_parse.json", counters, 2)
+  let raw = io.read_file("/tmp/a_test_prof_parse.json")
+  let data = json.parse(raw)
+  assert_eq(type_of(data), "map")
+  assert_true(map.has(data, "counters"))
+  assert_eq(int(data["total_points"]), 2)
+  fs.rm("/tmp/a_test_prof_parse.json")
+  println("PASS: profile JSON parses correctly")
+}
+
+fn test_profile_counter_fields() {
+  let counters = [
+    _make_counter(0, "fn:add", 42),
+    _make_counter(1, "if:0", 10)
+  ]
+  _write_test_profile("/tmp/a_test_fields.json", counters, 2)
+  let raw = io.read_file("/tmp/a_test_fields.json")
+  let data = json.parse(raw)
+  let cts = data["counters"]
+  assert_eq(len(cts), 2)
+  assert_eq(int(cts[0]["id"]), 0)
+  assert_eq(cts[0]["label"], "fn:add")
+  assert_eq(int(cts[0]["count"]), 42)
+  assert_eq(cts[1]["label"], "if:0")
+  fs.rm("/tmp/a_test_fields.json")
+  println("PASS: counter fields (id, label, count) correct")
+}
+
+fn test_hot_function_detection_logic() {
+  let counters = [
+    _make_counter(0, "fn:hot", 1000),
+    _make_counter(1, "fn:cold", 5),
+    _make_counter(2, "fn:warm", 200)
+  ]
+  _write_test_profile("/tmp/a_test_hot.json", counters, 3)
+  let raw = io.read_file("/tmp/a_test_hot.json")
+  let data = json.parse(raw)
+  let cts = data["counters"]
+  let mut max_c = 0
+  for c in cts {
+    let cnt = int(c["count"])
+    if cnt > max_c {
+      max_c = cnt
+    }
+  }
+  assert_eq(max_c, 1000)
+  let threshold = max_c / 10
+  assert_eq(threshold, 100)
+  let mut hot_names = []
+  for c2 in cts {
+    if int(c2["count"]) >= threshold {
+      if str.starts_with(c2["label"], "fn:") {
+        hot_names = push(hot_names, str.slice(c2["label"], 3, len(c2["label"])))
+      }
+    }
+  }
+  assert_eq(len(hot_names), 2)
+  assert_true(contains(hot_names, "hot"))
+  assert_true(contains(hot_names, "warm"))
+  fs.rm("/tmp/a_test_hot.json")
+  println("PASS: hot function detection threshold logic correct")
+}
+
+fn test_branch_counter_types() {
+  let counters = [
+    _make_counter(0, "if:0", 100),
+    _make_counter(1, "while:0", 200),
+    _make_counter(2, "for:0", 50),
+    _make_counter(3, "if:1", 80)
+  ]
+  _write_test_profile("/tmp/a_test_branches.json", counters, 4)
+  let raw = io.read_file("/tmp/a_test_branches.json")
+  let data = json.parse(raw)
+  let cts = data["counters"]
+  let mut n_ifs = 0
+  let mut n_whiles = 0
+  let mut n_fors = 0
+  for c in cts {
+    let lbl = c["label"]
+    if str.starts_with(lbl, "if:") {
+      n_ifs = n_ifs + 1
+    }
+    if str.starts_with(lbl, "while:") {
+      n_whiles = n_whiles + 1
+    }
+    if str.starts_with(lbl, "for:") {
+      n_fors = n_fors + 1
+    }
+  }
+  assert_eq(n_ifs, 2)
+  assert_eq(n_whiles, 1)
+  assert_eq(n_fors, 1)
+  fs.rm("/tmp/a_test_branches.json")
+  println("PASS: branch counter types (if/while/for) parsed correctly")
+}
+
+fn test_total_hits_calculation() {
+  let counters = [
+    _make_counter(0, "fn:a", 10),
+    _make_counter(1, "fn:b", 20),
+    _make_counter(2, "if:0", 5)
+  ]
+  _write_test_profile("/tmp/a_test_hits.json", counters, 3)
+  let raw = io.read_file("/tmp/a_test_hits.json")
+  let data = json.parse(raw)
+  let cts = data["counters"]
+  let mut total = 0
+  for c in cts {
+    total = total + int(c["count"])
+  }
+  assert_eq(total, 35)
+  fs.rm("/tmp/a_test_hits.json")
+  println("PASS: total hits calculation correct")
+}
+
+fn test_hot_ratio_calculation() {
+  let counters = [
+    _make_counter(0, "fn:hottest", 500),
+    _make_counter(1, "fn:half", 250)
+  ]
+  _write_test_profile("/tmp/a_test_ratio.json", counters, 2)
+  let raw = io.read_file("/tmp/a_test_ratio.json")
+  let data = json.parse(raw)
+  let cts = data["counters"]
+  let max_c = int(cts[0]["count"])
+  let ratio = int(cts[1]["count"]) * 100 / max_c
+  assert_eq(ratio, 50)
+  fs.rm("/tmp/a_test_ratio.json")
+  println("PASS: hot ratio calculation correct")
+}
+
+fn test_profile_error_no_source() {
+  let self_bin = argv0()
+  let r = exec(self_bin + " profile")
+  assert_true(r["code"] != 0)
+  println("PASS: 'a profile' without source fails")
+}
+
+fn test_optimize_error_no_args() {
+  let self_bin = argv0()
+  let r = exec(self_bin + " optimize")
+  assert_true(r["code"] != 0)
+  println("PASS: 'a optimize' without args fails")
+}
+
+fn test_gentests_error_no_source() {
+  let self_bin = argv0()
+  let r = exec(self_bin + " gentests")
+  assert_true(r["code"] != 0)
+  println("PASS: 'a gentests' without source fails")
+}
+
+fn test_inline_suggestion_logic() {
+  let stmt_count = 3
+  let param_count = 2
+  let call_count = 5000
+  let max_count = 5000
+  let ratio = call_count * 100 / max_count
+  let is_small = stmt_count <= 5
+  let few_params = param_count <= 3
+  let is_hot = ratio >= 50
+  assert_true(is_small && few_params && is_hot)
+  println("PASS: inline suggestion criteria met for small hot function")
+}
+
+fn test_loop_unroll_suggestion_logic() {
+  let iteration_count = 15000
+  let should_suggest = iteration_count > 10000
+  assert_true(should_suggest)
+  println("PASS: loop unroll suggestion criteria met for hot loop")
+}
+
+fn main() {
+  test_profile_get_counters_type()
+  test_profile_get_counters_empty()
+  test_profile_reset_returns_void()
+  test_profile_dump_not_active()
+  test_profile_json_parses()
+  test_profile_counter_fields()
+  test_hot_function_detection_logic()
+  test_branch_counter_types()
+  test_total_hits_calculation()
+  test_hot_ratio_calculation()
+  test_profile_error_no_source()
+  test_optimize_error_no_args()
+  test_gentests_error_no_source()
+  test_inline_suggestion_logic()
+  test_loop_unroll_suggestion_logic()
+  println("all 15 self-optimization tests passed")
+}

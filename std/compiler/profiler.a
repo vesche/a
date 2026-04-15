@@ -1,0 +1,284 @@
+; std/compiler/profiler.a -- Profile-guided optimization instrumentation
+;
+; Generates instrumented C code from "a" source. The instrumented binary
+; records function entry counts, branch hits, and loop iterations, then
+; dumps a JSON profile on exit.
+
+use std.compiler.parser
+
+fn _nl() -> str {
+  ret from_code(10)
+}
+
+fn _lbrace() -> str {
+  ret from_code(123)
+}
+
+fn _collect_fn_names(prog_ast) -> [str] {
+  let items = prog_ast["items"]
+  let mut names = []
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      names = push(names, item["name"])
+    }
+  }
+  ret names
+}
+
+fn _count_branches_inner(stmts, counts) -> map {
+  for st in stmts {
+    let tag = st["tag"]
+    if tag == "If" {
+      counts = map.set(counts, "ifs", counts["ifs"] + 1)
+      let then_stmts = st["then"]["stmts"]
+      counts = _count_branches_inner(then_stmts, counts)
+      let else_br = st["else"]
+      if type_of(else_br) != "void" {
+        if else_br["tag"] == "ElseBlock" {
+          counts = map.set(counts, "elses", counts["elses"] + 1)
+          counts = _count_branches_inner(else_br["block"]["stmts"], counts)
+        }
+        if else_br["tag"] == "ElseIf" {
+          counts = _count_branches_inner([else_br["stmt"]], counts)
+        }
+      }
+    }
+    if tag == "While" {
+      counts = map.set(counts, "whiles", counts["whiles"] + 1)
+      counts = _count_branches_inner(st["body"]["stmts"], counts)
+    }
+    if tag == "For" || tag == "ForDestructure" {
+      counts = map.set(counts, "fors", counts["fors"] + 1)
+      counts = _count_branches_inner(st["body"]["stmts"], counts)
+    }
+  }
+  ret counts
+}
+
+fn _analyze_ast(prog_ast) -> map {
+  let fns = _collect_fn_names(prog_ast)
+  let items = prog_ast["items"]
+  let mut total_counts = #{ "ifs": 0, "elses": 0, "whiles": 0, "fors": 0 }
+  for item in items {
+    if item["tag"] == "FnDecl" {
+      let body = item["body"]
+      if type_of(body) == "map" {
+        if map.has(body, "stmts") {
+          total_counts = _count_branches_inner(body["stmts"], total_counts)
+        }
+      }
+    }
+  }
+  ret #{
+    "functions": fns,
+    "branch_counts": total_counts
+  }
+}
+
+fn _mangle_name(name) -> str {
+  ret str.replace(str.replace(str.replace(name, ".", "_"), "-", "_"), "!", "_bang")
+}
+
+fn _gen_base_c(source_path) -> str {
+  let self_path = argv0()
+  let tmp_c = "/tmp/a_prof_" + to_str(time.now()) + ".c"
+  let r = exec(self_path + " cc " + source_path + " -o " + tmp_c)
+  if r["code"] != 0 {
+    ret ""
+  }
+  let c_code = io.read_file(tmp_c)
+  fs.rm(tmp_c)
+  ret c_code
+}
+
+fn _insert_fn_hits(c_code, fn_names, fn_hit_map) -> str {
+  let nl = _nl()
+  let lbr = _lbrace()
+  let mut result = c_code
+  for fn2 in fn_names {
+    let mangled = _mangle_name(fn2)
+    let sig_str = "AValue fn_" + mangled + "("
+    let parts = str.split(result, sig_str)
+    if len(parts) >= 2 {
+      let after_sig = parts[1]
+      let brace_idx = str.find(after_sig, lbr)
+      if brace_idx >= 0 {
+        let hit_id = fn_hit_map[fn2]
+        let after_brace = str.slice(after_sig, brace_idx + 1, len(after_sig))
+        let before_brace = str.slice(after_sig, 0, brace_idx + 1)
+        let hit_line = nl + "    a_profile_hit(" + to_str(hit_id) + ");"
+        result = parts[0] + sig_str + before_brace + hit_line + after_brace
+      }
+    }
+  }
+  ret result
+}
+
+fn _insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base) -> str {
+  let nl = _nl()
+  let src_lines = str.split(c_code, nl)
+  let mut new_lines = []
+  let mut idx_if = 0
+  let mut idx_wh = 0
+  let mut idx_fo = 0
+  for ln in src_lines {
+    new_lines = push(new_lines, ln)
+    let trimmed = str.trim(ln)
+    if str.starts_with(trimmed, "if (a_truthy(") {
+      if str.ends_with(trimmed, ") " + _lbrace()) {
+        if idx_if < n_ifs {
+          let cid = hit_base + idx_if
+          new_lines = push(new_lines, "        a_profile_hit(" + to_str(cid) + ");")
+          idx_if = idx_if + 1
+        }
+      }
+    }
+    if str.starts_with(trimmed, "while (a_truthy(") {
+      if str.ends_with(trimmed, ") " + _lbrace()) {
+        let cid = hit_base + n_ifs + idx_wh
+        new_lines = push(new_lines, "        a_profile_hit(" + to_str(cid) + ");")
+        idx_wh = idx_wh + 1
+      }
+    }
+    if str.starts_with(trimmed, "for (int __fi") {
+      let cid = hit_base + n_ifs + n_whiles + idx_fo
+      new_lines = push(new_lines, "            a_profile_hit(" + to_str(cid) + ");")
+      idx_fo = idx_fo + 1
+    }
+  }
+  ret str.join(new_lines, nl)
+}
+
+fn instrument(source_path, profile_out_path) -> str {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    ret ""
+  }
+
+  let parsed = parser.parse(source)
+  if type_of(parsed) != "map" {
+    ret ""
+  }
+  if parsed["tag"] != "Program" {
+    ret ""
+  }
+
+  let analysis = _analyze_ast(parsed)
+  let fn_names = analysis["functions"]
+  let base_c = _gen_base_c(source_path)
+  if len(base_c) == 0 {
+    ret ""
+  }
+
+  let nl = _nl()
+  let q = from_code(34)
+  let mut counter_id = 0
+  let mut reg_lines = ""
+
+  let mut fn_hit_map = #{}
+  for fname in fn_names {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "fn:" + fname + q + ");" + nl
+    fn_hit_map = map.set(fn_hit_map, fname, counter_id)
+    counter_id = counter_id + 1
+  }
+
+  let mut result = _insert_fn_hits(base_c, fn_names, fn_hit_map)
+
+  let bc = analysis["branch_counts"]
+  let n_ifs = bc["ifs"]
+  let n_whiles = bc["whiles"]
+  let n_fors = bc["fors"]
+
+  let mut bi = 0
+  while bi < n_ifs {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "if:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+  bi = 0
+  while bi < n_whiles {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "while:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+  bi = 0
+  while bi < n_fors {
+    reg_lines = reg_lines + "    a_profile_register(" + q + "for:" + to_str(bi) + q + ");" + nl
+    counter_id = counter_id + 1
+    bi = bi + 1
+  }
+
+  let hit_base = len(fn_names)
+  result = _insert_branch_hits(result, n_ifs, n_whiles, n_fors, hit_base)
+
+  let old_main = "g_argc = argc; g_argv = argv;"
+  let new_main = "g_argc = argc; g_argv = argv;" + nl + "    a_profile_init();" + nl + reg_lines
+  result = str.replace(result, old_main, new_main)
+
+  let old_end = "fn_main();" + nl + "    return 0;"
+  let new_end = "fn_main();" + nl + "    a_profile_dump_json(a_string(" + q + profile_out_path + q + "));" + nl + "    return 0;"
+  result = str.replace(result, old_end, new_end)
+
+  ret result
+}
+
+fn analyze_profile(profile_path) -> map {
+  let raw = io.read_file(profile_path)
+  if type_of(raw) == "void" || len(raw) == 0 {
+    ret #{ "error": "cannot read profile" }
+  }
+  let data = json.parse(raw)
+  if type_of(data) != "map" {
+    ret #{ "error": "invalid profile JSON" }
+  }
+
+  let counters = data["counters"]
+  if type_of(counters) != "array" {
+    ret #{ "error": "no counters in profile" }
+  }
+
+  let mut hot_fns = []
+  let mut hot_branches = []
+  let mut max_count = 0
+  for c in counters {
+    if c["count"] > max_count {
+      max_count = c["count"]
+    }
+  }
+  let mut threshold = max_count / 10
+  if threshold < 1 {
+    threshold = 1
+  }
+  for ct in counters {
+    let lbl = ct["label"]
+    let cnt = ct["count"]
+    if cnt >= threshold {
+      if str.starts_with(lbl, "fn:") {
+        let fname = str.slice(lbl, 3, len(lbl))
+        hot_fns = push(hot_fns, #{
+          "name": fname,
+          "count": cnt,
+          "hot_ratio": cnt * 100 / max_count
+        })
+      }
+    }
+    if cnt > 0 {
+      if str.starts_with(lbl, "if:") || str.starts_with(lbl, "while:") || str.starts_with(lbl, "for:") {
+        hot_branches = push(hot_branches, #{ "label": lbl, "count": cnt })
+      }
+    }
+  }
+
+  let mut total_hits = 0
+  for ct2 in counters {
+    total_hits = total_hits + ct2["count"]
+  }
+
+  ret #{
+    "total_points": data["total_points"],
+    "total_hits": total_hits,
+    "hot_functions": hot_fns,
+    "hot_branches": hot_branches,
+    "counters": counters
+  }
+}

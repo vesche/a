@@ -378,6 +378,14 @@ void*   a_arena_alloc(AArena* arena, int bytes);
 int     a_arena_save(AArena* arena);
 void    a_arena_restore(AArena* arena, int saved_pos);
 
+/* Profiling */
+void a_profile_init(void);
+int  a_profile_register(const char* label);
+void a_profile_hit(int id);
+AValue a_profile_dump_json(AValue path);
+AValue a_profile_get_counters(void);
+AValue a_profile_reset(void);
+
 /* Local LLM inference (GGUF) */
 AValue a_llm_load(AValue path);
 AValue a_llm_generate(AValue handle, AValue prompt, AValue opts);

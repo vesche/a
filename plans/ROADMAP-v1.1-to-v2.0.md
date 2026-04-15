@@ -102,13 +102,13 @@ Remove the last dependency on external services for core agent capability: reaso
 - **`std/local_llm.a`** [DONE] -- high-level module: `load`, `generate`, `chat`, `embed`, `info`, `unload`, `tokenize`, `detokenize`, `vocab_size`, `complete`, `classify`, `summarize`, `is_loaded`.
 - **Runtime builtins** [DONE] -- eight C entry points: `a_llm_load`, `a_llm_generate`, `a_llm_embed`, `a_llm_unload`, `a_llm_info`, `a_llm_tokenize`, `a_llm_detokenize`, `a_llm_vocab_size`; WASM builds use graceful stubs.
 
-### v1.9 -- Self-Optimization
+### v1.9 -- Self-Optimization [DONE]
 
 The language doesn't just compile itself -- it *optimizes* itself.
 
-- **Profile-guided optimization** -- `a profile program.a` runs with instrumentation, produces a profile. `a build program.a --profile data.prof` uses the profile to guide inlining, loop unrolling, and hot-path optimization in the C code generator.
-- **Automatic test generation** -- `codegen.gen_tests(source)` analyzes a module and generates test cases that cover branches, edge cases, and error paths. Uses the self-hosted parser to understand the code structure, then generates test source that exercises it.
-- **Compiler self-improvement** -- the codegen module can analyze its own output, measure code quality (binary size, compilation time, runtime performance), and propose patches to itself. The language literally optimizes its own compiler.
+- **Profile-guided optimization** -- `a profile program.a` instruments C output with `a_profile_hit()` counters at function entry, branch points (if/while/for), dumps JSON on exit. `a optimize program.a profile.json` analyzes hot functions, suggests inlining/unrolling. C runtime provides `a_profile_init/hit/register/dump_json/get_counters/reset`. New `std/compiler/profiler.a` handles AST analysis and C code instrumentation.
+- **Automatic test generation** -- `std/testgen.a` with `testgen.gen_tests(source)` parses modules, extracts public functions, infers parameter types by name heuristics, generates edge-case test combinations (0, 1, -1, empty, etc.). `testgen.analyze(source)` returns code metrics. CLI: `a gentests file.a [-o out]`.
+- **Compiler self-improvement** -- `std/compiler/optimizer.a` loads profile JSON, identifies hot functions (>10% of max), hot branches/loops, suggests inlining (small body + high call count), loop unrolling (>10K iterations). `optimizer.measure_binary()`, `optimizer.benchmark()`, `optimizer.report()` for quality measurement. CLI: `a optimize file.a profile.json`.
 
 ### v2.0 -- The Agent OS
 
