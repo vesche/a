@@ -38,6 +38,7 @@ fn _builtin_map() -> map {
     "fs.exists": "a_fs_exists", "fs.is_dir": "a_fs_is_dir",
     "fs.rm": "a_fs_rm", "fs.mv": "a_fs_mv", "fs.cp": "a_fs_cp",
     "fs.abs": "a_fs_abs", "fs.is_file": "a_fs_is_file",
+    "fs.stat": "a_fs_stat", "fs.watch": "a_fs_watch",
     "exec": "a_exec",
     "proc.spawn": "a_proc_spawn", "proc.write": "a_proc_write",
     "proc.read_line": "a_proc_read_line", "proc.kill": "a_proc_kill",
@@ -83,7 +84,7 @@ fn _builtin_map() -> map {
 }
 
 fn _void_builtins() -> [str] {
-  ret ["println", "print", "eprintln", "fail", "each", "parallel_each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static", "db.close"]
+  ret ["println", "print", "eprintln", "fail", "each", "parallel_each", "env.set", "time.sleep", "io.flush", "http.serve", "http.serve_static", "db.close", "fs.watch"]
 }
 
 fn _c_keywords() -> [str] {

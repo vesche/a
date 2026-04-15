@@ -222,6 +222,8 @@ AValue a_fs_mv(AValue src, AValue dst);
 AValue a_fs_cp(AValue src, AValue dst);
 AValue a_fs_abs(AValue path);
 AValue a_fs_is_file(AValue path);
+AValue a_fs_stat(AValue path);
+AValue a_fs_watch(AValue path, AValue callback);
 
 /* Time */
 AValue a_time_now(void);

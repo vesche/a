@@ -41,6 +41,7 @@ The build bootstraps from pre-generated C (`bootstrap/cli.c`), then self-hosts: 
 ./a ast program.a           # dump parsed AST as JSON
 ./a check program.a         # static analysis (undefined vars, arity, unused)
 ./a test tests/native/      # find test_*.a files, compile, run, report
+./a watch program.a         # recompile and re-run on file change
 ./a lsp                     # build the language server binary (./a-lsp)
 ./a cache clean             # clear the compilation cache
 ./a pkg init                # create pkg.toml manifest
@@ -99,7 +100,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 | Domain | Operations |
 |--------|-----------|
-| **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `io.read_file`, `io.write_file` |
+| **Filesystem** | `fs.ls`, `fs.mkdir`, `fs.rm`, `fs.mv`, `fs.cp`, `fs.glob`, `fs.exists`, `fs.is_dir`, `fs.is_file`, `fs.cwd`, `fs.abs`, `fs.stat`, `fs.watch`, `io.read_file`, `io.write_file` |
 | **HTTP client** | `http.get`, `http.post`, `http.put`, `http.patch`, `http.delete` (returns `{status, body, headers}`) -- in-process via POSIX sockets + platform TLS (macOS SecureTransport, Linux OpenSSL) |
 | **HTTP streaming** | `http.stream(url, body, headers)`, `http.stream_read(h)`, `http.stream_close(h)` -- incremental line-by-line response reading for SSE/streaming APIs |
 | **WebSocket** | `ws.connect(url)`, `ws.send(h, msg)`, `ws.recv(h)`, `ws.close(h)` -- RFC 6455 client with masking, ping/pong, ws:// and wss:// |
@@ -166,6 +167,7 @@ use std.compiler.checker      # static analysis: undefined vars, arity, unused, 
 use std.compiler.serialize    # serialize/deserialize compiled programs
 use std.codegen               # compile_check, run_in_sandbox, test, generate -- self-improvement loop
 use std.refactor              # rename, extract_fn, inline_fn -- AST-level refactoring
+use std.cron                  # schedule, once, cancel, run_loop, run_for -- task scheduler
 use std.lexer                 # legacy tokenizer
 ```
 
@@ -272,8 +274,8 @@ fn main() -> void {
 |---|---|
 | **C runtime** | ~4,100 lines (runtime.h + runtime.c) + bundled SQLite3, miniz, stb_image |
 | **"a" source** | ~21,000 lines across 110+ files |
-| **Standard library** | 33 modules, 510+ functions, ~10,600 lines |
-| **Test suites** | 33 suites + cgen test script, 700+ native tests, ~6,000 lines |
+| **Standard library** | 34 modules, 520+ functions, ~10,700 lines |
+| **Test suites** | 35 suites + cgen test script, 730+ native tests, ~6,400 lines |
 | **Examples & tools** | 39 programs, ~6,600 lines |
 
 ## Editor support

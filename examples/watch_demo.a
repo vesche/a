@@ -1,0 +1,25 @@
+; watch_demo.a -- Demonstrates fs.watch by printing file system events
+;
+; Usage:
+;   ./a run examples/watch_demo.a /path/to/dir
+;
+; The watcher prints every create/modify/delete event until killed with Ctrl+C.
+
+fn main() {
+  let argv = args()
+  let dir = if len(argv) > 0 { argv[0] } else { "." }
+
+  if !fs.exists(dir) {
+    eprintln("error: path does not exist: " + dir)
+    exit(1)
+  }
+
+  println("watching " + dir + " for changes (Ctrl+C to stop)...")
+
+  fs.watch(dir, fn(event) {
+    let kind = event["event"]
+    let path = event["path"]
+    println("[" + kind + "] " + path)
+    ret Ok(true)
+  })
+}

@@ -206,3 +206,120 @@ fn url_decode(s: str) -> str {
   }
   ret out
 }
+
+fn base64url_encode(s: str) -> str {
+  let encoded = base64_encode(s)
+  let mut out = str.replace(str.replace(encoded, "+", "-"), "/", "_")
+  ; Strip trailing '='
+  while str.ends_with(out, "=") {
+    out = str.slice(out, 0, len(str.chars(out)) - 1)
+  }
+  ret out
+}
+
+fn base64url_decode(s: str) -> str {
+  let mut padded = str.replace(str.replace(s, "-", "+"), "_", "/")
+  let remainder = len(str.chars(padded)) - (len(str.chars(padded)) / 4) * 4
+  if remainder == 2 { padded = str.concat(padded, "==") }
+  if remainder == 3 { padded = str.concat(padded, "=") }
+  ret base64_decode(padded)
+}
+
+fn html_escape(s: str) -> str {
+  let mut out = s
+  out = str.replace(out, "&", "&amp;")
+  out = str.replace(out, "<", "&lt;")
+  out = str.replace(out, ">", "&gt;")
+  out = str.replace(out, "\"", "&quot;")
+  out = str.replace(out, from_code(39), "&#39;")
+  ret out
+}
+
+fn html_unescape(s: str) -> str {
+  let mut out = s
+  out = str.replace(out, "&#39;", from_code(39))
+  out = str.replace(out, "&quot;", "\"")
+  out = str.replace(out, "&gt;", ">")
+  out = str.replace(out, "&lt;", "<")
+  out = str.replace(out, "&amp;", "&")
+  ret out
+}
+
+fn json_escape(s: str) -> str {
+  let chars = str.chars(s)
+  let mut out = ""
+  for c in chars {
+    if c == "\\" { out = str.concat(out, "\\\\") }
+    else {
+      if c == "\"" { out = str.concat(out, "\\\"") }
+      else {
+        if c == "\n" { out = str.concat(out, "\\n") }
+        else {
+          if c == "\r" { out = str.concat(out, "\\r") }
+          else {
+            if c == "\t" { out = str.concat(out, "\\t") }
+            else {
+              out = str.concat(out, c)
+            }
+          }
+        }
+      }
+    }
+  }
+  ret out
+}
+
+fn json_unescape(s: str) -> str {
+  let chars = str.chars(s)
+  let n = len(chars)
+  let mut out = ""
+  let mut i = 0
+  while i < n {
+    let c = chars[i]
+    if c == "\\" {
+      if i + 1 < n {
+        let next = chars[i + 1]
+        if next == "n" { out = str.concat(out, "\n") }
+        else {
+          if next == "r" { out = str.concat(out, "\r") }
+          else {
+            if next == "t" { out = str.concat(out, "\t") }
+            else {
+              if next == "\\" { out = str.concat(out, "\\") }
+              else {
+                if next == "\"" { out = str.concat(out, "\"") }
+                else {
+                  if next == "/" { out = str.concat(out, "/") }
+                  else { out = str.concat(out, next) }
+                }
+              }
+            }
+          }
+        }
+        i = i + 2
+        continue
+      }
+    }
+    out = str.concat(out, c)
+    i = i + 1
+  }
+  ret out
+}
+
+fn rot13(s: str) -> str {
+  let chars = str.chars(s)
+  let mut out = ""
+  for c in chars {
+    let code = char_code(c)
+    if code >= 65 && code <= 90 {
+      out = str.concat(out, from_code(65 + (code - 65 + 13) - ((code - 65 + 13) / 26) * 26))
+    } else {
+      if code >= 97 && code <= 122 {
+        out = str.concat(out, from_code(97 + (code - 97 + 13) - ((code - 97 + 13) / 26) * 26))
+      } else {
+        out = str.concat(out, c)
+      }
+    }
+  }
+  ret out
+}

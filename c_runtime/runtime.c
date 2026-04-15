@@ -13,6 +13,12 @@
 #include <unistd.h>
 #include <time.h>
 #include <poll.h>
+#include <fcntl.h>
+#ifdef __APPLE__
+#include <sys/event.h>
+#else
+#include <sys/inotify.h>
+#endif
 
 int g_argc = 0;
 char** g_argv = NULL;
@@ -1621,6 +1627,190 @@ AValue a_fs_is_file(AValue path) {
     if (stat(path.sval->data, &st) != 0) return a_bool(0);
     return a_bool(S_ISREG(st.st_mode));
 }
+
+AValue a_fs_stat(AValue path) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.stat: expected string path"));
+    struct stat st;
+    if (stat(path.sval->data, &st) != 0) return a_err(a_string("fs.stat: file not found"));
+    AValue result = a_map_new(0);
+    result = a_map_set(result, a_string("size"), a_int((int64_t)st.st_size));
+    result = a_map_set(result, a_string("mtime"), a_int((int64_t)st.st_mtime));
+    result = a_map_set(result, a_string("is_dir"), a_bool(S_ISDIR(st.st_mode)));
+    result = a_map_set(result, a_string("is_file"), a_bool(S_ISREG(st.st_mode)));
+    return result;
+}
+
+/* --- File watcher --- */
+
+#ifdef __APPLE__
+
+AValue a_fs_watch(AValue path, AValue callback) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.watch: expected string path"));
+    if (callback.tag != TAG_CLOSURE) return a_err(a_string("fs.watch: expected closure callback"));
+
+    int is_dir = 0;
+    struct stat st;
+    if (stat(path.sval->data, &st) == 0 && S_ISDIR(st.st_mode)) is_dir = 1;
+
+    int kq = kqueue();
+    if (kq < 0) return a_err(a_string("fs.watch: kqueue failed"));
+
+    int fds[256];
+    char* names[256];
+    int nfds = 0;
+
+    int dfd = open(path.sval->data, O_EVTONLY);
+    if (dfd < 0) { close(kq); return a_err(a_string("fs.watch: cannot open path")); }
+    fds[nfds] = dfd;
+    names[nfds] = strdup(path.sval->data);
+    nfds++;
+
+    if (is_dir) {
+        DIR* d = opendir(path.sval->data);
+        if (d) {
+            struct dirent* ent;
+            while ((ent = readdir(d)) != NULL && nfds < 255) {
+                if (ent->d_name[0] == '.') continue;
+                char full[4096];
+                snprintf(full, sizeof(full), "%s/%s", path.sval->data, ent->d_name);
+                int fd = open(full, O_EVTONLY);
+                if (fd >= 0) {
+                    fds[nfds] = fd;
+                    names[nfds] = strdup(full);
+                    nfds++;
+                }
+            }
+            closedir(d);
+        }
+    }
+
+    struct kevent* evts = malloc(sizeof(struct kevent) * nfds);
+    for (int i = 0; i < nfds; i++) {
+        EV_SET(&evts[i], fds[i], EVFILT_VNODE, EV_ADD | EV_CLEAR,
+               NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND, 0, (void*)(intptr_t)i);
+    }
+    kevent(kq, evts, nfds, NULL, 0, NULL);
+
+    for (;;) {
+        struct kevent ev;
+        int n = kevent(kq, NULL, 0, &ev, 1, NULL);
+        if (n < 0) break;
+        if (n == 0) continue;
+
+        int idx = (int)(intptr_t)ev.udata;
+        const char* etype = "modify";
+        if (ev.fflags & NOTE_DELETE) etype = "delete";
+        else if (ev.fflags & NOTE_RENAME) etype = "rename";
+
+        AValue emap = a_map_new(0);
+        emap = a_map_set(emap, a_string("path"), a_string(names[idx]));
+        emap = a_map_set(emap, a_string("event"), a_string(etype));
+        AValue result = a_closure_call(callback, 1, emap);
+        a_release(emap);
+
+        if (a_is_err_raw(result)) { a_release(result); break; }
+        a_release(result);
+
+        if (ev.fflags & NOTE_DELETE) {
+            if (idx == 0) break;
+        }
+
+        /* Rescan directory for new files */
+        if (is_dir && idx == 0 && (ev.fflags & (NOTE_WRITE | NOTE_EXTEND))) {
+            DIR* d = opendir(path.sval->data);
+            if (d) {
+                struct dirent* ent;
+                while ((ent = readdir(d)) != NULL && nfds < 255) {
+                    if (ent->d_name[0] == '.') continue;
+                    char full[4096];
+                    snprintf(full, sizeof(full), "%s/%s", path.sval->data, ent->d_name);
+                    int already = 0;
+                    for (int j = 0; j < nfds; j++) {
+                        if (strcmp(names[j], full) == 0) { already = 1; break; }
+                    }
+                    if (!already) {
+                        int fd = open(full, O_EVTONLY);
+                        if (fd >= 0) {
+                            fds[nfds] = fd;
+                            names[nfds] = strdup(full);
+                            struct kevent nev;
+                            EV_SET(&nev, fd, EVFILT_VNODE, EV_ADD | EV_CLEAR,
+                                   NOTE_WRITE | NOTE_DELETE | NOTE_RENAME | NOTE_EXTEND, 0, (void*)(intptr_t)nfds);
+                            kevent(kq, &nev, 1, NULL, 0, NULL);
+                            nfds++;
+
+                            AValue cmap = a_map_new(0);
+                            cmap = a_map_set(cmap, a_string("path"), a_string(full));
+                            cmap = a_map_set(cmap, a_string("event"), a_string("create"));
+                            AValue cr = a_closure_call(callback, 1, cmap);
+                            a_release(cmap);
+                            a_release(cr);
+                        }
+                    }
+                }
+                closedir(d);
+            }
+        }
+    }
+
+    for (int i = 0; i < nfds; i++) { close(fds[i]); free(names[i]); }
+    free(evts);
+    close(kq);
+    return a_void();
+}
+
+#else /* Linux: inotify */
+
+AValue a_fs_watch(AValue path, AValue callback) {
+    if (path.tag != TAG_STRING) return a_err(a_string("fs.watch: expected string path"));
+    if (callback.tag != TAG_CLOSURE) return a_err(a_string("fs.watch: expected closure callback"));
+
+    int ifd = inotify_init1(IN_CLOEXEC);
+    if (ifd < 0) return a_err(a_string("fs.watch: inotify_init failed"));
+
+    int wd = inotify_add_watch(ifd, path.sval->data,
+        IN_MODIFY | IN_CREATE | IN_DELETE | IN_MOVED_TO | IN_MOVED_FROM);
+    if (wd < 0) { close(ifd); return a_err(a_string("fs.watch: inotify_add_watch failed")); }
+
+    char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
+    for (;;) {
+        ssize_t n = read(ifd, buf, sizeof(buf));
+        if (n <= 0) break;
+
+        char* ptr = buf;
+        while (ptr < buf + n) {
+            struct inotify_event* ev = (struct inotify_event*)ptr;
+            const char* etype = "modify";
+            if (ev->mask & IN_CREATE) etype = "create";
+            else if (ev->mask & IN_DELETE) etype = "delete";
+            else if (ev->mask & IN_MOVED_TO) etype = "create";
+            else if (ev->mask & IN_MOVED_FROM) etype = "delete";
+
+            char full[4096];
+            if (ev->len > 0)
+                snprintf(full, sizeof(full), "%s/%s", path.sval->data, ev->name);
+            else
+                snprintf(full, sizeof(full), "%s", path.sval->data);
+
+            AValue emap = a_map_new(0);
+            emap = a_map_set(emap, a_string("path"), a_string(full));
+            emap = a_map_set(emap, a_string("event"), a_string(etype));
+            AValue result = a_closure_call(callback, 1, emap);
+            a_release(emap);
+
+            if (a_is_err_raw(result)) { a_release(result); goto done; }
+            a_release(result);
+
+            ptr += sizeof(struct inotify_event) + ev->len;
+        }
+    }
+done:
+    inotify_rm_watch(ifd, wd);
+    close(ifd);
+    return a_void();
+}
+
+#endif /* fs.watch */
 
 /* --- Time --- */
 

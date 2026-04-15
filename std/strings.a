@@ -51,3 +51,280 @@ fn center(s: str, width: i64, pad: str) -> str {
 fn is_empty(s: str) -> bool {
   ret len(str.chars(s)) == 0
 }
+
+fn char_at(s: str, idx: i64) -> str {
+  let chars: [str] = str.chars(s)
+  if idx < 0 { ret "" }
+  if idx >= len(chars) { ret "" }
+  ret chars[idx]
+}
+
+fn chars_count(s: str) -> i64 {
+  ret len(str.chars(s))
+}
+
+fn truncate(s: str, max_len: i64, suffix: str) -> str {
+  let chars: [str] = str.chars(s)
+  if len(chars) <= max_len { ret s }
+  let suf_len: i64 = len(str.chars(suffix))
+  let keep: i64 = max_len - suf_len
+  if keep <= 0 { ret suffix }
+  let mut out: str = ""
+  let mut i: i64 = 0
+  while i < keep {
+    out = str.concat(out, chars[i])
+    i = i + 1
+  }
+  ret str.concat(out, suffix)
+}
+
+fn words(s: str) -> [str] {
+  let parts: [str] = str.split(s, " ")
+  let mut result: [str] = []
+  for p: str in parts {
+    let t: str = str.trim(p)
+    if t != "" {
+      result = push(result, t)
+    }
+  }
+  ret result
+}
+
+fn capitalize(s: str) -> str {
+  let chars: [str] = str.chars(s)
+  if len(chars) == 0 { ret s }
+  ret str.concat(str.upper(chars[0]), str.slice(s, 1, len(chars)))
+}
+
+fn title_case(s: str) -> str {
+  let w: [str] = words(s)
+  let mut result: [str] = []
+  for word: str in w {
+    result = push(result, capitalize(str.lower(word)))
+  }
+  ret str.join(result, " ")
+}
+
+fn _is_upper_char(c: str) -> bool {
+  let code: i64 = char_code(c)
+  ret code >= 65 && code <= 90
+}
+
+fn _is_lower_char(c: str) -> bool {
+  let code: i64 = char_code(c)
+  ret code >= 97 && code <= 122
+}
+
+fn snake_case(s: str) -> str {
+  let chars: [str] = str.chars(s)
+  let n: i64 = len(chars)
+  let mut out: str = ""
+  let mut i: i64 = 0
+  while i < n {
+    let c: str = chars[i]
+    if c == " " || c == "-" || c == "." {
+      if out != "" { out = str.concat(out, "_") }
+    } else {
+      if _is_upper_char(c) {
+        if i > 0 {
+          if _is_lower_char(chars[i - 1]) {
+            out = str.concat(out, "_")
+          }
+        }
+        out = str.concat(out, str.lower(c))
+      } else {
+        out = str.concat(out, c)
+      }
+    }
+    i = i + 1
+  }
+  ret out
+}
+
+fn camel_case(s: str) -> str {
+  let w: [str] = words(str.replace(str.replace(str.replace(s, "_", " "), "-", " "), ".", " "))
+  if len(w) == 0 { ret "" }
+  let mut result: str = str.lower(w[0])
+  let mut i: i64 = 1
+  while i < len(w) {
+    result = str.concat(result, capitalize(str.lower(w[i])))
+    i = i + 1
+  }
+  ret result
+}
+
+fn kebab_case(s: str) -> str {
+  ret str.replace(snake_case(s), "_", "-")
+}
+
+fn is_numeric(s: str) -> bool {
+  let chars: [str] = str.chars(s)
+  let n: i64 = len(chars)
+  if n == 0 { ret false }
+  let mut start: i64 = 0
+  if chars[0] == "-" || chars[0] == "+" { start = 1 }
+  if start >= n { ret false }
+  let mut has_dot: bool = false
+  let mut i: i64 = start
+  while i < n {
+    let c: str = chars[i]
+    if c == "." {
+      if has_dot { ret false }
+      has_dot = true
+    } else {
+      if !is_digit(c) { ret false }
+    }
+    i = i + 1
+  }
+  ret true
+}
+
+fn is_upper(s: str) -> bool {
+  let chars: [str] = str.chars(s)
+  if len(chars) == 0 { ret false }
+  for c: str in chars {
+    if is_alpha(c) {
+      if !_is_upper_char(c) { ret false }
+    }
+  }
+  ret true
+}
+
+fn is_lower(s: str) -> bool {
+  let chars: [str] = str.chars(s)
+  if len(chars) == 0 { ret false }
+  for c: str in chars {
+    if is_alpha(c) {
+      if !_is_lower_char(c) { ret false }
+    }
+  }
+  ret true
+}
+
+fn indent(s: str, n: i64) -> str {
+  let prefix: str = repeat(" ", n)
+  let lines: [str] = str.lines(s)
+  let mut result: [str] = []
+  for line: str in lines {
+    result = push(result, str.concat(prefix, line))
+  }
+  ret str.join(result, "\n")
+}
+
+fn dedent(s: str) -> str {
+  let lines: [str] = str.lines(s)
+  let mut min_indent: i64 = 999999
+  for line: str in lines {
+    if str.trim(line) == "" { continue }
+    let chars: [str] = str.chars(line)
+    let mut spaces: i64 = 0
+    let mut j: i64 = 0
+    while j < len(chars) {
+      if chars[j] == " " {
+        spaces = spaces + 1
+      } else {
+        break
+      }
+      j = j + 1
+    }
+    if spaces < min_indent { min_indent = spaces }
+  }
+  if min_indent == 0 || min_indent == 999999 { ret s }
+  let mut result: [str] = []
+  for line: str in lines {
+    if str.trim(line) == "" {
+      result = push(result, "")
+    } else {
+      result = push(result, str.slice(line, min_indent, len(str.chars(line))))
+    }
+  }
+  ret str.join(result, "\n")
+}
+
+fn squeeze(s: str) -> str {
+  let chars: [str] = str.chars(s)
+  let n: i64 = len(chars)
+  let mut out: str = ""
+  let mut prev_space: bool = false
+  let mut i: i64 = 0
+  while i < n {
+    let c: str = chars[i]
+    if c == " " || c == "\t" {
+      if !prev_space {
+        out = str.concat(out, " ")
+        prev_space = true
+      }
+    } else {
+      out = str.concat(out, c)
+      prev_space = false
+    }
+    i = i + 1
+  }
+  ret str.trim(out)
+}
+
+fn strip_prefix(s: str, prefix: str) -> str {
+  if str.starts_with(s, prefix) {
+    ret str.slice(s, len(str.chars(prefix)), len(str.chars(s)))
+  }
+  ret s
+}
+
+fn strip_suffix(s: str, suffix: str) -> str {
+  if str.ends_with(s, suffix) {
+    let slen: i64 = len(str.chars(s))
+    let suflen: i64 = len(str.chars(suffix))
+    ret str.slice(s, 0, slen - suflen)
+  }
+  ret s
+}
+
+fn join_with(arr: [str], sep: str, last_sep: str) -> str {
+  let n: i64 = len(arr)
+  if n == 0 { ret "" }
+  if n == 1 { ret arr[0] }
+  if n == 2 { ret str.concat(arr[0], str.concat(last_sep, arr[1])) }
+  let mut out: str = arr[0]
+  let mut i: i64 = 1
+  while i < n - 1 {
+    out = str.concat(out, str.concat(sep, arr[i]))
+    i = i + 1
+  }
+  out = str.concat(out, str.concat(last_sep, arr[n - 1]))
+  ret out
+}
+
+fn wrap_text(s: str, width: i64) -> str {
+  let w: [str] = words(s)
+  let mut lines: [str] = []
+  let mut line: str = ""
+  let mut line_len: i64 = 0
+  for word: str in w {
+    let wlen: i64 = len(str.chars(word))
+    if line_len == 0 {
+      line = word
+      line_len = wlen
+    } else {
+      if line_len + 1 + wlen > width {
+        lines = push(lines, line)
+        line = word
+        line_len = wlen
+      } else {
+        line = str.concat(line, str.concat(" ", word))
+        line_len = line_len + 1 + wlen
+      }
+    }
+  }
+  if line != "" { lines = push(lines, line) }
+  ret str.join(lines, "\n")
+}
+
+fn replace_first(s: str, old: str, new: str) -> str {
+  let idx: i64 = str.find(s, old)
+  if idx < 0 { ret s }
+  let slen: i64 = len(str.chars(s))
+  let olen: i64 = len(str.chars(old))
+  let before: str = str.slice(s, 0, idx)
+  let after: str = str.slice(s, idx + olen, slen)
+  ret str.concat(before, str.concat(new, after))
+}

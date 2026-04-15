@@ -1,0 +1,107 @@
+; std/cron.a -- Lightweight task scheduler
+; schedule, once, cancel, run_loop, run_for
+
+fn schedule(interval_ms, f) -> map {
+  ret #{
+    "interval": interval_ms,
+    "next_run": time.now() + interval_ms,
+    "fn": f,
+    "once": false,
+    "cancelled": false,
+    "id": to_str(time.now()) + "_" + to_str(interval_ms)
+  }
+}
+
+fn once(delay_ms, f) -> map {
+  ret #{
+    "interval": 0,
+    "next_run": time.now() + delay_ms,
+    "fn": f,
+    "once": true,
+    "cancelled": false,
+    "id": to_str(time.now()) + "_once"
+  }
+}
+
+fn cancel(task) -> map {
+  ret map.set(task, "cancelled", true)
+}
+
+fn _has_active(tasks) -> bool {
+  let mut i = 0
+  while i < len(tasks) {
+    if !tasks[i]["cancelled"] { ret true }
+    i = i + 1
+  }
+  ret false
+}
+
+fn _min_wait(tasks, now) -> int {
+  let mut wait = 100
+  let mut i = 0
+  while i < len(tasks) {
+    let t = tasks[i]
+    if !t["cancelled"] {
+      let diff = t["next_run"] - now
+      if diff < wait { wait = diff }
+    }
+    i = i + 1
+  }
+  if wait < 1 { wait = 1 }
+  ret wait
+}
+
+fn _run_task(t) {
+  let f = t["fn"]
+  f()
+}
+
+fn run_loop(tasks) -> void {
+  let mut ts = tasks
+  while _has_active(ts) {
+    let now = time.now()
+    let mut i = 0
+    while i < len(ts) {
+      let t = ts[i]
+      if !t["cancelled"] && now >= t["next_run"] {
+        _run_task(t)
+        if t["once"] {
+          ts[i] = map.set(ts[i], "cancelled", true)
+        } else {
+          ts[i] = map.set(ts[i], "next_run", now + t["interval"])
+        }
+      }
+      i = i + 1
+    }
+    if !_has_active(ts) { break }
+    let wait = _min_wait(ts, time.now())
+    time.sleep(wait)
+  }
+}
+
+fn run_for(tasks, duration_ms) -> void {
+  let deadline = time.now() + duration_ms
+  let mut ts = tasks
+  while _has_active(ts) && time.now() < deadline {
+    let now = time.now()
+    let mut i = 0
+    while i < len(ts) {
+      let t = ts[i]
+      if !t["cancelled"] && now >= t["next_run"] {
+        _run_task(t)
+        if t["once"] {
+          ts[i] = map.set(ts[i], "cancelled", true)
+        } else {
+          ts[i] = map.set(ts[i], "next_run", now + t["interval"])
+        }
+      }
+      i = i + 1
+    }
+    if !_has_active(ts) { break }
+    if time.now() >= deadline { break }
+    let mut wait = _min_wait(ts, time.now())
+    let remaining = deadline - time.now()
+    if wait > remaining { wait = remaining }
+    if wait > 0 { time.sleep(wait) }
+  }
+}

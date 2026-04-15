@@ -51,3 +51,166 @@ fn range(start: i64, end: i64) -> [i64] {
   }
   ret result
 }
+
+fn range_step(start: i64, end: i64, step: i64) -> [i64] {
+  let mut result: [i64] = []
+  if step > 0 {
+    let mut i: i64 = start
+    while i < end {
+      result = push(result, i)
+      i = i + step
+    }
+  }
+  if step < 0 {
+    let mut i: i64 = start
+    while i > end {
+      result = push(result, i)
+      i = i + step
+    }
+  }
+  ret result
+}
+
+fn sign(x: i64) -> i64 {
+  if x > 0 { ret 1 }
+  if x < 0 { ret -1 }
+  ret 0
+}
+
+fn fsign(x: f64) -> f64 {
+  if x > 0.0 { ret 1.0 }
+  if x < 0.0 { ret -1.0 }
+  ret 0.0
+}
+
+fn is_even(n: i64) -> bool {
+  ret n - (n / 2) * 2 == 0
+}
+
+fn is_odd(n: i64) -> bool {
+  ret n - (n / 2) * 2 != 0
+}
+
+fn gcd(a: i64, b: i64) -> i64 {
+  let mut x: i64 = a
+  let mut y: i64 = b
+  if x < 0 { x = 0 - x }
+  if y < 0 { y = 0 - y }
+  while y != 0 {
+    let t: i64 = y
+    y = x - (x / y) * y
+    x = t
+  }
+  ret x
+}
+
+fn lcm(a: i64, b: i64) -> i64 {
+  if a == 0 { ret 0 }
+  if b == 0 { ret 0 }
+  let g: i64 = gcd(a, b)
+  let mut result: i64 = a / g * b
+  if result < 0 { result = 0 - result }
+  ret result
+}
+
+fn factorial(n: i64) -> i64 {
+  if n <= 1 { ret 1 }
+  let mut result: i64 = 1
+  let mut i: i64 = 2
+  while i <= n {
+    result = result * i
+    i = i + 1
+  }
+  ret result
+}
+
+fn divmod(a: i64, b: i64) -> [i64] {
+  let q: i64 = a / b
+  let r: i64 = a - q * b
+  ret [q, r]
+}
+
+fn wrap(val: i64, lo: i64, hi: i64) -> i64 {
+  let span: i64 = hi - lo
+  if span <= 0 { ret lo }
+  let mut v: i64 = val - lo
+  v = v - (v / span) * span
+  if v < 0 { v = v + span }
+  ret v + lo
+}
+
+fn fclamp(val: f64, lo: f64, hi: f64) -> f64 {
+  if val < lo { ret lo }
+  if val > hi { ret hi }
+  ret val
+}
+
+fn fpow(base: f64, exp: i64) -> f64 {
+  let mut result: f64 = 1.0
+  let mut i: i64 = 0
+  let mut n: i64 = exp
+  let mut b: f64 = base
+  if n < 0 {
+    b = 1.0 / b
+    n = 0 - n
+  }
+  while i < n {
+    result = result * b
+    i = i + 1
+  }
+  ret result
+}
+
+fn lerp(a: f64, b: f64, t: f64) -> f64 {
+  ret a + (b - a) * t
+}
+
+fn map_range(val: f64, in_lo: f64, in_hi: f64, out_lo: f64, out_hi: f64) -> f64 {
+  let t: f64 = (val - in_lo) / (in_hi - in_lo)
+  ret out_lo + (out_hi - out_lo) * t
+}
+
+fn average(arr: [i64]) -> f64 {
+  let n: i64 = len(arr)
+  if n == 0 { ret 0.0 }
+  let mut total: i64 = 0
+  for x: i64 in arr {
+    total = total + x
+  }
+  ret float(total) / float(n)
+}
+
+fn fsum(arr: [f64]) -> f64 {
+  let mut total: f64 = 0.0
+  for x: f64 in arr {
+    total = total + x
+  }
+  ret total
+}
+
+fn faverage(arr: [f64]) -> f64 {
+  let n: i64 = len(arr)
+  if n == 0 { ret 0.0 }
+  ret fsum(arr) / float(n)
+}
+
+fn product(arr: [i64]) -> i64 {
+  let n: i64 = len(arr)
+  if n == 0 { ret 0 }
+  let mut total: i64 = 1
+  for x: i64 in arr {
+    total = total * x
+  }
+  ret total
+}
+
+fn median(arr: [i64]) -> f64 {
+  let sorted: [i64] = sort(arr)
+  let n: i64 = len(sorted)
+  if n == 0 { ret 0.0 }
+  let mid: i64 = n / 2
+  if n - (n / 2) * 2 == 1 {
+    ret float(sorted[mid])
+  }
+  ret float(sorted[mid - 1] + sorted[mid]) / 2.0
+}

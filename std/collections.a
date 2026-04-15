@@ -1,0 +1,213 @@
+; std/collections.a -- Higher-order collection utilities
+
+fn group_by(arr, key_fn) -> map {
+  let mut result = #{}
+  for item in arr {
+    let k = key_fn(item)
+    let key = to_str(k)
+    if map.has(result, key) {
+      let existing = map.get(result, key)
+      result = map.set(result, key, push(existing, item))
+    } else {
+      result = map.set(result, key, [item])
+    }
+  }
+  ret result
+}
+
+fn freq(arr) -> map {
+  let mut result = #{}
+  for item in arr {
+    let key = to_str(item)
+    if map.has(result, key) {
+      result = map.set(result, key, map.get(result, key) + 1)
+    } else {
+      result = map.set(result, key, 1)
+    }
+  }
+  ret result
+}
+
+fn partition(arr, pred_fn) -> [array] {
+  let mut yes = []
+  let mut no = []
+  for item in arr {
+    if pred_fn(item) {
+      yes = push(yes, item)
+    } else {
+      no = push(no, item)
+    }
+  }
+  ret [yes, no]
+}
+
+fn flatten(arr) -> array {
+  let mut result = []
+  for item in arr {
+    if type_of(item) == "array" {
+      for sub in item {
+        result = push(result, sub)
+      }
+    } else {
+      result = push(result, item)
+    }
+  }
+  ret result
+}
+
+fn index_of(arr, target) -> int {
+  let mut i = 0
+  while i < len(arr) {
+    if to_str(arr[i]) == to_str(target) { ret i }
+    i = i + 1
+  }
+  ret -1
+}
+
+fn last_index_of(arr, target) -> int {
+  let mut i = len(arr) - 1
+  while i >= 0 {
+    if to_str(arr[i]) == to_str(target) { ret i }
+    i = i - 1
+  }
+  ret -1
+}
+
+fn compact(arr) -> array {
+  let mut result = []
+  for item in arr {
+    let t = type_of(item)
+    if t == "void" { continue }
+    if t == "str" && item == "" { continue }
+    if t == "bool" && !item { continue }
+    if t == "int" && item == 0 { continue }
+    result = push(result, item)
+  }
+  ret result
+}
+
+fn interleave(a, b) -> array {
+  let mut result = []
+  let al = len(a)
+  let bl = len(b)
+  let max_len = al
+  if bl > max_len { max_len = bl }
+  let mut i = 0
+  while i < max_len {
+    if i < al { result = push(result, a[i]) }
+    if i < bl { result = push(result, b[i]) }
+    i = i + 1
+  }
+  ret result
+}
+
+fn sliding_window(arr, size: int) -> [array] {
+  let n = len(arr)
+  if size <= 0 { ret [] }
+  if size > n { ret [] }
+  let mut result = []
+  let mut i = 0
+  while i + size <= n {
+    let mut window = []
+    let mut j = 0
+    while j < size {
+      window = push(window, arr[i + j])
+      j = j + 1
+    }
+    result = push(result, window)
+    i = i + 1
+  }
+  ret result
+}
+
+fn pluck(arr, key: str) -> array {
+  let mut result = []
+  for item in arr {
+    if type_of(item) == "map" {
+      if map.has(item, key) {
+        result = push(result, map.get(item, key))
+      } else {
+        result = push(result, "")
+      }
+    }
+  }
+  ret result
+}
+
+fn key_by(arr, key: str) -> map {
+  let mut result = #{}
+  for item in arr {
+    if type_of(item) == "map" {
+      if map.has(item, key) {
+        result = map.set(result, to_str(map.get(item, key)), item)
+      }
+    }
+  }
+  ret result
+}
+
+fn sum_by(arr, val_fn) -> int {
+  let mut total = 0
+  for item in arr {
+    total = total + val_fn(item)
+  }
+  ret total
+}
+
+fn count_by(arr, pred_fn) -> int {
+  let mut n = 0
+  for item in arr {
+    if pred_fn(item) { n = n + 1 }
+  }
+  ret n
+}
+
+fn first(arr, pred_fn) {
+  for item in arr {
+    if pred_fn(item) { ret item }
+  }
+  ret ""
+}
+
+fn last(arr, pred_fn) {
+  let mut result = ""
+  for item in arr {
+    if pred_fn(item) { result = item }
+  }
+  ret result
+}
+
+fn uniq_by(arr, key_fn) -> array {
+  let mut seen = #{}
+  let mut result = []
+  for item in arr {
+    let k = to_str(key_fn(item))
+    if !map.has(seen, k) {
+      seen = map.set(seen, k, true)
+      result = push(result, item)
+    }
+  }
+  ret result
+}
+
+fn pairs_to_map(arr) -> map {
+  let mut result = #{}
+  for pair in arr {
+    if type_of(pair) == "array" {
+      if len(pair) >= 2 {
+        result = map.set(result, to_str(pair[0]), pair[1])
+      }
+    }
+  }
+  ret result
+}
+
+fn repeat_val(val, n: int) -> array {
+  let mut result = []
+  let mut i = 0
+  while i < n {
+    result = push(result, val)
+    i = i + 1
+  }
+  ret result
+}

@@ -1,0 +1,97 @@
+; test_cron.a -- tests for std/cron.a scheduler
+
+use std.cron
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn test_schedule_creates_task() {
+  let t = cron.schedule(100, fn() { })
+  assert(type_of(t) == "map", "schedule should return a map")
+  assert(t["interval"] == 100, "interval should be 100")
+  assert(t["once"] == false, "should not be once")
+  assert(t["cancelled"] == false, "should not be cancelled")
+  println("  ok schedule creates task")
+}
+
+fn test_once_creates_task() {
+  let t = cron.once(200, fn() { })
+  assert(type_of(t) == "map", "once should return a map")
+  assert(t["once"] == true, "should be once")
+  assert(t["cancelled"] == false, "should not be cancelled")
+  println("  ok once creates task")
+}
+
+fn test_cancel() {
+  let t = cron.schedule(100, fn() { })
+  let cancelled = cron.cancel(t)
+  assert(cancelled["cancelled"] == true, "should be cancelled")
+  println("  ok cancel")
+}
+
+fn test_run_for_duration() {
+  let start = time.now()
+  let t = cron.schedule(50, fn() { })
+  cron.run_for([t], 200)
+  let elapsed = time.now() - start
+  assert(elapsed >= 150, "run_for should run for at least 150ms, got " + to_str(elapsed))
+  assert(elapsed < 500, "run_for should not run for more than 500ms, got " + to_str(elapsed))
+  println("  ok run_for respects duration")
+}
+
+fn test_once_fires_and_stops() {
+  let io_file = "/tmp/test_cron_once.txt"
+  if fs.exists(io_file) { fs.rm(io_file) }
+
+  let t = cron.once(50, fn() {
+    io.write_file("/tmp/test_cron_once.txt", "fired")
+  })
+  cron.run_for([t], 300)
+  assert(fs.exists(io_file), "once task should have fired")
+  let content = io.read_file(io_file)
+  assert(content == "fired", "once task content should be 'fired'")
+  fs.rm(io_file)
+  println("  ok once fires and stops")
+}
+
+fn test_schedule_fires_multiple() {
+  let counter_file = "/tmp/test_cron_multi.txt"
+  io.write_file(counter_file, "0")
+
+  let t = cron.schedule(50, fn() {
+    let cur = io.read_file("/tmp/test_cron_multi.txt")
+    let n = int(cur) + 1
+    io.write_file("/tmp/test_cron_multi.txt", to_str(n))
+  })
+  cron.run_for([t], 300)
+
+  let final_count = int(io.read_file(counter_file))
+  assert(final_count >= 2, "schedule should fire at least 2 times, got " + to_str(final_count))
+  fs.rm(counter_file)
+  println("  ok schedule fires multiple times (" + to_str(final_count) + "x)")
+}
+
+fn test_cancelled_task_doesnt_run() {
+  let marker = "/tmp/test_cron_cancelled.txt"
+  if fs.exists(marker) { fs.rm(marker) }
+
+  let t = cron.once(50, fn() {
+    io.write_file("/tmp/test_cron_cancelled.txt", "ran")
+  })
+  let ct = cron.cancel(t)
+  cron.run_for([ct], 200)
+  assert(!fs.exists(marker), "cancelled task should not run")
+  println("  ok cancelled task skipped")
+}
+
+fn main() {
+  test_schedule_creates_task()
+  test_once_creates_task()
+  test_cancel()
+  test_run_for_duration()
+  test_once_fires_and_stops()
+  test_schedule_fires_multiple()
+  test_cancelled_task_doesnt_run()
+  println("all cron tests passed")
+}

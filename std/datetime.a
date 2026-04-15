@@ -148,3 +148,215 @@ fn diff_ms(a: int, b: int) -> int {
 fn diff_seconds(a: int, b: int) -> int {
   ret diff_ms(a, b) / 1000
 }
+
+fn diff_minutes(a: int, b: int) -> int {
+  ret diff_ms(a, b) / 60000
+}
+
+fn diff_hours(a: int, b: int) -> int {
+  ret diff_ms(a, b) / 3600000
+}
+
+fn diff_days(a: int, b: int) -> int {
+  ret diff_ms(a, b) / 86400000
+}
+
+fn unix(epoch_ms: int) -> int {
+  ret epoch_ms / 1000
+}
+
+fn from_unix(secs: int) -> int {
+  ret secs * 1000
+}
+
+fn is_leap_year(y: int) -> bool {
+  ret _is_leap(y)
+}
+
+fn days_in_month(y: int, m: int) -> int {
+  ret _days_in_month(y, m)
+}
+
+fn day_of_week(epoch_ms: int) -> int {
+  ; 1970-01-01 was a Thursday (4). Returns 0=Sun, 1=Mon, ... 6=Sat
+  let days = epoch_ms / 86400000
+  let dow = (days + 4) - ((days + 4) / 7) * 7
+  if dow < 0 { ret dow + 7 }
+  ret dow
+}
+
+fn day_of_year(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  let mut doy = 0
+  let mut m = 1
+  while m < p["month"] {
+    doy = doy + _days_in_month(p["year"], m)
+    m = m + 1
+  }
+  ret doy + p["day"]
+}
+
+fn week_of_year(epoch_ms: int) -> int {
+  let doy = day_of_year(epoch_ms)
+  ret (doy - 1) / 7 + 1
+}
+
+fn start_of_day(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  ret from_parts(p["year"], p["month"], p["day"], 0, 0, 0)
+}
+
+fn end_of_day(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  ret from_parts(p["year"], p["month"], p["day"], 23, 59, 59) + 999
+}
+
+fn start_of_month(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  ret from_parts(p["year"], p["month"], 1, 0, 0, 0)
+}
+
+fn end_of_month(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  let last_day = _days_in_month(p["year"], p["month"])
+  ret from_parts(p["year"], p["month"], last_day, 23, 59, 59) + 999
+}
+
+fn start_of_year(epoch_ms: int) -> int {
+  let p = to_parts(epoch_ms)
+  ret from_parts(p["year"], 1, 1, 0, 0, 0)
+}
+
+fn is_before(a: int, b: int) -> bool {
+  ret a < b
+}
+
+fn is_after(a: int, b: int) -> bool {
+  ret a > b
+}
+
+fn is_same_day(a: int, b: int) -> bool {
+  let pa = to_parts(a)
+  let pb = to_parts(b)
+  ret pa["year"] == pb["year"] && pa["month"] == pb["month"] && pa["day"] == pb["day"]
+}
+
+fn add_months(epoch_ms: int, months: int) -> int {
+  let p = to_parts(epoch_ms)
+  let mut y = p["year"]
+  let mut m = p["month"] + months
+  while m > 12 {
+    m = m - 12
+    y = y + 1
+  }
+  while m < 1 {
+    m = m + 12
+    y = y - 1
+  }
+  let mut d = p["day"]
+  let max_d = _days_in_month(y, m)
+  if d > max_d { d = max_d }
+  ret from_parts(y, m, d, p["hour"], p["minute"], p["second"]) + p["ms"]
+}
+
+fn add_years(epoch_ms: int, years: int) -> int {
+  ret add_months(epoch_ms, years * 12)
+}
+
+fn _day_name(dow: int) -> str {
+  if dow == 0 { ret "Sunday" }
+  if dow == 1 { ret "Monday" }
+  if dow == 2 { ret "Tuesday" }
+  if dow == 3 { ret "Wednesday" }
+  if dow == 4 { ret "Thursday" }
+  if dow == 5 { ret "Friday" }
+  ret "Saturday"
+}
+
+fn _month_name(m: int) -> str {
+  if m == 1 { ret "January" }
+  if m == 2 { ret "February" }
+  if m == 3 { ret "March" }
+  if m == 4 { ret "April" }
+  if m == 5 { ret "May" }
+  if m == 6 { ret "June" }
+  if m == 7 { ret "July" }
+  if m == 8 { ret "August" }
+  if m == 9 { ret "September" }
+  if m == 10 { ret "October" }
+  if m == 11 { ret "November" }
+  ret "December"
+}
+
+fn day_name(epoch_ms: int) -> str {
+  ret _day_name(day_of_week(epoch_ms))
+}
+
+fn month_name(epoch_ms: int) -> str {
+  let p = to_parts(epoch_ms)
+  ret _month_name(p["month"])
+}
+
+fn parse_iso(s: str) -> int {
+  ; Parses "YYYY-MM-DDTHH:MM:SSZ" or "YYYY-MM-DD" to epoch_ms
+  let date_str = str.replace(str.replace(s, "Z", ""), "z", "")
+  let t_idx = str.find(date_str, "T")
+  let mut date_part = date_str
+  let mut time_part = ""
+  if t_idx >= 0 {
+    date_part = str.slice(date_str, 0, t_idx)
+    time_part = str.slice(date_str, t_idx + 1, len(str.chars(date_str)))
+  }
+  let dp = str.split(date_part, "-")
+  let y = int(dp[0])
+  let mo = int(dp[1])
+  let d = int(dp[2])
+  let mut h = 0
+  let mut mi = 0
+  let mut sec = 0
+  if time_part != "" {
+    let tp = str.split(time_part, ":")
+    h = int(tp[0])
+    if len(tp) > 1 { mi = int(tp[1]) }
+    if len(tp) > 2 { sec = int(tp[2]) }
+  }
+  ret from_parts(y, mo, d, h, mi, sec)
+}
+
+fn relative(epoch_ms: int) -> str {
+  let now_ms = time.now()
+  let d = now_ms - epoch_ms
+  let mut abs_d = d
+  if abs_d < 0 { abs_d = 0 - abs_d }
+  let suffix = "ago"
+  let prefix = ""
+  if d < 0 {
+    suffix = ""
+    prefix = "in "
+  }
+  if abs_d < 1000 { ret "just now" }
+  if abs_d < 60000 {
+    let secs = abs_d / 1000
+    if secs == 1 { ret str.concat(prefix, str.concat("1 second ", suffix)) }
+    ret str.concat(prefix, str.concat(to_str(secs), str.concat(" seconds ", suffix)))
+  }
+  if abs_d < 3600000 {
+    let mins = abs_d / 60000
+    if mins == 1 { ret str.concat(prefix, str.concat("1 minute ", suffix)) }
+    ret str.concat(prefix, str.concat(to_str(mins), str.concat(" minutes ", suffix)))
+  }
+  if abs_d < 86400000 {
+    let hrs = abs_d / 3600000
+    if hrs == 1 { ret str.concat(prefix, str.concat("1 hour ", suffix)) }
+    ret str.concat(prefix, str.concat(to_str(hrs), str.concat(" hours ", suffix)))
+  }
+  let days = abs_d / 86400000
+  if days == 1 { ret str.concat(prefix, str.concat("1 day ", suffix)) }
+  if days < 30 { ret str.concat(prefix, str.concat(to_str(days), str.concat(" days ", suffix))) }
+  let months = days / 30
+  if months == 1 { ret str.concat(prefix, str.concat("1 month ", suffix)) }
+  if months < 12 { ret str.concat(prefix, str.concat(to_str(months), str.concat(" months ", suffix))) }
+  let years = days / 365
+  if years == 1 { ret str.concat(prefix, str.concat("1 year ", suffix)) }
+  ret str.concat(prefix, str.concat(to_str(years), str.concat(" years ", suffix)))
+}

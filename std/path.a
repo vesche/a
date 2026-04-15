@@ -129,3 +129,63 @@ fn _last_dot(s: str) -> int {
   }
   ret last
 }
+
+fn home() -> str {
+  let h = env.get("HOME")
+  if h != "" { ret h }
+  ret env.get("USERPROFILE")
+}
+
+fn temp() -> str {
+  let t = env.get("TMPDIR")
+  if t != "" { ret t }
+  let t2 = env.get("TEMP")
+  if t2 != "" { ret t2 }
+  ret "/tmp"
+}
+
+fn relative(from: str, to: str) -> str {
+  let f_parts = segments(normalize(from))
+  let t_parts = segments(normalize(to))
+  let mut common = 0
+  while common < len(f_parts) && common < len(t_parts) {
+    if f_parts[common] != t_parts[common] { break }
+    common = common + 1
+  }
+  let mut result = ""
+  let ups = len(f_parts) - common
+  let mut i = 0
+  while i < ups {
+    if result != "" { result = str.concat(result, "/") }
+    result = str.concat(result, "..")
+    i = i + 1
+  }
+  let mut j = common
+  while j < len(t_parts) {
+    if result != "" { result = str.concat(result, "/") }
+    result = str.concat(result, t_parts[j])
+    j = j + 1
+  }
+  if result == "" { ret "." }
+  ret result
+}
+
+fn has_extension(p: str, ext: str) -> bool {
+  ret extension(p) == ext
+}
+
+fn join_all(parts: [str]) -> str {
+  if len(parts) == 0 { ret "" }
+  let mut result = parts[0]
+  let mut i = 1
+  while i < len(parts) {
+    result = join(result, parts[i])
+    i = i + 1
+  }
+  ret result
+}
+
+fn is_hidden(p: str) -> bool {
+  let base = basename(p)
+  ret str.starts_with(base, ".")
+}

@@ -37,3 +37,84 @@ fn assert_not_eq(actual: str, expected: str) -> void effects [io] {
     fail("expected values to differ, both are \"{actual}\"")
   }
 }
+
+fn assert_float_eq(actual: f64, expected: f64, epsilon: f64) -> void effects [io] {
+  let diff = actual - expected
+  if diff < 0.0 { diff = 0.0 - diff }
+  if diff > epsilon {
+    fail("expected {to_str(expected)} (±{to_str(epsilon)}) got {to_str(actual)}")
+  }
+}
+
+fn assert_gt(actual: i64, expected: i64) -> void effects [io] {
+  if actual <= expected {
+    fail("expected {to_str(actual)} > {to_str(expected)}")
+  }
+}
+
+fn assert_gte(actual: i64, expected: i64) -> void effects [io] {
+  if actual < expected {
+    fail("expected {to_str(actual)} >= {to_str(expected)}")
+  }
+}
+
+fn assert_lt(actual: i64, expected: i64) -> void effects [io] {
+  if actual >= expected {
+    fail("expected {to_str(actual)} < {to_str(expected)}")
+  }
+}
+
+fn assert_lte(actual: i64, expected: i64) -> void effects [io] {
+  if actual > expected {
+    fail("expected {to_str(actual)} <= {to_str(expected)}")
+  }
+}
+
+fn assert_len(arr, expected: i64) -> void effects [io] {
+  let actual = len(arr)
+  if actual != expected {
+    fail("expected length {to_str(expected)} got {to_str(actual)}")
+  }
+}
+
+fn assert_empty(arr) -> void effects [io] {
+  if len(arr) != 0 {
+    fail("expected empty, got length {to_str(len(arr))}")
+  }
+}
+
+fn assert_not_empty(arr) -> void effects [io] {
+  if len(arr) == 0 {
+    fail("expected non-empty collection")
+  }
+}
+
+fn assert_starts_with(s: str, prefix: str) -> void effects [io] {
+  if str.starts_with(s, prefix) == false {
+    fail("expected \"{s}\" to start with \"{prefix}\"")
+  }
+}
+
+fn assert_ends_with(s: str, suffix: str) -> void effects [io] {
+  if str.ends_with(s, suffix) == false {
+    fail("expected \"{s}\" to end with \"{suffix}\"")
+  }
+}
+
+fn assert_int_not_eq(actual: i64, expected: i64) -> void effects [io] {
+  if actual == expected {
+    fail("expected values to differ, both are {to_str(actual)}")
+  }
+}
+
+fn assert_between(val: i64, lo: i64, hi: i64) -> void effects [io] {
+  if val < lo || val > hi {
+    fail("expected {to_str(val)} to be between {to_str(lo)} and {to_str(hi)}")
+  }
+}
+
+fn assert_not_contains(haystack: str, needle: str) -> void effects [io] {
+  if str.contains(haystack, needle) {
+    fail("expected \"{haystack}\" not to contain \"{needle}\"")
+  }
+}

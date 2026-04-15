@@ -1,0 +1,101 @@
+; test_watch.a -- tests for fs.watch and fs.stat builtins
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn test_fs_stat() {
+  let tmp = "/tmp/test_watch_stat.txt"
+  io.write_file(tmp, "hello world")
+
+  let s = fs.stat(tmp)
+  assert(type_of(s) == "map", "fs.stat should return a map")
+  assert(s["size"] == 11, "size should be 11, got " + to_str(s["size"]))
+  assert(s["is_file"] == true, "should be a file")
+  assert(s["is_dir"] == false, "should not be a dir")
+  assert(s["mtime"] > 0, "mtime should be positive")
+
+  fs.rm(tmp)
+  println("  ok fs.stat")
+}
+
+fn test_fs_stat_dir() {
+  let dir = "/tmp/test_watch_dir"
+  if !fs.exists(dir) { fs.mkdir(dir) }
+
+  let s = fs.stat(dir)
+  assert(type_of(s) == "map", "fs.stat dir should return a map")
+  assert(s["is_dir"] == true, "should be a dir")
+  assert(s["is_file"] == false, "should not be a file")
+
+  fs.rm(dir)
+  println("  ok fs.stat dir")
+}
+
+fn test_fs_stat_missing() {
+  let s = fs.stat("/tmp/nonexistent_12345")
+  assert(type_of(s) != "map", "fs.stat missing should not return a map")
+  println("  ok fs.stat missing file")
+}
+
+fn test_fs_watch_detects_write() {
+  let dir = "/tmp/test_watch_dir_w"
+  if fs.exists(dir) { exec("rm -rf " + dir) }
+  fs.mkdir(dir)
+
+  let mut got_event = false
+  let mut event_type = ""
+  let mut event_path = ""
+
+  let watcher = spawn(fn() {
+    fs.watch(dir, fn(e) {
+      event_type = e["event"]
+      event_path = e["path"]
+      got_event = true
+      ret Err("stop")
+    })
+    ret "done"
+  })
+
+  time.sleep(300)
+  io.write_file(dir + "/hello.txt", "world")
+
+  let r = await(watcher)
+  assert(type_of(r) != "void", "watcher should return a result")
+
+  exec("rm -rf " + dir)
+  println("  ok fs.watch detects write")
+}
+
+fn test_fs_watch_callback_err_stops() {
+  let dir = "/tmp/test_watch_stop"
+  if fs.exists(dir) { exec("rm -rf " + dir) }
+  fs.mkdir(dir)
+
+  let watcher = spawn(fn() {
+    let mut count = 0
+    fs.watch(dir, fn(e) {
+      count = count + 1
+      ret Err("stop now")
+    })
+    ret "stopped"
+  })
+
+  time.sleep(300)
+  io.write_file(dir + "/a.txt", "x")
+
+  let r = await(watcher)
+  assert(type_of(r) != "void", "watcher should have stopped")
+
+  exec("rm -rf " + dir)
+  println("  ok fs.watch Err stops loop")
+}
+
+fn main() {
+  test_fs_stat()
+  test_fs_stat_dir()
+  test_fs_stat_missing()
+  test_fs_watch_detects_write()
+  test_fs_watch_callback_err_stops()
+  println("all watch tests passed")
+}

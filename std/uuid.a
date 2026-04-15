@@ -1,5 +1,52 @@
-; std/uuid.a -- UUID generation
+; std/uuid.a -- UUID generation and validation
 
 fn v4() -> str {
   ret uuid.v4()
+}
+
+fn nil() -> str {
+  ret "00000000-0000-0000-0000-000000000000"
+}
+
+fn is_valid(s: str) -> bool {
+  let chars = str.chars(s)
+  let n = len(chars)
+  if n != 36 { ret false }
+  ; Check format: 8-4-4-4-12
+  if chars[8] != "-" { ret false }
+  if chars[13] != "-" { ret false }
+  if chars[18] != "-" { ret false }
+  if chars[23] != "-" { ret false }
+  let mut i = 0
+  while i < n {
+    if i == 8 || i == 13 || i == 18 || i == 23 {
+      i = i + 1
+      continue
+    }
+    let c = chars[i]
+    let code = char_code(c)
+    let valid = (code >= 48 && code <= 57) || (code >= 97 && code <= 102) || (code >= 65 && code <= 70)
+    if !valid { ret false }
+    i = i + 1
+  }
+  ret true
+}
+
+fn is_nil(s: str) -> bool {
+  ret s == "00000000-0000-0000-0000-000000000000"
+}
+
+fn short(s: str) -> str {
+  ret str.replace(s, "-", "")
+}
+
+fn from_short(s: str) -> str {
+  let chars = str.chars(s)
+  if len(chars) != 32 { ret s }
+  let p1 = str.slice(s, 0, 8)
+  let p2 = str.slice(s, 8, 12)
+  let p3 = str.slice(s, 12, 16)
+  let p4 = str.slice(s, 16, 20)
+  let p5 = str.slice(s, 20, 32)
+  ret str.concat(p1, str.concat("-", str.concat(p2, str.concat("-", str.concat(p3, str.concat("-", str.concat(p4, str.concat("-", p5))))))))
 }

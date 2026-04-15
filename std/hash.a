@@ -22,3 +22,55 @@ fn quick(s: str) -> str {
   let full = hash.md5(s)
   ret str.slice(full, 0, 16)
 }
+
+fn hash_int(s: str) -> int {
+  ; DJB2 hash returning a non-negative integer
+  let chars = str.chars(s)
+  let mut h = 5381
+  for c in chars {
+    let code = char_code(c)
+    h = h * 33 + code
+    ; Keep within safe 53-bit integer range
+    h = h - (h / 4294967296) * 4294967296
+  }
+  if h < 0 { h = 0 - h }
+  ret h
+}
+
+fn equal(a: str, b: str) -> bool {
+  ; Constant-time comparison to prevent timing attacks
+  let ac = str.chars(a)
+  let bc = str.chars(b)
+  let alen = len(ac)
+  let blen = len(bc)
+  if alen != blen { ret false }
+  let mut diff = 0
+  let mut i = 0
+  while i < alen {
+    let ca = char_code(ac[i])
+    let cb = char_code(bc[i])
+    ; XOR accumulates any differences without short-circuiting
+    let xor = ca - cb
+    if xor < 0 { diff = diff + (0 - xor) }
+    if xor > 0 { diff = diff + xor }
+    i = i + 1
+  }
+  ret diff == 0
+}
+
+fn combine(a: str, b: str) -> str {
+  ret hash.sha256(str.concat(a, str.concat(":", b)))
+}
+
+fn sha256_hex(s: str) -> str {
+  ret hash.sha256(s)
+}
+
+fn md5_hex(s: str) -> str {
+  ret hash.md5(s)
+}
+
+fn fingerprint(s: str) -> str {
+  let full = hash.sha256(s)
+  ret str.slice(full, 0, 8)
+}

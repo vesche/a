@@ -52,3 +52,47 @@ fn error(msg: str) -> void {
 fn with(key: str, val) -> map {
   ret map.set(#{}, key, val)
 }
+
+fn debugf(msg: str, ctx) -> void {
+  log("debug", msg, ctx)
+}
+
+fn infof(msg: str, ctx) -> void {
+  log("info", msg, ctx)
+}
+
+fn warnf(msg: str, ctx) -> void {
+  log("warn", msg, ctx)
+}
+
+fn errorf(msg: str, ctx) -> void {
+  log("error", msg, ctx)
+}
+
+fn timed(label: str, f) -> void {
+  let start = time.now()
+  f()
+  let elapsed = time.now() - start
+  log("info", label, #{"elapsed_ms": elapsed})
+}
+
+fn with2(k1: str, v1, k2: str, v2) -> map {
+  ret map.set(map.set(#{}, k1, v1), k2, v2)
+}
+
+fn child(base_ctx) -> map {
+  ret base_ctx
+}
+
+fn child_log(level: str, msg: str, base_ctx, extra) -> void {
+  let mut ctx = base_ctx
+  if type_of(extra) == "map" {
+    let keys = map.keys(extra)
+    let mut i = 0
+    while i < len(keys) {
+      ctx = map.set(ctx, keys[i], extra[keys[i]])
+      i = i + 1
+    }
+  }
+  log(level, msg, ctx)
+}

@@ -232,6 +232,12 @@ AValue fn_path_segments(AValue p);
 AValue fn_path_normalize(AValue p);
 AValue fn_path__last_slash(AValue s);
 AValue fn_path__last_dot(AValue s);
+AValue fn_path_home(void);
+AValue fn_path_temp(void);
+AValue fn_path_relative(AValue from, AValue to);
+AValue fn_path_has_extension(AValue p, AValue ext);
+AValue fn_path_join_all(AValue parts);
+AValue fn_path_is_hidden(AValue p);
 AValue fn_cli_esc_code(void);
 AValue fn_cli_wrap(AValue s, AValue code);
 AValue fn_cli_red(AValue s);
@@ -320,6 +326,10 @@ AValue fn_cmd_repl(void);
 AValue fn_cmd_pkg_init(void);
 AValue fn_cmd_pkg_add(AValue name, AValue source);
 AValue fn_cmd_pkg_install(void);
+AValue fn__collect_watch_files(AValue source_path);
+AValue fn__get_mtimes(AValue files);
+AValue fn__mtimes_changed(AValue old_mt, AValue new_mt);
+AValue fn_cmd_watch(AValue source_path);
 AValue fn__usage(void);
 AValue fn_main(void);
 
@@ -4372,7 +4382,7 @@ AValue fn_cgen__builtin_map(void) {
     AValue __ret = a_void();
     { AValue __old = m; m = a_map_new(27, "println", a_string("a_println"), "print", a_string("a_print"), "eprintln", a_string("a_eprintln"), "len", a_string("a_len"), "push", a_string("a_array_push"), "to_str", a_string("a_to_str"), "fail", a_string("a_fail"), "type_of", a_string("a_type_of"), "int", a_string("a_to_int"), "float", a_string("a_to_float"), "sort", a_string("a_sort"), "contains", a_string("a_contains"), "reverse_arr", a_string("a_reverse_arr"), "concat_arr", a_string("a_concat_arr"), "args", a_string("a_args"), "slice", a_string("a_array_slice"), "char_code", a_string("a_char_code"), "from_code", a_string("a_from_code"), "is_alpha", a_string("a_is_alpha"), "is_digit", a_string("a_is_digit"), "is_alnum", a_string("a_is_alnum"), "Ok", a_string("a_ok"), "Err", a_string("a_err"), "unwrap", a_string("a_unwrap"), "is_ok", a_string("a_is_ok"), "is_err", a_string("a_is_err"), "unwrap_or", a_string("a_unwrap_or")); a_release(__old); }
     { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
-    { AValue __old = m3; m3 = a_map_new(29, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "exec", a_string("a_exec"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
+    { AValue __old = m3; m3 = a_map_new(31, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "fs.stat", a_string("a_fs_stat"), "fs.watch", a_string("a_fs_watch"), "exec", a_string("a_exec"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
     { AValue __old = m4; m4 = a_map_new(71, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip"), "spawn", a_string("a_spawn"), "await", a_string("a_await"), "await_all", a_string("a_await_all"), "parallel_map", a_string("a_parallel_map"), "parallel_each", a_string("a_parallel_each"), "timeout", a_string("a_timeout")); a_release(__old); }
     __ret = a_map_merge(a_map_merge(a_map_merge(m, m2), m3), m4); goto __fn_cleanup;
 __fn_cleanup:
@@ -4385,7 +4395,7 @@ __fn_cleanup:
 
 AValue fn_cgen__void_builtins(void) {
     AValue __ret = a_void();
-    __ret = a_array_new(12, a_string("println"), a_string("print"), a_string("eprintln"), a_string("fail"), a_string("each"), a_string("parallel_each"), a_string("env.set"), a_string("time.sleep"), a_string("io.flush"), a_string("http.serve"), a_string("http.serve_static"), a_string("db.close")); goto __fn_cleanup;
+    __ret = a_array_new(13, a_string("println"), a_string("print"), a_string("eprintln"), a_string("fail"), a_string("each"), a_string("parallel_each"), a_string("env.set"), a_string("time.sleep"), a_string("io.flush"), a_string("http.serve"), a_string("http.serve_static"), a_string("db.close"), a_string("fs.watch")); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
 }
@@ -9866,6 +9876,130 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_path_home(void) {
+    AValue h = {0};
+    AValue __ret = a_void();
+    { AValue __old = h; h = a_env_get(a_string("HOME")); a_release(__old); }
+    if (a_truthy(a_neq(h, a_string("")))) {
+        __ret = a_retain(h); goto __fn_cleanup;
+    }
+    __ret = a_env_get(a_string("USERPROFILE")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(h);
+    return __ret;
+}
+
+AValue fn_path_temp(void) {
+    AValue t = {0}, t2 = {0};
+    AValue __ret = a_void();
+    { AValue __old = t; t = a_env_get(a_string("TMPDIR")); a_release(__old); }
+    if (a_truthy(a_neq(t, a_string("")))) {
+        __ret = a_retain(t); goto __fn_cleanup;
+    }
+    { AValue __old = t2; t2 = a_env_get(a_string("TEMP")); a_release(__old); }
+    if (a_truthy(a_neq(t2, a_string("")))) {
+        __ret = a_retain(t2); goto __fn_cleanup;
+    }
+    __ret = a_string("/tmp"); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    a_release(t2);
+    return __ret;
+}
+
+AValue fn_path_relative(AValue from, AValue to) {
+    AValue f_parts = {0}, t_parts = {0}, common = {0}, result = {0}, ups = {0}, i = {0}, j = {0};
+    AValue __ret = a_void();
+    from = a_retain(from);
+    to = a_retain(to);
+    { AValue __old = f_parts; f_parts = fn_path_segments(fn_path_normalize(from)); a_release(__old); }
+    { AValue __old = t_parts; t_parts = fn_path_segments(fn_path_normalize(to)); a_release(__old); }
+    { AValue __old = common; common = a_int(0); a_release(__old); }
+    while (a_truthy(a_and(a_lt(common, a_len(f_parts)), a_lt(common, a_len(t_parts))))) {
+        if (a_truthy(a_neq(a_array_get(f_parts, common), a_array_get(t_parts, common)))) {
+            break;
+        }
+        { AValue __old = common; common = a_add(common, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = result; result = a_string(""); a_release(__old); }
+    { AValue __old = ups; ups = a_sub(a_len(f_parts), common); a_release(__old); }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, ups))) {
+        if (a_truthy(a_neq(result, a_string("")))) {
+            { AValue __old = result; result = a_str_concat(result, a_string("/")); a_release(__old); }
+        }
+        { AValue __old = result; result = a_str_concat(result, a_string("..")); a_release(__old); }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = j; j = a_retain(common); a_release(__old); }
+    while (a_truthy(a_lt(j, a_len(t_parts)))) {
+        if (a_truthy(a_neq(result, a_string("")))) {
+            { AValue __old = result; result = a_str_concat(result, a_string("/")); a_release(__old); }
+        }
+        { AValue __old = result; result = a_str_concat(result, a_array_get(t_parts, j)); a_release(__old); }
+        { AValue __old = j; j = a_add(j, a_int(1)); a_release(__old); }
+    }
+    if (a_truthy(a_eq(result, a_string("")))) {
+        __ret = a_string("."); goto __fn_cleanup;
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(f_parts);
+    a_release(t_parts);
+    a_release(common);
+    a_release(result);
+    a_release(ups);
+    a_release(i);
+    a_release(j);
+    a_release(from);
+    a_release(to);
+    return __ret;
+}
+
+AValue fn_path_has_extension(AValue p, AValue ext) {
+    AValue __ret = a_void();
+    p = a_retain(p);
+    ext = a_retain(ext);
+    __ret = a_eq(fn_path_extension(p), ext); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(p);
+    a_release(ext);
+    return __ret;
+}
+
+AValue fn_path_join_all(AValue parts) {
+    AValue result = {0}, i = {0};
+    AValue __ret = a_void();
+    parts = a_retain(parts);
+    if (a_truthy(a_eq(a_len(parts), a_int(0)))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = result; result = a_array_get(parts, a_int(0)); a_release(__old); }
+    { AValue __old = i; i = a_int(1); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(parts)))) {
+        { AValue __old = result; result = fn_path_join(result, a_array_get(parts, i)); a_release(__old); }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(result);
+    a_release(i);
+    a_release(parts);
+    return __ret;
+}
+
+AValue fn_path_is_hidden(AValue p) {
+    AValue base = {0};
+    AValue __ret = a_void();
+    p = a_retain(p);
+    { AValue __old = base; base = fn_path_basename(p); a_release(__old); }
+    __ret = a_str_starts_with(base, a_string(".")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(base);
+    a_release(p);
+    return __ret;
+}
+
 AValue fn_cli_esc_code(void) {
     AValue __ret = a_void();
     __ret = a_from_code(a_int(27)); goto __fn_cleanup;
@@ -12481,6 +12615,152 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn__collect_watch_files(AValue source_path) {
+    AValue files = {0}, source = {0}, lines = {0}, trimmed = {0}, mod_path = {0}, parts = {0}, file = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    { AValue __old = files; files = a_array_new(1, source_path); a_release(__old); }
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+    if (a_truthy(a_eq(a_type_of(source), a_string("void")))) {
+        __ret = a_retain(files); goto __fn_cleanup;
+    }
+    { AValue __old = lines; lines = a_str_lines(source); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(lines);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue line = {0}, trimmed = {0}, mod_path = {0}, parts = {0}, file = {0};
+            line = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = trimmed; trimmed = a_str_trim(line); a_release(__old); }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("use ")))) {
+                { AValue __old = mod_path; mod_path = a_str_trim(a_str_slice(trimmed, a_int(4), a_len(trimmed))); a_release(__old); }
+                { AValue __old = parts; parts = a_str_split(mod_path, a_string(".")); a_release(__old); }
+                { AValue __old = file; file = a_add(a_str_join(parts, a_string("/")), a_string(".a")); a_release(__old); }
+                if (a_truthy(a_fs_exists(file))) {
+                    { AValue __old = files; files = a_array_push(files, file); a_release(__old); }
+                }
+            }
+            a_release(line);
+            a_release(trimmed);
+            a_release(mod_path);
+            a_release(parts);
+            a_release(file);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(files); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(files);
+    a_release(source);
+    a_release(lines);
+    a_release(trimmed);
+    a_release(mod_path);
+    a_release(parts);
+    a_release(file);
+    a_release(source_path);
+    return __ret;
+}
+
+AValue fn__get_mtimes(AValue files) {
+    AValue mtimes = {0}, s = {0};
+    AValue __ret = a_void();
+    files = a_retain(files);
+    { AValue __old = mtimes; mtimes = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(files);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue f = {0}, s = {0};
+            f = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = s; s = a_fs_stat(f); a_release(__old); }
+            if (a_truthy(a_eq(a_type_of(s), a_string("map")))) {
+                { AValue __old = mtimes; mtimes = a_array_push(mtimes, a_array_get(s, a_string("mtime"))); a_release(__old); }
+            } else {
+                { AValue __old = mtimes; mtimes = a_array_push(mtimes, a_int(0)); a_release(__old); }
+            }
+            a_release(f);
+            a_release(s);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(mtimes); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(mtimes);
+    a_release(s);
+    a_release(files);
+    return __ret;
+}
+
+AValue fn__mtimes_changed(AValue old_mt, AValue new_mt) {
+    AValue i = {0};
+    AValue __ret = a_void();
+    old_mt = a_retain(old_mt);
+    new_mt = a_retain(new_mt);
+    if (a_truthy(a_neq(a_len(old_mt), a_len(new_mt)))) {
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(i, a_len(old_mt)))) {
+        if (a_truthy(a_neq(a_array_get(old_mt, i), a_array_get(new_mt, i)))) {
+            __ret = a_bool(1); goto __fn_cleanup;
+        }
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+    __ret = a_bool(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(i);
+    a_release(old_mt);
+    a_release(new_mt);
+    return __ret;
+}
+
+AValue fn_cmd_watch(AValue source_path) {
+    AValue self = {0}, files = {0}, mtimes = {0}, r = {0}, new_files = {0}, new_mtimes = {0}, result = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    if (a_truthy(a_not(a_fs_exists(source_path)))) {
+        fn__die(a_add(a_string("watch: file not found: "), source_path));
+    }
+    { AValue __old = self; self = a_argv0(); a_release(__old); }
+    { AValue __old = files; files = fn__collect_watch_files(source_path); a_release(__old); }
+    { AValue __old = mtimes; mtimes = fn__get_mtimes(files); a_release(__old); }
+    a_eprintln(fn_cli_dim(a_add(a_add(a_string("[watch] watching "), a_to_str(a_len(files))), a_string(" file(s), press Ctrl+C to stop"))));
+    { AValue __old = r; r = a_exec(a_add(a_add(self, a_string(" run ")), source_path)); a_release(__old); }
+    if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stdout"))), a_int(0)))) {
+        a_print(a_array_get(r, a_string("stdout")));
+    }
+    if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stderr"))), a_int(0)))) {
+        a_eprintln(a_array_get(r, a_string("stderr")));
+    }
+    a_io_flush();
+    while (a_truthy(a_bool(1))) {
+        a_time_sleep(a_int(500));
+        { AValue __old = new_files; new_files = fn__collect_watch_files(source_path); a_release(__old); }
+        { AValue __old = new_mtimes; new_mtimes = fn__get_mtimes(new_files); a_release(__old); }
+        if (a_truthy(a_or(fn__mtimes_changed(mtimes, new_mtimes), a_neq(a_len(new_files), a_len(files))))) {
+            a_eprintln(fn_cli_dim(a_string("[watch] change detected, restarting...")));
+            { AValue __old = files; files = a_retain(new_files); a_release(__old); }
+            { AValue __old = mtimes; mtimes = fn__get_mtimes(files); a_release(__old); }
+            { AValue __old = result; result = a_exec(a_add(a_add(self, a_string(" run ")), source_path)); a_release(__old); }
+            if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
+                a_print(a_array_get(result, a_string("stdout")));
+            }
+            if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
+                a_eprintln(a_array_get(result, a_string("stderr")));
+            }
+            a_io_flush();
+        }
+    }
+__fn_cleanup:
+    a_release(self);
+    a_release(files);
+    a_release(mtimes);
+    a_release(r);
+    a_release(new_files);
+    a_release(new_mtimes);
+    a_release(result);
+    a_release(source_path);
+    return __ret;
+}
+
 AValue fn__usage(void) {
     AValue __ret = a_void();
     a_eprintln(a_string("a -- the a language native toolchain"));
@@ -12496,6 +12776,7 @@ AValue fn__usage(void) {
     a_eprintln(a_string("  a check <file.a>           type-check source file"));
     a_eprintln(a_string("  a test <dir/>              run test_*.a files in directory"));
     a_eprintln(a_string("  a lsp                      start language server (JSON-RPC over stdio)"));
+    a_eprintln(a_string("  a watch <file.a>           recompile and run on file change"));
     a_eprintln(a_string("  a cache clean              clear the compilation cache"));
     a_eprintln(a_string("  a pkg init                 create pkg.toml in current directory"));
     a_eprintln(a_string("  a pkg add <name> <source>  add a dependency"));
@@ -12636,6 +12917,13 @@ AValue fn_main(void) {
             __ret = a_void(); goto __fn_cleanup;
         }
         fn__die(a_string("usage: a cache clean"));
+        __ret = a_void(); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(subcmd, a_string("watch")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+            fn__die(a_string("watch requires a source file"));
+        }
+        fn_cmd_watch(a_array_get(argv, a_int(1)));
         __ret = a_void(); goto __fn_cleanup;
     }
     if (a_truthy(a_eq(subcmd, a_string("lsp")))) {

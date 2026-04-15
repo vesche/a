@@ -2655,3 +2655,38 @@ All 5 build paths updated to include `stb_impl.c`:
 | `src/lsp.a` | Version bump to 1.0.0 |
 | `plans/ROADMAP-v0.57-to-v1.0.md` | Marked v1.0 as DONE |
 | `README.md` | Updated for v1.0: gcc-only build, removed Rust references, updated stats |
+
+## v1.1.0 -- Watch and React
+
+Added file watching to the C runtime, a task scheduler to the stdlib, and a live-reload CLI subcommand.
+
+### Features
+
+- **`fs.watch(path, callback)`** -- Native file watcher using kqueue (macOS) and inotify (Linux). Watches files and directories, calling back with `#{"path": "...", "event": "modify"|"create"|"delete"}` on each change. Supports automatic detection of new files in watched directories.
+- **`fs.stat(path)`** -- Returns file metadata: `#{"size": int, "mtime": int, "is_dir": bool, "is_file": bool}`.
+- **`std/cron.a`** -- Lightweight task scheduler with `schedule(interval_ms, fn)`, `once(delay_ms, fn)`, `cancel(task)`, `run_loop(tasks)`, and `run_for(tasks, duration_ms)`.
+- **`a watch <file.a>`** -- CLI subcommand that compiles and runs a program, then polls for file changes (including imported modules) and automatically restarts on modification.
+
+### Tests
+
+- `test_watch.a` -- fs.stat, fs.stat on directories, fs.stat on missing files, fs.watch event detection, fs.watch stop on Err
+- `test_cron.a` -- schedule/once/cancel task creation, run_for duration bounds, once fires and stops, schedule fires multiple times, cancelled task skipped
+- Native test suite grew from 33 to 35 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `c_runtime/runtime.c` | Added `a_fs_watch()` (~120 lines, kqueue/inotify), `a_fs_stat()` (~15 lines) |
+| `c_runtime/runtime.h` | Declared `a_fs_watch`, `a_fs_stat` |
+| `std/compiler/cgen.a` | Added `"fs.watch"`, `"fs.stat"` to builtin map and void builtins |
+| `std/cron.a` | NEW -- schedule, once, cancel, run_loop, run_for (~100 lines) |
+| `src/cli.a` | Added `cmd_watch`, dispatch branch, `_collect_watch_files`, `_get_mtimes`, updated `_usage` |
+| `tests/native/test_watch.a` | NEW -- fs.watch and fs.stat tests |
+| `tests/native/test_cron.a` | NEW -- cron module tests |
+| `examples/watch_demo.a` | NEW -- file watcher demo |
+| `Cargo.toml` | Version bump to 1.1.0 |
+| `src/lsp.a` | Version bump to 1.1.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.1 as DONE |
+| `README.md` | Updated stats, CLI usage, module list |
+| `bootstrap/cli.c` | Regenerated |

@@ -564,6 +564,81 @@ fn cmd_pkg_install() {
   println("done (" + to_str(map.get(result, "installed")) + " packages installed)")
 }
 
+fn _collect_watch_files(source_path) -> [str] {
+  let mut files = [source_path]
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" { ret files }
+  let lines = str.lines(source)
+  for line in lines {
+    let trimmed = str.trim(line)
+    if str.starts_with(trimmed, "use ") {
+      let mod_path = str.trim(str.slice(trimmed, 4, len(trimmed)))
+      let parts = str.split(mod_path, ".")
+      let file = str.join(parts, "/") + ".a"
+      if fs.exists(file) {
+        files = push(files, file)
+      }
+    }
+  }
+  ret files
+}
+
+fn _get_mtimes(files) -> [int] {
+  let mut mtimes = []
+  for f in files {
+    let s = fs.stat(f)
+    if type_of(s) == "map" {
+      mtimes = push(mtimes, s["mtime"])
+    } else {
+      mtimes = push(mtimes, 0)
+    }
+  }
+  ret mtimes
+}
+
+fn _mtimes_changed(old_mt, new_mt) -> bool {
+  if len(old_mt) != len(new_mt) { ret true }
+  let mut i = 0
+  while i < len(old_mt) {
+    if old_mt[i] != new_mt[i] { ret true }
+    i = i + 1
+  }
+  ret false
+}
+
+fn cmd_watch(source_path) {
+  if !fs.exists(source_path) {
+    _die("watch: file not found: " + source_path)
+  }
+  let self = argv0()
+  let mut files = _collect_watch_files(source_path)
+  let mut mtimes = _get_mtimes(files)
+
+  eprintln(cli.dim("[watch] watching " + to_str(len(files)) + " file(s), press Ctrl+C to stop"))
+
+  let r = exec(self + " run " + source_path)
+  if len(r["stdout"]) > 0 { print(r["stdout"]) }
+  if len(r["stderr"]) > 0 { eprintln(r["stderr"]) }
+  io.flush()
+
+  ; Poll for changes and re-run
+  while true {
+    time.sleep(500)
+    let new_files = _collect_watch_files(source_path)
+    let new_mtimes = _get_mtimes(new_files)
+
+    if _mtimes_changed(mtimes, new_mtimes) || len(new_files) != len(files) {
+      eprintln(cli.dim("[watch] change detected, restarting..."))
+      files = new_files
+      mtimes = _get_mtimes(files)
+      let result = exec(self + " run " + source_path)
+      if len(result["stdout"]) > 0 { print(result["stdout"]) }
+      if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+      io.flush()
+    }
+  }
+}
+
 fn _usage() {
   eprintln("a -- the a language native toolchain")
   eprintln("")
@@ -578,6 +653,7 @@ fn _usage() {
   eprintln("  a check <file.a>           type-check source file")
   eprintln("  a test <dir/>              run test_*.a files in directory")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
+  eprintln("  a watch <file.a>           recompile and run on file change")
   eprintln("  a cache clean              clear the compilation cache")
   eprintln("  a pkg init                 create pkg.toml in current directory")
   eprintln("  a pkg add <name> <source>  add a dependency")
@@ -706,6 +782,12 @@ fn main() {
       ret
     }
     _die("usage: a cache clean")
+    ret
+  }
+
+  if subcmd == "watch" {
+    if len(argv) < 2 { _die("watch requires a source file") }
+    cmd_watch(argv[1])
     ret
   }
 
