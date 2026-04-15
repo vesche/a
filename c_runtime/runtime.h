@@ -275,6 +275,15 @@ AValue a_parallel_map(AValue arr, AValue func);
 AValue a_parallel_each(AValue arr, AValue func);
 AValue a_timeout(AValue ms, AValue func);
 
+/* Async event loop */
+AValue a_async_http_get(AValue url, AValue headers);
+AValue a_async_http_post(AValue url, AValue body, AValue headers);
+AValue a_async_http_put(AValue url, AValue body, AValue headers);
+AValue a_async_http_patch(AValue url, AValue body, AValue headers);
+AValue a_async_http_delete(AValue url, AValue headers);
+AValue a_async_await(AValue handle);
+AValue a_async_gather(AValue handles);
+
 /* Database (SQLite) */
 AValue a_db_open(AValue path);
 AValue a_db_close(AValue db);

@@ -1,0 +1,123 @@
+; std/vector.a -- In-process vector store backed by SQLite
+;
+; Embeddings are stored as JSON arrays. Search uses brute-force
+; cosine similarity, which is efficient for agent-scale collections
+; (thousands of vectors, not millions).
+
+fn open(path, dim) -> map {
+  let handle = db.open(path)
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS vectors (id TEXT PRIMARY KEY, embedding TEXT NOT NULL, metadata TEXT)")
+  ret #{"handle": handle, "dim": dim}
+}
+
+fn close(store) {
+  db.close(store["handle"])
+}
+
+fn add(store, id, embedding) {
+  let h = store["handle"]
+  let emb_json = json.stringify(embedding)
+  db.query(h, "INSERT OR REPLACE INTO vectors (id, embedding, metadata) VALUES (?, ?, ?)", [id, emb_json, ""])
+}
+
+fn add_with(store, id, embedding, metadata) {
+  let h = store["handle"]
+  let emb_json = json.stringify(embedding)
+  let meta_json = json.stringify(metadata)
+  db.query(h, "INSERT OR REPLACE INTO vectors (id, embedding, metadata) VALUES (?, ?, ?)", [id, emb_json, meta_json])
+}
+
+fn remove(store, id) {
+  db.query(store["handle"], "DELETE FROM vectors WHERE id = ?", [id])
+}
+
+fn count(store) -> int {
+  let rows = db.query(store["handle"], "SELECT COUNT(*) as n FROM vectors", [])
+  ret rows[0]["n"]
+}
+
+fn _build_entry(row_id, emb_json, meta_raw) {
+  let emb = json.parse(emb_json)
+  let mut meta = #{}
+  if type_of(meta_raw) == "str" && len(meta_raw) > 0 {
+    meta = json.parse(meta_raw)
+  }
+  let mut m = #{"id": row_id, "embedding": emb}
+  m = map.set(m, "metadata", meta)
+  ret m
+}
+
+fn get(store, id) {
+  let rows = db.query(store["handle"], "SELECT id, embedding, metadata FROM vectors WHERE id = ?", [id])
+  if len(rows) == 0 { ret Err("not found") }
+  let row = rows[0]
+  ret Ok(_build_entry(row["id"], row["embedding"], row["metadata"]))
+}
+
+fn _parse_meta(raw) {
+  if type_of(raw) != "str" || len(raw) == 0 { ret #{} }
+  ret json.parse(raw)
+}
+
+fn _dot(a, b) -> float {
+  let mut sum = 0.0
+  let mut i = 0
+  let n = len(a)
+  while i < n {
+    sum = sum + float(a[i]) * float(b[i])
+    i = i + 1
+  }
+  ret sum
+}
+
+fn _magnitude(v) -> float {
+  let mut sum = 0.0
+  let mut i = 0
+  let n = len(v)
+  while i < n {
+    let val = float(v[i])
+    sum = sum + val * val
+    i = i + 1
+  }
+  ret math.sqrt(sum)
+}
+
+fn _cosine_sim(a, b) -> float {
+  let d = _dot(a, b)
+  let ma = _magnitude(a)
+  let mb = _magnitude(b)
+  if ma == 0.0 || mb == 0.0 { ret 0.0 }
+  ret d / (ma * mb)
+}
+
+fn search(store, query_embedding, k) -> [map] {
+  let rows = db.query(store["handle"], "SELECT id, embedding, metadata FROM vectors", [])
+  let mut scored = []
+  let mut i = 0
+  while i < len(rows) {
+    let row = rows[i]
+    let emb = json.parse(row["embedding"])
+    let sim = _cosine_sim(query_embedding, emb)
+    scored = push(scored, #{
+      "id": row["id"],
+      "score": sim,
+      "metadata": _parse_meta(row["metadata"])
+    })
+    i = i + 1
+  }
+
+  scored = sort_by(scored, fn(a, b) {
+    if a["score"] > b["score"] { ret -1 }
+    if a["score"] < b["score"] { ret 1 }
+    ret 0
+  })
+
+  if len(scored) > k {
+    ret take(scored, k)
+  }
+  ret scored
+}
+
+fn clear(store) {
+  db.exec(store["handle"], "DELETE FROM vectors")
+}

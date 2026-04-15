@@ -3663,6 +3663,540 @@ AValue a_ws_close(AValue handle) {
     return a_void();
 }
 
+/* --- Async Event Loop --- */
+
+#define MAX_ASYNC_OPS 256
+
+typedef enum {
+    ASYNC_CONNECTING,
+    ASYNC_TLS,
+    ASYNC_SENDING,
+    ASYNC_RECV_HEADERS,
+    ASYNC_RECV_BODY,
+    ASYNC_DONE,
+    ASYNC_ERROR
+} AsyncState;
+
+typedef struct {
+    int active;
+    AsyncState state;
+    HttpConn conn;
+    char host[256];
+    int port;
+    int use_tls;
+    char* req_buf;
+    int req_len;
+    int req_sent;
+    char* resp_buf;
+    int resp_len;
+    int resp_cap;
+    int headers_parsed;
+    int http_status;
+    int content_length;
+    int chunked;
+    int gzipped;
+    AValue resp_headers;
+    char* body_buf;
+    int body_len;
+    int body_cap;
+    AValue result;
+    int resolved;
+} AsyncOp;
+
+static AsyncOp async_ops[MAX_ASYNC_OPS];
+
+static int async_alloc_slot(void) {
+    for (int i = 0; i < MAX_ASYNC_OPS; i++) {
+        if (!async_ops[i].active) return i;
+    }
+    return -1;
+}
+
+static void async_free_op(int slot) {
+    AsyncOp* op = &async_ops[slot];
+    if (op->req_buf) { free(op->req_buf); op->req_buf = NULL; }
+    if (op->resp_buf) { free(op->resp_buf); op->resp_buf = NULL; }
+    if (op->body_buf) { free(op->body_buf); op->body_buf = NULL; }
+    if (op->conn.fd >= 0 && op->state != ASYNC_DONE && op->state != ASYNC_ERROR) {
+        http_conn_close(&op->conn);
+    }
+    op->active = 0;
+}
+
+static int async_decode_chunked(const char* raw, int raw_len, char** out, int* out_len) {
+    *out = malloc(raw_len > 0 ? raw_len : 1);
+    *out_len = 0;
+    const char* p = raw;
+    const char* end = raw + raw_len;
+    while (p < end) {
+        const char* crlf = memmem(p, end - p, "\r\n", 2);
+        if (!crlf) break;
+        long csize = strtol(p, NULL, 16);
+        if (csize <= 0) break;
+        p = crlf + 2;
+        if (p + csize > end) break;
+        memcpy(*out + *out_len, p, csize);
+        *out_len += (int)csize;
+        p += csize;
+        if (p + 2 <= end && p[0] == '\r' && p[1] == '\n') p += 2;
+    }
+    return 0;
+}
+
+static void async_finish_body(int slot) {
+    AsyncOp* op = &async_ops[slot];
+    http_conn_close(&op->conn);
+
+    char* final_body = op->body_buf;
+    int final_len = op->body_len;
+    int free_final = 0;
+
+    if (op->chunked && final_body && final_len > 0) {
+        char* decoded = NULL;
+        int decoded_len = 0;
+        async_decode_chunked(final_body, final_len, &decoded, &decoded_len);
+        final_body = decoded;
+        final_len = decoded_len;
+        free_final = 1;
+    }
+
+    if (op->gzipped && final_body && final_len > 0) {
+        AValue gz_in = a_string_len(final_body, final_len);
+        AValue decompressed = a_compress_gunzip(gz_in);
+        a_release(gz_in);
+        if (free_final) free(final_body);
+        if (decompressed.tag == TAG_STRING) {
+            final_body = decompressed.sval->data;
+            final_len = decompressed.sval->len;
+            AValue res = a_map_new(0);
+            res = a_map_set(res, a_string("status"), a_int(op->http_status));
+            res = a_map_set(res, a_string("body"), a_string_len(final_body, final_len));
+            res = a_map_set(res, a_string("headers"), op->resp_headers);
+            a_release(decompressed);
+            op->result = res;
+            op->state = ASYNC_DONE;
+            op->resolved = 1;
+            return;
+        }
+        final_body = "";
+        final_len = 0;
+        free_final = 0;
+    }
+
+    AValue res = a_map_new(0);
+    res = a_map_set(res, a_string("status"), a_int(op->http_status));
+    res = a_map_set(res, a_string("body"), a_string_len(final_body ? final_body : "", final_len));
+    res = a_map_set(res, a_string("headers"), op->resp_headers);
+    if (free_final && final_body) free(final_body);
+    op->result = res;
+    op->state = ASYNC_DONE;
+    op->resolved = 1;
+}
+
+static void async_advance(int slot, short revents) {
+    AsyncOp* op = &async_ops[slot];
+    if (!op->active || op->resolved) return;
+
+    switch (op->state) {
+    case ASYNC_CONNECTING: {
+        if (revents & (POLLERR | POLLHUP)) {
+            op->result = a_err(a_string("async: connection error"));
+            op->state = ASYNC_ERROR;
+            op->resolved = 1;
+            return;
+        }
+        if (!(revents & POLLOUT)) return;
+        int err = 0;
+        socklen_t elen = sizeof(err);
+        getsockopt(op->conn.fd, SOL_SOCKET, SO_ERROR, &err, &elen);
+        if (err != 0) {
+            op->result = a_err(a_string("async: connection refused"));
+            op->state = ASYNC_ERROR;
+            op->resolved = 1;
+            return;
+        }
+        if (op->use_tls) {
+            op->state = ASYNC_TLS;
+        } else {
+            op->state = ASYNC_SENDING;
+            return;
+        }
+    }
+    /* falls through to TLS */
+    case ASYNC_TLS: {
+        int flags = fcntl(op->conn.fd, F_GETFL, 0);
+        fcntl(op->conn.fd, F_SETFL, flags & ~O_NONBLOCK);
+        if (http_tls_connect(&op->conn, op->host) != 0) {
+            fcntl(op->conn.fd, F_SETFL, flags | O_NONBLOCK);
+            op->result = a_err(a_string("async: TLS handshake failed"));
+            op->state = ASYNC_ERROR;
+            op->resolved = 1;
+            return;
+        }
+        fcntl(op->conn.fd, F_SETFL, flags | O_NONBLOCK);
+        op->state = ASYNC_SENDING;
+        return;
+    }
+
+    case ASYNC_SENDING: {
+        if (!(revents & POLLOUT) && revents != 0) return;
+        int remaining = op->req_len - op->req_sent;
+        int n = http_io_write(&op->conn, op->req_buf + op->req_sent, remaining);
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) return;
+            op->result = a_err(a_string("async: send failed"));
+            op->state = ASYNC_ERROR;
+            op->resolved = 1;
+            return;
+        }
+        op->req_sent += n;
+        if (op->req_sent >= op->req_len) {
+            free(op->req_buf);
+            op->req_buf = NULL;
+            op->state = ASYNC_RECV_HEADERS;
+        }
+        return;
+    }
+
+    case ASYNC_RECV_HEADERS: {
+        if (!(revents & POLLIN) && revents != 0) return;
+        if (op->resp_len >= op->resp_cap - 1) {
+            op->resp_cap *= 2;
+            op->resp_buf = realloc(op->resp_buf, op->resp_cap);
+        }
+        int n = http_io_read(&op->conn, op->resp_buf + op->resp_len,
+                             op->resp_cap - op->resp_len - 1);
+        if (n < 0) return;
+        if (n == 0 && op->resp_len == 0) {
+            op->result = a_err(a_string("async: no response"));
+            op->state = ASYNC_ERROR;
+            op->resolved = 1;
+            return;
+        }
+        op->resp_len += n;
+        op->resp_buf[op->resp_len] = '\0';
+        char* header_end = strstr(op->resp_buf, "\r\n\r\n");
+        if (!header_end) {
+            if (n == 0) header_end = op->resp_buf + op->resp_len;
+            else return;
+        }
+        char* first_space = strchr(op->resp_buf, ' ');
+        if (first_space) op->http_status = atoi(first_space + 1);
+        op->resp_headers = a_map_new(0);
+        op->content_length = -1;
+        char* hdr_start = strstr(op->resp_buf, "\r\n");
+        if (hdr_start) {
+            hdr_start += 2;
+            while (hdr_start < header_end) {
+                char* eol = strstr(hdr_start, "\r\n");
+                if (!eol || eol == hdr_start) break;
+                char* colon = memchr(hdr_start, ':', eol - hdr_start);
+                if (colon) {
+                    int klen = (int)(colon - hdr_start);
+                    char key[256];
+                    if (klen >= (int)sizeof(key)) klen = (int)sizeof(key) - 1;
+                    for (int j = 0; j < klen; j++) key[j] = (char)tolower((unsigned char)hdr_start[j]);
+                    key[klen] = '\0';
+                    char* val = colon + 1;
+                    while (val < eol && *val == ' ') val++;
+                    int vlen = (int)(eol - val);
+                    op->resp_headers = a_map_set(op->resp_headers, a_string(key), a_string_len(val, vlen));
+                    if (strcmp(key, "content-length") == 0) op->content_length = atoi(val);
+                    if (strcmp(key, "transfer-encoding") == 0 && strstr(val, "chunked")) op->chunked = 1;
+                    if (strcmp(key, "content-encoding") == 0 && strstr(val, "gzip")) op->gzipped = 1;
+                }
+                hdr_start = eol + 2;
+            }
+        }
+        op->headers_parsed = 1;
+        char* body_start = header_end + 4;
+        int already = (int)(op->resp_len - (body_start - op->resp_buf));
+        if (already < 0) already = 0;
+        if (already > 0) {
+            while (already > op->body_cap) { op->body_cap *= 2; op->body_buf = realloc(op->body_buf, op->body_cap); }
+            memcpy(op->body_buf, body_start, already);
+            op->body_len = already;
+        }
+        op->state = ASYNC_RECV_BODY;
+        if (!op->chunked && op->content_length >= 0 && op->body_len >= op->content_length) {
+            async_finish_body(slot);
+            return;
+        }
+        if (n == 0) { async_finish_body(slot); return; }
+        return;
+    }
+
+    case ASYNC_RECV_BODY: {
+        if (!(revents & POLLIN) && revents != 0) return;
+        if (op->body_len >= op->body_cap - 1) {
+            op->body_cap *= 2;
+            op->body_buf = realloc(op->body_buf, op->body_cap);
+        }
+        int n = http_io_read(&op->conn, op->body_buf + op->body_len,
+                             op->body_cap - op->body_len - 1);
+        if (n < 0) return;
+        if (n > 0) op->body_len += n;
+        if (!op->chunked && op->content_length >= 0) {
+            if (op->body_len >= op->content_length || n == 0) { async_finish_body(slot); return; }
+        } else {
+            if (n == 0) { async_finish_body(slot); return; }
+        }
+        return;
+    }
+
+    case ASYNC_DONE:
+    case ASYNC_ERROR:
+        return;
+    }
+}
+
+static void async_event_tick(int timeout_ms) {
+    struct pollfd pfds[MAX_ASYNC_OPS];
+    int slot_map[MAX_ASYNC_OPS];
+    int nfds = 0;
+
+    for (int i = 0; i < MAX_ASYNC_OPS; i++) {
+        AsyncOp* op = &async_ops[i];
+        if (!op->active || op->resolved) continue;
+        if (op->state == ASYNC_TLS) {
+            async_advance(i, POLLOUT);
+            if (op->resolved) continue;
+        }
+        pfds[nfds].fd = op->conn.fd;
+        pfds[nfds].events = 0;
+        pfds[nfds].revents = 0;
+        switch (op->state) {
+        case ASYNC_CONNECTING:
+        case ASYNC_SENDING:
+            pfds[nfds].events = POLLOUT;
+            break;
+        case ASYNC_RECV_HEADERS:
+        case ASYNC_RECV_BODY:
+            pfds[nfds].events = POLLIN;
+            break;
+        default:
+            continue;
+        }
+        slot_map[nfds] = i;
+        nfds++;
+    }
+    if (nfds == 0) return;
+    int ret = poll(pfds, nfds, timeout_ms);
+    if (ret <= 0) return;
+    for (int i = 0; i < nfds; i++) {
+        if (pfds[i].revents) {
+            async_advance(slot_map[i], pfds[i].revents);
+        }
+    }
+}
+
+static AValue async_http_start(const char* method, const char* url_str,
+                                const char* body, int body_len, AValue req_headers) {
+    int slot = async_alloc_slot();
+    if (slot < 0) return a_err(a_string("async: too many concurrent operations"));
+
+    AsyncOp* op = &async_ops[slot];
+    memset(op, 0, sizeof(AsyncOp));
+    op->active = 1;
+    op->conn.fd = -1;
+
+    HttpUrl url;
+    if (http_parse_url(url_str, &url) != 0) {
+        op->active = 0;
+        return a_err(a_string("async: invalid URL"));
+    }
+
+    op->use_tls = (strcmp(url.scheme, "https") == 0);
+    strncpy(op->host, url.host, sizeof(op->host) - 1);
+    op->port = url.port;
+
+    size_t req_cap = 4096 + body_len;
+    op->req_buf = malloc(req_cap);
+    int rlen = snprintf(op->req_buf, req_cap, "%s %s HTTP/1.1\r\nHost: %s\r\n",
+                        method, url.path, url.host);
+    int has_ct = 0, has_ae = 0;
+    if (req_headers.tag == TAG_MAP) {
+        for (int i = 0; i < req_headers.mval->len; i++) {
+            if (req_headers.mval->vals[i].tag != TAG_STRING) continue;
+            rlen += snprintf(op->req_buf + rlen, req_cap - rlen, "%s: %s\r\n",
+                             req_headers.mval->keys[i], req_headers.mval->vals[i].sval->data);
+            if (strcasecmp(req_headers.mval->keys[i], "content-type") == 0) has_ct = 1;
+            if (strcasecmp(req_headers.mval->keys[i], "accept-encoding") == 0) has_ae = 1;
+        }
+    }
+    if (body && body_len > 0 && !has_ct)
+        rlen += snprintf(op->req_buf + rlen, req_cap - rlen, "Content-Type: application/json\r\n");
+    if (body && body_len > 0)
+        rlen += snprintf(op->req_buf + rlen, req_cap - rlen, "Content-Length: %d\r\n", body_len);
+    if (!has_ae)
+        rlen += snprintf(op->req_buf + rlen, req_cap - rlen, "Accept-Encoding: gzip\r\n");
+    rlen += snprintf(op->req_buf + rlen, req_cap - rlen, "Connection: close\r\n\r\n");
+    if (body && body_len > 0) {
+        memcpy(op->req_buf + rlen, body, body_len);
+        rlen += body_len;
+    }
+    op->req_len = rlen;
+    op->req_sent = 0;
+
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", url.port);
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(url.host, port_str, &hints, &res) != 0) {
+        async_free_op(slot);
+        return a_err(a_string("async: DNS resolution failed"));
+    }
+    int fd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (fd < 0) {
+        freeaddrinfo(res);
+        async_free_op(slot);
+        return a_err(a_string("async: socket creation failed"));
+    }
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    int rc = connect(fd, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+
+    op->conn.fd = fd;
+    op->conn.tls_ctx = NULL;
+    op->conn.use_tls = 0;
+
+    if (rc == 0) {
+        op->state = op->use_tls ? ASYNC_TLS : ASYNC_SENDING;
+    } else if (errno == EINPROGRESS) {
+        op->state = ASYNC_CONNECTING;
+    } else {
+        close(fd);
+        op->conn.fd = -1;
+        async_free_op(slot);
+        return a_err(a_string("async: connection failed"));
+    }
+
+    op->resp_cap = 8192;
+    op->resp_buf = malloc(op->resp_cap);
+    op->resp_len = 0;
+    op->body_cap = 8192;
+    op->body_buf = malloc(op->body_cap);
+    op->body_len = 0;
+
+    return a_ok(a_int(slot));
+}
+
+AValue a_async_http_get(AValue url, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("async.http_get: expected string url"));
+    return async_http_start("GET", url.sval->data, NULL, 0, headers);
+}
+
+AValue a_async_http_post(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("async.http_post: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : NULL;
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return async_http_start("POST", url.sval->data, b, blen, headers);
+}
+
+AValue a_async_http_put(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("async.http_put: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : NULL;
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return async_http_start("PUT", url.sval->data, b, blen, headers);
+}
+
+AValue a_async_http_patch(AValue url, AValue body, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("async.http_patch: expected string url"));
+    const char* b = (body.tag == TAG_STRING) ? body.sval->data : NULL;
+    int blen = (body.tag == TAG_STRING) ? body.sval->len : 0;
+    return async_http_start("PATCH", url.sval->data, b, blen, headers);
+}
+
+AValue a_async_http_delete(AValue url, AValue headers) {
+    if (url.tag != TAG_STRING) return a_err(a_string("async.http_delete: expected string url"));
+    return async_http_start("DELETE", url.sval->data, NULL, 0, headers);
+}
+
+AValue a_async_await(AValue handle) {
+    int slot = -1;
+    if (handle.tag == TAG_RESULT) {
+        if (!handle.rval.is_ok) return a_err(a_retain(*handle.rval.inner));
+        AValue inner = *handle.rval.inner;
+        if (inner.tag != TAG_INT) return a_err(a_string("async.await: invalid handle"));
+        slot = (int)inner.ival;
+    } else if (handle.tag == TAG_INT) {
+        slot = (int)handle.ival;
+    } else {
+        return a_err(a_string("async.await: expected int or Result handle"));
+    }
+    if (slot < 0 || slot >= MAX_ASYNC_OPS || !async_ops[slot].active)
+        return a_err(a_string("async.await: invalid or expired handle"));
+
+    while (!async_ops[slot].resolved) {
+        async_event_tick(50);
+    }
+    AValue result = a_retain(async_ops[slot].result);
+    async_free_op(slot);
+    return result;
+}
+
+AValue a_async_gather(AValue handles) {
+    if (handles.tag != TAG_ARRAY) return a_err(a_string("async.gather: expected array"));
+    int n = handles.aval->len;
+    int* slots = malloc(n * sizeof(int));
+    int* is_err_handle = calloc(n, sizeof(int));
+    AValue* err_vals = malloc(n * sizeof(AValue));
+
+    for (int i = 0; i < n; i++) {
+        AValue h = handles.aval->items[i];
+        if (h.tag == TAG_RESULT) {
+            if (!h.rval.is_ok) {
+                slots[i] = -1;
+                is_err_handle[i] = 1;
+                err_vals[i] = a_err(a_retain(*h.rval.inner));
+            } else {
+                AValue inner = *h.rval.inner;
+                slots[i] = (inner.tag == TAG_INT) ? (int)inner.ival : -1;
+            }
+        } else if (h.tag == TAG_INT) {
+            slots[i] = (int)h.ival;
+        } else {
+            slots[i] = -1;
+            is_err_handle[i] = 1;
+            err_vals[i] = a_err(a_string("async.gather: invalid handle"));
+        }
+    }
+
+    for (;;) {
+        int all_done = 1;
+        for (int i = 0; i < n; i++) {
+            if (is_err_handle[i]) continue;
+            if (slots[i] >= 0 && slots[i] < MAX_ASYNC_OPS &&
+                async_ops[slots[i]].active && !async_ops[slots[i]].resolved) {
+                all_done = 0;
+                break;
+            }
+        }
+        if (all_done) break;
+        async_event_tick(50);
+    }
+
+    AValue results = a_array_new(0);
+    for (int i = 0; i < n; i++) {
+        if (is_err_handle[i]) {
+            results = a_array_push(results, err_vals[i]);
+        } else if (slots[i] >= 0 && slots[i] < MAX_ASYNC_OPS && async_ops[slots[i]].active) {
+            results = a_array_push(results, a_retain(async_ops[slots[i]].result));
+            async_free_op(slots[i]);
+        } else {
+            results = a_array_push(results, a_err(a_string("async.gather: invalid handle")));
+        }
+    }
+    free(slots);
+    free(is_err_handle);
+    free(err_vals);
+    return results;
+}
+
 /* --- Database (SQLite) --- */
 
 #include "sqlite3.h"

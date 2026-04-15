@@ -2690,3 +2690,69 @@ Added file watching to the C runtime, a task scheduler to the stdlib, and a live
 | `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.1 as DONE |
 | `README.md` | Updated stats, CLI usage, module list |
 | `bootstrap/cli.c` | Regenerated |
+
+## v1.2.0 -- Memory
+
+Added persistent storage primitives: a key-value store, a vector store for semantic search, and a caching layer with TTL and LRU eviction. All built as pure "a" modules on top of the bundled SQLite -- zero external dependencies.
+
+### Features
+
+- **`std/kv.a`** -- Persistent key-value store backed by SQLite. Values are auto-serialized via JSON. API: `open(path)`, `get(db, key)`, `set(db, key, value)`, `delete(db, key)`, `has(db, key)`, `list(db, prefix)`, `keys(db)`, `count(db)`, `clear(db)`, `close(db)`.
+- **`std/vector.a`** -- In-process vector store for semantic memory. Embeddings stored as JSON arrays in SQLite. Brute-force cosine similarity search, efficient for agent-scale (thousands of vectors). API: `open(path, dim)`, `add(store, id, embedding)`, `add_with(store, id, embedding, metadata)`, `get(store, id)`, `search(store, query, k)`, `remove(store, id)`, `count(store)`, `clear(store)`, `close(store)`.
+- **`std/cache.a`** -- Caching layer with two modes: persistent (SQLite-backed, survives restarts) and in-memory (map-based, fast). Both support TTL expiration and LRU eviction. API: `open(path)` / `create(max_size)`, `get(c, key)`, `set(c, key, value, ttl_ms)`, `get_or_set(c, key, ttl_ms, f)`, `evict_expired(c)`, `evict_lru(c, max_size)`, `delete(c, key)`, `has(c, key)`, `count(c)`, `clear(c)`, `close(c)`.
+
+### Tests
+
+- `test_kv.a` -- 13 tests: set/get for strings, ints, arrays, maps; missing key; overwrite; delete; has; count; keys; list prefix; clear; persistence across open/close
+- `test_vector.a` -- 10 tests: open/close; add/count; get; get missing; remove; cosine similarity search; k > store size; overwrite; metadata; clear
+- `test_cache.a` -- 16 tests: persistent set/get, miss, has, delete, count, clear, TTL expiry, no-TTL, LRU eviction, get_or_set; memory set/get, miss, count, delete, clear, max_size eviction
+- Native test suite grew from 35 to 38 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `std/kv.a` | NEW -- persistent key-value store (~70 lines) |
+| `std/vector.a` | NEW -- vector store with cosine similarity search (~110 lines) |
+| `std/cache.a` | NEW -- cache layer, persistent + in-memory modes (~170 lines) |
+| `tests/native/test_kv.a` | NEW -- 13 KV store tests |
+| `tests/native/test_vector.a` | NEW -- 10 vector store tests |
+| `tests/native/test_cache.a` | NEW -- 16 cache tests |
+| `Cargo.toml` | Version bump to 1.2.0 |
+| `src/lsp.a` | Version bump to 1.2.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.2 as DONE |
+| `README.md` | Updated stats, module list |
+| `bootstrap/cli.c` | Regenerated |
+
+## v1.3.0 -- Event Loop
+
+### Features
+
+- **Async event loop in C runtime** -- `poll()`-based single-threaded multiplexing for non-blocking HTTP. Internal state machine drives up to 256 concurrent async operations through CONNECTING → TLS → SENDING → RECV_HEADERS → RECV_BODY → DONE. Non-blocking TCP connect, send, and receive. TLS handshake done in brief blocking phase, all subsequent I/O non-blocking. Handles chunked transfer encoding and gzip decompression.
+- **`async.http_get(url, headers)`**, **`async.http_post(url, body, headers)`**, **`async.http_put`**, **`async.http_patch`**, **`async.http_delete`** -- start non-blocking HTTP requests, return future handles (`Ok(int)`).
+- **`async.await(future)`** -- drives the event loop until the given future resolves. Returns the HTTP response map (status, body, headers). Handles Err futures gracefully (returns Err as-is).
+- **`async.gather(futures_array)`** -- drives the event loop until ALL futures resolve concurrently. Returns array of results in the same order. Multiplexes all active sockets through `poll()`.
+- **`std/pool.a`** -- generic resource pool with functional immutable state. `pool.create(factory, max_size)`, `pool.acquire(p)` → `Ok(#{pool, conn})` or `Err("pool exhausted")`, `pool.release(p, conn)` → updated pool, `pool.drain(p)`, `pool.stats(p)`, `pool.size(p)`.
+
+### Tests
+
+- `test_async.a` -- 12 tests: async GET/POST/PUT/PATCH/DELETE with await, gather with multiple requests, gather with mixed methods, 404 response, await on Err handle, custom headers, empty gather, JSON response parsing
+- `test_pool.a` -- 10 tests: create, acquire via factory, release/reuse, max_size enforcement, release after exhaustion, stats, drain, size, single-size pool
+- Native test suite grew from 38 to 40 suites.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `c_runtime/runtime.c` | NEW async event loop: `poll()`-based multiplexer, HTTP state machine, 7 public functions (~350 lines) |
+| `c_runtime/runtime.h` | Added declarations for async.* builtins |
+| `std/compiler/cgen.a` | Added `async.http_get/post/put/patch/delete`, `async.await`, `async.gather` to `_builtin_map()` |
+| `std/pool.a` | NEW -- generic resource pool (~65 lines) |
+| `tests/native/test_async.a` | NEW -- 12 async event loop tests |
+| `tests/native/test_pool.a` | NEW -- 10 resource pool tests |
+| `tests/native/_http_server_async.a` | NEW -- test server with slow endpoint |
+| `Cargo.toml` | Version bump to 1.3.0 |
+| `src/lsp.a` | Version bump to 1.3.0 |
+| `plans/ROADMAP-v1.1-to-v2.0.md` | Marked v1.3 as DONE |
+| `README.md` | Updated stats, module list |
+| `bootstrap/cli.c` | Regenerated |

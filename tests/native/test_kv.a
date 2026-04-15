@@ -1,0 +1,167 @@
+; test_kv.a -- tests for std/kv.a persistent key-value store
+
+use std.kv
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn test_set_get_string() {
+  let store = kv.open(":memory:")
+  kv.set(store, "name", "alice")
+  let val = unwrap(kv.get(store, "name"))
+  assert(val == "alice", "expected alice, got " + to_str(val))
+  kv.close(store)
+  println("  ok set/get string")
+}
+
+fn test_set_get_int() {
+  let store = kv.open(":memory:")
+  kv.set(store, "age", 30)
+  let val = unwrap(kv.get(store, "age"))
+  assert(val == 30, "expected 30, got " + to_str(val))
+  kv.close(store)
+  println("  ok set/get int")
+}
+
+fn test_set_get_array() {
+  let store = kv.open(":memory:")
+  kv.set(store, "items", [1, 2, 3])
+  let val = unwrap(kv.get(store, "items"))
+  assert(len(val) == 3, "expected 3 items")
+  assert(val[0] == 1, "expected first=1")
+  assert(val[2] == 3, "expected third=3")
+  kv.close(store)
+  println("  ok set/get array")
+}
+
+fn test_set_get_map() {
+  let store = kv.open(":memory:")
+  kv.set(store, "config", #{"debug": true, "level": 5})
+  let val = unwrap(kv.get(store, "config"))
+  assert(val["debug"] == true, "expected debug=true")
+  assert(val["level"] == 5, "expected level=5")
+  kv.close(store)
+  println("  ok set/get map")
+}
+
+fn test_get_missing() {
+  let store = kv.open(":memory:")
+  let result = kv.get(store, "nope")
+  assert(is_err(result), "expected Err for missing key")
+  kv.close(store)
+  println("  ok get missing returns Err")
+}
+
+fn test_overwrite() {
+  let store = kv.open(":memory:")
+  kv.set(store, "x", 1)
+  kv.set(store, "x", 2)
+  let val = unwrap(kv.get(store, "x"))
+  assert(val == 2, "expected 2 after overwrite, got " + to_str(val))
+  kv.close(store)
+  println("  ok overwrite")
+}
+
+fn test_delete() {
+  let store = kv.open(":memory:")
+  kv.set(store, "x", 1)
+  kv.delete(store, "x")
+  assert(!kv.has(store, "x"), "expected key to be deleted")
+  assert(kv.count(store) == 0, "expected count 0")
+  kv.close(store)
+  println("  ok delete")
+}
+
+fn test_has() {
+  let store = kv.open(":memory:")
+  kv.set(store, "x", 1)
+  assert(kv.has(store, "x") == true, "expected has=true")
+  assert(kv.has(store, "y") == false, "expected has=false")
+  kv.close(store)
+  println("  ok has")
+}
+
+fn test_count() {
+  let store = kv.open(":memory:")
+  assert(kv.count(store) == 0, "expected count 0")
+  kv.set(store, "a", 1)
+  kv.set(store, "b", 2)
+  assert(kv.count(store) == 2, "expected count 2")
+  kv.close(store)
+  println("  ok count")
+}
+
+fn test_keys() {
+  let store = kv.open(":memory:")
+  kv.set(store, "beta", 2)
+  kv.set(store, "alpha", 1)
+  kv.set(store, "gamma", 3)
+  let ks = kv.keys(store)
+  assert(len(ks) == 3, "expected 3 keys")
+  assert(ks[0] == "alpha", "expected alpha first (sorted), got " + to_str(ks[0]))
+  kv.close(store)
+  println("  ok keys")
+}
+
+fn test_list_prefix() {
+  let store = kv.open(":memory:")
+  kv.set(store, "user:1", "alice")
+  kv.set(store, "user:2", "bob")
+  kv.set(store, "config:debug", true)
+
+  let users = kv.list(store, "user:")
+  assert(len(users) == 2, "expected 2 users")
+  assert(users[0]["key"] == "user:1", "expected user:1")
+  assert(users[0]["value"] == "alice", "expected alice")
+
+  let configs = kv.list(store, "config:")
+  assert(len(configs) == 1, "expected 1 config")
+
+  kv.close(store)
+  println("  ok list prefix")
+}
+
+fn test_clear() {
+  let store = kv.open(":memory:")
+  kv.set(store, "a", 1)
+  kv.set(store, "b", 2)
+  kv.clear(store)
+  assert(kv.count(store) == 0, "expected count 0 after clear")
+  kv.close(store)
+  println("  ok clear")
+}
+
+fn test_persistence() {
+  let path = "/tmp/test_kv_persist.db"
+  if fs.exists(path) { fs.rm(path) }
+
+  let s1 = kv.open(path)
+  kv.set(s1, "key", "persisted")
+  kv.close(s1)
+
+  let s2 = kv.open(path)
+  let val = unwrap(kv.get(s2, "key"))
+  assert(val == "persisted", "expected persisted value")
+  kv.close(s2)
+
+  fs.rm(path)
+  println("  ok persistence across open/close")
+}
+
+fn main() {
+  test_set_get_string()
+  test_set_get_int()
+  test_set_get_array()
+  test_set_get_map()
+  test_get_missing()
+  test_overwrite()
+  test_delete()
+  test_has()
+  test_count()
+  test_keys()
+  test_list_prefix()
+  test_clear()
+  test_persistence()
+  println("all kv tests passed")
+}

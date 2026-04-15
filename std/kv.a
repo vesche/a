@@ -1,0 +1,71 @@
+; std/kv.a -- Persistent key-value store backed by SQLite
+;
+; Values are automatically JSON-serialized. Any "a" value that
+; json.stringify can handle (strings, ints, floats, bools, arrays,
+; maps, void) round-trips through the store.
+
+fn open(path) {
+  let handle = db.open(path)
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL)")
+  ret handle
+}
+
+fn close(handle) {
+  db.close(handle)
+}
+
+fn get(handle, key) {
+  let rows = db.query(handle, "SELECT value FROM kv WHERE key = ?", [key])
+  if len(rows) == 0 { ret Err("not found") }
+  ret Ok(json.parse(rows[0]["value"]))
+}
+
+fn set(handle, key, value) {
+  let serialized = json.stringify(value)
+  let now = time.now()
+  db.query(handle, "INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)", [key, serialized, now])
+}
+
+fn delete(handle, key) {
+  db.query(handle, "DELETE FROM kv WHERE key = ?", [key])
+}
+
+fn has(handle, key) -> bool {
+  let rows = db.query(handle, "SELECT 1 FROM kv WHERE key = ?", [key])
+  ret len(rows) > 0
+}
+
+fn list(handle, prefix) -> [map] {
+  let pattern = prefix + "%"
+  let rows = db.query(handle, "SELECT key, value FROM kv WHERE key LIKE ?", [pattern])
+  let mut result = []
+  let mut i = 0
+  while i < len(rows) {
+    result = push(result, #{
+      "key": rows[i]["key"],
+      "value": json.parse(rows[i]["value"])
+    })
+    i = i + 1
+  }
+  ret result
+}
+
+fn keys(handle) -> [str] {
+  let rows = db.query(handle, "SELECT key FROM kv ORDER BY key", [])
+  let mut result = []
+  let mut i = 0
+  while i < len(rows) {
+    result = push(result, rows[i]["key"])
+    i = i + 1
+  }
+  ret result
+}
+
+fn count(handle) -> int {
+  let rows = db.query(handle, "SELECT COUNT(*) as n FROM kv", [])
+  ret rows[0]["n"]
+}
+
+fn clear(handle) {
+  db.exec(handle, "DELETE FROM kv")
+}

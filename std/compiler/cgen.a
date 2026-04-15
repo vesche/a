@@ -78,7 +78,11 @@ fn _builtin_map() -> map {
     "compress.gzip": "a_compress_gzip", "compress.gunzip": "a_compress_gunzip",
     "spawn": "a_spawn", "await": "a_await", "await_all": "a_await_all",
     "parallel_map": "a_parallel_map", "parallel_each": "a_parallel_each",
-    "timeout": "a_timeout"
+    "timeout": "a_timeout",
+    "async.http_get": "a_async_http_get", "async.http_post": "a_async_http_post",
+    "async.http_put": "a_async_http_put", "async.http_patch": "a_async_http_patch",
+    "async.http_delete": "a_async_http_delete",
+    "async.await": "a_async_await", "async.gather": "a_async_gather"
   }
   ret map.merge(map.merge(map.merge(m, m2), m3), m4)
 }

@@ -1,0 +1,101 @@
+use std.testing
+use std.pool
+
+fn main() {
+  let factory = fn() {
+    ret "resource"
+  }
+
+  ; --- Test 1: create returns pool map ---
+  let mut p = pool.create(factory, 3)
+  testing.assert_eq(to_str(p["max_size"]), "3")
+  testing.assert_eq(to_str(len(p["available"])), "0")
+  testing.assert_eq(to_str(p["in_use"]), "0")
+  println("PASS: create returns pool map")
+
+  ; --- Test 2: acquire creates resource via factory ---
+  let r1 = pool.acquire(p)
+  testing.assert_eq(is_ok(r1), true)
+  let data1 = unwrap(r1)
+  p = data1["pool"]
+  let c1 = data1["conn"]
+  testing.assert_eq(c1, "resource")
+  testing.assert_eq(to_str(p["in_use"]), "1")
+  println("PASS: acquire creates resource via factory")
+
+  ; --- Test 3: release returns resource to pool ---
+  p = pool.release(p, c1)
+  testing.assert_eq(to_str(p["in_use"]), "0")
+  testing.assert_eq(to_str(len(p["available"])), "1")
+  println("PASS: release returns resource to pool")
+
+  ; --- Test 4: acquire reuses released resource ---
+  let r2 = pool.acquire(p)
+  testing.assert_eq(is_ok(r2), true)
+  let data2 = unwrap(r2)
+  p = data2["pool"]
+  let c2 = data2["conn"]
+  testing.assert_eq(c2, "resource")
+  testing.assert_eq(to_str(len(p["available"])), "0")
+  println("PASS: acquire reuses released resource")
+
+  ; --- Test 5: pool enforces max_size ---
+  p = pool.release(p, c2)
+  let r3 = pool.acquire(p)
+  p = unwrap(r3)["pool"]
+  let r4 = pool.acquire(p)
+  p = unwrap(r4)["pool"]
+  let r5 = pool.acquire(p)
+  p = unwrap(r5)["pool"]
+  ; Now 3 in use (max), next should fail
+  let r6 = pool.acquire(p)
+  testing.assert_eq(is_err(r6), true)
+  println("PASS: pool enforces max_size")
+
+  ; --- Test 6: release and re-acquire after exhaustion ---
+  p = pool.release(p, unwrap(r3)["conn"])
+  let r7 = pool.acquire(p)
+  testing.assert_eq(is_ok(r7), true)
+  p = unwrap(r7)["pool"]
+  println("PASS: release and re-acquire after exhaustion")
+
+  ; Release everything
+  p = pool.release(p, unwrap(r4)["conn"])
+  p = pool.release(p, unwrap(r5)["conn"])
+  p = pool.release(p, unwrap(r7)["conn"])
+
+  ; --- Test 7: stats ---
+  let s = pool.stats(p)
+  testing.assert_eq(to_str(s["available"]), "3")
+  testing.assert_eq(to_str(s["in_use"]), "0")
+  testing.assert_eq(to_str(s["max_size"]), "3")
+  println("PASS: stats returns correct info")
+
+  ; --- Test 8: drain clears pool ---
+  p = pool.drain(p)
+  testing.assert_eq(to_str(len(p["available"])), "0")
+  testing.assert_eq(to_str(p["in_use"]), "0")
+  println("PASS: drain clears pool")
+
+  ; --- Test 9: size returns available count ---
+  testing.assert_eq(to_str(pool.size(p)), "0")
+  let r8 = pool.acquire(p)
+  p = unwrap(r8)["pool"]
+  p = pool.release(p, unwrap(r8)["conn"])
+  testing.assert_eq(to_str(pool.size(p)), "1")
+  println("PASS: size returns available count")
+
+  ; --- Test 10: pool with max_size 1 ---
+  let mut p2 = pool.create(factory, 1)
+  let a1 = pool.acquire(p2)
+  p2 = unwrap(a1)["pool"]
+  let a2 = pool.acquire(p2)
+  testing.assert_eq(is_err(a2), true)
+  p2 = pool.release(p2, unwrap(a1)["conn"])
+  let a3 = pool.acquire(p2)
+  testing.assert_eq(is_ok(a3), true)
+  println("PASS: pool with max_size 1")
+
+  println("")
+  println("All pool tests passed!")
+}

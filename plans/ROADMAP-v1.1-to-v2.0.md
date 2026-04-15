@@ -36,21 +36,21 @@ The simplest form of persistence: a process that stays alive and responds to cha
 - **`std/cron.a`** -- schedule(interval_ms, f), once(delay_ms, f), cancel(task), run_loop(tasks), run_for(tasks, duration_ms). Lightweight event scheduler. No external cron, no system service. The agent IS the scheduler.
 - **Hot module reload for `use`** -- deferred to future release (full recompile+restart is fast enough at ~200ms).
 
-### v1.2 -- Memory
+### v1.2 -- Memory [DONE]
 
 Right now every `./a run` starts from void. An agent needs to remember.
 
-- **`std/kv.a`** -- persistent key-value store backed by the bundled SQLite. `kv.open(path)`, `kv.get(db, key)`, `kv.set(db, key, value)`, `kv.delete(db, key)`, `kv.list(db, prefix)`, `kv.close(db)`. Values are JSON-serialized automatically. This is the simplest possible persistence that actually works.
-- **`std/vector.a`** -- in-process vector store for semantic memory. `vector.create(dim)`, `vector.add(store, id, embedding)`, `vector.search(store, query_embedding, k)`. Cosine similarity, brute-force scan is fine for agent-scale (thousands, not millions). Backed by SQLite for persistence. Combined with `llm.chat` for embeddings, this gives agents long-term semantic memory with zero external dependencies.
-- **`std/cache.a`** -- memoization layer. `cache.wrap(key_fn, ttl_ms, f)` returns a cached version of `f`. LRU eviction. Optional disk persistence via kv. For: API response caching, LLM result caching, expensive computation caching.
+- **`std/kv.a`** -- persistent key-value store backed by the bundled SQLite. `kv.open(path)`, `kv.get(db, key)` (returns `Ok(value)` or `Err("not found")`), `kv.set(db, key, value)`, `kv.delete(db, key)`, `kv.has(db, key)`, `kv.list(db, prefix)`, `kv.keys(db)`, `kv.count(db)`, `kv.clear(db)`, `kv.close(db)`. Values are JSON-serialized automatically.
+- **`std/vector.a`** -- in-process vector store for semantic memory. `vector.open(path, dim)`, `vector.add(store, id, embedding)`, `vector.add_with(store, id, embedding, metadata)`, `vector.search(store, query_embedding, k)`, `vector.get(store, id)`, `vector.remove(store, id)`. Cosine similarity, brute-force scan. Backed by SQLite for persistence. Combined with `llm.chat` for embeddings, this gives agents long-term semantic memory with zero external dependencies.
+- **`std/cache.a`** -- caching layer with two modes: persistent (SQLite-backed, survives restarts) and in-memory (map-based). `cache.open(path)` / `cache.create(max_size)`, `cache.get(c, key)`, `cache.set(c, key, value, ttl_ms)`, `cache.get_or_set(c, key, ttl_ms, f)`, `cache.evict_lru(c, max_size)`, `cache.evict_expired(c)`. TTL expiration and LRU eviction.
 
-### v1.3 -- Event Loop
+### v1.3 -- Event Loop [DONE]
 
 Fork-based concurrency (v0.67) works for parallelism but is too heavy for I/O-bound agent workloads. An agent making 50 concurrent API calls shouldn't fork 50 processes.
 
-- **`poll`/`epoll`/`kqueue` event loop in C runtime** -- single-threaded multiplexing for sockets and pipes. The runtime already has POSIX sockets; this adds non-blocking I/O.
-- **`async`/`await` syntax sugar** -- `let result = await http.get_async(url)`. Under the hood: register the socket with the event loop, suspend the current coroutine, resume when data arrives. No threads, no callbacks, no colored functions -- just sequential code that happens to be concurrent.
-- **`std/pool.a`** -- connection pooling for HTTP and database. `pool.create(factory, max_size)`, `pool.acquire(p)`, `pool.release(p, conn)`. Reuse TCP connections across requests. Critical for high-throughput API work.
+- **`poll()`-based event loop in C runtime** -- single-threaded multiplexing for HTTP sockets. Non-blocking connect, send, and receive with internal state machine (CONNECTING → TLS → SENDING → RECV_HEADERS → RECV_BODY → DONE). Up to 256 concurrent async operations. TLS handshake done in brief blocking phase, all other I/O non-blocking. Handles chunked transfer encoding and gzip decompression.
+- **`async.http_get/post/put/patch/delete`** -- start non-blocking HTTP requests that return future handles (`Ok(int)`). **`async.await(future)`** drives the event loop until the future resolves. **`async.gather(futures)`** drives all futures concurrently and returns results array. Same response shape as blocking `http.*` (status, body, headers). Coroutine-like syntax is deferred; the futures model provides concurrency without language changes.
+- **`std/pool.a`** -- generic resource pool with functional immutable state. `pool.create(factory, max_size)`, `pool.acquire(p)` returns `Ok(#{pool, conn})`, `pool.release(p, conn)`, `pool.drain(p)`, `pool.stats(p)`, `pool.size(p)`. Works for any resource type.
 
 ---
 
@@ -125,8 +125,8 @@ The convergence point. Not a language with agent libraries -- an operating syste
 | Version | Name | Key Capability | Unlocks |
 |---------|------|---------------|---------|
 | **v1.1** | Watch and React [DONE] | File watcher, cron, `a watch` CLI | Live development, reactive agents |
-| **v1.2** | Memory | KV store, vector store, cache | Persistent knowledge, semantic search |
-| **v1.3** | Event Loop | Non-blocking I/O, async/await, connection pool | High-concurrency agents, efficient API clients |
+| **v1.2** | Memory [DONE] | KV store, vector store, cache | Persistent knowledge, semantic search |
+| **v1.3** | Event Loop [DONE] | Non-blocking I/O, async futures, connection pool | High-concurrency agents, efficient API clients |
 | **v1.4** | Agent Comms | Channels, RPC, named agents | Multi-agent systems, delegation |
 | **v1.5** | Planning | Task planner, tracing, self-reflection | Deliberate agents, debuggable behavior |
 | **v1.6** | Sandboxing | Plugins, capabilities, sandboxed execution | Safe extensibility, untrusted code |

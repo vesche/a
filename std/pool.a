@@ -1,0 +1,66 @@
+; std/pool.a -- Generic resource pool with configurable max size
+; Uses functional state: pool operations return updated pool maps.
+;
+; Usage:
+;   let factory = fn() { ret db.open("app.db") }
+;   let mut p = pool.create(factory, 5)
+;   let acq = pool.acquire(p)
+;   if is_ok(acq) {
+;     let data = unwrap(acq)
+;     p = data["pool"]
+;     let conn = data["conn"]
+;     ; ... use conn ...
+;     p = pool.release(p, conn)
+;   }
+
+fn _call_factory(p) {
+  let f = p["factory"]
+  ret f()
+}
+
+fn create(factory, max_size) -> map {
+  ret #{
+    "factory": factory,
+    "max_size": max_size,
+    "available": [],
+    "in_use": 0
+  }
+}
+
+fn acquire(p) {
+  let avail = p["available"]
+  if len(avail) > 0 {
+    let conn = avail[len(avail) - 1]
+    let new_avail = slice(avail, 0, len(avail) - 1)
+    let new_pool = map.merge(p, #{ "available": new_avail, "in_use": p["in_use"] + 1 })
+    ret Ok(#{ "pool": new_pool, "conn": conn })
+  }
+  if p["in_use"] >= p["max_size"] {
+    ret Err("pool exhausted")
+  }
+  let conn = _call_factory(p)
+  let new_pool = map.merge(p, #{ "in_use": p["in_use"] + 1 })
+  ret Ok(#{ "pool": new_pool, "conn": conn })
+}
+
+fn release(p, conn) -> map {
+  let new_avail = push(p["available"], conn)
+  ret map.merge(p, #{ "available": new_avail, "in_use": p["in_use"] - 1 })
+}
+
+fn drain(p) -> map {
+  ret map.merge(p, #{ "available": [], "in_use": 0 })
+}
+
+fn size(p) -> int {
+  ret len(p["available"])
+}
+
+fn stats(p) -> map {
+  ret #{
+    "available": len(p["available"]),
+    "in_use": p["in_use"],
+    "total": p["in_use"] + len(p["available"]),
+    "max_size": p["max_size"]
+  }
+}

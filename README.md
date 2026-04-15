@@ -96,7 +96,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**145+ builtins** covering everything an agent needs (plus native compilation to C):
+**150+ builtins** covering everything an agent needs (plus native compilation to C):
 
 | Domain | Operations |
 |--------|-----------|
@@ -117,6 +117,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Maps** | `map.get`, `map.set`, `map.keys`, `map.values`, `map.has` |
 | **Error handling** | `try { }`, `?` operator, `Ok`/`Err` constructors, `unwrap`, `unwrap_or`, `is_ok`, `is_err`, `expect`, pattern matching on Results |
 | **Concurrency** | `spawn`, `await`, `await_all`, `parallel_map`, `parallel_each`, `timeout` |
+| **Async I/O** | `async.http_get`, `async.http_post`, `async.http_put`, `async.http_patch`, `async.http_delete`, `async.await`, `async.gather` -- non-blocking HTTP via `poll()` event loop, up to 256 concurrent requests |
 | **Process** | `args()`, `exit(code)`, `eprintln()` |
 | **Stdin** | `io.read_stdin()`, `io.read_line()`, `io.read_bytes(n)`, `io.flush()` |
 | **Environment** | `env.get`, `env.set`, `env.all` |
@@ -126,7 +127,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 | **Image** | `image.load(path)`, `image.decode(bytes)`, `image.encode(image, fmt)`, `image.save(image, path)`, `image.width`, `image.height`, `image.resize(image, w, h)`, `image.pixels(image)` -- PNG/JPEG/BMP/GIF decode, PNG/BMP/JPEG encode, bilinear resize (native CLI only, via bundled stb_image) |
 | **Introspection** | `type_of`, `int`, `float`, `to_str`, `char_code`, `from_code`, `is_alpha`, `is_digit`, `is_alnum` |
 
-**Standard library** with 33 modules:
+**Standard library** with 35 modules:
 
 ```
 use std.math                  # max, min, clamp, pow, sum, range
@@ -168,6 +169,10 @@ use std.compiler.serialize    # serialize/deserialize compiled programs
 use std.codegen               # compile_check, run_in_sandbox, test, generate -- self-improvement loop
 use std.refactor              # rename, extract_fn, inline_fn -- AST-level refactoring
 use std.cron                  # schedule, once, cancel, run_loop, run_for -- task scheduler
+use std.kv                    # open, get, set, delete, list, keys, count -- persistent KV store (SQLite)
+use std.vector                # open, add, search, get, remove -- vector store with cosine similarity
+use std.cache                 # open/create, get, set, get_or_set, evict -- cache with TTL and LRU
+use std.pool                  # create, acquire, release, drain, stats -- generic resource pool
 use std.lexer                 # legacy tokenizer
 ```
 
@@ -182,7 +187,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~12,600 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 160+ native builtins. All 33 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~12,900 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 170+ native builtins. All 35 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
@@ -192,7 +197,7 @@ The entire language bootstraps from a single C compiler. `build.sh` compiles the
 
 ## Native compilation
 
-"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~3,900 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, fork-based concurrency (spawn/await/parallel_map/timeout), JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
+"a" programs compile to native executables through C code generation. The code generator (`std/compiler/cgen.a`) is written entirely in "a" -- it uses the self-hosted parser to produce an AST, walks it, and emits equivalent C with automatic memory management. All values are reference-counted with ownership semantics: zero-initialized locals, retain on copy, release at scope exit via goto-based cleanup epilogues (single cleanup label per function, 44% code reduction vs inline release). Lambdas are lifted to top-level C functions with captured environment arrays. Error handling uses `setjmp`/`longjmp` for `try`/`?` semantics with correct tail-expression capture. C FFI via `extern fn` declarations generates type-marshalling shim wrappers automatically. The C runtime (~4,250 lines) includes POSIX I/O, filesystem ops, shell execution, subprocess pipes, fork-based concurrency (spawn/await/parallel_map/timeout), async event loop (poll()-based non-blocking HTTP with state machine), JSON parse/stringify, SHA-256/MD5 hashing, HTTP/1.1 client (in-process POSIX sockets + platform TLS), HTTP streaming, WebSocket client (RFC 6455), HTTP server (POSIX sockets), SQLite (bundled amalgamation), zlib-compatible compression (bundled miniz), POSIX time, environment management, arena allocator, and mark-and-sweep GC.
 
 **164x faster:** fib(35) runs in 0.17s native vs 28s on the bytecode VM.
 
@@ -274,8 +279,8 @@ fn main() -> void {
 |---|---|
 | **C runtime** | ~4,100 lines (runtime.h + runtime.c) + bundled SQLite3, miniz, stb_image |
 | **"a" source** | ~21,000 lines across 110+ files |
-| **Standard library** | 34 modules, 520+ functions, ~10,700 lines |
-| **Test suites** | 35 suites + cgen test script, 730+ native tests, ~6,400 lines |
+| **Standard library** | 37 modules, 550+ functions, ~11,100 lines |
+| **Test suites** | 38 suites + cgen test script, 770+ native tests, ~7,000 lines |
 | **Examples & tools** | 39 programs, ~6,600 lines |
 
 ## Editor support

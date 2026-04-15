@@ -1,0 +1,135 @@
+; test_vector.a -- tests for std/vector.a in-process vector store
+
+use std.vector
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn test_open_close() {
+  let store = vector.open(":memory:", 3)
+  assert(type_of(store) == "map", "expected map")
+  assert(store["dim"] == 3, "expected dim=3")
+  vector.close(store)
+  println("  ok open/close")
+}
+
+fn test_add_and_count() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "a", [1.0, 0.0, 0.0])
+  vector.add(store, "b", [0.0, 1.0, 0.0])
+  assert(vector.count(store) == 2, "expected count 2")
+  vector.close(store)
+  println("  ok add and count")
+}
+
+fn test_get() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "test", [0.5, 0.5, 0.0])
+  let entry = unwrap(vector.get(store, "test"))
+  assert(entry["id"] == "test", "expected id=test")
+  let emb = entry["embedding"]
+  assert(len(emb) == 3, "expected 3-dim embedding")
+  vector.close(store)
+  println("  ok get")
+}
+
+fn test_get_missing() {
+  let store = vector.open(":memory:", 3)
+  let result = vector.get(store, "nope")
+  assert(is_err(result), "expected Err for missing id")
+  vector.close(store)
+  println("  ok get missing returns Err")
+}
+
+fn test_remove() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "a", [1.0, 0.0, 0.0])
+  vector.add(store, "b", [0.0, 1.0, 0.0])
+  vector.remove(store, "a")
+  assert(vector.count(store) == 1, "expected count 1 after remove")
+  assert(is_err(vector.get(store, "a")), "removed entry should be gone")
+  vector.close(store)
+  println("  ok remove")
+}
+
+fn test_search_cosine_similarity() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "cat", [1.0, 0.0, 0.0])
+  vector.add(store, "kitten", [0.95, 0.05, 0.0])
+  vector.add(store, "dog", [0.0, 1.0, 0.0])
+  vector.add(store, "car", [0.0, 0.0, 1.0])
+
+  let results = vector.search(store, [1.0, 0.0, 0.0], 2)
+  assert(len(results) == 2, "expected 2 results")
+  assert(results[0]["id"] == "cat", "expected cat first, got " + results[0]["id"])
+  assert(results[1]["id"] == "kitten", "expected kitten second, got " + results[1]["id"])
+  assert(results[0]["score"] > 0.99, "cat score should be ~1.0")
+  assert(results[1]["score"] > 0.9, "kitten score should be >0.9")
+
+  vector.close(store)
+  println("  ok search cosine similarity")
+}
+
+fn test_search_k_larger_than_store() {
+  let store = vector.open(":memory:", 2)
+  vector.add(store, "a", [1.0, 0.0])
+  vector.add(store, "b", [0.0, 1.0])
+
+  let results = vector.search(store, [1.0, 0.0], 10)
+  assert(len(results) == 2, "expected 2 results (all in store)")
+  vector.close(store)
+  println("  ok search k > store size")
+}
+
+fn test_overwrite_embedding() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "item", [1.0, 0.0, 0.0])
+  vector.add(store, "item", [0.0, 1.0, 0.0])
+  assert(vector.count(store) == 1, "expected count 1 after overwrite")
+
+  let entry = unwrap(vector.get(store, "item"))
+  let emb = entry["embedding"]
+  assert(emb[1] > 0.9, "expected updated embedding")
+  vector.close(store)
+  println("  ok overwrite embedding")
+}
+
+fn test_add_with_metadata() {
+  let store = vector.open(":memory:", 2)
+  vector.add_with(store, "doc1", [1.0, 0.0], #{"title": "hello", "category": "greet"})
+
+  let entry = unwrap(vector.get(store, "doc1"))
+  assert(entry["metadata"]["title"] == "hello", "expected metadata title")
+  assert(entry["metadata"]["category"] == "greet", "expected metadata category")
+
+  let results = vector.search(store, [1.0, 0.0], 1)
+  assert(results[0]["metadata"]["title"] == "hello", "expected metadata in search results")
+
+  vector.close(store)
+  println("  ok add_with metadata")
+}
+
+fn test_clear() {
+  let store = vector.open(":memory:", 3)
+  vector.add(store, "a", [1.0, 0.0, 0.0])
+  vector.add(store, "b", [0.0, 1.0, 0.0])
+  vector.clear(store)
+  assert(vector.count(store) == 0, "expected count 0 after clear")
+  vector.close(store)
+  println("  ok clear")
+}
+
+fn main() {
+  test_open_close()
+  test_add_and_count()
+  test_get()
+  test_get_missing()
+  test_remove()
+  test_search_cosine_similarity()
+  test_search_k_larger_than_store()
+  test_overwrite_embedding()
+  test_add_with_metadata()
+  test_clear()
+  println("all vector tests passed")
+}

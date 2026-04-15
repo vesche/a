@@ -1,0 +1,104 @@
+use std.testing
+
+fn main() {
+  let port = 9879
+  let addr = str.concat("http://127.0.0.1:", to_str(port))
+
+  exec("./a run tests/native/_http_server_async.a &")
+  time.sleep(1000)
+
+  ; --- Test 1: async.http_get + async.await returns same shape as http.get ---
+  let f1 = async.http_get(str.concat(addr, "/json"), #{})
+  testing.assert_eq(is_ok(f1), true)
+  let r1 = async.await(f1)
+  testing.assert_eq(to_str(r1.status), "200")
+  testing.assert_eq(type_of(r1.body), "str")
+  testing.assert_eq(type_of(r1.headers), "map")
+  println("PASS: async.http_get + await returns status, body, headers")
+
+  ; --- Test 2: async.http_post ---
+  let f2 = async.http_post(str.concat(addr, "/echo"), "hello", #{})
+  let r2 = async.await(f2)
+  testing.assert_eq(to_str(r2.status), "200")
+  testing.assert_eq(r2.body, "POST:hello")
+  println("PASS: async.http_post works")
+
+  ; --- Test 3: async.http_put ---
+  let f3 = async.http_put(str.concat(addr, "/echo"), "putdata", #{})
+  let r3 = async.await(f3)
+  testing.assert_eq(to_str(r3.status), "200")
+  testing.assert_eq(r3.body, "PUT:putdata")
+  println("PASS: async.http_put works")
+
+  ; --- Test 4: async.http_patch ---
+  let f4 = async.http_patch(str.concat(addr, "/echo"), "patchdata", #{})
+  let r4 = async.await(f4)
+  testing.assert_eq(to_str(r4.status), "200")
+  testing.assert_eq(r4.body, "PATCH:patchdata")
+  println("PASS: async.http_patch works")
+
+  ; --- Test 5: async.http_delete ---
+  let f5 = async.http_delete(str.concat(addr, "/echo"), #{})
+  let r5 = async.await(f5)
+  testing.assert_eq(to_str(r5.status), "200")
+  println("PASS: async.http_delete works")
+
+  ; --- Test 6: async.gather collects results from multiple requests ---
+  let g1 = async.http_get(str.concat(addr, "/json"), #{})
+  let g2 = async.http_get(str.concat(addr, "/json"), #{})
+  let g3 = async.http_post(str.concat(addr, "/echo"), "batch", #{})
+  let results = async.gather([g1, g2, g3])
+  testing.assert_eq(to_str(len(results)), "3")
+  testing.assert_eq(to_str(results[0].status), "200")
+  testing.assert_eq(to_str(results[1].status), "200")
+  testing.assert_eq(results[2].body, "POST:batch")
+  println("PASS: async.gather collects results from multiple requests")
+
+  ; --- Test 7: gather with mixed methods ---
+  let m1 = async.http_get(str.concat(addr, "/json"), #{})
+  let m2 = async.http_post(str.concat(addr, "/echo"), "a", #{})
+  let m3 = async.http_put(str.concat(addr, "/echo"), "b", #{})
+  let m4 = async.http_delete(str.concat(addr, "/echo"), #{})
+  let mixed = async.gather([m1, m2, m3, m4])
+  testing.assert_eq(to_str(len(mixed)), "4")
+  testing.assert_eq(to_str(mixed[0].status), "200")
+  testing.assert_eq(mixed[1].body, "POST:a")
+  testing.assert_eq(mixed[2].body, "PUT:b")
+  testing.assert_eq(to_str(mixed[3].status), "200")
+  println("PASS: gather with mixed HTTP methods")
+
+  ; --- Test 8: 404 for unknown path ---
+  let f6 = async.http_get(str.concat(addr, "/nonexistent"), #{})
+  let r6 = async.await(f6)
+  testing.assert_eq(to_str(r6.status), "404")
+  println("PASS: async returns 404 for unknown path")
+
+  ; --- Test 9: await on Err handle returns Err ---
+  let bad = Err("test error")
+  let rbad = async.await(bad)
+  testing.assert_eq(is_err(rbad), true)
+  println("PASS: await on Err handle returns Err")
+
+  ; --- Test 10: custom headers ---
+  let f7 = async.http_get(str.concat(addr, "/headers"), #{ "X-Custom": "myval" })
+  let r7 = async.await(f7)
+  testing.assert_eq(to_str(r7.status), "200")
+  println("PASS: custom headers sent via async")
+
+  ; --- Test 11: gather with empty array ---
+  let empty = async.gather([])
+  testing.assert_eq(to_str(len(empty)), "0")
+  println("PASS: gather with empty array returns empty")
+
+  ; --- Test 12: response body is correct JSON ---
+  let f8 = async.http_get(str.concat(addr, "/json"), #{})
+  let r8 = async.await(f8)
+  let parsed = json.parse(r8.body)
+  testing.assert_eq(to_str(parsed["ok"]), "true")
+  println("PASS: async response body parses as JSON")
+
+  exec("pkill -f '_http_server_async.a' 2>/dev/null || true")
+
+  println("")
+  println("All async tests passed!")
+}

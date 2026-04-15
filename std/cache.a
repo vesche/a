@@ -1,0 +1,182 @@
+; std/cache.a -- Caching layer with TTL and LRU eviction
+;
+; Two modes:
+;   1. Persistent (SQLite-backed) -- survives process restarts
+;   2. In-memory (map-based) -- fast, ephemeral
+;
+; Both support TTL expiration and max-size eviction.
+
+; --- Persistent cache (SQLite-backed) ---
+
+fn open(path) -> map {
+  let handle = db.open(path)
+  db.exec(handle, "CREATE TABLE IF NOT EXISTS cache (key TEXT PRIMARY KEY, value TEXT NOT NULL, expires_at INTEGER NOT NULL, last_used INTEGER NOT NULL)")
+  db.exec(handle, "CREATE INDEX IF NOT EXISTS idx_cache_expires ON cache(expires_at)")
+  db.exec(handle, "CREATE INDEX IF NOT EXISTS idx_cache_lru ON cache(last_used)")
+  ret #{"handle": handle, "type": "persistent"}
+}
+
+fn close(c) {
+  if c["type"] == "persistent" {
+    db.close(c["handle"])
+  }
+}
+
+fn get(c, key) {
+  if c["type"] == "memory" { ret _mem_get(c, key) }
+  let h = c["handle"]
+  let now = time.now()
+  let rows = db.query(h, "SELECT value, expires_at FROM cache WHERE key = ?", [key])
+  if len(rows) == 0 { ret Err("miss") }
+  let row = rows[0]
+  if row["expires_at"] > 0 && now >= row["expires_at"] {
+    db.query(h, "DELETE FROM cache WHERE key = ?", [key])
+    ret Err("expired")
+  }
+  db.query(h, "UPDATE cache SET last_used = ? WHERE key = ?", [now, key])
+  ret Ok(json.parse(row["value"]))
+}
+
+fn set(c, key, value, ttl_ms) {
+  if c["type"] == "memory" { ret _mem_set(c, key, value, ttl_ms) }
+  let h = c["handle"]
+  let now = time.now()
+  let mut expires = 0
+  if ttl_ms > 0 { expires = now + ttl_ms }
+  let serialized = json.stringify(value)
+  db.query(h, "INSERT OR REPLACE INTO cache (key, value, expires_at, last_used) VALUES (?, ?, ?, ?)", [key, serialized, expires, now])
+  ret c
+}
+
+fn delete(c, key) {
+  if c["type"] == "memory" { ret _mem_delete(c, key) }
+  db.query(c["handle"], "DELETE FROM cache WHERE key = ?", [key])
+  ret c
+}
+
+fn has(c, key) -> bool {
+  let result = get(c, key)
+  ret is_ok(result)
+}
+
+fn evict_expired(c) {
+  if c["type"] == "memory" { ret _mem_evict_expired(c) }
+  let now = time.now()
+  db.query(c["handle"], "DELETE FROM cache WHERE expires_at > 0 AND expires_at <= ?", [now])
+  ret c
+}
+
+fn evict_lru(c, max_size) {
+  if c["type"] == "memory" { ret _mem_evict_lru(c, max_size) }
+  let h = c["handle"]
+  let rows = db.query(h, "SELECT COUNT(*) as n FROM cache", [])
+  let n = rows[0]["n"]
+  if n > max_size {
+    let excess = n - max_size
+    db.query(h, "DELETE FROM cache WHERE key IN (SELECT key FROM cache ORDER BY last_used ASC LIMIT ?)", [excess])
+  }
+  ret c
+}
+
+fn count(c) -> int {
+  if c["type"] == "memory" { ret _mem_count(c) }
+  let rows = db.query(c["handle"], "SELECT COUNT(*) as n FROM cache", [])
+  ret rows[0]["n"]
+}
+
+fn clear(c) {
+  if c["type"] == "memory" { ret _mem_clear(c) }
+  db.exec(c["handle"], "DELETE FROM cache")
+  ret c
+}
+
+fn get_or_set(c, key, ttl_ms, f) {
+  let cached = get(c, key)
+  if is_ok(cached) { ret unwrap(cached) }
+  let val = f()
+  set(c, key, val, ttl_ms)
+  ret val
+}
+
+; --- In-memory cache (map-based) ---
+
+fn create(max_size) -> map {
+  ret #{"type": "memory", "entries": #{}, "max_size": max_size}
+}
+
+fn _mem_get(c, key) {
+  let entries = c["entries"]
+  if !map.has(entries, key) { ret Err("miss") }
+  let entry = entries[key]
+  let now = time.now()
+  if entry["expires_at"] > 0 && now >= entry["expires_at"] {
+    ret Err("expired")
+  }
+  ret Ok(entry["value"])
+}
+
+fn _mem_set(c, key, value, ttl_ms) {
+  let now = time.now()
+  let mut expires = 0
+  if ttl_ms > 0 { expires = now + ttl_ms }
+  let entry = #{"value": value, "expires_at": expires, "last_used": now}
+  let entries = map.set(c["entries"], key, entry)
+  let updated = map.set(c, "entries", entries)
+  let max_s = c["max_size"]
+  if max_s > 0 && len(map.keys(entries)) > max_s {
+    ret _mem_evict_lru(updated, max_s)
+  }
+  ret updated
+}
+
+fn _mem_delete(c, key) {
+  let entries = map.delete(c["entries"], key)
+  ret map.set(c, "entries", entries)
+}
+
+fn _mem_evict_expired(c) {
+  let entries = c["entries"]
+  let now = time.now()
+  let ks = map.keys(entries)
+  let mut new_entries = entries
+  for k in ks {
+    let entry = entries[k]
+    if entry["expires_at"] > 0 && now >= entry["expires_at"] {
+      new_entries = map.delete(new_entries, k)
+    }
+  }
+  ret map.set(c, "entries", new_entries)
+}
+
+fn _mem_evict_lru(c, max_size) {
+  let entries = c["entries"]
+  let ks = map.keys(entries)
+  if len(ks) <= max_size { ret c }
+
+  let mut items = []
+  for k in ks {
+    items = push(items, #{"key": k, "last_used": entries[k]["last_used"]})
+  }
+  items = sort_by(items, fn(a, b) {
+    if a["last_used"] < b["last_used"] { ret -1 }
+    if a["last_used"] > b["last_used"] { ret 1 }
+    ret 0
+  })
+
+  let to_remove = len(ks) - max_size
+  let mut new_entries = entries
+  let mut i = 0
+  while i < to_remove {
+    new_entries = map.delete(new_entries, items[i]["key"])
+    i = i + 1
+  }
+  ret map.set(c, "entries", new_entries)
+}
+
+fn _mem_count(c) -> int {
+  ret len(map.keys(c["entries"]))
+}
+
+fn _mem_clear(c) {
+  ret map.set(c, "entries", #{})
+}

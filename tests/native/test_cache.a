@@ -1,0 +1,186 @@
+; test_cache.a -- tests for std/cache.a caching layer
+
+use std.cache
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+; --- Persistent cache tests ---
+
+fn test_persistent_set_get() {
+  let c = cache.open(":memory:")
+  cache.set(c, "key1", "hello", 5000)
+  let val = unwrap(cache.get(c, "key1"))
+  assert(val == "hello", "expected hello, got " + to_str(val))
+  cache.close(c)
+  println("  ok persistent set/get")
+}
+
+fn test_persistent_miss() {
+  let c = cache.open(":memory:")
+  let result = cache.get(c, "missing")
+  assert(is_err(result), "expected Err for cache miss")
+  cache.close(c)
+  println("  ok persistent miss")
+}
+
+fn test_persistent_has() {
+  let c = cache.open(":memory:")
+  cache.set(c, "x", 42, 5000)
+  assert(cache.has(c, "x") == true, "expected has=true")
+  assert(cache.has(c, "y") == false, "expected has=false")
+  cache.close(c)
+  println("  ok persistent has")
+}
+
+fn test_persistent_delete() {
+  let c = cache.open(":memory:")
+  cache.set(c, "x", 1, 0)
+  cache.delete(c, "x")
+  assert(!cache.has(c, "x"), "expected deleted")
+  cache.close(c)
+  println("  ok persistent delete")
+}
+
+fn test_persistent_count() {
+  let c = cache.open(":memory:")
+  cache.set(c, "a", 1, 0)
+  cache.set(c, "b", 2, 0)
+  assert(cache.count(c) == 2, "expected count 2")
+  cache.close(c)
+  println("  ok persistent count")
+}
+
+fn test_persistent_clear() {
+  let c = cache.open(":memory:")
+  cache.set(c, "a", 1, 0)
+  cache.set(c, "b", 2, 0)
+  cache.clear(c)
+  assert(cache.count(c) == 0, "expected count 0")
+  cache.close(c)
+  println("  ok persistent clear")
+}
+
+fn test_persistent_ttl_expiry() {
+  let c = cache.open(":memory:")
+  cache.set(c, "short", "value", 100)
+  let v1 = cache.get(c, "short")
+  assert(is_ok(v1), "expected Ok before expiry")
+  time.sleep(200)
+  let v2 = cache.get(c, "short")
+  assert(is_err(v2), "expected Err after expiry")
+  cache.close(c)
+  println("  ok persistent TTL expiry")
+}
+
+fn test_persistent_no_ttl() {
+  let c = cache.open(":memory:")
+  cache.set(c, "forever", "value", 0)
+  time.sleep(50)
+  let val = cache.get(c, "forever")
+  assert(is_ok(val), "expected Ok with ttl=0 (no expiry)")
+  cache.close(c)
+  println("  ok persistent no TTL")
+}
+
+fn test_persistent_evict_lru() {
+  let c = cache.open(":memory:")
+  cache.set(c, "old", 1, 0)
+  time.sleep(10)
+  cache.set(c, "mid", 2, 0)
+  time.sleep(10)
+  cache.set(c, "new", 3, 0)
+  time.sleep(10)
+  ; Access "old" to make it recently used
+  cache.get(c, "old")
+  cache.evict_lru(c, 2)
+  assert(cache.count(c) == 2, "expected 2 after eviction, got " + to_str(cache.count(c)))
+  assert(cache.has(c, "old"), "old should survive (recently accessed)")
+  assert(cache.has(c, "new"), "new should survive")
+  assert(!cache.has(c, "mid"), "mid should be evicted (least recently used)")
+  cache.close(c)
+  println("  ok persistent LRU eviction")
+}
+
+fn test_persistent_get_or_set() {
+  let c = cache.open(":memory:")
+  let v1 = cache.get_or_set(c, "computed", 5000, fn() { ret 42 })
+  assert(v1 == 42, "expected 42")
+  let v2 = cache.get_or_set(c, "computed", 5000, fn() { ret 99 })
+  assert(v2 == 42, "expected cached 42, not 99")
+  cache.close(c)
+  println("  ok persistent get_or_set")
+}
+
+; --- In-memory cache tests ---
+
+fn test_memory_set_get() {
+  let mut c = cache.create(10)
+  c = cache.set(c, "k", "v", 0)
+  let val = unwrap(cache.get(c, "k"))
+  assert(val == "v", "expected v")
+  println("  ok memory set/get")
+}
+
+fn test_memory_miss() {
+  let c = cache.create(10)
+  assert(is_err(cache.get(c, "nope")), "expected miss")
+  println("  ok memory miss")
+}
+
+fn test_memory_count() {
+  let mut c = cache.create(10)
+  c = cache.set(c, "a", 1, 0)
+  c = cache.set(c, "b", 2, 0)
+  assert(cache.count(c) == 2, "expected count 2")
+  println("  ok memory count")
+}
+
+fn test_memory_delete() {
+  let mut c = cache.create(10)
+  c = cache.set(c, "a", 1, 0)
+  c = cache.delete(c, "a")
+  assert(cache.count(c) == 0, "expected count 0")
+  println("  ok memory delete")
+}
+
+fn test_memory_clear() {
+  let mut c = cache.create(10)
+  c = cache.set(c, "a", 1, 0)
+  c = cache.set(c, "b", 2, 0)
+  c = cache.clear(c)
+  assert(cache.count(c) == 0, "expected count 0")
+  println("  ok memory clear")
+}
+
+fn test_memory_max_size_eviction() {
+  let mut c = cache.create(2)
+  c = cache.set(c, "a", 1, 0)
+  time.sleep(10)
+  c = cache.set(c, "b", 2, 0)
+  time.sleep(10)
+  c = cache.set(c, "c", 3, 0)
+  assert(cache.count(c) == 2, "expected 2 after max_size eviction, got " + to_str(cache.count(c)))
+  println("  ok memory max_size auto-eviction")
+}
+
+fn main() {
+  test_persistent_set_get()
+  test_persistent_miss()
+  test_persistent_has()
+  test_persistent_delete()
+  test_persistent_count()
+  test_persistent_clear()
+  test_persistent_ttl_expiry()
+  test_persistent_no_ttl()
+  test_persistent_evict_lru()
+  test_persistent_get_or_set()
+  test_memory_set_get()
+  test_memory_miss()
+  test_memory_count()
+  test_memory_delete()
+  test_memory_clear()
+  test_memory_max_size_eviction()
+  println("all cache tests passed")
+}
