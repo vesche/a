@@ -236,6 +236,37 @@ AValue fn_checker__collect_idents_expr(AValue node, AValue s);
 AValue fn_checker__collect_all_idents_block(AValue stmts, AValue s);
 AValue fn_checker__collect_calls_expr(AValue node, AValue out);
 AValue fn_checker__collect_all_calls(AValue stmts);
+AValue fn_profiler__nl(void);
+AValue fn_profiler__lbrace(void);
+AValue fn_profiler__collect_fn_names(AValue prog_ast);
+AValue fn_profiler__count_branches_inner(AValue stmts, AValue counts);
+AValue fn_profiler__analyze_ast(AValue prog_ast);
+AValue fn_profiler__mangle_name(AValue name);
+AValue fn_profiler__gen_base_c(AValue source_path);
+AValue fn_profiler__insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_map);
+AValue fn_profiler__insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whiles, AValue n_fors, AValue hit_base);
+AValue fn_profiler_instrument(AValue source_path, AValue profile_out_path);
+AValue fn_profiler_analyze_profile(AValue profile_path);
+AValue fn_optimizer_load_profile(AValue profile_path);
+AValue fn_optimizer__find_hot_functions(AValue counters);
+AValue fn_optimizer__find_hot_branches(AValue counters);
+AValue fn_optimizer_analyze_profile(AValue profile_path);
+AValue fn_optimizer__count_fn_body_stmts(AValue body);
+AValue fn_optimizer__is_small_fn(AValue func_node);
+AValue fn_optimizer__extract_fn_map(AValue source);
+AValue fn_optimizer_suggest(AValue source, AValue profile_report);
+AValue fn_optimizer_measure_binary(AValue bin_path);
+AValue fn_optimizer_measure_compile_time(AValue source_path);
+AValue fn_optimizer_benchmark(AValue source_path, AValue runs);
+AValue fn_optimizer_report(AValue source_path, AValue profile_path);
+AValue fn_testgen__edge_values_for_type(AValue hint);
+AValue fn_testgen__guess_param_type(AValue pname);
+AValue fn_testgen__extract_functions(AValue prog_ast);
+AValue fn_testgen__gen_arg_combos(AValue params);
+AValue fn_testgen__gen_test_for_fn(AValue func_info, AValue test_num);
+AValue fn_testgen_gen_tests(AValue source);
+AValue fn_testgen_gen_tests_for_file(AValue filepath);
+AValue fn_testgen_analyze(AValue source);
 AValue fn_path_join(AValue a, AValue b);
 AValue fn_path_join3(AValue a, AValue b, AValue c);
 AValue fn_path_dirname(AValue p);
@@ -355,6 +386,12 @@ AValue fn__store_cache(AValue source_path, AValue bin_path);
 AValue fn_cmd_run(AValue source_path, AValue extra_args);
 AValue fn_cmd_test(AValue test_dir);
 AValue fn_cmd_cache_clean(void);
+AValue fn__profile_insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_map);
+AValue fn__profile_insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whiles, AValue n_fors, AValue hit_base);
+AValue fn__profile_count_branches(AValue stmts, AValue counts);
+AValue fn_cmd_profile(AValue source_path, AValue profile_out);
+AValue fn_cmd_gentests(AValue source_path, AValue out_path);
+AValue fn_cmd_optimize_report(AValue source_path, AValue profile_path);
 AValue fn_cmd_eval(AValue expr, AValue extra_args);
 AValue fn_cmd_lsp(void);
 AValue fn__parse_source(AValue source_path);
@@ -4428,7 +4465,7 @@ AValue fn_cgen__builtin_map(void) {
     { AValue __old = m; m = a_map_new(27, "println", a_string("a_println"), "print", a_string("a_print"), "eprintln", a_string("a_eprintln"), "len", a_string("a_len"), "push", a_string("a_array_push"), "to_str", a_string("a_to_str"), "fail", a_string("a_fail"), "type_of", a_string("a_type_of"), "int", a_string("a_to_int"), "float", a_string("a_to_float"), "sort", a_string("a_sort"), "contains", a_string("a_contains"), "reverse_arr", a_string("a_reverse_arr"), "concat_arr", a_string("a_concat_arr"), "args", a_string("a_args"), "slice", a_string("a_array_slice"), "char_code", a_string("a_char_code"), "from_code", a_string("a_from_code"), "is_alpha", a_string("a_is_alpha"), "is_digit", a_string("a_is_digit"), "is_alnum", a_string("a_is_alnum"), "Ok", a_string("a_ok"), "Err", a_string("a_err"), "unwrap", a_string("a_unwrap"), "is_ok", a_string("a_is_ok"), "is_err", a_string("a_is_err"), "unwrap_or", a_string("a_unwrap_or")); a_release(__old); }
     { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
     { AValue __old = m3; m3 = a_map_new(31, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "fs.stat", a_string("a_fs_stat"), "fs.watch", a_string("a_fs_watch"), "exec", a_string("a_exec"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
-    { AValue __old = m4; m4 = a_map_new(89, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip"), "spawn", a_string("a_spawn"), "await", a_string("a_await"), "await_all", a_string("a_await_all"), "parallel_map", a_string("a_parallel_map"), "parallel_each", a_string("a_parallel_each"), "timeout", a_string("a_timeout"), "async.http_get", a_string("a_async_http_get"), "async.http_post", a_string("a_async_http_post"), "async.http_put", a_string("a_async_http_put"), "async.http_patch", a_string("a_async_http_patch"), "async.http_delete", a_string("a_async_http_delete"), "async.await", a_string("a_async_await"), "async.gather", a_string("a_async_gather"), "reflect.uptime_ms", a_string("a_reflect_uptime_ms"), "reflect.memory_usage", a_string("a_reflect_memory_usage"), "reflect.pid", a_string("a_reflect_pid"), "local_llm.load", a_string("a_llm_load"), "local_llm.generate", a_string("a_llm_generate"), "local_llm.embed", a_string("a_llm_embed"), "local_llm.unload", a_string("a_llm_unload"), "local_llm.info", a_string("a_llm_info"), "local_llm.tokenize", a_string("a_llm_tokenize"), "local_llm.detokenize", a_string("a_llm_detokenize"), "local_llm.vocab_size", a_string("a_llm_vocab_size")); a_release(__old); }
+    { AValue __old = m4; m4 = a_map_new(92, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip"), "spawn", a_string("a_spawn"), "await", a_string("a_await"), "await_all", a_string("a_await_all"), "parallel_map", a_string("a_parallel_map"), "parallel_each", a_string("a_parallel_each"), "timeout", a_string("a_timeout"), "async.http_get", a_string("a_async_http_get"), "async.http_post", a_string("a_async_http_post"), "async.http_put", a_string("a_async_http_put"), "async.http_patch", a_string("a_async_http_patch"), "async.http_delete", a_string("a_async_http_delete"), "async.await", a_string("a_async_await"), "async.gather", a_string("a_async_gather"), "reflect.uptime_ms", a_string("a_reflect_uptime_ms"), "reflect.memory_usage", a_string("a_reflect_memory_usage"), "reflect.pid", a_string("a_reflect_pid"), "local_llm.load", a_string("a_llm_load"), "local_llm.generate", a_string("a_llm_generate"), "local_llm.embed", a_string("a_llm_embed"), "local_llm.unload", a_string("a_llm_unload"), "local_llm.info", a_string("a_llm_info"), "local_llm.tokenize", a_string("a_llm_tokenize"), "local_llm.detokenize", a_string("a_llm_detokenize"), "local_llm.vocab_size", a_string("a_llm_vocab_size"), "profile.dump", a_string("a_profile_dump_json"), "profile.get_counters", a_string("a_profile_get_counters"), "profile.reset", a_string("a_profile_reset")); a_release(__old); }
     __ret = a_map_merge(a_map_merge(a_map_merge(m, m2), m3), m4); goto __fn_cleanup;
 __fn_cleanup:
     a_release(m);
@@ -10523,6 +10560,1275 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_profiler__nl(void) {
+    AValue __ret = a_void();
+    __ret = a_from_code(a_int(10)); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_profiler__lbrace(void) {
+    AValue __ret = a_void();
+    __ret = a_from_code(a_int(123)); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_profiler__collect_fn_names(AValue prog_ast) {
+    AValue items = {0}, names = {0};
+    AValue __ret = a_void();
+    prog_ast = a_retain(prog_ast);
+    { AValue __old = items; items = a_array_get(prog_ast, a_string("items")); a_release(__old); }
+    { AValue __old = names; names = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = names; names = a_array_push(names, a_array_get(item, a_string("name"))); a_release(__old); }
+            }
+            a_release(item);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(names); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(items);
+    a_release(names);
+    a_release(prog_ast);
+    return __ret;
+}
+
+AValue fn_profiler__count_branches_inner(AValue stmts, AValue counts) {
+    AValue tag = {0}, then_stmts = {0}, else_br = {0};
+    AValue __ret = a_void();
+    stmts = a_retain(stmts);
+    counts = a_retain(counts);
+    {
+        AValue __iter_arr = a_iterable(stmts);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue st = {0}, tag = {0}, then_stmts = {0}, else_br = {0};
+            st = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = tag; tag = a_array_get(st, a_string("tag")); a_release(__old); }
+            if (a_truthy(a_eq(tag, a_string("If")))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("ifs"), a_add(a_array_get(counts, a_string("ifs")), a_int(1))); a_release(__old); }
+                { AValue __old = then_stmts; then_stmts = a_array_get(a_array_get(st, a_string("then")), a_string("stmts")); a_release(__old); }
+                { AValue __old = counts; counts = fn_profiler__count_branches_inner(then_stmts, counts); a_release(__old); }
+                { AValue __old = else_br; else_br = a_array_get(st, a_string("else")); a_release(__old); }
+                if (a_truthy(a_neq(a_type_of(else_br), a_string("void")))) {
+                    if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseBlock")))) {
+                        { AValue __old = counts; counts = a_map_set(counts, a_string("elses"), a_add(a_array_get(counts, a_string("elses")), a_int(1))); a_release(__old); }
+                        { AValue __old = counts; counts = fn_profiler__count_branches_inner(a_array_get(a_array_get(else_br, a_string("block")), a_string("stmts")), counts); a_release(__old); }
+                    }
+                    if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseIf")))) {
+                        { AValue __old = counts; counts = fn_profiler__count_branches_inner(a_array_new(1, a_array_get(else_br, a_string("stmt"))), counts); a_release(__old); }
+                    }
+                }
+            }
+            if (a_truthy(a_eq(tag, a_string("While")))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("whiles"), a_add(a_array_get(counts, a_string("whiles")), a_int(1))); a_release(__old); }
+                { AValue __old = counts; counts = fn_profiler__count_branches_inner(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
+            }
+            if (a_truthy(a_or(a_eq(tag, a_string("For")), a_eq(tag, a_string("ForDestructure"))))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("fors"), a_add(a_array_get(counts, a_string("fors")), a_int(1))); a_release(__old); }
+                { AValue __old = counts; counts = fn_profiler__count_branches_inner(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
+            }
+            a_release(st);
+            a_release(tag);
+            a_release(then_stmts);
+            a_release(else_br);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(counts); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(tag);
+    a_release(then_stmts);
+    a_release(else_br);
+    a_release(stmts);
+    a_release(counts);
+    return __ret;
+}
+
+AValue fn_profiler__analyze_ast(AValue prog_ast) {
+    AValue fns = {0}, items = {0}, total_counts = {0}, body = {0};
+    AValue __ret = a_void();
+    prog_ast = a_retain(prog_ast);
+    { AValue __old = fns; fns = fn_profiler__collect_fn_names(prog_ast); a_release(__old); }
+    { AValue __old = items; items = a_array_get(prog_ast, a_string("items")); a_release(__old); }
+    { AValue __old = total_counts; total_counts = a_map_new(4, "ifs", a_int(0), "elses", a_int(0), "whiles", a_int(0), "fors", a_int(0)); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0}, body = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
+                if (a_truthy(a_eq(a_type_of(body), a_string("map")))) {
+                    if (a_truthy(a_map_has(body, a_string("stmts")))) {
+                        { AValue __old = total_counts; total_counts = fn_profiler__count_branches_inner(a_array_get(body, a_string("stmts")), total_counts); a_release(__old); }
+                    }
+                }
+            }
+            a_release(item);
+            a_release(body);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_map_new(2, "functions", fns, "branch_counts", total_counts); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(fns);
+    a_release(items);
+    a_release(total_counts);
+    a_release(body);
+    a_release(prog_ast);
+    return __ret;
+}
+
+AValue fn_profiler__mangle_name(AValue name) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+    __ret = a_str_replace(a_str_replace(a_str_replace(name, a_string("."), a_string("_")), a_string("-"), a_string("_")), a_string("!"), a_string("_bang")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_profiler__gen_base_c(AValue source_path) {
+    AValue self_path = {0}, tmp_c = {0}, r = {0}, c_code = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    { AValue __old = self_path; self_path = a_argv0(); a_release(__old); }
+    { AValue __old = tmp_c; tmp_c = a_add(a_add(a_string("/tmp/a_prof_"), a_to_str(a_time_now())), a_string(".c")); a_release(__old); }
+    { AValue __old = r; r = a_exec(a_add(a_add(a_add(a_add(self_path, a_string(" cc ")), source_path), a_string(" -o ")), tmp_c)); a_release(__old); }
+    if (a_truthy(a_neq(a_array_get(r, a_string("code")), a_int(0)))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = c_code; c_code = a_io_read_file(tmp_c); a_release(__old); }
+    a_fs_rm(tmp_c);
+    __ret = a_retain(c_code); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(self_path);
+    a_release(tmp_c);
+    a_release(r);
+    a_release(c_code);
+    a_release(source_path);
+    return __ret;
+}
+
+AValue fn_profiler__insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_map) {
+    AValue nl = {0}, lbr = {0}, result = {0}, mangled = {0}, sig_str = {0}, parts = {0}, after_sig = {0}, brace_idx = {0}, hit_id = {0}, after_brace = {0}, before_brace = {0}, hit_line = {0};
+    AValue __ret = a_void();
+    c_code = a_retain(c_code);
+    fn_names = a_retain(fn_names);
+    fn_hit_map = a_retain(fn_hit_map);
+    { AValue __old = nl; nl = fn_profiler__nl(); a_release(__old); }
+    { AValue __old = lbr; lbr = fn_profiler__lbrace(); a_release(__old); }
+    { AValue __old = result; result = a_retain(c_code); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(fn_names);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue fn2 = {0}, mangled = {0}, sig_str = {0}, parts = {0}, after_sig = {0}, brace_idx = {0}, hit_id = {0}, after_brace = {0}, before_brace = {0}, hit_line = {0};
+            fn2 = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = mangled; mangled = fn_profiler__mangle_name(fn2); a_release(__old); }
+            { AValue __old = sig_str; sig_str = a_add(a_add(a_string("AValue fn_"), mangled), a_string("(")); a_release(__old); }
+            { AValue __old = parts; parts = a_str_split(result, sig_str); a_release(__old); }
+            if (a_truthy(a_gteq(a_len(parts), a_int(2)))) {
+                { AValue __old = after_sig; after_sig = a_array_get(parts, a_int(1)); a_release(__old); }
+                { AValue __old = brace_idx; brace_idx = a_str_find(after_sig, lbr); a_release(__old); }
+                if (a_truthy(a_gteq(brace_idx, a_int(0)))) {
+                    { AValue __old = hit_id; hit_id = a_array_get(fn_hit_map, fn2); a_release(__old); }
+                    { AValue __old = after_brace; after_brace = a_str_slice(after_sig, a_add(brace_idx, a_int(1)), a_len(after_sig)); a_release(__old); }
+                    { AValue __old = before_brace; before_brace = a_str_slice(after_sig, a_int(0), a_add(brace_idx, a_int(1))); a_release(__old); }
+                    { AValue __old = hit_line; hit_line = a_add(a_add(a_add(nl, a_string("    a_profile_hit(")), a_to_str(hit_id)), a_string(");")); a_release(__old); }
+                    { AValue __old = result; result = a_add(a_add(a_add(a_add(a_array_get(parts, a_int(0)), sig_str), before_brace), hit_line), after_brace); a_release(__old); }
+                }
+            }
+            a_release(fn2);
+            a_release(mangled);
+            a_release(sig_str);
+            a_release(parts);
+            a_release(after_sig);
+            a_release(brace_idx);
+            a_release(hit_id);
+            a_release(after_brace);
+            a_release(before_brace);
+            a_release(hit_line);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(nl);
+    a_release(lbr);
+    a_release(result);
+    a_release(mangled);
+    a_release(sig_str);
+    a_release(parts);
+    a_release(after_sig);
+    a_release(brace_idx);
+    a_release(hit_id);
+    a_release(after_brace);
+    a_release(before_brace);
+    a_release(hit_line);
+    a_release(c_code);
+    a_release(fn_names);
+    a_release(fn_hit_map);
+    return __ret;
+}
+
+AValue fn_profiler__insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whiles, AValue n_fors, AValue hit_base) {
+    AValue nl = {0}, src_lines = {0}, new_lines = {0}, idx_if = {0}, idx_wh = {0}, idx_fo = {0}, trimmed = {0}, cid = {0};
+    AValue __ret = a_void();
+    c_code = a_retain(c_code);
+    n_ifs = a_retain(n_ifs);
+    n_whiles = a_retain(n_whiles);
+    n_fors = a_retain(n_fors);
+    hit_base = a_retain(hit_base);
+    { AValue __old = nl; nl = fn_profiler__nl(); a_release(__old); }
+    { AValue __old = src_lines; src_lines = a_str_split(c_code, nl); a_release(__old); }
+    { AValue __old = new_lines; new_lines = a_array_new(0); a_release(__old); }
+    { AValue __old = idx_if; idx_if = a_int(0); a_release(__old); }
+    { AValue __old = idx_wh; idx_wh = a_int(0); a_release(__old); }
+    { AValue __old = idx_fo; idx_fo = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(src_lines);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ln = {0}, trimmed = {0}, cid = {0};
+            ln = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = new_lines; new_lines = a_array_push(new_lines, ln); a_release(__old); }
+            { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("if (a_truthy(")))) {
+                if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), fn_profiler__lbrace())))) {
+                    if (a_truthy(a_lt(idx_if, n_ifs))) {
+                        { AValue __old = cid; cid = a_add(hit_base, idx_if); a_release(__old); }
+                        { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                        { AValue __old = idx_if; idx_if = a_add(idx_if, a_int(1)); a_release(__old); }
+                    }
+                }
+            }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("while (a_truthy(")))) {
+                if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), fn_profiler__lbrace())))) {
+                    { AValue __old = cid; cid = a_add(a_add(hit_base, n_ifs), idx_wh); a_release(__old); }
+                    { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                    { AValue __old = idx_wh; idx_wh = a_add(idx_wh, a_int(1)); a_release(__old); }
+                }
+            }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("for (int __fi")))) {
+                { AValue __old = cid; cid = a_add(a_add(a_add(hit_base, n_ifs), n_whiles), idx_fo); a_release(__old); }
+                { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("            a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                { AValue __old = idx_fo; idx_fo = a_add(idx_fo, a_int(1)); a_release(__old); }
+            }
+            a_release(ln);
+            a_release(trimmed);
+            a_release(cid);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_str_join(new_lines, nl); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(nl);
+    a_release(src_lines);
+    a_release(new_lines);
+    a_release(idx_if);
+    a_release(idx_wh);
+    a_release(idx_fo);
+    a_release(trimmed);
+    a_release(cid);
+    a_release(c_code);
+    a_release(n_ifs);
+    a_release(n_whiles);
+    a_release(n_fors);
+    a_release(hit_base);
+    return __ret;
+}
+
+AValue fn_profiler_instrument(AValue source_path, AValue profile_out_path) {
+    AValue source = {0}, parsed = {0}, analysis = {0}, fn_names = {0}, base_c = {0}, nl = {0}, q = {0}, counter_id = {0}, reg_lines = {0}, fn_hit_map = {0}, result = {0}, bc = {0}, n_ifs = {0}, n_whiles = {0}, n_fors = {0}, bi = {0}, hit_base = {0}, old_main = {0}, new_main = {0}, old_end = {0}, new_end = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    profile_out_path = a_retain(profile_out_path);
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = parsed; parsed = fn_parser_parse(source); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(parsed), a_string("map")))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    if (a_truthy(a_neq(a_array_get(parsed, a_string("tag")), a_string("Program")))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = analysis; analysis = fn_profiler__analyze_ast(parsed); a_release(__old); }
+    { AValue __old = fn_names; fn_names = a_array_get(analysis, a_string("functions")); a_release(__old); }
+    { AValue __old = base_c; base_c = fn_profiler__gen_base_c(source_path); a_release(__old); }
+    if (a_truthy(a_eq(a_len(base_c), a_int(0)))) {
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+    { AValue __old = nl; nl = fn_profiler__nl(); a_release(__old); }
+    { AValue __old = q; q = a_from_code(a_int(34)); a_release(__old); }
+    { AValue __old = counter_id; counter_id = a_int(0); a_release(__old); }
+    { AValue __old = reg_lines; reg_lines = a_string(""); a_release(__old); }
+    { AValue __old = fn_hit_map; fn_hit_map = a_map_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(fn_names);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue fname = {0};
+            fname = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("fn:")), fname), q), a_string(");")), nl); a_release(__old); }
+            { AValue __old = fn_hit_map; fn_hit_map = a_map_set(fn_hit_map, fname, counter_id); a_release(__old); }
+            { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+            a_release(fname);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = result; result = fn_profiler__insert_fn_hits(base_c, fn_names, fn_hit_map); a_release(__old); }
+    { AValue __old = bc; bc = a_array_get(analysis, a_string("branch_counts")); a_release(__old); }
+    { AValue __old = n_ifs; n_ifs = a_array_get(bc, a_string("ifs")); a_release(__old); }
+    { AValue __old = n_whiles; n_whiles = a_array_get(bc, a_string("whiles")); a_release(__old); }
+    { AValue __old = n_fors; n_fors = a_array_get(bc, a_string("fors")); a_release(__old); }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_ifs))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("if:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_whiles))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("while:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_fors))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("for:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = hit_base; hit_base = a_len(fn_names); a_release(__old); }
+    { AValue __old = result; result = fn_profiler__insert_branch_hits(result, n_ifs, n_whiles, n_fors, hit_base); a_release(__old); }
+    { AValue __old = old_main; old_main = a_string("g_argc = argc; g_argv = argv;"); a_release(__old); }
+    { AValue __old = new_main; new_main = a_add(a_add(a_add(a_add(a_string("g_argc = argc; g_argv = argv;"), nl), a_string("    a_profile_init();")), nl), reg_lines); a_release(__old); }
+    { AValue __old = result; result = a_str_replace(result, old_main, new_main); a_release(__old); }
+    { AValue __old = old_end; old_end = a_add(a_add(a_string("fn_main();"), nl), a_string("    return 0;")); a_release(__old); }
+    { AValue __old = new_end; new_end = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("fn_main();"), nl), a_string("    a_profile_dump_json(a_string(")), q), profile_out_path), q), a_string("));")), nl), a_string("    return 0;")); a_release(__old); }
+    { AValue __old = result; result = a_str_replace(result, old_end, new_end); a_release(__old); }
+    __ret = a_retain(result); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(source);
+    a_release(parsed);
+    a_release(analysis);
+    a_release(fn_names);
+    a_release(base_c);
+    a_release(nl);
+    a_release(q);
+    a_release(counter_id);
+    a_release(reg_lines);
+    a_release(fn_hit_map);
+    a_release(result);
+    a_release(bc);
+    a_release(n_ifs);
+    a_release(n_whiles);
+    a_release(n_fors);
+    a_release(bi);
+    a_release(hit_base);
+    a_release(old_main);
+    a_release(new_main);
+    a_release(old_end);
+    a_release(new_end);
+    a_release(source_path);
+    a_release(profile_out_path);
+    return __ret;
+}
+
+AValue fn_profiler_analyze_profile(AValue profile_path) {
+    AValue raw = {0}, data = {0}, counters = {0}, hot_fns = {0}, hot_branches = {0}, max_count = {0}, threshold = {0}, lbl = {0}, cnt = {0}, fname = {0}, total_hits = {0};
+    AValue __ret = a_void();
+    profile_path = a_retain(profile_path);
+    { AValue __old = raw; raw = a_io_read_file(profile_path); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(raw), a_string("void")), a_eq(a_len(raw), a_int(0))))) {
+        __ret = a_map_new(1, "error", a_string("cannot read profile")); goto __fn_cleanup;
+    }
+    { AValue __old = data; data = a_json_parse(raw); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(data), a_string("map")))) {
+        __ret = a_map_new(1, "error", a_string("invalid profile JSON")); goto __fn_cleanup;
+    }
+    { AValue __old = counters; counters = a_array_get(data, a_string("counters")); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(counters), a_string("array")))) {
+        __ret = a_map_new(1, "error", a_string("no counters in profile")); goto __fn_cleanup;
+    }
+    { AValue __old = hot_fns; hot_fns = a_array_new(0); a_release(__old); }
+    { AValue __old = hot_branches; hot_branches = a_array_new(0); a_release(__old); }
+    { AValue __old = max_count; max_count = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_gt(a_array_get(c, a_string("count")), max_count))) {
+                { AValue __old = max_count; max_count = a_array_get(c, a_string("count")); a_release(__old); }
+            }
+            a_release(c);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = threshold; threshold = a_div(max_count, a_int(10)); a_release(__old); }
+    if (a_truthy(a_lt(threshold, a_int(1)))) {
+        { AValue __old = threshold; threshold = a_int(1); a_release(__old); }
+    }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ct = {0}, lbl = {0}, cnt = {0}, fname = {0};
+            ct = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = lbl; lbl = a_array_get(ct, a_string("label")); a_release(__old); }
+            { AValue __old = cnt; cnt = a_array_get(ct, a_string("count")); a_release(__old); }
+            if (a_truthy(a_gteq(cnt, threshold))) {
+                if (a_truthy(a_str_starts_with(lbl, a_string("fn:")))) {
+                    { AValue __old = fname; fname = a_str_slice(lbl, a_int(3), a_len(lbl)); a_release(__old); }
+                    { AValue __old = hot_fns; hot_fns = a_array_push(hot_fns, a_map_new(3, "name", fname, "count", cnt, "hot_ratio", a_div(a_mul(cnt, a_int(100)), max_count))); a_release(__old); }
+                }
+            }
+            if (a_truthy(a_gt(cnt, a_int(0)))) {
+                if (a_truthy(a_or(a_or(a_str_starts_with(lbl, a_string("if:")), a_str_starts_with(lbl, a_string("while:"))), a_str_starts_with(lbl, a_string("for:"))))) {
+                    { AValue __old = hot_branches; hot_branches = a_array_push(hot_branches, a_map_new(2, "label", lbl, "count", cnt)); a_release(__old); }
+                }
+            }
+            a_release(ct);
+            a_release(lbl);
+            a_release(cnt);
+            a_release(fname);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = total_hits; total_hits = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ct2 = {0};
+            ct2 = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = total_hits; total_hits = a_add(total_hits, a_array_get(ct2, a_string("count"))); a_release(__old); }
+            a_release(ct2);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_map_new(5, "total_points", a_array_get(data, a_string("total_points")), "total_hits", total_hits, "hot_functions", hot_fns, "hot_branches", hot_branches, "counters", counters); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(raw);
+    a_release(data);
+    a_release(counters);
+    a_release(hot_fns);
+    a_release(hot_branches);
+    a_release(max_count);
+    a_release(threshold);
+    a_release(lbl);
+    a_release(cnt);
+    a_release(fname);
+    a_release(total_hits);
+    a_release(profile_path);
+    return __ret;
+}
+
+AValue fn_optimizer_load_profile(AValue profile_path) {
+    AValue raw = {0}, data = {0};
+    AValue __ret = a_void();
+    profile_path = a_retain(profile_path);
+    { AValue __old = raw; raw = a_io_read_file(profile_path); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(raw), a_string("void")), a_eq(a_len(raw), a_int(0))))) {
+        __ret = a_map_new(1, "error", a_string("cannot read profile")); goto __fn_cleanup;
+    }
+    { AValue __old = data; data = a_json_parse(raw); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(data), a_string("map")))) {
+        __ret = a_map_new(1, "error", a_string("invalid profile JSON")); goto __fn_cleanup;
+    }
+    __ret = a_retain(data); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(raw);
+    a_release(data);
+    a_release(profile_path);
+    return __ret;
+}
+
+AValue fn_optimizer__find_hot_functions(AValue counters) {
+    AValue hot = {0}, max_count = {0}, cnt = {0}, threshold = {0}, lbl = {0};
+    AValue __ret = a_void();
+    counters = a_retain(counters);
+    { AValue __old = hot; hot = a_array_new(0); a_release(__old); }
+    { AValue __old = max_count; max_count = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0}, cnt = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = cnt; cnt = a_array_get(c, a_string("count")); a_release(__old); }
+            if (a_truthy(a_gt(cnt, max_count))) {
+                { AValue __old = max_count; max_count = a_retain(cnt); a_release(__old); }
+            }
+            a_release(c);
+            a_release(cnt);
+        }
+        a_release(__iter_arr);
+    }
+    if (a_truthy(a_eq(max_count, a_int(0)))) {
+        __ret = a_array_new(0); goto __fn_cleanup;
+    }
+    { AValue __old = threshold; threshold = a_div(max_count, a_int(10)); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0}, lbl = {0}, cnt = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = lbl; lbl = a_array_get(c, a_string("label")); a_release(__old); }
+            { AValue __old = cnt; cnt = a_array_get(c, a_string("count")); a_release(__old); }
+            if (a_truthy(a_and(a_gteq(cnt, threshold), a_str_starts_with(lbl, a_string("fn:"))))) {
+                { AValue __old = hot; hot = a_array_push(hot, a_map_new(4, "label", lbl, "count", cnt, "name", a_str_slice(lbl, a_int(3), a_len(lbl)), "hot_ratio", a_div(a_mul(cnt, a_int(100)), max_count))); a_release(__old); }
+            }
+            a_release(c);
+            a_release(lbl);
+            a_release(cnt);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(hot); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(hot);
+    a_release(max_count);
+    a_release(cnt);
+    a_release(threshold);
+    a_release(lbl);
+    a_release(counters);
+    return __ret;
+}
+
+AValue fn_optimizer__find_hot_branches(AValue counters) {
+    AValue branches = {0}, lbl = {0}, cnt = {0};
+    AValue __ret = a_void();
+    counters = a_retain(counters);
+    { AValue __old = branches; branches = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0}, lbl = {0}, cnt = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = lbl; lbl = a_array_get(c, a_string("label")); a_release(__old); }
+            { AValue __old = cnt; cnt = a_array_get(c, a_string("count")); a_release(__old); }
+            if (a_truthy(a_or(a_or(a_or(a_str_starts_with(lbl, a_string("if:")), a_str_starts_with(lbl, a_string("else:"))), a_str_starts_with(lbl, a_string("while:"))), a_str_starts_with(lbl, a_string("for:"))))) {
+                if (a_truthy(a_gt(cnt, a_int(0)))) {
+                    { AValue __old = branches; branches = a_array_push(branches, a_map_new(2, "label", lbl, "count", cnt)); a_release(__old); }
+                }
+            }
+            a_release(c);
+            a_release(lbl);
+            a_release(cnt);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(branches); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(branches);
+    a_release(lbl);
+    a_release(cnt);
+    a_release(counters);
+    return __ret;
+}
+
+AValue fn_optimizer_analyze_profile(AValue profile_path) {
+    AValue data = {0}, counters = {0}, hot_fns = {0}, hot_branches = {0}, total_pts = {0}, total_hits = {0};
+    AValue __ret = a_void();
+    profile_path = a_retain(profile_path);
+    { AValue __old = data; data = fn_optimizer_load_profile(profile_path); a_release(__old); }
+    if (a_truthy(a_map_has(data, a_string("error")))) {
+        __ret = a_retain(data); goto __fn_cleanup;
+    }
+    { AValue __old = counters; counters = a_array_get(data, a_string("counters")); a_release(__old); }
+    if (a_truthy(a_neq(a_type_of(counters), a_string("array")))) {
+        __ret = a_map_new(1, "error", a_string("no counters in profile")); goto __fn_cleanup;
+    }
+    { AValue __old = hot_fns; hot_fns = fn_optimizer__find_hot_functions(counters); a_release(__old); }
+    { AValue __old = hot_branches; hot_branches = fn_optimizer__find_hot_branches(counters); a_release(__old); }
+    { AValue __old = total_pts; total_pts = a_array_get(data, a_string("total_points")); a_release(__old); }
+    { AValue __old = total_hits; total_hits = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(counters);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = total_hits; total_hits = a_add(total_hits, a_array_get(c, a_string("count"))); a_release(__old); }
+            a_release(c);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_map_new(5, "total_points", total_pts, "total_hits", total_hits, "hot_functions", hot_fns, "hot_branches", hot_branches, "counters", counters); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(data);
+    a_release(counters);
+    a_release(hot_fns);
+    a_release(hot_branches);
+    a_release(total_pts);
+    a_release(total_hits);
+    a_release(profile_path);
+    return __ret;
+}
+
+AValue fn_optimizer__count_fn_body_stmts(AValue body) {
+    AValue __ret = a_void();
+    body = a_retain(body);
+    if (a_truthy(a_and(a_eq(a_type_of(body), a_string("map")), a_map_has(body, a_string("stmts"))))) {
+        __ret = a_len(a_array_get(body, a_string("stmts"))); goto __fn_cleanup;
+    }
+    __ret = a_int(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(body);
+    return __ret;
+}
+
+AValue fn_optimizer__is_small_fn(AValue func_node) {
+    AValue stmts = {0};
+    AValue __ret = a_void();
+    func_node = a_retain(func_node);
+    { AValue __old = stmts; stmts = fn_optimizer__count_fn_body_stmts(a_array_get(func_node, a_string("body"))); a_release(__old); }
+    __ret = a_lteq(stmts, a_int(5)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(stmts);
+    a_release(func_node);
+    return __ret;
+}
+
+AValue fn_optimizer__extract_fn_map(AValue source) {
+    AValue prog = {0}, fm = {0}, items = {0};
+    AValue __ret = a_void();
+    source = a_retain(source);
+    { AValue __old = prog; prog = fn_parser_parse(source); a_release(__old); }
+    if (a_truthy(a_or(a_neq(a_type_of(prog), a_string("map")), a_neq(a_array_get(prog, a_string("tag")), a_string("Program"))))) {
+        __ret = a_map_new(0); goto __fn_cleanup;
+    }
+    { AValue __old = fm; fm = a_map_new(0); a_release(__old); }
+    { AValue __old = items; items = a_array_get(prog, a_string("items")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = fm; fm = a_map_set(fm, a_array_get(item, a_string("name")), item); a_release(__old); }
+            }
+            a_release(item);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(fm); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(prog);
+    a_release(fm);
+    a_release(items);
+    a_release(source);
+    return __ret;
+}
+
+AValue fn_optimizer_suggest(AValue source, AValue profile_report) {
+    AValue suggestions = {0}, fn_map = {0}, hot_fns = {0}, fname = {0}, cnt = {0}, ratio = {0}, fn_node = {0}, is_small = {0}, n_params = {0}, hot_branches = {0}, lbl = {0};
+    AValue __ret = a_void();
+    source = a_retain(source);
+    profile_report = a_retain(profile_report);
+    { AValue __old = suggestions; suggestions = a_array_new(0); a_release(__old); }
+    if (a_truthy(a_map_has(profile_report, a_string("error")))) {
+        __ret = a_retain(suggestions); goto __fn_cleanup;
+    }
+    { AValue __old = fn_map; fn_map = fn_optimizer__extract_fn_map(source); a_release(__old); }
+    { AValue __old = hot_fns; hot_fns = a_array_get(profile_report, a_string("hot_functions")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(hot_fns);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue hf = {0}, fname = {0}, cnt = {0}, ratio = {0}, fn_node = {0}, is_small = {0}, n_params = {0};
+            hf = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = fname; fname = a_array_get(hf, a_string("name")); a_release(__old); }
+            { AValue __old = cnt; cnt = a_array_get(hf, a_string("count")); a_release(__old); }
+            { AValue __old = ratio; ratio = a_array_get(hf, a_string("hot_ratio")); a_release(__old); }
+            if (a_truthy(a_map_has(fn_map, fname))) {
+                { AValue __old = fn_node; fn_node = a_array_get(fn_map, fname); a_release(__old); }
+                { AValue __old = is_small; is_small = fn_optimizer__is_small_fn(fn_node); a_release(__old); }
+                { AValue __old = n_params; n_params = a_len(a_array_get(fn_node, a_string("params"))); a_release(__old); }
+                if (a_truthy(a_and(a_and(is_small, a_lteq(n_params, a_int(3))), a_gteq(ratio, a_int(50))))) {
+                    { AValue __old = suggestions; suggestions = a_array_push(suggestions, a_map_new(4, "type", a_string("inline"), "function", fname, "reason", a_add(a_add(a_add(a_add(a_add(a_add(a_string("hot function ("), a_to_str(cnt)), a_string(" calls, ")), a_to_str(ratio)), a_string("% of max) with small body (")), a_to_str(fn_optimizer__count_fn_body_stmts(a_array_get(fn_node, a_string("body"))))), a_string(" stmts)")), "priority", a_string("high"))); a_release(__old); }
+                }
+                if (a_truthy(a_and(a_not(is_small), a_gteq(ratio, a_int(80))))) {
+                    { AValue __old = suggestions; suggestions = a_array_push(suggestions, a_map_new(4, "type", a_string("optimize"), "function", fname, "reason", a_add(a_add(a_add(a_add(a_string("dominant hot function ("), a_to_str(cnt)), a_string(" calls, ")), a_to_str(ratio)), a_string("% of max), review for algorithmic improvements")), "priority", a_string("high"))); a_release(__old); }
+                }
+            }
+            a_release(hf);
+            a_release(fname);
+            a_release(cnt);
+            a_release(ratio);
+            a_release(fn_node);
+            a_release(is_small);
+            a_release(n_params);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = hot_branches; hot_branches = a_array_get(profile_report, a_string("hot_branches")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(hot_branches);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue hb = {0}, lbl = {0}, cnt = {0};
+            hb = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = lbl; lbl = a_array_get(hb, a_string("label")); a_release(__old); }
+            { AValue __old = cnt; cnt = a_array_get(hb, a_string("count")); a_release(__old); }
+            if (a_truthy(a_and(a_str_starts_with(lbl, a_string("while:")), a_gt(cnt, a_int(10000))))) {
+                { AValue __old = suggestions; suggestions = a_array_push(suggestions, a_map_new(4, "type", a_string("loop_unroll"), "label", lbl, "reason", a_add(a_add(a_string("hot loop with "), a_to_str(cnt)), a_string(" iterations, consider unrolling")), "priority", a_string("medium"))); a_release(__old); }
+            }
+            a_release(hb);
+            a_release(lbl);
+            a_release(cnt);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(suggestions); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(suggestions);
+    a_release(fn_map);
+    a_release(hot_fns);
+    a_release(fname);
+    a_release(cnt);
+    a_release(ratio);
+    a_release(fn_node);
+    a_release(is_small);
+    a_release(n_params);
+    a_release(hot_branches);
+    a_release(lbl);
+    a_release(source);
+    a_release(profile_report);
+    return __ret;
+}
+
+AValue fn_optimizer_measure_binary(AValue bin_path) {
+    AValue stat_r = {0}, sz = {0};
+    AValue __ret = a_void();
+    bin_path = a_retain(bin_path);
+    if (a_truthy(a_not(a_fs_exists(bin_path)))) {
+        __ret = a_map_new(1, "error", a_string("binary not found")); goto __fn_cleanup;
+    }
+    { AValue __old = stat_r; stat_r = a_exec(a_add(a_string("wc -c < "), bin_path)); a_release(__old); }
+    { AValue __old = sz; sz = a_int(0); a_release(__old); }
+    if (a_truthy(a_eq(a_array_get(stat_r, a_string("code")), a_int(0)))) {
+        { AValue __old = sz; sz = a_to_int(a_str_trim(a_array_get(stat_r, a_string("stdout")))); a_release(__old); }
+    }
+    __ret = a_map_new(4, "path", bin_path, "size_bytes", sz, "size_kb", a_div(sz, a_int(1024)), "size_mb", a_div(sz, a_int(1048576))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(stat_r);
+    a_release(sz);
+    a_release(bin_path);
+    return __ret;
+}
+
+AValue fn_optimizer_measure_compile_time(AValue source_path) {
+    AValue t0 = {0}, self = {0}, tmp_bin = {0}, r = {0}, t1 = {0}, elapsed = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    { AValue __old = t0; t0 = a_time_now(); a_release(__old); }
+    { AValue __old = self; self = a_argv0(); a_release(__old); }
+    { AValue __old = tmp_bin; tmp_bin = a_add(a_string("/tmp/a_opt_bench_"), a_to_str(a_time_now())); a_release(__old); }
+    { AValue __old = r; r = a_exec(a_add(a_add(a_add(a_add(a_add(self, a_string(" build ")), source_path), a_string(" -o ")), tmp_bin), a_string(" 2>&1"))); a_release(__old); }
+    { AValue __old = t1; t1 = a_time_now(); a_release(__old); }
+    { AValue __old = elapsed; elapsed = a_sub(t1, t0); a_release(__old); }
+    if (a_truthy(a_fs_exists(tmp_bin))) {
+        a_fs_rm(tmp_bin);
+    }
+    __ret = a_map_new(3, "source", source_path, "compile_ms", elapsed, "success", a_eq(a_array_get(r, a_string("code")), a_int(0))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t0);
+    a_release(self);
+    a_release(tmp_bin);
+    a_release(r);
+    a_release(t1);
+    a_release(elapsed);
+    a_release(source_path);
+    return __ret;
+}
+
+AValue fn_optimizer_benchmark(AValue source_path, AValue runs) {
+    AValue self = {0}, tmp_bin = {0}, build_r = {0}, times = {0}, ri = {0}, t0 = {0}, run_r = {0}, t1 = {0}, total = {0}, min_t = {0}, max_t = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    runs = a_retain(runs);
+    { AValue __old = self; self = a_argv0(); a_release(__old); }
+    { AValue __old = tmp_bin; tmp_bin = a_add(a_string("/tmp/a_opt_bench_"), a_to_str(a_time_now())); a_release(__old); }
+    { AValue __old = build_r; build_r = a_exec(a_add(a_add(a_add(a_add(a_add(self, a_string(" build ")), source_path), a_string(" -o ")), tmp_bin), a_string(" 2>&1"))); a_release(__old); }
+    if (a_truthy(a_neq(a_array_get(build_r, a_string("code")), a_int(0)))) {
+        __ret = a_map_new(1, "error", a_string("build failed")); goto __fn_cleanup;
+    }
+    { AValue __old = times; times = a_array_new(0); a_release(__old); }
+    { AValue __old = ri; ri = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(ri, runs))) {
+        { AValue __old = t0; t0 = a_time_now(); a_release(__old); }
+        { AValue __old = run_r; run_r = a_exec(a_add(tmp_bin, a_string(" 2>&1"))); a_release(__old); }
+        { AValue __old = t1; t1 = a_time_now(); a_release(__old); }
+        { AValue __old = times; times = a_array_push(times, a_sub(t1, t0)); a_release(__old); }
+        { AValue __old = ri; ri = a_add(ri, a_int(1)); a_release(__old); }
+    }
+    a_fs_rm(tmp_bin);
+    { AValue __old = total; total = a_int(0); a_release(__old); }
+    { AValue __old = min_t; min_t = a_array_get(times, a_int(0)); a_release(__old); }
+    { AValue __old = max_t; max_t = a_array_get(times, a_int(0)); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(times);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue t = {0};
+            t = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = total; total = a_add(total, t); a_release(__old); }
+            if (a_truthy(a_lt(t, min_t))) {
+                { AValue __old = min_t; min_t = a_retain(t); a_release(__old); }
+            }
+            if (a_truthy(a_gt(t, max_t))) {
+                { AValue __old = max_t; max_t = a_retain(t); a_release(__old); }
+            }
+            a_release(t);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_map_new(6, "source", source_path, "runs", runs, "avg_ms", a_div(total, runs), "min_ms", min_t, "max_ms", max_t, "total_ms", total); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(self);
+    a_release(tmp_bin);
+    a_release(build_r);
+    a_release(times);
+    a_release(ri);
+    a_release(t0);
+    a_release(run_r);
+    a_release(t1);
+    a_release(total);
+    a_release(min_t);
+    a_release(max_t);
+    a_release(source_path);
+    a_release(runs);
+    return __ret;
+}
+
+AValue fn_optimizer_report(AValue source_path, AValue profile_path) {
+    AValue source = {0}, prof = {0}, suggs = {0}, bin_info = {0}, out = {0}, hf = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    profile_path = a_retain(profile_path);
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+    { AValue __old = prof; prof = fn_optimizer_analyze_profile(profile_path); a_release(__old); }
+    { AValue __old = suggs; suggs = fn_optimizer_suggest(source, prof); a_release(__old); }
+    { AValue __old = bin_info; bin_info = fn_optimizer_measure_binary(source_path); a_release(__old); }
+    { AValue __old = out; out = a_string("=== Optimization Report ===\n\n"); a_release(__old); }
+    { AValue __old = out; out = a_add(a_add(a_add(out, a_string("Profile: ")), profile_path), a_string("\n")); a_release(__old); }
+    { AValue __old = out; out = a_add(a_add(a_add(out, a_string("Total instrumentation points: ")), a_to_str(a_array_get(prof, a_string("total_points")))), a_string("\n")); a_release(__old); }
+    { AValue __old = out; out = a_add(a_add(a_add(out, a_string("Total hits: ")), a_to_str(a_array_get(prof, a_string("total_hits")))), a_string("\n\n")); a_release(__old); }
+    { AValue __old = hf; hf = a_array_get(prof, a_string("hot_functions")); a_release(__old); }
+    { AValue __old = out; out = a_add(a_add(a_add(out, a_string("Hot Functions (")), a_to_str(a_len(hf))), a_string("):\n")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(hf);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue f = {0};
+            f = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = out; out = a_add(a_add(a_add(a_add(a_add(a_add(a_add(out, a_string("  ")), a_array_get(f, a_string("name"))), a_string(": ")), a_to_str(a_array_get(f, a_string("count")))), a_string(" calls (")), a_to_str(a_array_get(f, a_string("hot_ratio")))), a_string("% of max)\n")); a_release(__old); }
+            a_release(f);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = out; out = a_add(a_add(a_add(out, a_string("\nSuggestions (")), a_to_str(a_len(suggs))), a_string("):\n")); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(suggs);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue sg = {0};
+            sg = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = out; out = a_add(a_add(a_add(a_add(a_add(a_add(a_add(out, a_string("  [")), a_array_get(sg, a_string("priority"))), a_string("] ")), a_array_get(sg, a_string("type"))), a_string(" -- ")), a_array_get(sg, a_string("reason"))), a_string("\n")); a_release(__old); }
+            a_release(sg);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = out; out = a_add(out, a_string("\n")); a_release(__old); }
+    __ret = a_retain(out); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(source);
+    a_release(prof);
+    a_release(suggs);
+    a_release(bin_info);
+    a_release(out);
+    a_release(hf);
+    a_release(source_path);
+    a_release(profile_path);
+    return __ret;
+}
+
+AValue fn_testgen__edge_values_for_type(AValue hint) {
+    AValue q = {0};
+    AValue __ret = a_void();
+    hint = a_retain(hint);
+    if (a_truthy(a_or(a_eq(hint, a_string("int")), a_eq(hint, a_string("number"))))) {
+        __ret = a_array_new(5, a_string("0"), a_string("1"), a_string("-1"), a_string("42"), a_string("100")); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_eq(hint, a_string("str")), a_eq(hint, a_string("string"))))) {
+        { AValue __old = q; q = a_from_code(a_int(34)); a_release(__old); }
+        __ret = a_array_new(4, a_add(q, q), a_add(a_add(q, a_string("hello")), q), a_add(a_add(q, a_string("a")), q), a_add(a_add(q, a_string("test string")), q)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(hint, a_string("bool")))) {
+        __ret = a_array_new(2, a_string("true"), a_string("false")); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_eq(hint, a_string("array")), a_eq(hint, a_string("list"))))) {
+        __ret = a_array_new(3, a_string("[]"), a_string("[1]"), a_string("[1, 2, 3]")); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(hint, a_string("map")))) {
+        __ret = a_array_new(2, a_add(a_add(a_string("#"), a_from_code(a_int(123))), a_from_code(a_int(125))), a_add(a_add(a_add(a_add(a_add(a_add(a_string("#"), a_from_code(a_int(123))), a_from_code(a_int(34))), a_string("a")), a_from_code(a_int(34))), a_string(": 1")), a_from_code(a_int(125)))); goto __fn_cleanup;
+    }
+    __ret = a_array_new(4, a_string("0"), a_add(a_add(a_from_code(a_int(34)), a_string("test")), a_from_code(a_int(34))), a_string("true"), a_string("[]")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(q);
+    a_release(hint);
+    return __ret;
+}
+
+AValue fn_testgen__guess_param_type(AValue pname) {
+    AValue nm = {0};
+    AValue __ret = a_void();
+    pname = a_retain(pname);
+    { AValue __old = nm; nm = a_str_lower(pname); a_release(__old); }
+    if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_or(a_or(a_or(a_or(a_str_contains(nm, a_string("count")), a_str_contains(nm, a_string("num"))), a_str_contains(nm, a_string("size"))), a_str_contains(nm, a_string("len"))), a_str_contains(nm, a_string("idx"))), a_str_contains(nm, a_string("index"))), a_eq(nm, a_string("n"))), a_eq(nm, a_string("i"))), a_eq(nm, a_string("x"))), a_eq(nm, a_string("y"))))) {
+        __ret = a_string("int"); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_or(a_str_contains(nm, a_string("name")), a_str_contains(nm, a_string("text"))), a_str_contains(nm, a_string("msg"))), a_str_contains(nm, a_string("str"))), a_str_contains(nm, a_string("label"))), a_str_contains(nm, a_string("desc"))), a_eq(nm, a_string("s"))))) {
+        __ret = a_string("str"); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_or(a_or(a_or(a_str_contains(nm, a_string("flag")), a_str_contains(nm, a_string("enabled"))), a_str_contains(nm, a_string("active"))), a_str_contains(nm, a_string("is_"))), a_str_contains(nm, a_string("has_"))))) {
+        __ret = a_string("bool"); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_or(a_or(a_str_contains(nm, a_string("items")), a_str_contains(nm, a_string("list"))), a_str_contains(nm, a_string("arr"))), a_str_contains(nm, a_string("elems"))))) {
+        __ret = a_string("array"); goto __fn_cleanup;
+    }
+    if (a_truthy(a_or(a_or(a_or(a_str_contains(nm, a_string("opts")), a_str_contains(nm, a_string("config"))), a_str_contains(nm, a_string("options"))), a_str_contains(nm, a_string("settings"))))) {
+        __ret = a_string("map"); goto __fn_cleanup;
+    }
+    __ret = a_string("any"); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(nm);
+    a_release(pname);
+    return __ret;
+}
+
+AValue fn_testgen__extract_functions(AValue prog_ast) {
+    AValue items = {0}, fns = {0}, fname = {0}, params = {0}, param_info = {0}, pname = {0}, ptype = {0}, body = {0}, has_return = {0}, stmts = {0};
+    AValue __ret = a_void();
+    prog_ast = a_retain(prog_ast);
+    { AValue __old = items; items = a_array_get(prog_ast, a_string("items")); a_release(__old); }
+    { AValue __old = fns; fns = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0}, fname = {0}, params = {0}, param_info = {0}, pname = {0}, ptype = {0}, body = {0}, has_return = {0}, stmts = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = fname; fname = a_array_get(item, a_string("name")); a_release(__old); }
+                if (a_truthy(a_str_starts_with(fname, a_string("_")))) {
+                } else {
+                    if (a_truthy(a_neq(fname, a_string("main")))) {
+                        { AValue __old = params; params = a_array_get(item, a_string("params")); a_release(__old); }
+                        { AValue __old = param_info; param_info = a_array_new(0); a_release(__old); }
+                        {
+                            AValue __iter_arr = a_iterable(params);
+                            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                                AValue p = {0}, pname = {0}, ptype = {0};
+                                p = a_array_get(__iter_arr, a_int(__fi));
+                                { AValue __old = pname; pname = a_array_get(p, a_string("name")); a_release(__old); }
+                                { AValue __old = ptype; ptype = fn_testgen__guess_param_type(pname); a_release(__old); }
+                                { AValue __old = param_info; param_info = a_array_push(param_info, a_map_new(2, "name", pname, "type", ptype)); a_release(__old); }
+                                a_release(p);
+                                a_release(pname);
+                                a_release(ptype);
+                            }
+                            a_release(__iter_arr);
+                        }
+                        { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
+                        { AValue __old = has_return; has_return = a_bool(0); a_release(__old); }
+                        if (a_truthy(a_and(a_eq(a_type_of(body), a_string("map")), a_map_has(body, a_string("stmts"))))) {
+                            { AValue __old = stmts; stmts = a_array_get(body, a_string("stmts")); a_release(__old); }
+                            {
+                                AValue __iter_arr = a_iterable(stmts);
+                                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                                    AValue st = {0};
+                                    st = a_array_get(__iter_arr, a_int(__fi));
+                                    if (a_truthy(a_eq(a_array_get(st, a_string("tag")), a_string("Return")))) {
+                                        { AValue __old = has_return; has_return = a_bool(1); a_release(__old); }
+                                    }
+                                    a_release(st);
+                                }
+                                a_release(__iter_arr);
+                            }
+                        }
+                        { AValue __old = fns; fns = a_array_push(fns, a_map_new(4, "name", fname, "params", param_info, "has_return", has_return, "param_count", a_len(params))); a_release(__old); }
+                    }
+                }
+            }
+            a_release(item);
+            a_release(fname);
+            a_release(params);
+            a_release(param_info);
+            a_release(pname);
+            a_release(ptype);
+            a_release(body);
+            a_release(has_return);
+            a_release(stmts);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(fns); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(items);
+    a_release(fns);
+    a_release(fname);
+    a_release(params);
+    a_release(param_info);
+    a_release(pname);
+    a_release(ptype);
+    a_release(body);
+    a_release(has_return);
+    a_release(stmts);
+    a_release(prog_ast);
+    return __ret;
+}
+
+AValue fn_testgen__gen_arg_combos(AValue params) {
+    AValue p = {0}, vals = {0}, combos = {0}, first = {0}, rest_params = {0}, first_vals = {0}, rest_combos = {0}, combo = {0};
+    AValue __ret = a_void();
+    params = a_retain(params);
+    if (a_truthy(a_eq(a_len(params), a_int(0)))) {
+        __ret = a_array_new(1, a_array_new(0)); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(a_len(params), a_int(1)))) {
+        { AValue __old = p; p = a_array_get(params, a_int(0)); a_release(__old); }
+        { AValue __old = vals; vals = fn_testgen__edge_values_for_type(a_array_get(p, a_string("type"))); a_release(__old); }
+        { AValue __old = combos; combos = a_array_new(0); a_release(__old); }
+        {
+            AValue __iter_arr = a_iterable(vals);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue v = {0};
+                v = a_array_get(__iter_arr, a_int(__fi));
+                { AValue __old = combos; combos = a_array_push(combos, a_array_new(1, v)); a_release(__old); }
+                a_release(v);
+            }
+            a_release(__iter_arr);
+        }
+        __ret = a_retain(combos); goto __fn_cleanup;
+    }
+    { AValue __old = first; first = a_array_get(params, a_int(0)); a_release(__old); }
+    { AValue __old = rest_params; rest_params = a_drop(params, a_int(1)); a_release(__old); }
+    { AValue __old = first_vals; first_vals = fn_testgen__edge_values_for_type(a_array_get(first, a_string("type"))); a_release(__old); }
+    { AValue __old = rest_combos; rest_combos = fn_testgen__gen_arg_combos(rest_params); a_release(__old); }
+    { AValue __old = combos; combos = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(first_vals);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue fv = {0}, combo = {0};
+            fv = a_array_get(__iter_arr, a_int(__fi));
+            {
+                AValue __iter_arr = a_iterable(rest_combos);
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue rc = {0}, combo = {0};
+                    rc = a_array_get(__iter_arr, a_int(__fi));
+                    { AValue __old = combo; combo = a_concat_arr(a_array_new(1, fv), rc); a_release(__old); }
+                    if (a_truthy(a_lt(a_len(combos), a_int(20)))) {
+                        { AValue __old = combos; combos = a_array_push(combos, combo); a_release(__old); }
+                    }
+                    a_release(rc);
+                    a_release(combo);
+                }
+                a_release(__iter_arr);
+            }
+            a_release(fv);
+            a_release(combo);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(combos); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(p);
+    a_release(vals);
+    a_release(combos);
+    a_release(first);
+    a_release(rest_params);
+    a_release(first_vals);
+    a_release(rest_combos);
+    a_release(combo);
+    a_release(params);
+    return __ret;
+}
+
+AValue fn_testgen__gen_test_for_fn(AValue func_info, AValue test_num) {
+    AValue fname = {0}, params = {0}, has_ret = {0}, combos = {0}, code = {0}, tn = {0}, arg_str = {0};
+    AValue __ret = a_void();
+    func_info = a_retain(func_info);
+    test_num = a_retain(test_num);
+    { AValue __old = fname; fname = a_array_get(func_info, a_string("name")); a_release(__old); }
+    { AValue __old = params; params = a_array_get(func_info, a_string("params")); a_release(__old); }
+    { AValue __old = has_ret; has_ret = a_array_get(func_info, a_string("has_return")); a_release(__old); }
+    { AValue __old = combos; combos = fn_testgen__gen_arg_combos(params); a_release(__old); }
+    { AValue __old = code; code = a_string(""); a_release(__old); }
+    { AValue __old = tn; tn = a_retain(test_num); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(combos);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue combo = {0}, arg_str = {0};
+            combo = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = arg_str; arg_str = a_str_join(combo, a_string(", ")); a_release(__old); }
+            { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(code, a_string("  ; --- Test ")), a_to_str(tn)), a_string(": ")), fname), a_string("(")), arg_str), a_string(") ---\n")); a_release(__old); }
+            if (a_truthy(has_ret)) {
+                { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(code, a_string("  let r_")), a_to_str(tn)), a_string(" = ")), fname), a_string("(")), arg_str), a_string(")\n")); a_release(__old); }
+                { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(code, a_string("  println(")), a_from_code(a_int(34))), a_string("PASS: ")), fname), a_string("(")), arg_str), a_string(") = ")), a_from_code(a_int(34))), a_string(" + to_str(r_")), a_to_str(tn)), a_string("))\n")); a_release(__old); }
+            } else {
+                { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(code, a_string("  ")), fname), a_string("(")), arg_str), a_string(")\n")); a_release(__old); }
+                { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(code, a_string("  println(")), a_from_code(a_int(34))), a_string("PASS: ")), fname), a_string("(")), arg_str), a_string(")")), a_from_code(a_int(34))), a_string(")\n")); a_release(__old); }
+            }
+            { AValue __old = code; code = a_add(code, a_string("\n")); a_release(__old); }
+            { AValue __old = tn; tn = a_add(tn, a_int(1)); a_release(__old); }
+            a_release(combo);
+            a_release(arg_str);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(code); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(fname);
+    a_release(params);
+    a_release(has_ret);
+    a_release(combos);
+    a_release(code);
+    a_release(tn);
+    a_release(arg_str);
+    a_release(func_info);
+    a_release(test_num);
+    return __ret;
+}
+
+AValue fn_testgen_gen_tests(AValue source) {
+    AValue prog = {0}, fns = {0}, test_code = {0}, test_num = {0}, fn_tests = {0}, combos = {0};
+    AValue __ret = a_void();
+    source = a_retain(source);
+    { AValue __old = prog; prog = fn_parser_parse(source); a_release(__old); }
+    if (a_truthy(a_or(a_neq(a_type_of(prog), a_string("map")), a_neq(a_array_get(prog, a_string("tag")), a_string("Program"))))) {
+        __ret = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("; error: could not parse source\nfn main() "), a_from_code(a_int(123))), a_string("\n  println(")), a_from_code(a_int(34))), a_string("ERROR: parse failure")), a_from_code(a_int(34))), a_string(")\n")), a_from_code(a_int(125))), a_string("\n")); goto __fn_cleanup;
+    }
+    { AValue __old = fns; fns = fn_testgen__extract_functions(prog); a_release(__old); }
+    if (a_truthy(a_eq(a_len(fns), a_int(0)))) {
+        __ret = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("; no testable functions found\nfn main() "), a_from_code(a_int(123))), a_string("\n  println(")), a_from_code(a_int(34))), a_string("no tests generated")), a_from_code(a_int(34))), a_string(")\n")), a_from_code(a_int(125))), a_string("\n")); goto __fn_cleanup;
+    }
+    { AValue __old = test_code; test_code = a_string("; Auto-generated tests by std/testgen.a\n\n"); a_release(__old); }
+    { AValue __old = test_code; test_code = a_add(test_code, a_string("; Source functions under test:\n")); a_release(__old); }
+    { AValue __old = test_code; test_code = a_add(a_add(test_code, source), a_string("\n\n")); a_release(__old); }
+    { AValue __old = test_code; test_code = a_add(a_add(a_add(test_code, a_string("fn main() ")), a_from_code(a_int(123))), a_string("\n")); a_release(__old); }
+    { AValue __old = test_num; test_num = a_int(1); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(fns);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue func = {0}, fn_tests = {0}, combos = {0};
+            func = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = fn_tests; fn_tests = fn_testgen__gen_test_for_fn(func, test_num); a_release(__old); }
+            { AValue __old = test_code; test_code = a_add(test_code, fn_tests); a_release(__old); }
+            { AValue __old = combos; combos = fn_testgen__gen_arg_combos(a_array_get(func, a_string("params"))); a_release(__old); }
+            { AValue __old = test_num; test_num = a_add(test_num, a_len(combos)); a_release(__old); }
+            a_release(func);
+            a_release(fn_tests);
+            a_release(combos);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = test_code; test_code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(test_code, a_string("  println(")), a_from_code(a_int(34))), a_string("All ")), a_to_str(a_sub(test_num, a_int(1)))), a_string(" generated tests passed")), a_from_code(a_int(34))), a_string(")\n")); a_release(__old); }
+    { AValue __old = test_code; test_code = a_add(a_add(test_code, a_from_code(a_int(125))), a_string("\n")); a_release(__old); }
+    __ret = a_retain(test_code); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(prog);
+    a_release(fns);
+    a_release(test_code);
+    a_release(test_num);
+    a_release(fn_tests);
+    a_release(combos);
+    a_release(source);
+    return __ret;
+}
+
+AValue fn_testgen_gen_tests_for_file(AValue filepath) {
+    AValue source = {0};
+    AValue __ret = a_void();
+    filepath = a_retain(filepath);
+    { AValue __old = source; source = a_io_read_file(filepath); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+        __ret = a_add(a_add(a_string("; error: could not read "), filepath), a_string("\n")); goto __fn_cleanup;
+    }
+    __ret = fn_testgen_gen_tests(source); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(source);
+    a_release(filepath);
+    return __ret;
+}
+
+AValue fn_testgen_analyze(AValue source) {
+    AValue prog = {0}, fns = {0}, all_items = {0}, total_fns = {0}, private_fns = {0}, total_params = {0}, src_lines = {0}, code_lines = {0}, comment_lines = {0}, trimmed = {0};
+    AValue __ret = a_void();
+    source = a_retain(source);
+    { AValue __old = prog; prog = fn_parser_parse(source); a_release(__old); }
+    if (a_truthy(a_or(a_neq(a_type_of(prog), a_string("map")), a_neq(a_array_get(prog, a_string("tag")), a_string("Program"))))) {
+        __ret = a_map_new(3, "error", a_string("parse failure"), "functions", a_int(0), "lines", a_int(0)); goto __fn_cleanup;
+    }
+    { AValue __old = fns; fns = fn_testgen__extract_functions(prog); a_release(__old); }
+    { AValue __old = all_items; all_items = a_array_get(prog, a_string("items")); a_release(__old); }
+    { AValue __old = total_fns; total_fns = a_int(0); a_release(__old); }
+    { AValue __old = private_fns; private_fns = a_int(0); a_release(__old); }
+    { AValue __old = total_params; total_params = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(all_items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = total_fns; total_fns = a_add(total_fns, a_int(1)); a_release(__old); }
+                if (a_truthy(a_str_starts_with(a_array_get(item, a_string("name")), a_string("_")))) {
+                    { AValue __old = private_fns; private_fns = a_add(private_fns, a_int(1)); a_release(__old); }
+                }
+                { AValue __old = total_params; total_params = a_add(total_params, a_len(a_array_get(item, a_string("params")))); a_release(__old); }
+            }
+            a_release(item);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = src_lines; src_lines = a_str_split(source, a_string("\n")); a_release(__old); }
+    { AValue __old = code_lines; code_lines = a_int(0); a_release(__old); }
+    { AValue __old = comment_lines; comment_lines = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(src_lines);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ln = {0}, trimmed = {0};
+            ln = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
+            if (a_truthy(a_eq(a_len(trimmed), a_int(0)))) {
+            } else {
+                if (a_truthy(a_str_starts_with(trimmed, a_string(";")))) {
+                    { AValue __old = comment_lines; comment_lines = a_add(comment_lines, a_int(1)); a_release(__old); }
+                } else {
+                    { AValue __old = code_lines; code_lines = a_add(code_lines, a_int(1)); a_release(__old); }
+                }
+            }
+            a_release(ln);
+            a_release(trimmed);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_map_new(8, "total_functions", total_fns, "public_functions", a_sub(total_fns, private_fns), "private_functions", private_fns, "testable_functions", a_len(fns), "total_parameters", total_params, "total_lines", a_len(src_lines), "code_lines", code_lines, "comment_lines", comment_lines); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(prog);
+    a_release(fns);
+    a_release(all_items);
+    a_release(total_fns);
+    a_release(private_fns);
+    a_release(total_params);
+    a_release(src_lines);
+    a_release(code_lines);
+    a_release(comment_lines);
+    a_release(trimmed);
+    a_release(source);
+    return __ret;
+}
+
 AValue fn_path_join(AValue a, AValue b) {
     AValue __ret = a_void();
     a = a_retain(a);
@@ -13815,6 +15121,423 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn__profile_insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_map) {
+    AValue nl = {0}, lbr = {0}, lines = {0}, new_lines = {0}, trimmed = {0}, mangled = {0}, sig_start = {0}, hit_id = {0};
+    AValue __ret = a_void();
+    c_code = a_retain(c_code);
+    fn_names = a_retain(fn_names);
+    fn_hit_map = a_retain(fn_hit_map);
+    { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
+    { AValue __old = lbr; lbr = a_from_code(a_int(123)); a_release(__old); }
+    { AValue __old = lines; lines = a_str_split(c_code, nl); a_release(__old); }
+    { AValue __old = new_lines; new_lines = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(lines);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ln = {0}, trimmed = {0}, mangled = {0}, sig_start = {0}, hit_id = {0};
+            ln = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = new_lines; new_lines = a_array_push(new_lines, ln); a_release(__old); }
+            { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
+            {
+                AValue __iter_arr = a_iterable(fn_names);
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue fn2 = {0}, mangled = {0}, sig_start = {0}, hit_id = {0};
+                    fn2 = a_array_get(__iter_arr, a_int(__fi));
+                    { AValue __old = mangled; mangled = a_str_replace(a_str_replace(a_str_replace(fn2, a_string("."), a_string("_")), a_string("-"), a_string("_")), a_string("!"), a_string("_bang")); a_release(__old); }
+                    { AValue __old = sig_start; sig_start = a_add(a_add(a_string("AValue fn_"), mangled), a_string("(")); a_release(__old); }
+                    if (a_truthy(a_str_starts_with(trimmed, sig_start))) {
+                        if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
+                            { AValue __old = hit_id; hit_id = a_array_get(fn_hit_map, fn2); a_release(__old); }
+                            { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("    a_profile_hit("), a_to_str(hit_id)), a_string(");"))); a_release(__old); }
+                        }
+                    }
+                    a_release(fn2);
+                    a_release(mangled);
+                    a_release(sig_start);
+                    a_release(hit_id);
+                }
+                a_release(__iter_arr);
+            }
+            a_release(ln);
+            a_release(trimmed);
+            a_release(mangled);
+            a_release(sig_start);
+            a_release(hit_id);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_str_join(new_lines, nl); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(nl);
+    a_release(lbr);
+    a_release(lines);
+    a_release(new_lines);
+    a_release(trimmed);
+    a_release(mangled);
+    a_release(sig_start);
+    a_release(hit_id);
+    a_release(c_code);
+    a_release(fn_names);
+    a_release(fn_hit_map);
+    return __ret;
+}
+
+AValue fn__profile_insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whiles, AValue n_fors, AValue hit_base) {
+    AValue nl = {0}, lbr = {0}, src_lines = {0}, new_lines = {0}, idx_if = {0}, idx_wh = {0}, idx_fo = {0}, trimmed = {0}, cid = {0};
+    AValue __ret = a_void();
+    c_code = a_retain(c_code);
+    n_ifs = a_retain(n_ifs);
+    n_whiles = a_retain(n_whiles);
+    n_fors = a_retain(n_fors);
+    hit_base = a_retain(hit_base);
+    { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
+    { AValue __old = lbr; lbr = a_from_code(a_int(123)); a_release(__old); }
+    { AValue __old = src_lines; src_lines = a_str_split(c_code, nl); a_release(__old); }
+    { AValue __old = new_lines; new_lines = a_array_new(0); a_release(__old); }
+    { AValue __old = idx_if; idx_if = a_int(0); a_release(__old); }
+    { AValue __old = idx_wh; idx_wh = a_int(0); a_release(__old); }
+    { AValue __old = idx_fo; idx_fo = a_int(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(src_lines);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue ln = {0}, trimmed = {0}, cid = {0};
+            ln = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = new_lines; new_lines = a_array_push(new_lines, ln); a_release(__old); }
+            { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("if (a_truthy(")))) {
+                if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
+                    if (a_truthy(a_lt(idx_if, n_ifs))) {
+                        { AValue __old = cid; cid = a_add(hit_base, idx_if); a_release(__old); }
+                        { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                        { AValue __old = idx_if; idx_if = a_add(idx_if, a_int(1)); a_release(__old); }
+                    }
+                }
+            }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("while (a_truthy(")))) {
+                if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
+                    { AValue __old = cid; cid = a_add(a_add(hit_base, n_ifs), idx_wh); a_release(__old); }
+                    { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                    { AValue __old = idx_wh; idx_wh = a_add(idx_wh, a_int(1)); a_release(__old); }
+                }
+            }
+            if (a_truthy(a_str_starts_with(trimmed, a_string("for (int __fi")))) {
+                { AValue __old = cid; cid = a_add(a_add(a_add(hit_base, n_ifs), n_whiles), idx_fo); a_release(__old); }
+                { AValue __old = new_lines; new_lines = a_array_push(new_lines, a_add(a_add(a_string("            a_profile_hit("), a_to_str(cid)), a_string(");"))); a_release(__old); }
+                { AValue __old = idx_fo; idx_fo = a_add(idx_fo, a_int(1)); a_release(__old); }
+            }
+            a_release(ln);
+            a_release(trimmed);
+            a_release(cid);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_str_join(new_lines, nl); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(nl);
+    a_release(lbr);
+    a_release(src_lines);
+    a_release(new_lines);
+    a_release(idx_if);
+    a_release(idx_wh);
+    a_release(idx_fo);
+    a_release(trimmed);
+    a_release(cid);
+    a_release(c_code);
+    a_release(n_ifs);
+    a_release(n_whiles);
+    a_release(n_fors);
+    a_release(hit_base);
+    return __ret;
+}
+
+AValue fn__profile_count_branches(AValue stmts, AValue counts) {
+    AValue tag = {0}, then_stmts = {0}, else_br = {0};
+    AValue __ret = a_void();
+    stmts = a_retain(stmts);
+    counts = a_retain(counts);
+    {
+        AValue __iter_arr = a_iterable(stmts);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue st = {0}, tag = {0}, then_stmts = {0}, else_br = {0};
+            st = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = tag; tag = a_array_get(st, a_string("tag")); a_release(__old); }
+            if (a_truthy(a_eq(tag, a_string("If")))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("ifs"), a_add(a_array_get(counts, a_string("ifs")), a_int(1))); a_release(__old); }
+                { AValue __old = then_stmts; then_stmts = a_array_get(a_array_get(st, a_string("then")), a_string("stmts")); a_release(__old); }
+                { AValue __old = counts; counts = fn__profile_count_branches(then_stmts, counts); a_release(__old); }
+                { AValue __old = else_br; else_br = a_array_get(st, a_string("else")); a_release(__old); }
+                if (a_truthy(a_neq(a_type_of(else_br), a_string("void")))) {
+                    if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseBlock")))) {
+                        { AValue __old = counts; counts = a_map_set(counts, a_string("elses"), a_add(a_array_get(counts, a_string("elses")), a_int(1))); a_release(__old); }
+                        { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(else_br, a_string("block")), a_string("stmts")), counts); a_release(__old); }
+                    }
+                    if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseIf")))) {
+                        { AValue __old = counts; counts = fn__profile_count_branches(a_array_new(1, a_array_get(else_br, a_string("stmt"))), counts); a_release(__old); }
+                    }
+                }
+            }
+            if (a_truthy(a_eq(tag, a_string("While")))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("whiles"), a_add(a_array_get(counts, a_string("whiles")), a_int(1))); a_release(__old); }
+                { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
+            }
+            if (a_truthy(a_or(a_eq(tag, a_string("For")), a_eq(tag, a_string("ForDestructure"))))) {
+                { AValue __old = counts; counts = a_map_set(counts, a_string("fors"), a_add(a_array_get(counts, a_string("fors")), a_int(1))); a_release(__old); }
+                { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
+            }
+            a_release(st);
+            a_release(tag);
+            a_release(then_stmts);
+            a_release(else_br);
+        }
+        a_release(__iter_arr);
+    }
+    __ret = a_retain(counts); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(tag);
+    a_release(then_stmts);
+    a_release(else_br);
+    a_release(stmts);
+    a_release(counts);
+    return __ret;
+}
+
+AValue fn_cmd_profile(AValue source_path, AValue profile_out) {
+    AValue runtime_dir = {0}, prof_out = {0}, source = {0}, prog = {0}, items = {0}, fn_names = {0}, branch_counts = {0}, body = {0}, base_c = {0}, nl = {0}, q = {0}, counter_id = {0}, reg_lines = {0}, fn_hit_map = {0}, c_code = {0}, n_ifs = {0}, n_whiles = {0}, n_fors = {0}, bi = {0}, hit_base = {0}, old_main = {0}, new_main = {0}, old_end = {0}, new_end = {0}, c_path = {0}, bin_path = {0}, gcc_code = {0}, run_result = {0}, report = {0}, hf = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    profile_out = a_retain(profile_out);
+    { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
+    { AValue __old = prof_out; prof_out = a_retain(profile_out); a_release(__old); }
+    if (a_truthy(a_eq(a_len(prof_out), a_int(0)))) {
+        { AValue __old = prof_out; prof_out = a_string("profile.json"); a_release(__old); }
+    }
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+        fn__die(a_string("profiler: could not read source file"));
+    }
+    { AValue __old = prog; prog = fn__parse_source(source_path); a_release(__old); }
+    { AValue __old = items; items = a_array_get(prog, a_string("items")); a_release(__old); }
+    { AValue __old = fn_names; fn_names = a_array_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = fn_names; fn_names = a_array_push(fn_names, a_array_get(item, a_string("name"))); a_release(__old); }
+            }
+            a_release(item);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = branch_counts; branch_counts = a_map_new(4, "ifs", a_int(0), "elses", a_int(0), "whiles", a_int(0), "fors", a_int(0)); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item2 = {0}, body = {0};
+            item2 = a_array_get(__iter_arr, a_int(__fi));
+            if (a_truthy(a_eq(a_array_get(item2, a_string("tag")), a_string("FnDecl")))) {
+                { AValue __old = body; body = a_array_get(item2, a_string("body")); a_release(__old); }
+                if (a_truthy(a_eq(a_type_of(body), a_string("map")))) {
+                    if (a_truthy(a_map_has(body, a_string("stmts")))) {
+                        { AValue __old = branch_counts; branch_counts = fn__profile_count_branches(a_array_get(body, a_string("stmts")), branch_counts); a_release(__old); }
+                    }
+                }
+            }
+            a_release(item2);
+            a_release(body);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = base_c; base_c = fn__generate_c(source_path); a_release(__old); }
+    { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
+    { AValue __old = q; q = a_from_code(a_int(34)); a_release(__old); }
+    { AValue __old = counter_id; counter_id = a_int(0); a_release(__old); }
+    { AValue __old = reg_lines; reg_lines = a_string(""); a_release(__old); }
+    { AValue __old = fn_hit_map; fn_hit_map = a_map_new(0); a_release(__old); }
+    {
+        AValue __iter_arr = a_iterable(fn_names);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue fname = {0};
+            fname = a_array_get(__iter_arr, a_int(__fi));
+            { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("fn:")), fname), q), a_string(");")), nl); a_release(__old); }
+            { AValue __old = fn_hit_map; fn_hit_map = a_map_set(fn_hit_map, fname, counter_id); a_release(__old); }
+            { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+            a_release(fname);
+        }
+        a_release(__iter_arr);
+    }
+    { AValue __old = c_code; c_code = fn__profile_insert_fn_hits(base_c, fn_names, fn_hit_map); a_release(__old); }
+    { AValue __old = n_ifs; n_ifs = a_array_get(branch_counts, a_string("ifs")); a_release(__old); }
+    { AValue __old = n_whiles; n_whiles = a_array_get(branch_counts, a_string("whiles")); a_release(__old); }
+    { AValue __old = n_fors; n_fors = a_array_get(branch_counts, a_string("fors")); a_release(__old); }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_ifs))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("if:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_whiles))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("while:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_fors))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("for:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
+    { AValue __old = hit_base; hit_base = a_len(fn_names); a_release(__old); }
+    { AValue __old = c_code; c_code = fn__profile_insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base); a_release(__old); }
+    { AValue __old = old_main; old_main = a_string("g_argc = argc; g_argv = argv;"); a_release(__old); }
+    { AValue __old = new_main; new_main = a_add(a_add(a_add(a_add(a_string("g_argc = argc; g_argv = argv;"), nl), a_string("    a_profile_init();")), nl), reg_lines); a_release(__old); }
+    { AValue __old = c_code; c_code = a_str_replace(c_code, old_main, new_main); a_release(__old); }
+    { AValue __old = old_end; old_end = a_add(a_add(a_string("fn_main();"), nl), a_string("    return 0;")); a_release(__old); }
+    { AValue __old = new_end; new_end = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("fn_main();"), nl), a_string("    a_profile_dump_json(a_string(")), q), prof_out), q), a_string("));")), nl), a_string("    return 0;")); a_release(__old); }
+    { AValue __old = c_code; c_code = a_str_replace(c_code, old_end, new_end); a_release(__old); }
+    { AValue __old = c_path; c_path = fn__tmp_path(a_string("_prof.c")); a_release(__old); }
+    a_io_write_file(c_path, c_code);
+    { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_prof_bin")); a_release(__old); }
+    fn__ensure_runtime_objs(runtime_dir);
+    { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
+    a_fs_rm(c_path);
+    if (a_truthy(a_neq(gcc_code, a_int(0)))) {
+        fn__die(a_string("profiler: gcc compilation failed"));
+    }
+    a_eprintln(a_string("running instrumented binary..."));
+    { AValue __old = run_result; run_result = a_exec(bin_path); a_release(__old); }
+    a_fs_rm(bin_path);
+    if (a_truthy(a_fs_exists(prof_out))) {
+        a_eprintln(fn_cli_green(a_add(a_string("profile written to "), prof_out)));
+        { AValue __old = report; report = fn_optimizer_analyze_profile(prof_out); a_release(__old); }
+        if (a_truthy(a_not(a_map_has(report, a_string("error"))))) {
+            a_eprintln(a_add(a_string("  total instrumentation points: "), a_to_str(a_array_get(report, a_string("total_points")))));
+            a_eprintln(a_add(a_string("  total hits: "), a_to_str(a_array_get(report, a_string("total_hits")))));
+            { AValue __old = hf; hf = a_array_get(report, a_string("hot_functions")); a_release(__old); }
+            if (a_truthy(a_gt(a_len(hf), a_int(0)))) {
+                a_eprintln(a_string("  hot functions:"));
+                {
+                    AValue __iter_arr = a_iterable(hf);
+                    for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                        AValue hfn = {0};
+                        hfn = a_array_get(__iter_arr, a_int(__fi));
+                        a_eprintln(a_add(a_add(a_add(a_add(a_add(a_add(a_string("    "), a_array_get(hfn, a_string("name"))), a_string(": ")), a_to_str(a_array_get(hfn, a_string("count")))), a_string(" calls (")), a_to_str(a_array_get(hfn, a_string("hot_ratio")))), a_string("% of max)")));
+                        a_release(hfn);
+                    }
+                    a_release(__iter_arr);
+                }
+            }
+        }
+    } else {
+        a_eprintln(fn_cli_red(a_string("profile file not generated")));
+    }
+__fn_cleanup:
+    a_release(runtime_dir);
+    a_release(prof_out);
+    a_release(source);
+    a_release(prog);
+    a_release(items);
+    a_release(fn_names);
+    a_release(branch_counts);
+    a_release(body);
+    a_release(base_c);
+    a_release(nl);
+    a_release(q);
+    a_release(counter_id);
+    a_release(reg_lines);
+    a_release(fn_hit_map);
+    a_release(c_code);
+    a_release(n_ifs);
+    a_release(n_whiles);
+    a_release(n_fors);
+    a_release(bi);
+    a_release(hit_base);
+    a_release(old_main);
+    a_release(new_main);
+    a_release(old_end);
+    a_release(new_end);
+    a_release(c_path);
+    a_release(bin_path);
+    a_release(gcc_code);
+    a_release(run_result);
+    a_release(report);
+    a_release(hf);
+    a_release(source_path);
+    a_release(profile_out);
+    return __ret;
+}
+
+AValue fn_cmd_gentests(AValue source_path, AValue out_path) {
+    AValue tests_str = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    out_path = a_retain(out_path);
+    { AValue __old = tests_str; tests_str = fn_testgen_gen_tests_for_file(source_path); a_release(__old); }
+    if (a_truthy(a_gt(a_len(out_path), a_int(0)))) {
+        a_io_write_file(out_path, tests_str);
+        a_eprintln(fn_cli_green(a_add(a_string("tests written to "), out_path)));
+    } else {
+        a_print(tests_str);
+    }
+__fn_cleanup:
+    a_release(tests_str);
+    a_release(source_path);
+    a_release(out_path);
+    return __ret;
+}
+
+AValue fn_cmd_optimize_report(AValue source_path, AValue profile_path) {
+    AValue source = {0}, report = {0}, suggs = {0}, hf = {0};
+    AValue __ret = a_void();
+    source_path = a_retain(source_path);
+    profile_path = a_retain(profile_path);
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+    { AValue __old = report; report = fn_optimizer_analyze_profile(profile_path); a_release(__old); }
+    if (a_truthy(a_map_has(report, a_string("error")))) {
+        fn__die(a_add(a_string("optimizer: "), a_array_get(report, a_string("error"))));
+    }
+    { AValue __old = suggs; suggs = fn_optimizer_suggest(source, report); a_release(__old); }
+    a_eprintln(a_string("=== Optimization Report ==="));
+    a_eprintln(a_string(""));
+    a_eprintln(a_add(a_string("Total instrumentation points: "), a_to_str(a_array_get(report, a_string("total_points")))));
+    a_eprintln(a_add(a_string("Total hits: "), a_to_str(a_array_get(report, a_string("total_hits")))));
+    a_eprintln(a_string(""));
+    { AValue __old = hf; hf = a_array_get(report, a_string("hot_functions")); a_release(__old); }
+    a_eprintln(a_add(a_add(a_string("Hot Functions ("), a_to_str(a_len(hf))), a_string("):")));
+    {
+        AValue __iter_arr = a_iterable(hf);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue f = {0};
+            f = a_array_get(__iter_arr, a_int(__fi));
+            a_eprintln(a_add(a_add(a_add(a_add(a_add(a_add(a_string("  "), a_array_get(f, a_string("name"))), a_string(": ")), a_to_str(a_array_get(f, a_string("count")))), a_string(" calls (")), a_to_str(a_array_get(f, a_string("hot_ratio")))), a_string("% of max)")));
+            a_release(f);
+        }
+        a_release(__iter_arr);
+    }
+    a_eprintln(a_string(""));
+    a_eprintln(a_add(a_add(a_string("Suggestions ("), a_to_str(a_len(suggs))), a_string("):")));
+    {
+        AValue __iter_arr = a_iterable(suggs);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue sg = {0};
+            sg = a_array_get(__iter_arr, a_int(__fi));
+            a_eprintln(a_add(a_add(a_add(a_add(a_add(a_string("  ["), a_array_get(sg, a_string("priority"))), a_string("] ")), a_array_get(sg, a_string("type"))), a_string(" -- ")), a_array_get(sg, a_string("reason"))));
+            a_release(sg);
+        }
+        a_release(__iter_arr);
+    }
+__fn_cleanup:
+    a_release(source);
+    a_release(report);
+    a_release(suggs);
+    a_release(hf);
+    a_release(source_path);
+    a_release(profile_path);
+    return __ret;
+}
+
 AValue fn_cmd_eval(AValue expr, AValue extra_args) {
     AValue wrapped = {0}, tmp = {0};
     AValue __ret = a_void();
@@ -14511,6 +16234,9 @@ AValue fn__usage(void) {
     a_eprintln(a_string("  a plugin remove <name>     uninstall a plugin"));
     a_eprintln(a_string("  a plugin init <dir> <name> scaffold a new plugin"));
     a_eprintln(a_string("  a plugin run <name>        run an installed plugin"));
+    a_eprintln(a_string("  a profile <file.a> [-o p]   profile-guided: instrument, run, dump JSON"));
+    a_eprintln(a_string("  a gentests <file.a> [-o f]  auto-generate tests from source analysis"));
+    a_eprintln(a_string("  a optimize <file.a> <prof>  optimization report from profile data"));
     a_eprintln(a_string("  a cache clean              clear the compilation cache"));
     a_eprintln(a_string("  a pkg init                 create pkg.toml in current directory"));
     a_eprintln(a_string("  a pkg add <name> <source>  add a dependency"));
@@ -14523,7 +16249,7 @@ __fn_cleanup:
 }
 
 AValue fn_main(void) {
-    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, plugin_argv = {0}, agent_name = {0};
+    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, plugin_argv = {0}, agent_name = {0}, prof_out = {0}, test_out = {0};
     AValue __ret = a_void();
     { AValue __old = argv; argv = a_args(); a_release(__old); }
     if (a_truthy(a_eq(a_len(argv), a_int(0)))) {
@@ -14721,6 +16447,49 @@ AValue fn_main(void) {
         fn_cmd_lsp();
         __ret = a_void(); goto __fn_cleanup;
     }
+    if (a_truthy(a_eq(subcmd, a_string("profile")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+            fn__die(a_string("profile requires a source file"));
+        }
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+        { AValue __old = prof_out; prof_out = a_string(""); a_release(__old); }
+        { AValue __old = i; i = a_int(2); a_release(__old); }
+        while (a_truthy(a_lt(i, a_len(argv)))) {
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("-o")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+                { AValue __old = prof_out; prof_out = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else {
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+        fn_cmd_profile(source, prof_out);
+        __ret = a_void(); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(subcmd, a_string("gentests")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+            fn__die(a_string("gentests requires a source file"));
+        }
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+        { AValue __old = test_out; test_out = a_string(""); a_release(__old); }
+        { AValue __old = i; i = a_int(2); a_release(__old); }
+        while (a_truthy(a_lt(i, a_len(argv)))) {
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("-o")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+                { AValue __old = test_out; test_out = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else {
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+        fn_cmd_gentests(source, test_out);
+        __ret = a_void(); goto __fn_cleanup;
+    }
+    if (a_truthy(a_eq(subcmd, a_string("optimize")))) {
+        if (a_truthy(a_lt(a_len(argv), a_int(3)))) {
+            fn__die(a_string("optimize requires a source file and profile path"));
+        }
+        fn_cmd_optimize_report(a_array_get(argv, a_int(1)), a_array_get(argv, a_int(2)));
+        __ret = a_void(); goto __fn_cleanup;
+    }
     fn__die(a_str_concat(a_string("unknown command: "), subcmd));
 __fn_cleanup:
     a_release(argv);
@@ -14735,6 +16504,8 @@ __fn_cleanup:
     a_release(extra);
     a_release(plugin_argv);
     a_release(agent_name);
+    a_release(prof_out);
+    a_release(test_out);
     return __ret;
 }
 
