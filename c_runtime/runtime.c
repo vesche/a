@@ -5010,3 +5010,13 @@ AValue a_profile_reset(void) {
     for (int i = 0; i < A_PROFILE_MAX; i++) a_profile_counters[i] = 0;
     return a_void();
 }
+
+/* Local LLM stubs -- GGUF inference is only available in the Rust VM */
+AValue a_llm_load(AValue path)                                { (void)path; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_generate(AValue handle, AValue prompt, AValue o) { (void)handle; (void)prompt; (void)o; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_embed(AValue handle, AValue text)                { (void)handle; (void)text; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_unload(AValue handle)                            { (void)handle; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_info(AValue handle)                              { (void)handle; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_tokenize(AValue handle, AValue text)             { (void)handle; (void)text; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_detokenize(AValue handle, AValue tokens)         { (void)handle; (void)tokens; return a_err(a_string("local_llm: not available in native build")); }
+AValue a_llm_vocab_size(AValue handle)                        { (void)handle; return a_err(a_string("local_llm: not available in native build")); }
