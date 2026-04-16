@@ -1,0 +1,519 @@
+; std/git.a -- Structured git operations
+;
+; All functions return structured maps instead of raw strings.
+; Uses `exec("git ...")` internally -- git must be on PATH.
+
+fn _run(path, cmd) -> map {
+  let full = "cd " + path + " && git " + cmd + " 2>&1"
+  ret exec(full)
+}
+
+fn _run_ok(path, cmd) {
+  let r = _run(path, cmd)
+  if r["code"] != 0 {
+    ret Err("git " + cmd + " failed: " + str.trim(r["stdout"]))
+  }
+  ret Ok(str.trim(r["stdout"]))
+}
+
+fn _lines(s) -> [str] {
+  if len(str.trim(s)) == 0 { ret [] }
+  ret filter(str.split(s, "\n"), fn(l) => len(str.trim(l)) > 0)
+}
+
+; ── Repository ──
+
+fn init(path) {
+  ret _run_ok(path, "init")
+}
+
+fn clone(url, path, opts) {
+  let mut cmd = "clone"
+  if map.has(opts, "depth") {
+    cmd = cmd + " --depth " + to_str(opts["depth"])
+  }
+  if map.has(opts, "branch") {
+    cmd = cmd + " --branch " + opts["branch"]
+  }
+  cmd = cmd + " " + url + " " + path
+  let r = exec("git " + cmd + " 2>&1")
+  if r["code"] != 0 {
+    ret Err("git clone failed: " + str.trim(r["stdout"]))
+  }
+  ret Ok(path)
+}
+
+; ── Status ──
+
+fn status(path) -> [map] {
+  let r = _run(path, "status --porcelain")
+  if r["code"] != 0 { ret [] }
+  let lines = _lines(r["stdout"])
+  let mut result = []
+  let mut i = 0
+  while i < len(lines) {
+    let line = lines[i]
+    if len(line) >= 3 {
+      let code = str.trim(str.slice(line, 0, 2))
+      let file = str.trim(str.slice(line, 3, len(str.chars(line))))
+      let mut st = "modified"
+      if code == "??" { st = "untracked" }
+      if code == "A" { st = "added" }
+      if code == "D" { st = "deleted" }
+      if code == "R" { st = "renamed" }
+      if code == "M" { st = "modified" }
+      if code == "MM" { st = "modified" }
+      if code == "AM" { st = "added" }
+      result = push(result, #{"file": file, "status": st})
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn is_clean(path) -> bool {
+  ret len(status(path)) == 0
+}
+
+; ── Diff ──
+
+fn diff(path, opts) -> [map] {
+  let mut cmd = "diff"
+  if map.has(opts, "staged") && opts["staged"] {
+    cmd = cmd + " --cached"
+  }
+  if map.has(opts, "commit") {
+    cmd = cmd + " " + opts["commit"]
+  }
+  let r = _run(path, cmd)
+  if r["code"] != 0 { ret [] }
+  ret _parse_diff(r["stdout"])
+}
+
+fn diff_stat(path, opts) -> [map] {
+  let mut cmd = "diff --stat"
+  if map.has(opts, "staged") && opts["staged"] {
+    cmd = cmd + " --cached"
+  }
+  if map.has(opts, "commit") {
+    cmd = cmd + " " + opts["commit"]
+  }
+  let r = _run(path, cmd)
+  if r["code"] != 0 { ret [] }
+  let lines = _lines(r["stdout"])
+  let mut result = []
+  let mut i = 0
+  while i < len(lines) - 1 {
+    let line = str.trim(lines[i])
+    let parts = str.split(line, "|")
+    if len(parts) == 2 {
+      result = push(result, #{
+        "file": str.trim(parts[0]),
+        "changes": str.trim(parts[1])
+      })
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn _parse_diff(raw) -> [map] {
+  let lines = str.split(raw, "\n")
+  let mut files = []
+  let mut current_file = ""
+  let mut hunks = []
+  let mut hunk_lines = []
+  let mut old_start = 0
+  let mut new_start = 0
+  let mut i = 0
+  while i < len(lines) {
+    let line = lines[i]
+    if str.starts_with(line, "diff --git") {
+      if len(current_file) > 0 {
+        if len(hunk_lines) > 0 {
+          hunks = push(hunks, #{
+            "old_start": old_start,
+            "new_start": new_start,
+            "lines": hunk_lines
+          })
+        }
+        files = push(files, #{"file": current_file, "hunks": hunks})
+      }
+      let parts = str.split(line, " ")
+      if len(parts) >= 4 {
+        let b_path = parts[len(parts) - 1]
+        current_file = str.slice(b_path, 2, len(str.chars(b_path)))
+      }
+      hunks = []
+      hunk_lines = []
+    }
+    if str.starts_with(line, "@@") {
+      if len(hunk_lines) > 0 {
+        hunks = push(hunks, #{
+          "old_start": old_start,
+          "new_start": new_start,
+          "lines": hunk_lines
+        })
+      }
+      hunk_lines = []
+      let header = _parse_hunk_header(line)
+      old_start = header["old_start"]
+      new_start = header["new_start"]
+    }
+    if len(current_file) > 0 && !str.starts_with(line, "diff ") && !str.starts_with(line, "index ") && !str.starts_with(line, "---") && !str.starts_with(line, "+++") && !str.starts_with(line, "@@") {
+      hunk_lines = push(hunk_lines, line)
+    }
+    i = i + 1
+  }
+  if len(current_file) > 0 {
+    if len(hunk_lines) > 0 {
+      hunks = push(hunks, #{
+        "old_start": old_start,
+        "new_start": new_start,
+        "lines": hunk_lines
+      })
+    }
+    files = push(files, #{"file": current_file, "hunks": hunks})
+  }
+  ret files
+}
+
+fn _parse_hunk_header(line) -> map {
+  let mut old_s = 0
+  let mut new_s = 0
+  let parts = str.split(line, " ")
+  let mut i = 0
+  while i < len(parts) {
+    if str.starts_with(parts[i], "-") && str.contains(parts[i], ",") {
+      let nums = str.split(str.slice(parts[i], 1, len(str.chars(parts[i]))), ",")
+      if len(nums) >= 1 {
+        let parsed = try { int(nums[0]) }
+        if is_ok(parsed) { old_s = unwrap(parsed) }
+      }
+    }
+    if str.starts_with(parts[i], "+") && str.contains(parts[i], ",") {
+      let nums = str.split(str.slice(parts[i], 1, len(str.chars(parts[i]))), ",")
+      if len(nums) >= 1 {
+        let parsed = try { int(nums[0]) }
+        if is_ok(parsed) { new_s = unwrap(parsed) }
+      }
+    }
+    i = i + 1
+  }
+  ret #{"old_start": old_s, "new_start": new_s}
+}
+
+; ── Log ──
+
+fn log(path, opts) -> [map] {
+  let sep = "---GIT-LOG-SEP---"
+  let fmt = str.join(["%H", "%an", "%ae", "%aI", "%s"], sep)
+  let mut cmd = "log --format=" + fmt
+  if map.has(opts, "limit") {
+    cmd = cmd + " -n " + to_str(opts["limit"])
+  }
+  if map.has(opts, "since") {
+    cmd = cmd + " --since=" + opts["since"]
+  }
+  if map.has(opts, "path_filter") {
+    cmd = cmd + " -- " + opts["path_filter"]
+  }
+  let r = _run(path, cmd)
+  if r["code"] != 0 { ret [] }
+  let lines = _lines(r["stdout"])
+  let mut result = []
+  let mut i = 0
+  while i < len(lines) {
+    let parts = str.split(lines[i], sep)
+    if len(parts) >= 5 {
+      result = push(result, #{
+        "hash": parts[0],
+        "author": parts[1],
+        "email": parts[2],
+        "date": parts[3],
+        "message": parts[4]
+      })
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn log_short(path, n) -> [map] {
+  ret log(path, #{"limit": n})
+}
+
+; ── Staging ──
+
+fn add(path, files) {
+  let file_args = str.join(files, " ")
+  ret _run_ok(path, "add " + file_args)
+}
+
+fn add_all(path) {
+  ret _run_ok(path, "add -A")
+}
+
+fn reset(path, files) {
+  let file_args = str.join(files, " ")
+  ret _run_ok(path, "reset " + file_args)
+}
+
+; ── Commits ──
+
+fn commit(path, message) {
+  let r = _run(path, "commit -m " + _shell_quote(message))
+  if r["code"] != 0 {
+    ret Err("commit failed: " + str.trim(r["stdout"]))
+  }
+  let hash_r = _run(path, "rev-parse HEAD")
+  let hash = str.trim(hash_r["stdout"])
+  ret Ok(#{"hash": hash, "message": message})
+}
+
+fn commit_all(path, message) {
+  let r = _run(path, "commit -am " + _shell_quote(message))
+  if r["code"] != 0 {
+    ret Err("commit failed: " + str.trim(r["stdout"]))
+  }
+  let hash_r = _run(path, "rev-parse HEAD")
+  ret Ok(#{"hash": str.trim(hash_r["stdout"]), "message": message})
+}
+
+fn _shell_quote(s) -> str {
+  let escaped = str.replace(s, "'", "'\\''")
+  ret "'" + escaped + "'"
+}
+
+; ── Branches ──
+
+fn branch(path) -> str {
+  let r = _run(path, "branch --show-current")
+  if r["code"] != 0 { ret "" }
+  ret str.trim(r["stdout"])
+}
+
+fn branches(path) -> [map] {
+  let r = _run(path, "branch -a --format=%(refname:short)|||%(objectname:short)|||%(HEAD)")
+  if r["code"] != 0 { ret [] }
+  let lines = _lines(r["stdout"])
+  let mut result = []
+  let mut i = 0
+  while i < len(lines) {
+    let parts = str.split(lines[i], "|||")
+    if len(parts) >= 3 {
+      result = push(result, #{
+        "name": str.trim(parts[0]),
+        "hash": str.trim(parts[1]),
+        "current": str.trim(parts[2]) == "*"
+      })
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn checkout(path, branch_name) {
+  ret _run_ok(path, "checkout " + branch_name)
+}
+
+fn create_branch(path, name) {
+  ret _run_ok(path, "checkout -b " + name)
+}
+
+fn delete_branch(path, name) {
+  ret _run_ok(path, "branch -d " + name)
+}
+
+fn merge(path, branch_name) {
+  let r = _run(path, "merge " + branch_name)
+  if r["code"] == 0 {
+    ret Ok(#{"ok": true, "conflicts": []})
+  }
+  let conflicts = _find_conflicts(path)
+  if len(conflicts) > 0 {
+    ret Ok(#{"ok": false, "conflicts": conflicts})
+  }
+  ret Err("merge failed: " + str.trim(r["stdout"]))
+}
+
+fn _find_conflicts(path) -> [str] {
+  let r = _run(path, "diff --name-only --diff-filter=U")
+  if r["code"] != 0 { ret [] }
+  ret _lines(r["stdout"])
+}
+
+; ── Remotes ──
+
+fn remote(path) -> [map] {
+  let r = _run(path, "remote -v")
+  if r["code"] != 0 { ret [] }
+  let lines = _lines(r["stdout"])
+  let mut seen = #{}
+  let mut result = []
+  let mut i = 0
+  while i < len(lines) {
+    let parts = str.split(lines[i], "\t")
+    if len(parts) >= 2 {
+      let name = parts[0]
+      if !map.has(seen, name) {
+        let url_part = str.split(parts[1], " ")
+        result = push(result, #{"name": name, "url": url_part[0]})
+        seen = map.set(seen, name, true)
+      }
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn remote_url(path, name) -> str {
+  let r = _run(path, "remote get-url " + name)
+  if r["code"] != 0 { ret "" }
+  ret str.trim(r["stdout"])
+}
+
+; ── Push / Pull ──
+
+fn push(path, remote_name, branch_name) {
+  ret _run_ok(path, "push " + remote_name + " " + branch_name)
+}
+
+fn pull(path, remote_name, branch_name) {
+  ret _run_ok(path, "pull " + remote_name + " " + branch_name)
+}
+
+fn fetch(path, remote_name) {
+  ret _run_ok(path, "fetch " + remote_name)
+}
+
+; ── Tags ──
+
+fn tag(path, name) {
+  ret _run_ok(path, "tag " + name)
+}
+
+fn tag_annotated(path, name, message) {
+  ret _run_ok(path, "tag -a " + name + " -m " + _shell_quote(message))
+}
+
+fn tags(path) -> [str] {
+  let r = _run(path, "tag --list")
+  if r["code"] != 0 { ret [] }
+  ret sort(_lines(r["stdout"]))
+}
+
+fn delete_tag(path, name) {
+  ret _run_ok(path, "tag -d " + name)
+}
+
+; ── Stash ──
+
+fn stash(path) {
+  ret _run_ok(path, "stash")
+}
+
+fn stash_pop(path) {
+  ret _run_ok(path, "stash pop")
+}
+
+fn stash_list(path) -> [str] {
+  let r = _run(path, "stash list")
+  if r["code"] != 0 { ret [] }
+  ret _lines(r["stdout"])
+}
+
+; ── Blame ──
+
+fn blame(path, file) -> [map] {
+  let r = _run(path, "blame --porcelain " + file)
+  if r["code"] != 0 { ret [] }
+  let lines = str.split(r["stdout"], "\n")
+  let mut result = []
+  let mut current_hash = ""
+  let mut current_author = ""
+  let mut current_date = ""
+  let mut line_num = 0
+  let mut i = 0
+  while i < len(lines) {
+    let line = lines[i]
+    if len(line) > 0 {
+      let first_char = str.slice(line, 0, 1)
+      let is_hex = is_alnum(first_char) && !str.starts_with(line, "author") && !str.starts_with(line, "committer") && !str.starts_with(line, "summary") && !str.starts_with(line, "filename") && !str.starts_with(line, "previous") && !str.starts_with(line, "boundary") && first_char != "\t"
+      if is_hex && len(line) >= 40 {
+        let parts = str.split(line, " ")
+        if len(parts) >= 3 {
+          current_hash = str.slice(parts[0], 0, 8)
+          let parsed = try { int(parts[2]) }
+          if is_ok(parsed) { line_num = unwrap(parsed) }
+        }
+      }
+      if str.starts_with(line, "author ") {
+        current_author = str.slice(line, 7, len(str.chars(line)))
+      }
+      if str.starts_with(line, "author-time ") {
+        current_date = str.slice(line, 12, len(str.chars(line)))
+      }
+      if str.starts_with(line, "\t") {
+        result = push(result, #{
+          "line": line_num,
+          "hash": current_hash,
+          "author": current_author,
+          "date": current_date,
+          "content": str.slice(line, 1, len(str.chars(line)))
+        })
+      }
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+; ── Info / Inspection ──
+
+fn head(path) -> str {
+  let r = _run(path, "rev-parse HEAD")
+  if r["code"] != 0 { ret "" }
+  ret str.trim(r["stdout"])
+}
+
+fn head_short(path) -> str {
+  let r = _run(path, "rev-parse --short HEAD")
+  if r["code"] != 0 { ret "" }
+  ret str.trim(r["stdout"])
+}
+
+fn show(path, ref, file) -> str {
+  let r = _run(path, "show " + ref + ":" + file)
+  if r["code"] != 0 { ret "" }
+  ret r["stdout"]
+}
+
+fn is_repo(path) -> bool {
+  let r = _run(path, "rev-parse --is-inside-work-tree")
+  ret r["code"] == 0 && str.trim(r["stdout"]) == "true"
+}
+
+fn root(path) -> str {
+  let r = _run(path, "rev-parse --show-toplevel")
+  if r["code"] != 0 { ret "" }
+  ret str.trim(r["stdout"])
+}
+
+fn changed_files(path, ref1, ref2) -> [str] {
+  let r = _run(path, "diff --name-only " + ref1 + " " + ref2)
+  if r["code"] != 0 { ret [] }
+  ret _lines(r["stdout"])
+}
+
+fn untracked(path) -> [str] {
+  let r = _run(path, "ls-files --others --exclude-standard")
+  if r["code"] != 0 { ret [] }
+  ret _lines(r["stdout"])
+}
+
+fn tracked(path) -> [str] {
+  let r = _run(path, "ls-files")
+  if r["code"] != 0 { ret [] }
+  ret _lines(r["stdout"])
+}

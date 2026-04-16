@@ -17,6 +17,7 @@ use std.compiler.optimizer
 use std.codegen
 use std.refactor
 use std.testgen
+use std.fs_tx
 
 fn _log(msg) {
   eprintln("[self-improve] " + msg)
@@ -161,19 +162,20 @@ fn _optimize(source, suggestions) -> map {
 }
 
 fn _validate(module_path, new_source) -> bool {
-  let original = io.read_file(module_path)
-  io.write_file(module_path, new_source)
   let tf = _test_for(module_path)
-  let mut ok = true
-  if len(tf) > 0 {
-    let r = exec(_cli() + " run " + tf + " 2>/dev/null")
-    ok = r["code"] == 0
-  }
-  if !ok {
-    io.write_file(module_path, original)
+  let result = fs_tx.run([module_path], fn() {
+    io.write_file(module_path, new_source)
+    if len(tf) > 0 {
+      let r = exec(_cli() + " run " + tf + " 2>/dev/null")
+      if r["code"] != 0 { ret Err("tests failed") }
+    }
+    ret Ok("valid")
+  })
+  if is_err(result) {
     _log("    ROLLBACK: tests failed")
+    ret false
   }
-  ret ok
+  ret true
 }
 
 fn _gen_tests(target, mname) -> int {

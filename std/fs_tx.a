@@ -1,0 +1,92 @@
+; std/fs_tx.a -- Transactional file operations with automatic rollback
+;
+; Snapshot files before modification, rollback on failure.
+; Replaces the manual read-original/write-new/test/restore pattern
+; used throughout the codebase (e.g. agents/self_improve.a).
+
+fn _tx_dir() -> str {
+  ret "/tmp/a_fs_tx_" + to_str(time.now()) + "_" + to_str(reflect.pid)
+}
+
+fn _snapshot_file(src, backup_dir) {
+  let name = str.replace(src, "/", "__")
+  let dest = backup_dir + "/" + name
+  fs.cp(src, dest)
+}
+
+fn _restore_file(src, backup_dir) {
+  let name = str.replace(src, "/", "__")
+  let backup = backup_dir + "/" + name
+  if fs.exists(backup) {
+    fs.cp(backup, src)
+  }
+}
+
+fn _cleanup(backup_dir) {
+  if fs.exists(backup_dir) {
+    let entries = fs.ls(backup_dir)
+    let mut i = 0
+    while i < len(entries) {
+      fs.rm(backup_dir + "/" + entries[i]["name"])
+      i = i + 1
+    }
+    fs.rm(backup_dir)
+  }
+}
+
+fn begin(paths) -> map {
+  let dir = _tx_dir()
+  fs.mkdir(dir)
+  let mut snapped = []
+  let mut i = 0
+  while i < len(paths) {
+    let p = paths[i]
+    if fs.exists(p) {
+      _snapshot_file(p, dir)
+      snapped = push(snapped, p)
+    }
+    i = i + 1
+  }
+  ret #{
+    "backup_dir": dir,
+    "paths": paths,
+    "snapped": snapped,
+    "committed": false,
+    "rolled_back": false
+  }
+}
+
+fn commit(tx) -> map {
+  _cleanup(tx["backup_dir"])
+  ret map.set(map.set(tx, "committed", true), "rolled_back", false)
+}
+
+fn rollback(tx) -> map {
+  let snapped = tx["snapped"]
+  let dir = tx["backup_dir"]
+  let mut i = 0
+  while i < len(snapped) {
+    _restore_file(snapped[i], dir)
+    i = i + 1
+  }
+  _cleanup(dir)
+  ret map.set(map.set(tx, "rolled_back", true), "committed", false)
+}
+
+fn run(paths, f) {
+  let tx = begin(paths)
+  let result = try { f() }
+  if is_ok(result) {
+    let inner = unwrap(result)
+    if type_of(inner) == "map" && map.has(inner, "tag") {
+      if inner["tag"] == "Err" {
+        rollback(tx)
+        ret inner
+      }
+    }
+    commit(tx)
+    ret inner
+  }
+  rollback(tx)
+  ret Err("transaction failed: " + to_str(result))
+}

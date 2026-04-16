@@ -35,19 +35,25 @@ jobs:
         if: runner.os == 'Linux' && !matrix.cross
         run: sudo apt-get update && sudo apt-get install -y gcc libssl-dev
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
 
-      - name: Generate C sources via VM
+      - name: Bootstrap self-hosted compiler
+        if: "!matrix.cross"
+        run: ./build.sh
+
+      - name: Bootstrap self-hosted compiler (cross-compile host)
+        if: matrix.cross
         run: |
-          CGEN="std/compiler/cgen.a"
-          cargo run --quiet -- run "$CGEN" -- src/cli.a > /tmp/cli.c 2>/dev/null
-          cargo run --quiet -- run "$CGEN" -- src/lsp.a > /tmp/lsp.c 2>/dev/null
+          sudo apt-get install -y gcc libssl-dev
+          ./build.sh
+
+      - name: Generate C sources
+        run: |
+          ./a cc src/cli.a -o /tmp/cli.c
+          ./a cc src/lsp.a -o /tmp/lsp.c
 
       - name: Generate embedded runtime bundle
         run: python3 scripts/embed.py > /tmp/embedded.c

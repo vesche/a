@@ -1,0 +1,306 @@
+; test_index.a -- tests for std/index.a codebase intelligence
+;
+; Creates a small fixture project in /tmp, indexes it, queries the index.
+
+use std.index
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn _fixture_dir() -> str {
+  ret "/tmp/a_test_index_" + to_str(time.now())
+}
+
+fn _setup() -> str {
+  let dir = _fixture_dir()
+  fs.mkdir(dir)
+
+  io.write_file(dir + "/main.a", r#"use std.math
+
+ty Point = {x: f64, y: f64}
+
+fn distance(a, b) {
+  let dx = a.x - b.x
+  let dy = a.y - b.y
+  ret sqrt(dx * dx + dy * dy)
+}
+
+fn main() {
+  let p1 = #{"x": 0.0, "y": 0.0}
+  let p2 = #{"x": 3.0, "y": 4.0}
+  println(to_str(distance(p1, p2)))
+}
+"#)
+
+  io.write_file(dir + "/utils.a", r#"fn add(a, b) {
+  ret a + b
+}
+
+fn multiply(a, b) {
+  ret a * b
+}
+
+fn _private_helper() {
+  ret 42
+}
+"#)
+
+  io.write_file(dir + "/caller.a", r#"use std.testing
+
+fn do_work() {
+  let x = add(1, 2)
+  let y = multiply(x, 3)
+  println(to_str(y))
+}
+
+fn main() {
+  do_work()
+}
+"#)
+
+  ret dir
+}
+
+fn _cleanup(dir) {
+  if fs.exists(dir) {
+    exec("rm -rf " + dir)
+  }
+}
+
+fn test_create_and_files() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+  let f = index.files(idx)
+  assert(len(f) == 3, "should index 3 files, got " + to_str(len(f)))
+  _cleanup(dir)
+  println("  ok create and files")
+}
+
+fn test_symbols() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+  let syms = index.symbols(idx)
+  assert(len(syms) > 0, "should have symbols")
+
+  let fns = index.functions(idx)
+  assert(len(fns) >= 5, "should have at least 5 functions (distance, main, add, multiply, _private_helper, do_work)")
+
+  let types = index.types(idx)
+  assert(len(types) >= 1, "should have at least 1 type (Point)")
+
+  _cleanup(dir)
+  println("  ok symbols")
+}
+
+fn test_find() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let results = index.find(idx, "distance")
+  assert(len(results) >= 1, "should find 'distance'")
+  assert(results[0]["kind"] == "fn", "distance should be a function")
+
+  let no_results = index.find(idx, "nonexistent")
+  assert(len(no_results) == 0, "should not find nonexistent")
+
+  _cleanup(dir)
+  println("  ok find")
+}
+
+fn test_find_fuzzy() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let results = index.find_fuzzy(idx, "add")
+  assert(len(results) >= 1, "should find something matching 'add'")
+
+  _cleanup(dir)
+  println("  ok find_fuzzy")
+}
+
+fn test_exports() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let utils_exports = index.exports(idx, dir + "/utils.a")
+  let mut has_add = false
+  let mut has_private = false
+  let mut i = 0
+  while i < len(utils_exports) {
+    if utils_exports[i]["name"] == "add" { has_add = true }
+    if utils_exports[i]["name"] == "_private_helper" { has_private = true }
+    i = i + 1
+  }
+  assert(has_add, "utils exports should include 'add'")
+  assert(!has_private, "_private_helper should not be in exports (kind is fn_private)")
+
+  _cleanup(dir)
+  println("  ok exports")
+}
+
+fn test_imports() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let main_imports = index.imports(idx, dir + "/main.a")
+  assert(len(main_imports) >= 1, "main.a should import at least 1 module")
+  assert(contains(main_imports, "std.math"), "main.a should import std.math")
+
+  let utils_imports = index.imports(idx, dir + "/utils.a")
+  assert(len(utils_imports) == 0, "utils.a should have no imports")
+
+  _cleanup(dir)
+  println("  ok imports")
+}
+
+fn test_call_graph() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let cg = index.call_graph(idx)
+  assert(map.has(cg, "main"), "call graph should have 'main'")
+
+  _cleanup(dir)
+  println("  ok call_graph")
+}
+
+fn test_callees() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let targets = index.callees(idx, "distance")
+  assert(len(targets) >= 1, "distance should call at least sqrt")
+  assert(contains(targets, "sqrt"), "distance should call sqrt")
+
+  _cleanup(dir)
+  println("  ok callees")
+}
+
+fn test_callers() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let who = index.callers(idx, "distance")
+  let mut found_main = false
+  let mut i = 0
+  while i < len(who) {
+    if who[i]["caller"] == "main" { found_main = true }
+    i = i + 1
+  }
+  assert(found_main, "main should be a caller of distance")
+
+  _cleanup(dir)
+  println("  ok callers")
+}
+
+fn test_symbols_in() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let utils_syms = index.symbols_in(idx, dir + "/utils.a")
+  assert(len(utils_syms) >= 3, "utils.a should have at least 3 symbols (add, multiply, _private_helper)")
+
+  _cleanup(dir)
+  println("  ok symbols_in")
+}
+
+fn test_search() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let results = index.search(idx, "println")
+  assert(len(results) >= 2, "should find println in at least 2 places")
+
+  let no_results = index.search(idx, "zzz_nonexistent_zzz")
+  assert(len(no_results) == 0, "should find nothing for nonsense query")
+
+  _cleanup(dir)
+  println("  ok search")
+}
+
+fn test_stats() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let s = index.stats(idx)
+  assert(s["files"] == 3, "should have 3 files")
+  assert(s["functions"] >= 5, "should have at least 5 functions")
+  assert(s["types"] >= 1, "should have at least 1 type")
+  assert(s["lines"] > 0, "should have some lines")
+
+  _cleanup(dir)
+  println("  ok stats")
+}
+
+fn test_save_and_load() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let db_path = "/tmp/a_test_index_db_" + to_str(time.now()) + ".db"
+  index.save(idx, db_path)
+
+  let loaded = index.load(db_path)
+  assert(len(index.files(loaded)) == 3, "loaded index should have 3 files")
+  assert(len(index.symbols(loaded)) > 0, "loaded index should have symbols")
+
+  let s = index.stats(loaded)
+  assert(s["files"] == 3, "loaded stats should have 3 files")
+
+  fs.rm(db_path)
+  _cleanup(dir)
+  println("  ok save and load")
+}
+
+fn test_update() {
+  let dir = _setup()
+  let idx = index.create(dir, #{})
+
+  let s1 = index.stats(idx)
+  let orig_fns = s1["functions"]
+
+  io.write_file(dir + "/utils.a", r#"fn add(a, b) {
+  ret a + b
+}
+
+fn multiply(a, b) {
+  ret a * b
+}
+
+fn _private_helper() {
+  ret 42
+}
+
+fn new_function(x) {
+  ret x * 2
+}
+"#)
+
+  let idx2 = index.update(idx, [dir + "/utils.a"])
+  let s2 = index.stats(idx2)
+  assert(s2["functions"] > orig_fns, "should have more functions after adding new_function")
+
+  let found = index.find(idx2, "new_function")
+  assert(len(found) >= 1, "should find new_function after update")
+
+  _cleanup(dir)
+  println("  ok update")
+}
+
+fn main() {
+  test_create_and_files()
+  test_symbols()
+  test_find()
+  test_find_fuzzy()
+  test_exports()
+  test_imports()
+  test_call_graph()
+  test_callees()
+  test_callers()
+  test_symbols_in()
+  test_search()
+  test_stats()
+  test_save_and_load()
+  test_update()
+  println("all index tests passed")
+}

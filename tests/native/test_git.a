@@ -1,0 +1,300 @@
+; test_git.a -- tests for std/git.a structured git operations
+;
+; Creates a temporary git repo in /tmp for each test, cleans up after.
+
+use std.git
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn _repo() -> str {
+  let path = "/tmp/a_test_git_" + to_str(time.now())
+  fs.mkdir(path)
+  exec("cd " + path + " && git init && git config user.email 'test@test.com' && git config user.name 'Test'")
+  ret path
+}
+
+fn _cleanup(path) {
+  if fs.exists(path) {
+    exec("rm -rf " + path)
+  }
+}
+
+fn _write(path, file, content) {
+  io.write_file(path + "/" + file, content)
+}
+
+fn test_init_and_is_repo() {
+  let path = "/tmp/a_test_git_init_" + to_str(time.now())
+  fs.mkdir(path)
+  git.init(path)
+  assert(git.is_repo(path), "should be a git repo after init")
+  _cleanup(path)
+  println("  ok init and is_repo")
+}
+
+fn test_status_clean() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  let s = git.status(r)
+  assert(len(s) == 0, "clean repo should have empty status")
+  assert(git.is_clean(r), "should be clean")
+  _cleanup(r)
+  println("  ok status clean")
+}
+
+fn test_status_modified() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  _write(r, "a.txt", "changed")
+  let s = git.status(r)
+  assert(len(s) == 1, "should have 1 changed file")
+  assert(s[0]["file"] == "a.txt", "file should be a.txt")
+  assert(s[0]["status"] == "modified", "status should be modified")
+  _cleanup(r)
+  println("  ok status modified")
+}
+
+fn test_status_untracked() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  _write(r, "new.txt", "new file")
+  let s = git.status(r)
+  assert(len(s) == 1, "should have 1 untracked file")
+  assert(s[0]["status"] == "untracked", "should be untracked")
+  _cleanup(r)
+  println("  ok status untracked")
+}
+
+fn test_add_and_commit() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  git.add(r, ["a.txt"])
+  let result = git.commit(r, "initial commit")
+  assert(is_ok(result), "commit should succeed")
+  let c = unwrap(result)
+  assert(len(c["hash"]) > 0, "should have a hash")
+  assert(c["message"] == "initial commit", "message should match")
+  assert(git.is_clean(r), "should be clean after commit")
+  _cleanup(r)
+  println("  ok add and commit")
+}
+
+fn test_log() {
+  let r = _repo()
+  _write(r, "a.txt", "v1")
+  exec("cd " + r + " && git add . && git commit -m 'first'")
+  _write(r, "a.txt", "v2")
+  exec("cd " + r + " && git add . && git commit -m 'second'")
+  let entries = git.log(r, #{"limit": 5})
+  assert(len(entries) == 2, "should have 2 log entries, got " + to_str(len(entries)))
+  assert(entries[0]["message"] == "second", "newest should be first")
+  assert(entries[1]["message"] == "first", "oldest should be second")
+  assert(len(entries[0]["hash"]) > 0, "should have hash")
+  assert(len(entries[0]["author"]) > 0, "should have author")
+  assert(len(entries[0]["date"]) > 0, "should have date")
+  _cleanup(r)
+  println("  ok log")
+}
+
+fn test_branch() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+
+  let main = git.branch(r)
+  assert(len(main) > 0, "should have a branch name")
+
+  git.create_branch(r, "feature")
+  assert(git.branch(r) == "feature", "should be on feature branch")
+
+  let bs = git.branches(r)
+  assert(len(bs) >= 2, "should have at least 2 branches")
+
+  git.checkout(r, main)
+  assert(git.branch(r) == main, "should be back on main")
+
+  _cleanup(r)
+  println("  ok branch operations")
+}
+
+fn test_diff() {
+  let r = _repo()
+  _write(r, "a.txt", "line1\nline2\nline3\n")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  _write(r, "a.txt", "line1\nchanged\nline3\n")
+
+  let d = git.diff(r, #{})
+  assert(len(d) >= 1, "should have diff for at least 1 file")
+  assert(d[0]["file"] == "a.txt", "diff should be for a.txt")
+  assert(len(d[0]["hunks"]) >= 1, "should have at least 1 hunk")
+  _cleanup(r)
+  println("  ok diff")
+}
+
+fn test_tags() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+
+  git.tag(r, "v1.0")
+  let ts = git.tags(r)
+  assert(len(ts) == 1, "should have 1 tag")
+  assert(ts[0] == "v1.0", "tag should be v1.0")
+
+  git.tag(r, "v2.0")
+  let ts2 = git.tags(r)
+  assert(len(ts2) == 2, "should have 2 tags")
+
+  _cleanup(r)
+  println("  ok tags")
+}
+
+fn test_stash() {
+  let r = _repo()
+  _write(r, "a.txt", "original")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  _write(r, "a.txt", "modified")
+
+  git.stash(r)
+  let content = io.read_file(r + "/a.txt")
+  assert(content == "original", "file should be original after stash")
+
+  git.stash_pop(r)
+  let content2 = io.read_file(r + "/a.txt")
+  assert(content2 == "modified", "file should be modified after stash pop")
+
+  _cleanup(r)
+  println("  ok stash")
+}
+
+fn test_head() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+
+  let h = git.head(r)
+  assert(len(h) == 40, "full hash should be 40 chars, got " + to_str(len(h)))
+
+  let hs = git.head_short(r)
+  assert(len(hs) >= 7, "short hash should be at least 7 chars")
+
+  _cleanup(r)
+  println("  ok head")
+}
+
+fn test_remote() {
+  let r = _repo()
+  exec("cd " + r + " && git remote add origin https://example.com/test.git")
+
+  let remotes = git.remote(r)
+  assert(len(remotes) == 1, "should have 1 remote")
+  assert(remotes[0]["name"] == "origin", "remote name should be origin")
+  assert(str.contains(remotes[0]["url"], "example.com"), "url should contain example.com")
+
+  let url = git.remote_url(r, "origin")
+  assert(str.contains(url, "example.com"), "remote_url should contain example.com")
+
+  _cleanup(r)
+  println("  ok remote")
+}
+
+fn test_root() {
+  let r = _repo()
+  let root = git.root(r)
+  assert(len(root) > 0, "should return repo root")
+  _cleanup(r)
+  println("  ok root")
+}
+
+fn test_changed_files() {
+  let r = _repo()
+  _write(r, "a.txt", "v1")
+  _write(r, "b.txt", "v1")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  let h1 = git.head(r)
+
+  _write(r, "a.txt", "v2")
+  exec("cd " + r + " && git add . && git commit -m 'change a'")
+  let h2 = git.head(r)
+
+  let changed = git.changed_files(r, h1, h2)
+  assert(len(changed) == 1, "should have 1 changed file")
+  assert(changed[0] == "a.txt", "changed file should be a.txt")
+  _cleanup(r)
+  println("  ok changed_files")
+}
+
+fn test_tracked_and_untracked() {
+  let r = _repo()
+  _write(r, "tracked.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  _write(r, "untracked.txt", "new")
+
+  let t = git.tracked(r)
+  assert(contains(t, "tracked.txt"), "tracked should include tracked.txt")
+
+  let u = git.untracked(r)
+  assert(contains(u, "untracked.txt"), "untracked should include untracked.txt")
+
+  _cleanup(r)
+  println("  ok tracked/untracked")
+}
+
+fn test_merge() {
+  let r = _repo()
+  _write(r, "a.txt", "hello")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+  let main = git.branch(r)
+
+  git.create_branch(r, "feat")
+  _write(r, "b.txt", "feature file")
+  exec("cd " + r + " && git add . && git commit -m 'feat commit'")
+
+  git.checkout(r, main)
+  let result = git.merge(r, "feat")
+  assert(is_ok(result), "merge should succeed")
+  let m = unwrap(result)
+  assert(m["ok"] == true, "merge should be clean")
+  assert(fs.exists(r + "/b.txt"), "merged file should exist")
+
+  _cleanup(r)
+  println("  ok merge")
+}
+
+fn test_show() {
+  let r = _repo()
+  _write(r, "a.txt", "hello world")
+  exec("cd " + r + " && git add . && git commit -m 'init'")
+
+  let content = git.show(r, "HEAD", "a.txt")
+  assert(str.contains(content, "hello world"), "show should return file content")
+
+  _cleanup(r)
+  println("  ok show")
+}
+
+fn main() {
+  test_init_and_is_repo()
+  test_status_clean()
+  test_status_modified()
+  test_status_untracked()
+  test_add_and_commit()
+  test_log()
+  test_branch()
+  test_diff()
+  test_tags()
+  test_stash()
+  test_head()
+  test_remote()
+  test_root()
+  test_changed_files()
+  test_tracked_and_untracked()
+  test_merge()
+  test_show()
+  println("all git tests passed")
+}

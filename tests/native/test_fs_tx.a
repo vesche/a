@@ -1,0 +1,169 @@
+; test_fs_tx.a -- tests for std/fs_tx.a transactional file operations
+
+use std.fs_tx
+
+fn assert(cond, msg) {
+  if !cond { fail("ASSERT: " + msg) }
+}
+
+fn _tmp(name) -> str {
+  ret "/tmp/a_test_fs_tx_" + name
+}
+
+fn _cleanup(path) {
+  if fs.exists(path) { fs.rm(path) }
+}
+
+fn test_begin_commit() {
+  let f = _tmp("commit.txt")
+  _cleanup(f)
+  io.write_file(f, "original")
+
+  let tx = fs_tx.begin([f])
+  assert(tx["committed"] == false, "should not be committed yet")
+  assert(len(tx["snapped"]) == 1, "should snapshot 1 file")
+
+  io.write_file(f, "modified")
+  let tx2 = fs_tx.commit(tx)
+  assert(tx2["committed"] == true, "should be committed")
+
+  let content = io.read_file(f)
+  assert(content == "modified", "file should remain modified after commit")
+  _cleanup(f)
+  println("  ok begin/commit")
+}
+
+fn test_begin_rollback() {
+  let f = _tmp("rollback.txt")
+  _cleanup(f)
+  io.write_file(f, "original")
+
+  let tx = fs_tx.begin([f])
+  io.write_file(f, "modified")
+
+  let content_mid = io.read_file(f)
+  assert(content_mid == "modified", "file should be modified mid-transaction")
+
+  let tx2 = fs_tx.rollback(tx)
+  assert(tx2["rolled_back"] == true, "should be rolled back")
+
+  let content_after = io.read_file(f)
+  assert(content_after == "original", "file should be restored after rollback")
+  _cleanup(f)
+  println("  ok begin/rollback")
+}
+
+fn test_multiple_files() {
+  let f1 = _tmp("multi1.txt")
+  let f2 = _tmp("multi2.txt")
+  _cleanup(f1)
+  _cleanup(f2)
+  io.write_file(f1, "aaa")
+  io.write_file(f2, "bbb")
+
+  let tx = fs_tx.begin([f1, f2])
+  assert(len(tx["snapped"]) == 2, "should snapshot 2 files")
+
+  io.write_file(f1, "xxx")
+  io.write_file(f2, "yyy")
+
+  fs_tx.rollback(tx)
+
+  assert(io.read_file(f1) == "aaa", "f1 should be restored")
+  assert(io.read_file(f2) == "bbb", "f2 should be restored")
+  _cleanup(f1)
+  _cleanup(f2)
+  println("  ok multiple files rollback")
+}
+
+fn test_missing_file_in_paths() {
+  let f = _tmp("exists.txt")
+  let missing = _tmp("no_such_file.txt")
+  _cleanup(f)
+  _cleanup(missing)
+  io.write_file(f, "here")
+
+  let tx = fs_tx.begin([f, missing])
+  assert(len(tx["snapped"]) == 1, "should only snapshot existing files")
+
+  io.write_file(f, "changed")
+  fs_tx.rollback(tx)
+  assert(io.read_file(f) == "here", "existing file should be restored")
+  _cleanup(f)
+  println("  ok missing file handled")
+}
+
+fn test_run_success() {
+  let f = _tmp("run_ok.txt")
+  _cleanup(f)
+  io.write_file(f, "before")
+
+  let result = fs_tx.run([f], fn() {
+    io.write_file(f, "after")
+    ret Ok("done")
+  })
+
+  assert(is_ok(result), "run should return Ok on success")
+  assert(io.read_file(f) == "after", "file should be modified after successful run")
+  _cleanup(f)
+  println("  ok run success commits")
+}
+
+fn test_run_err_rollback() {
+  let f = _tmp("run_err.txt")
+  _cleanup(f)
+  io.write_file(f, "safe")
+
+  let result = fs_tx.run([f], fn() {
+    io.write_file(f, "dangerous")
+    ret Err("tests failed")
+  })
+
+  assert(is_err(result), "run should return Err on failure")
+  assert(io.read_file(f) == "safe", "file should be restored after Err")
+  _cleanup(f)
+  println("  ok run Err triggers rollback")
+}
+
+fn test_run_exception_rollback() {
+  let f = _tmp("run_exc.txt")
+  _cleanup(f)
+  io.write_file(f, "protected")
+
+  let result = fs_tx.run([f], fn() {
+    io.write_file(f, "will be undone")
+    fail("something crashed")
+  })
+
+  assert(is_err(result), "run should return Err on exception")
+  assert(io.read_file(f) == "protected", "file should be restored after exception")
+  _cleanup(f)
+  println("  ok run exception triggers rollback")
+}
+
+fn test_commit_cleans_up() {
+  let f = _tmp("cleanup.txt")
+  _cleanup(f)
+  io.write_file(f, "data")
+
+  let tx = fs_tx.begin([f])
+  let dir = tx["backup_dir"]
+  assert(fs.exists(dir), "backup dir should exist after begin")
+
+  fs_tx.commit(tx)
+  assert(!fs.exists(dir), "backup dir should be removed after commit")
+  _cleanup(f)
+  println("  ok commit cleans up backup dir")
+}
+
+fn main() {
+  test_begin_commit()
+  test_begin_rollback()
+  test_multiple_files()
+  test_missing_file_in_paths()
+  test_run_success()
+  test_run_err_rollback()
+  test_run_exception_rollback()
+  test_commit_cleans_up()
+  println("all fs_tx tests passed")
+}

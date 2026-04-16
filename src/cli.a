@@ -11,6 +11,8 @@ use std.cli
 use std.pkg
 use std.plugin
 
+fn _version() -> str { ret "2.1.0" }
+
 fn _die(msg) {
   eprintln(cli.red(str.concat("error: ", msg)))
   exit(1)
@@ -1246,7 +1248,7 @@ fn cmd_plugin(argv) {
 }
 
 fn _usage() {
-  eprintln("a -- the a language native toolchain")
+  eprintln("a " + _version() + " -- the a language native toolchain")
   eprintln("")
   eprintln("usage:")
   eprintln("  a run <file.a> [args...]    compile and run (cached)")
@@ -1293,6 +1295,11 @@ fn main() {
   }
 
   let subcmd = argv[0]
+
+  if subcmd == "--version" || subcmd == "version" {
+    println("a " + _version())
+    ret
+  }
 
   if subcmd == "cc" {
     if len(argv) < 2 { _die("cc requires a source file") }

@@ -1,0 +1,496 @@
+; std/index.a -- Codebase intelligence
+;
+; Parse a project into a queryable, persistent index.
+; Built on std/meta.a (AST), std/kv.a (persistence).
+;
+;   let idx = index.create(".", #{})
+;   let callers = index.callers(idx, "parse_config")
+;   let deps = index.dependencies(idx, "src/cli.a")
+
+use std.meta
+use std.kv
+
+; ── Index Creation ──
+
+fn create(project_path, opts) -> map {
+  let mut extensions = [".a"]
+  if map.has(opts, "extensions") { extensions = opts["extensions"] }
+  let mut ignore = [".git", "node_modules", "target", ".a_cache", "a_modules"]
+  if map.has(opts, "ignore") { ignore = opts["ignore"] }
+
+  let all_files = _collect_files(project_path, extensions, ignore)
+
+  let mut file_data = #{}
+  let mut all_symbols = []
+  let mut all_imports = #{}
+  let mut all_call_graphs = #{}
+  let mut file_lines = #{}
+
+  let mut i = 0
+  while i < len(all_files) {
+    let file = all_files[i]
+    let result = _index_file(file, project_path)
+    if result["ok"] {
+      file_data = map.set(file_data, file, result)
+      all_symbols = concat_arr(all_symbols, result["symbols"])
+      all_imports = map.set(all_imports, file, result["imports"])
+      all_call_graphs = map.set(all_call_graphs, file, result["call_graph"])
+      file_lines = map.set(file_lines, file, result["lines"])
+    }
+    i = i + 1
+  }
+
+  let cross_calls = _build_cross_file_calls(all_call_graphs, file_data)
+
+  ret #{
+    "project_path": project_path,
+    "files": all_files,
+    "file_data": file_data,
+    "symbols": all_symbols,
+    "imports": all_imports,
+    "call_graphs": all_call_graphs,
+    "cross_calls": cross_calls,
+    "file_lines": file_lines,
+    "opts": opts
+  }
+}
+
+fn _collect_files(dir, extensions, ignore) -> [str] {
+  let mut result = []
+  if !fs.exists(dir) { ret result }
+  let entries = fs.ls(dir)
+  let mut i = 0
+  while i < len(entries) {
+    let e = entries[i]
+    let name = e["name"]
+    let path = dir + "/" + name
+    if e["is_dir"] {
+      if !_should_ignore(name, ignore) {
+        result = concat_arr(result, _collect_files(path, extensions, ignore))
+      }
+    } else {
+      let mut j = 0
+      while j < len(extensions) {
+        if str.ends_with(name, extensions[j]) {
+          result = push(result, path)
+        }
+        j = j + 1
+      }
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn _should_ignore(name, ignore) -> bool {
+  if str.starts_with(name, ".") { ret true }
+  let mut i = 0
+  while i < len(ignore) {
+    if name == ignore[i] { ret true }
+    i = i + 1
+  }
+  ret false
+}
+
+fn _index_file(file, project_path) -> map {
+  let source_result = try { io.read_file(file) }
+  if is_err(source_result) {
+    ret #{"ok": false, "error": "read failed"}
+  }
+  let source = unwrap(source_result)
+  let line_count = len(str.lines(source))
+
+  let parse_result = try { meta.parse(source) }
+  if is_err(parse_result) {
+    ret #{"ok": false, "error": "parse failed"}
+  }
+  let ast = unwrap(parse_result)
+  if type_of(ast) != "map" || !map.has(ast, "items") {
+    ret #{"ok": false, "error": "invalid AST"}
+  }
+
+  let fn_sigs = meta.fn_signatures(ast)
+  let fn_list = meta.fn_names(ast)
+  let imports = meta.uses(ast)
+  let cg = meta.call_graph(ast)
+
+  let mut symbols = []
+  let items = ast["items"]
+  let mut si = 0
+  while si < len(items) {
+    let item = items[si]
+    if type_of(item) == "map" && map.has(item, "tag") {
+      if item["tag"] == "FnDecl" {
+        let kind = "fn"
+        if str.starts_with(item["name"], "_") { kind = "fn_private" }
+        symbols = push(symbols, #{
+          "name": item["name"],
+          "kind": kind,
+          "file": file,
+          "line": _get_line(item),
+          "params": _param_count(item)
+        })
+      }
+      if item["tag"] == "TyDecl" {
+        symbols = push(symbols, #{
+          "name": item["name"],
+          "kind": "type",
+          "file": file,
+          "line": _get_line(item),
+          "params": 0
+        })
+      }
+      if item["tag"] == "ModDecl" {
+        symbols = push(symbols, #{
+          "name": item["name"],
+          "kind": "mod",
+          "file": file,
+          "line": _get_line(item),
+          "params": 0
+        })
+      }
+    }
+    si = si + 1
+  }
+
+  ret #{
+    "ok": true,
+    "file": file,
+    "lines": line_count,
+    "symbols": symbols,
+    "fn_names": fn_list,
+    "fn_sigs": fn_sigs,
+    "imports": imports,
+    "call_graph": cg
+  }
+}
+
+fn _get_line(node) -> int {
+  if map.has(node, "line") { ret node["line"] }
+  if map.has(node, "pos") {
+    let p = node["pos"]
+    if type_of(p) == "map" && map.has(p, "line") { ret p["line"] }
+  }
+  ret 0
+}
+
+fn _param_count(fn_node) -> int {
+  if map.has(fn_node, "params") { ret len(fn_node["params"]) }
+  ret 0
+}
+
+fn _build_cross_file_calls(all_cgs, file_data) -> map {
+  let mut callers_map = #{}
+  let keys = map.keys(all_cgs)
+  let mut i = 0
+  while i < len(keys) {
+    let file = keys[i]
+    let cg = all_cgs[file]
+    let fn_keys = map.keys(cg)
+    let mut j = 0
+    while j < len(fn_keys) {
+      let caller = fn_keys[j]
+      let callees = cg[caller]
+      let mut k = 0
+      while k < len(callees) {
+        let callee = callees[k]
+        let entry = #{"caller": caller, "file": file}
+        if map.has(callers_map, callee) {
+          callers_map = map.set(callers_map, callee, push(callers_map[callee], entry))
+        } else {
+          callers_map = map.set(callers_map, callee, [entry])
+        }
+        k = k + 1
+      }
+      j = j + 1
+    }
+    i = i + 1
+  }
+  ret callers_map
+}
+
+; ── Querying ──
+
+fn files(idx) -> [str] {
+  ret idx["files"]
+}
+
+fn symbols(idx) -> [map] {
+  ret idx["symbols"]
+}
+
+fn find(idx, name) -> [map] {
+  ret filter(idx["symbols"], fn(s) => s["name"] == name)
+}
+
+fn find_fuzzy(idx, pattern) -> [map] {
+  ret filter(idx["symbols"], fn(s) => str.contains(s["name"], pattern))
+}
+
+fn functions(idx) -> [map] {
+  ret filter(idx["symbols"], fn(s) => s["kind"] == "fn" || s["kind"] == "fn_private")
+}
+
+fn types(idx) -> [map] {
+  ret filter(idx["symbols"], fn(s) => s["kind"] == "type")
+}
+
+fn symbols_in(idx, file) -> [map] {
+  ret filter(idx["symbols"], fn(s) => s["file"] == file)
+}
+
+fn exports(idx, file) -> [map] {
+  ret filter(idx["symbols"], fn(s) => s["file"] == file && s["kind"] == "fn")
+}
+
+fn imports(idx, file) -> [str] {
+  let imp = idx["imports"]
+  if map.has(imp, file) { ret imp[file] }
+  ret []
+}
+
+; ── Call Graph Queries ──
+
+fn callers(idx, fn_name) -> [map] {
+  let cc = idx["cross_calls"]
+  if map.has(cc, fn_name) { ret cc[fn_name] }
+  ret []
+}
+
+fn callees(idx, fn_name) -> [str] {
+  let cgs = idx["call_graphs"]
+  let keys = map.keys(cgs)
+  let mut i = 0
+  while i < len(keys) {
+    let cg = cgs[keys[i]]
+    if map.has(cg, fn_name) { ret cg[fn_name] }
+    i = i + 1
+  }
+  ret []
+}
+
+fn call_graph(idx) -> map {
+  let mut merged = #{}
+  let cgs = idx["call_graphs"]
+  let keys = map.keys(cgs)
+  let mut i = 0
+  while i < len(keys) {
+    let cg = cgs[keys[i]]
+    let fns = map.keys(cg)
+    let mut j = 0
+    while j < len(fns) {
+      merged = map.set(merged, fns[j], cg[fns[j]])
+      j = j + 1
+    }
+    i = i + 1
+  }
+  ret merged
+}
+
+; ── Dependency Graph ──
+
+fn _module_to_file(idx, module_path) -> str {
+  let parts = str.split(module_path, ".")
+  if len(parts) >= 2 && parts[0] == "std" {
+    let mut candidates = []
+    if len(parts) == 2 {
+      candidates = push(candidates, "std/" + parts[1] + ".a")
+    }
+    if len(parts) == 3 {
+      candidates = push(candidates, "std/" + parts[1] + "/" + parts[2] + ".a")
+    }
+    let files = idx["files"]
+    let mut i = 0
+    while i < len(candidates) {
+      let mut j = 0
+      while j < len(files) {
+        if str.ends_with(files[j], candidates[i]) { ret files[j] }
+        j = j + 1
+      }
+      i = i + 1
+    }
+  }
+  ret ""
+}
+
+fn dependencies(idx, file) -> [str] {
+  let imps = imports(idx, file)
+  let mut deps = []
+  let mut i = 0
+  while i < len(imps) {
+    let resolved = _module_to_file(idx, imps[i])
+    if len(resolved) > 0 {
+      deps = push(deps, resolved)
+    }
+    i = i + 1
+  }
+  ret deps
+}
+
+fn dependents(idx, file) -> [str] {
+  let all_imports = idx["imports"]
+  let keys = map.keys(all_imports)
+  let mut result = []
+  let mut i = 0
+  while i < len(keys) {
+    let imps = all_imports[keys[i]]
+    let deps = _resolve_imports(idx, imps)
+    if contains(deps, file) {
+      result = push(result, keys[i])
+    }
+    i = i + 1
+  }
+  ret result
+}
+
+fn _resolve_imports(idx, imps) -> [str] {
+  let mut resolved = []
+  let mut i = 0
+  while i < len(imps) {
+    let f = _module_to_file(idx, imps[i])
+    if len(f) > 0 { resolved = push(resolved, f) }
+    i = i + 1
+  }
+  ret resolved
+}
+
+; ── Search ──
+
+fn search(idx, query) -> [map] {
+  let all_files = idx["files"]
+  let mut results = []
+  let mut i = 0
+  while i < len(all_files) {
+    let source_result = try { io.read_file(all_files[i]) }
+    if is_ok(source_result) {
+      let source = unwrap(source_result)
+      let lines = str.lines(source)
+      let mut ln = 1
+      let mut j = 0
+      while j < len(lines) {
+        if str.contains(lines[j], query) {
+          results = push(results, #{
+            "file": all_files[i],
+            "line": ln,
+            "content": str.trim(lines[j])
+          })
+        }
+        ln = ln + 1
+        j = j + 1
+      }
+    }
+    i = i + 1
+  }
+  ret results
+}
+
+; ── Statistics ──
+
+fn stats(idx) -> map {
+  let sym = idx["symbols"]
+  let mut fn_count = 0
+  let mut type_count = 0
+  let mut mod_count = 0
+  let mut i = 0
+  while i < len(sym) {
+    if sym[i]["kind"] == "fn" || sym[i]["kind"] == "fn_private" { fn_count = fn_count + 1 }
+    if sym[i]["kind"] == "type" { type_count = type_count + 1 }
+    if sym[i]["kind"] == "mod" { mod_count = mod_count + 1 }
+    i = i + 1
+  }
+
+  let fl = idx["file_lines"]
+  let file_keys = map.keys(fl)
+  let mut total_lines = 0
+  let mut j = 0
+  while j < len(file_keys) {
+    total_lines = total_lines + fl[file_keys[j]]
+    j = j + 1
+  }
+
+  let imp = idx["imports"]
+  let imp_keys = map.keys(imp)
+  let mut unique_imports = #{}
+  let mut k = 0
+  while k < len(imp_keys) {
+    let imps = imp[imp_keys[k]]
+    let mut m = 0
+    while m < len(imps) {
+      unique_imports = map.set(unique_imports, imps[m], true)
+      m = m + 1
+    }
+    k = k + 1
+  }
+
+  ret #{
+    "files": len(idx["files"]),
+    "functions": fn_count,
+    "types": type_count,
+    "modules": mod_count,
+    "lines": total_lines,
+    "unique_imports": len(map.keys(unique_imports))
+  }
+}
+
+; ── Persistence ──
+
+fn save(idx, path) {
+  let store = kv.open(path)
+  kv.set(store, "project_path", idx["project_path"])
+  kv.set(store, "files", idx["files"])
+  kv.set(store, "symbols", idx["symbols"])
+  kv.set(store, "imports", idx["imports"])
+  kv.set(store, "call_graphs", idx["call_graphs"])
+  kv.set(store, "cross_calls", idx["cross_calls"])
+  kv.set(store, "file_lines", idx["file_lines"])
+  kv.set(store, "opts", idx["opts"])
+  kv.close(store)
+}
+
+fn load(path) -> map {
+  let store = kv.open(path)
+  let idx = #{
+    "project_path": unwrap(kv.get(store, "project_path")),
+    "files": unwrap(kv.get(store, "files")),
+    "file_data": #{},
+    "symbols": unwrap(kv.get(store, "symbols")),
+    "imports": unwrap(kv.get(store, "imports")),
+    "call_graphs": unwrap(kv.get(store, "call_graphs")),
+    "cross_calls": unwrap(kv.get(store, "cross_calls")),
+    "file_lines": unwrap(kv.get(store, "file_lines")),
+    "opts": unwrap(kv.get(store, "opts"))
+  }
+  kv.close(store)
+  ret idx
+}
+
+; ── Incremental Update ──
+
+fn update(idx, changed_files) -> map {
+  let mut new_idx = idx
+  let mut i = 0
+  while i < len(changed_files) {
+    let file = changed_files[i]
+    let result = _index_file(file, idx["project_path"])
+    if result["ok"] {
+      let fd = new_idx["file_data"]
+      new_idx = map.set(new_idx, "file_data", map.set(fd, file, result))
+
+      let old_syms = filter(new_idx["symbols"], fn(s) => s["file"] != file)
+      new_idx = map.set(new_idx, "symbols", concat_arr(old_syms, result["symbols"]))
+
+      let imp = new_idx["imports"]
+      new_idx = map.set(new_idx, "imports", map.set(imp, file, result["imports"]))
+
+      let cg = new_idx["call_graphs"]
+      new_idx = map.set(new_idx, "call_graphs", map.set(cg, file, result["call_graph"]))
+
+      let fl = new_idx["file_lines"]
+      new_idx = map.set(new_idx, "file_lines", map.set(fl, file, result["lines"]))
+    }
+    i = i + 1
+  }
+  let new_cc = _build_cross_file_calls(new_idx["call_graphs"], new_idx["file_data"])
+  new_idx = map.set(new_idx, "cross_calls", new_cc)
+  ret new_idx
+}
