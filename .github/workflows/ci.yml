@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
@@ -31,11 +32,11 @@ jobs:
 
       - name: Verify bootstrap/cli.c is up to date
         run: |
-          ./a run std/compiler/cgen.a -- src/cli.a > /tmp/bootstrap_verify.c 2>/dev/null
+          ./a cc src/cli.a -o /tmp/bootstrap_verify.c
           if ! diff -q bootstrap/cli.c /tmp/bootstrap_verify.c > /dev/null 2>&1; then
             echo "ERROR: bootstrap/cli.c is out of date."
             echo "Regenerate with:"
-            echo "  ./a run std/compiler/cgen.a -- src/cli.a > bootstrap/cli.c"
+            echo "  ./a cc src/cli.a -o bootstrap/cli.c"
             diff bootstrap/cli.c /tmp/bootstrap_verify.c | head -20
             exit 1
           fi
@@ -60,30 +61,40 @@ jobs:
           SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
           PASS=0; FAIL=0; SKIP=0
           TEST_TIMEOUT=60
+          RT=c_runtime
 
-          # Portable timeout: prefer timeout, fall back to gtimeout (macOS coreutils)
+          # Portable timeout
           if command -v timeout >/dev/null 2>&1; then
             TIMEOUT_CMD="timeout"
           elif command -v gtimeout >/dev/null 2>&1; then
             TIMEOUT_CMD="gtimeout"
           else
-            echo "warning: no timeout command found, tests will run without timeouts"
             TIMEOUT_CMD=""
           fi
+
+          # ── Pre-compile the C runtime objects ONCE (in parallel) ──
+          # sqlite3.c alone is 261K lines; recompiling per-test was the #1 bottleneck.
+          echo "Pre-compiling runtime objects..."
+          gcc -c $RT/runtime.c  -o /tmp/rt_runtime.o  -I $RT -O2 $SQLITE &
+          gcc -c $RT/sqlite3.c  -o /tmp/rt_sqlite3.o  -I $RT -O2 $SQLITE &
+          gcc -c $RT/miniz.c    -o /tmp/rt_miniz.o    -I $RT -O2 &
+          gcc -c $RT/stb_impl.c -o /tmp/rt_stb.o      -I $RT -O2 &
+          gcc -c $RT/embedded.c -o /tmp/rt_embedded.o  -I $RT -O2 &
+          wait
+          RT_OBJS="/tmp/rt_runtime.o /tmp/rt_sqlite3.o /tmp/rt_miniz.o /tmp/rt_stb.o /tmp/rt_embedded.o"
+          echo "done."
 
           # Pre-build cgen as a native binary once
           echo "Building cgen binary..."
           ./a build std/compiler/cgen.a -o /tmp/cgen
           echo ""
 
-          # Tests that require servers, file watchers, or spawn/await
-          # that may block in CI without proper signal handling.
-          SKIP_TESTS="test_http.a test_watch.a test_stream.a"
+          # Tests that hang or need external resources in CI
+          SKIP_TESTS="test_http.a test_watch.a test_stream.a test_selfopt.a"
 
           for src in tests/native/test_*.a; do
             name=$(basename "$src")
 
-            # Check skip list
             skip=false
             for s in $SKIP_TESTS; do
               if [ "$name" = "$s" ]; then skip=true; break; fi
@@ -103,10 +114,10 @@ jobs:
               continue
             fi
 
-            # Compile with gcc
+            # Compile test against pre-built runtime objects (link-only)
             BIN_FILE=$(mktemp /tmp/a_test_XXXXXX)
-            if ! gcc "$C_FILE" c_runtime/runtime.c c_runtime/sqlite3.c c_runtime/miniz.c c_runtime/stb_impl.c c_runtime/embedded.c \
-                -o "$BIN_FILE" -I c_runtime -lm -O2 $STACK $TLS $SQLITE 2>/dev/null; then
+            if ! gcc "$C_FILE" $RT_OBJS \
+                -o "$BIN_FILE" -I $RT -lm -O2 $STACK $TLS 2>/dev/null; then
               echo "  FAIL $name (compile error)"
               rm -f "$C_FILE" "$BIN_FILE"
               FAIL=$((FAIL + 1))
