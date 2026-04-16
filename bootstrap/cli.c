@@ -359,6 +359,7 @@ AValue fn_plugin_run(AValue name);
 AValue fn_plugin__find_cli(void);
 AValue fn_plugin_create_manifest(AValue name, AValue version, AValue desc, AValue ep);
 AValue fn_plugin_init(AValue dir, AValue name);
+AValue fn__version(void);
 AValue fn__die(AValue msg);
 AValue fn__find_runtime_dir(void);
 AValue fn__generate_c(AValue source_path);
@@ -14323,6 +14324,13 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn__version(void) {
+    AValue __ret = a_void();
+    __ret = a_string("2.1.0"); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
 AValue fn__die(AValue msg) {
     AValue __ret = a_void();
     msg = a_retain(msg);
@@ -16334,7 +16342,7 @@ __fn_cleanup:
 
 AValue fn__usage(void) {
     AValue __ret = a_void();
-    a_eprintln(a_string("a -- the a language native toolchain"));
+    a_eprintln(a_add(a_add(a_string("a "), fn__version()), a_string(" -- the a language native toolchain")));
     a_eprintln(a_string(""));
     a_eprintln(a_string("usage:"));
     a_eprintln(a_string("  a run <file.a> [args...]    compile and run (cached)"));
@@ -16384,6 +16392,10 @@ AValue fn_main(void) {
         (exit((int)a_int(1).ival), a_void());
     }
     { AValue __old = subcmd; subcmd = a_array_get(argv, a_int(0)); a_release(__old); }
+    if (a_truthy(a_or(a_eq(subcmd, a_string("--version")), a_eq(subcmd, a_string("version"))))) {
+        a_println(a_add(a_string("a "), fn__version()));
+        __ret = a_void(); goto __fn_cleanup;
+    }
     if (a_truthy(a_eq(subcmd, a_string("cc")))) {
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
             fn__die(a_string("cc requires a source file"));
