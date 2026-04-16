@@ -1,0 +1,343 @@
+; agents/self_improve.a -- Self-improvement agent for the "a" language
+;
+; Run:    a agent agents/self_improve.a --name self-improver
+; Or:     ./a build agents/self_improve.a -o /tmp/a_self_improve && /tmp/a_self_improve
+;
+; Each run, this agent:
+;   1. Scans std/ and std/compiler/ for all modules
+;   2. Profiles each module via its corresponding test file
+;   3. Filters hot functions to only module-owned code (not test harness)
+;   4. Applies safe mechanical transforms (inline small hot fns)
+;   5. Validates changes compile and tests still pass
+;   6. Generates tests for modules that lack them
+;   7. Checkpoints progress across runs
+
+use std.agent
+use std.compiler.optimizer
+use std.codegen
+use std.refactor
+use std.testgen
+
+fn _log(msg) {
+  eprintln("[self-improve] " + msg)
+}
+
+fn _cli() -> str {
+  if map.has(env.all(), "A_COMPILER") {
+    let c = env.get("A_COMPILER")
+    if len(c) > 0 { ret c }
+  }
+  if fs.exists("./a") { ret "./a" }
+  let which = exec("which a 2>/dev/null")
+  if which["code"] == 0 {
+    let p = str.trim(which["stdout"])
+    if len(p) > 0 { ret p }
+  }
+  ret "a"
+}
+
+fn _find_modules(dir) -> [str] {
+  let mut modules = []
+  if !fs.exists(dir) { ret modules }
+  let entries = fs.ls(dir)
+  let mut i = 0
+  while i < len(entries) {
+    let name = entries[i]["name"]
+    if str.ends_with(name, ".a") {
+      modules = push(modules, dir + "/" + name)
+    }
+    i = i + 1
+  }
+  ret modules
+}
+
+fn _basename(path) -> str {
+  let parts = str.split(path, "/")
+  ret parts[len(parts) - 1]
+}
+
+fn _test_for(module_path) -> str {
+  let name = str.replace(_basename(module_path), ".a", "")
+  let p = "tests/native/test_" + name + ".a"
+  if fs.exists(p) { ret p }
+  ret ""
+}
+
+fn _skip(test_name) -> bool {
+  if test_name == "test_self_host.a" { ret true }
+  if test_name == "test_http.a" { ret true }
+  if test_name == "test_async.a" { ret true }
+  if test_name == "test_rpc.a" { ret true }
+  if test_name == "test_local_llm.a" { ret true }
+  if test_name == "test_watch.a" { ret true }
+  if test_name == "test_concurrency.a" { ret true }
+  if test_name == "test_stream.a" { ret true }
+  ret false
+}
+
+fn _profile(test_file) -> map {
+  let out = "/tmp/a_si_prof_" + to_str(time.now()) + ".json"
+  let cmd = "timeout 30 " + _cli() + " profile " + test_file + " -o " + out + " 2>/dev/null"
+  let r = exec(cmd)
+  if r["code"] != 0 || !fs.exists(out) {
+    ret #{ "error": "profile failed" }
+  }
+  let report = optimizer.analyze_profile(out)
+  fs.rm(out)
+  ret report
+}
+
+fn _fn_names_in(source) -> [str] {
+  let analysis = testgen.analyze(source)
+  let mut names = []
+  let prog = codegen.compile_check(source)
+  if !prog["ok"] { ret names }
+  let ast = prog["ast"]
+  if type_of(ast) != "map" { ret names }
+  if !map.has(ast, "items") { ret names }
+  let items = ast["items"]
+  let mut i = 0
+  while i < len(items) {
+    let item = items[i]
+    if type_of(item) == "map" && map.has(item, "tag") {
+      if item["tag"] == "FnDecl" {
+        names = push(names, item["name"])
+      }
+    }
+    i = i + 1
+  }
+  ret names
+}
+
+fn _filter_hot(profile, fn_names) -> [map] {
+  if !map.has(profile, "hot_functions") { ret [] }
+  let hf = profile["hot_functions"]
+  let mut filtered = []
+  let mut i = 0
+  while i < len(hf) {
+    let fname = hf[i]["name"]
+    let mut j = 0
+    while j < len(fn_names) {
+      if fn_names[j] == fname {
+        filtered = push(filtered, hf[i])
+        j = len(fn_names)
+      }
+      j = j + 1
+    }
+    i = i + 1
+  }
+  ret filtered
+}
+
+fn _try_inline(source, fn_name) -> map {
+  let new_source = refactor.inline_fn(source, fn_name)
+  if new_source == source {
+    ret #{ "changed": false }
+  }
+  let check = codegen.compile_check(new_source)
+  if check["ok"] {
+    ret #{ "changed": true, "source": new_source }
+  }
+  ret #{ "changed": false }
+}
+
+fn _optimize(source, suggestions) -> map {
+  let mut current = source
+  let mut count = 0
+  let mut i = 0
+  while i < len(suggestions) {
+    let s = suggestions[i]
+    if s["type"] == "inline" && s["priority"] == "high" {
+      let result = _try_inline(current, s["function"])
+      if map.has(result, "changed") && result["changed"] {
+        current = result["source"]
+        count = count + 1
+        _log("    inlined: " + s["function"])
+      }
+    }
+    i = i + 1
+  }
+  ret #{ "source": current, "changed": count > 0 }
+}
+
+fn _validate(module_path, new_source) -> bool {
+  let original = io.read_file(module_path)
+  io.write_file(module_path, new_source)
+  let tf = _test_for(module_path)
+  let mut ok = true
+  if len(tf) > 0 {
+    let r = exec(_cli() + " run " + tf + " 2>/dev/null")
+    ok = r["code"] == 0
+  }
+  if !ok {
+    io.write_file(module_path, original)
+    _log("    ROLLBACK: tests failed")
+  }
+  ret ok
+}
+
+fn _gen_tests(target, mname) -> int {
+  let source = io.read_file(target)
+  if type_of(source) == "void" || len(source) == 0 { ret 0 }
+  let tests = testgen.gen_tests(source)
+  let check = codegen.compile_check(tests)
+  if !check["ok"] {
+    _log("    test generation failed (compile errors)")
+    ret 0
+  }
+  let name_no_ext = str.replace(mname, ".a", "")
+  if !fs.exists("tests/generated") { fs.mkdir("tests/generated") }
+  let gen_path = "tests/generated/test_" + name_no_ext + ".a"
+  io.write_file(gen_path, tests)
+  _log("    wrote " + gen_path)
+  ret 1
+}
+
+fn _process(target) -> map {
+  let source = io.read_file(target)
+  if type_of(source) == "void" || len(source) == 0 {
+    ret #{ "profiled": false, "improved": false, "tested": 0 }
+  }
+  let mname = _basename(target)
+
+  let analysis = testgen.analyze(source)
+  _log("  " + to_str(analysis["total_functions"]) + " fns (" +
+       to_str(analysis["public_functions"]) + " public), " +
+       to_str(analysis["code_lines"]) + " LOC")
+
+  let tf = _test_for(target)
+
+  ; Generate tests for untested modules
+  let mut tests_gen = 0
+  if len(tf) == 0 {
+    _log("  no test file -- generating...")
+    tests_gen = _gen_tests(target, mname)
+    ret #{ "profiled": false, "improved": false, "tested": tests_gen }
+  }
+
+  if _skip(_basename(tf)) {
+    _log("  skip profile (slow test)")
+    ret #{ "profiled": false, "improved": false, "tested": 0 }
+  }
+
+  ; Profile
+  _log("  profiling via " + tf + "...")
+  let profile = _profile(tf)
+  if map.has(profile, "error") {
+    _log("  " + profile["error"])
+    ret #{ "profiled": false, "improved": false, "tested": 0 }
+  }
+
+  ; Filter to only module-owned hot functions
+  let fn_names = _fn_names_in(source)
+  let module_hot = _filter_hot(profile, fn_names)
+
+  if len(module_hot) > 0 {
+    _log("  module hot functions:")
+    let mut j = 0
+    while j < len(module_hot) && j < 5 {
+      _log("    " + module_hot[j]["name"] + ": " + to_str(module_hot[j]["count"]) + " calls (" + to_str(module_hot[j]["hot_ratio"]) + "%)")
+      j = j + 1
+    }
+  } else {
+    _log("  no hot functions in module code")
+  }
+
+  ; Get suggestions filtered to module functions
+  let suggestions = optimizer.suggest(source, profile)
+  let mut module_suggestions = []
+  let mut si = 0
+  while si < len(suggestions) {
+    let s = suggestions[si]
+    if map.has(s, "function") {
+      let sf = s["function"]
+      let mut found = false
+      let mut fi = 0
+      while fi < len(fn_names) {
+        if fn_names[fi] == sf { found = true }
+        fi = fi + 1
+      }
+      if found { module_suggestions = push(module_suggestions, s) }
+    } else {
+      module_suggestions = push(module_suggestions, s)
+    }
+    si = si + 1
+  }
+
+  if len(module_suggestions) == 0 {
+    _log("  no optimization suggestions")
+    ret #{ "profiled": true, "improved": false, "tested": 0 }
+  }
+
+  _log("  " + to_str(len(module_suggestions)) + " suggestions:")
+  let mut k = 0
+  while k < len(module_suggestions) {
+    let sg = module_suggestions[k]
+    _log("    [" + sg["priority"] + "] " + sg["type"] + ": " + sg["reason"])
+    k = k + 1
+  }
+
+  let opt = _optimize(source, module_suggestions)
+  if !opt["changed"] {
+    _log("  no applicable transforms")
+    ret #{ "profiled": true, "improved": false, "tested": 0 }
+  }
+
+  _log("  validating changes...")
+  let valid = _validate(target, opt["source"])
+  if valid { _log("  IMPROVED!") }
+  ret #{ "profiled": true, "improved": valid, "tested": 0 }
+}
+
+fn main() {
+  let name = "self-improver"
+  agent.register(name, ["optimize", "profile", "refactor", "test-gen"])
+  _log("registered (v" + agent.version() + ")")
+
+  let prev = agent.restore(name)
+  let mut runs = 0
+  let mut total_imp = 0
+  let mut total_tg = 0
+  if is_ok(prev) {
+    let s = unwrap(prev)
+    if map.has(s, "runs") { runs = s["runs"] }
+    if map.has(s, "improvements") { total_imp = s["improvements"] }
+    if map.has(s, "tests_gen") { total_tg = s["tests_gen"] }
+    _log("restored: " + to_str(runs) + " runs, " + to_str(total_imp) + " improvements, " + to_str(total_tg) + " tests")
+  }
+  runs = runs + 1
+  _log("=== run #" + to_str(runs) + " ===")
+
+  let all = concat_arr(_find_modules("std/compiler"), _find_modules("std"))
+  _log("found " + to_str(len(all)) + " modules")
+
+  let mut improved = 0
+  let mut profiled = 0
+  let mut tested = 0
+  let mut idx = 0
+  while idx < len(all) {
+    _log("")
+    _log("--- " + _basename(all[idx]) + " ---")
+    let r = _process(all[idx])
+    if r["profiled"] { profiled = profiled + 1 }
+    if r["improved"] { improved = improved + 1 }
+    tested = tested + r["tested"]
+    idx = idx + 1
+  }
+
+  total_imp = total_imp + improved
+  total_tg = total_tg + tested
+  agent.checkpoint(name, #{ "runs": runs, "improvements": total_imp, "tests_gen": total_tg })
+
+  _log("")
+  _log("=== Run #" + to_str(runs) + " Summary ===")
+  _log("  Modules:       " + to_str(len(all)))
+  _log("  Profiled:      " + to_str(profiled))
+  _log("  Improved:      " + to_str(improved))
+  _log("  Tests gen'd:   " + to_str(tested))
+  _log("  Lifetime:      " + to_str(total_imp) + " improvements, " + to_str(total_tg) + " tests across " + to_str(runs) + " runs")
+
+  agent.unregister(name)
+  _log("done")
+  exit(0)
+}
