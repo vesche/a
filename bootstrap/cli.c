@@ -14328,7 +14328,7 @@ __fn_cleanup:
 
 AValue fn__version(void) {
     AValue __ret = a_void();
-    __ret = a_string("2.1.0"); goto __fn_cleanup;
+    __ret = a_string("2.1.1"); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
 }

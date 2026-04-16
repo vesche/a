@@ -11,7 +11,7 @@ use std.cli
 use std.pkg
 use std.plugin
 
-fn _version() -> str { ret "2.1.0" }
+fn _version() -> str { ret "2.1.1" }
 
 fn _die(msg) {
   eprintln(cli.red(str.concat("error: ", msg)))
