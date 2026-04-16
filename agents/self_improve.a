@@ -1,16 +1,18 @@
 ; agents/self_improve.a -- Self-improvement agent for the "a" language
 ;
-; Run:    a agent agents/self_improve.a --name self-improver
-; Or:     ./a build agents/self_improve.a -o /tmp/a_self_improve && /tmp/a_self_improve
+; Run:    a agent agents/self_improve.a --name self-improver --max-restarts 0
 ;
-; Each run, this agent:
-;   1. Scans std/ and std/compiler/ for all modules
-;   2. Profiles each module via its corresponding test file
-;   3. Filters hot functions to only module-owned code (not test harness)
-;   4. Applies safe mechanical transforms (inline small hot fns)
-;   5. Validates changes compile and tests still pass
-;   6. Generates tests for modules that lack them
-;   7. Checkpoints progress across runs
+; Each run (cycle), this agent:
+;   1. Creates a feature branch self-improve/run-N
+;   2. Scans std/ and std/compiler/ for all modules
+;   3. Profiles each module via its corresponding test file
+;   4. Filters hot functions to only module-owned code (not test harness)
+;   5. Applies safe mechanical transforms (inline small hot fns)
+;   6. Validates changes compile and tests still pass
+;   7. Commits validated changes with git
+;   8. Regenerates bootstrap/cli.c if compiler modules changed
+;   9. Pushes branch and opens a PR
+;  10. Exits 42 to trigger supervisor rebuild for next cycle
 
 use std.agent
 use std.compiler.optimizer
@@ -18,9 +20,15 @@ use std.codegen
 use std.refactor
 use std.testgen
 use std.fs_tx
+use std.git
 
 fn _log(msg) {
   eprintln("[self-improve] " + msg)
+}
+
+fn _shell_quote(s) -> str {
+  let escaped = str.replace(s, "'", "'\\''")
+  ret "'" + escaped + "'"
 }
 
 fn _cli() -> str {
@@ -288,7 +296,28 @@ fn _process(target) -> map {
   _log("  validating changes...")
   let valid = _validate(target, opt["source"])
   if valid { _log("  IMPROVED!") }
-  ret #{ "profiled": true, "improved": valid, "tested": 0 }
+  ret #{ "profiled": true, "improved": valid, "tested": 0, "target": target }
+}
+
+fn _maybe_regen_bootstrap(changed_files) {
+  let mut compiler_changed = false
+  let mut i = 0
+  while i < len(changed_files) {
+    if str.contains(changed_files[i], "std/compiler/") {
+      compiler_changed = true
+    }
+    i = i + 1
+  }
+  if !compiler_changed { ret }
+  _log("compiler module changed -- regenerating bootstrap/cli.c")
+  let r = exec(_cli() + " cc src/cli.a -o bootstrap/cli.c")
+  if r["code"] == 0 {
+    git.add(".", ["bootstrap/cli.c"])
+    git.commit(".", "chore: regenerate bootstrap/cli.c")
+    _log("  bootstrap/cli.c regenerated and committed")
+  } else {
+    _log("  WARNING: bootstrap regeneration failed")
+  }
 }
 
 fn main() {
@@ -310,21 +339,44 @@ fn main() {
   runs = runs + 1
   _log("=== run #" + to_str(runs) + " ===")
 
+  ; Create a feature branch for this run
+  let branch = "self-improve/run-" + to_str(runs)
+  let branch_r = git.create_branch(".", branch)
+  if is_err(branch_r) {
+    _log("WARNING: could not create branch " + branch + " -- continuing on current branch")
+  } else {
+    _log("created branch: " + branch)
+  }
+
   let all = concat_arr(_find_modules("std/compiler"), _find_modules("std"))
   _log("found " + to_str(len(all)) + " modules")
 
   let mut improved = 0
   let mut profiled = 0
   let mut tested = 0
+  let mut changed_files = []
   let mut idx = 0
   while idx < len(all) {
     _log("")
     _log("--- " + _basename(all[idx]) + " ---")
     let r = _process(all[idx])
     if r["profiled"] { profiled = profiled + 1 }
-    if r["improved"] { improved = improved + 1 }
+    if r["improved"] {
+      improved = improved + 1
+      changed_files = push(changed_files, r["target"])
+      ; Stage and commit each validated improvement individually
+      git.add(".", [r["target"]])
+      let mod_name = _basename(r["target"])
+      git.commit(".", "perf: optimize " + mod_name + " (self-improve run " + to_str(runs) + ")")
+      _log("  committed: " + mod_name)
+    }
     tested = tested + r["tested"]
     idx = idx + 1
+  }
+
+  ; If compiler modules changed, regenerate bootstrap/cli.c
+  if len(changed_files) > 0 {
+    _maybe_regen_bootstrap(changed_files)
   }
 
   total_imp = total_imp + improved
@@ -339,7 +391,44 @@ fn main() {
   _log("  Tests gen'd:   " + to_str(tested))
   _log("  Lifetime:      " + to_str(total_imp) + " improvements, " + to_str(total_tg) + " tests across " + to_str(runs) + " runs")
 
+  ; Push and open PR if we made improvements
+  if improved > 0 {
+    _log("pushing " + branch + " to origin...")
+    let push_r = git.push(".", "origin", branch)
+    if is_err(push_r) {
+      _log("WARNING: push failed -- changes are committed locally")
+    } else {
+      _log("pushed to origin/" + branch)
+      ; Open a PR via gh CLI
+      let pr_title = "perf: self-improve run " + to_str(runs) + " (" + to_str(improved) + " optimizations)"
+      let pr_body = "Automated self-improvement run #" + to_str(runs) + ".\n\n"
+      let pr_body2 = pr_body + "- Modules profiled: " + to_str(profiled) + "\n"
+      let pr_body3 = pr_body2 + "- Modules improved: " + to_str(improved) + "\n"
+      let pr_body4 = pr_body3 + "- Tests generated: " + to_str(tested) + "\n\n"
+      let pr_body5 = pr_body4 + "All changes validated: compile check + test suite pass before commit."
+      let pr_cmd = "gh pr create --title " + _shell_quote(pr_title) + " --body " + _shell_quote(pr_body5) + " --head " + branch + " --base main 2>&1"
+      let pr_r = exec(pr_cmd)
+      if pr_r["code"] == 0 {
+        _log("PR opened: " + str.trim(pr_r["stdout"]))
+      } else {
+        _log("WARNING: PR creation failed: " + str.trim(pr_r["stdout"]))
+      }
+    }
+    ; Return to main for the next cycle
+    let co_r = git.checkout(".", "main")
+    if is_err(co_r) {
+      _log("WARNING: could not checkout main")
+    }
+  } else {
+    ; No improvements -- delete the empty branch and stay on main
+    let co_r = git.checkout(".", "main")
+    if is_ok(co_r) {
+      exec("cd . && git branch -D " + branch + " 2>/dev/null")
+    }
+  }
+
   agent.unregister(name)
-  _log("done")
-  exit(0)
+  _log("done -- requesting next cycle")
+  time.sleep(5000)
+  exit(42)
 }
