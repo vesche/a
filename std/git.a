@@ -294,7 +294,8 @@ fn branch(path) -> str {
 }
 
 fn branches(path) -> [map] {
-  let r = _run(path, "branch -a --format=%(refname:short)|||%(objectname:short)|||%(HEAD)")
+  let fmt = _shell_quote("%(refname:short)|||%(objectname:short)|||%(HEAD)")
+  let r = _run(path, "branch -a --format=" + fmt)
   if r["code"] != 0 { ret [] }
   let lines = _lines(r["stdout"])
   let mut result = []

@@ -605,7 +605,7 @@ __fn_cleanup:
 }
 
 AValue fn_lexer_lex(AValue src) {
-    AValue chars = {0}, n = {0}, pos = {0}, toks = {0}, interp_depth = {0}, c = {0}, content = {0}, hash_start = {0}, hashes = {0}, found = {0}, hi = {0}, ok = {0}, start = {0}, word = {0}, kind = {0}, is_float = {0}, text = {0}, done = {0}, sc = {0}, tlen = {0}, ended = {0};
+    AValue chars = {0}, n = {0}, pos = {0}, toks = {0}, interp_depth = {0}, c = {0}, content = {0}, hash_start = {0}, hashes = {0}, hp = {0}, found = {0}, hi = {0}, ok = {0}, start = {0}, word = {0}, kind = {0}, is_float = {0}, text = {0}, done = {0}, sc = {0}, tlen = {0}, ended = {0};
     AValue __ret = a_void();
     src = a_retain(src);
     { AValue __old = chars; chars = a_str_chars(src); a_release(__old); }
@@ -635,9 +635,9 @@ AValue fn_lexer_lex(AValue src) {
             continue;
         }
         if (a_truthy(a_eq(c, a_string("r")))) {
-            if (a_truthy(a_lt(pos, n))) {
-                if (a_truthy(a_eq(a_array_get(chars, pos), a_string("\"")))) {
-                    { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+            if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
+                if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("\"")))) {
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
                     { AValue __old = content; content = a_string(""); a_release(__old); }
                     while (a_truthy(a_lt(pos, n))) {
                         if (a_truthy(a_eq(a_array_get(chars, pos), a_string("\"")))) {
@@ -651,20 +651,21 @@ AValue fn_lexer_lex(AValue src) {
                     { AValue __old = toks; toks = a_array_push(toks, content); a_release(__old); }
                     continue;
                 }
-                if (a_truthy(a_eq(a_array_get(chars, pos), a_string("#")))) {
+                if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("#")))) {
                     { AValue __old = hash_start; hash_start = a_retain(pos); a_release(__old); }
                     { AValue __old = hashes; hashes = a_int(0); a_release(__old); }
-                    while (a_truthy(a_lt(pos, n))) {
-                        if (a_truthy(a_eq(a_array_get(chars, pos), a_string("#")))) {
+                    { AValue __old = hp; hp = a_add(pos, a_int(1)); a_release(__old); }
+                    while (a_truthy(a_lt(hp, n))) {
+                        if (a_truthy(a_eq(a_array_get(chars, hp), a_string("#")))) {
                             { AValue __old = hashes; hashes = a_add(hashes, a_int(1)); a_release(__old); }
-                            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+                            { AValue __old = hp; hp = a_add(hp, a_int(1)); a_release(__old); }
                         } else {
                             break;
                         }
                     }
-                    if (a_truthy(a_lt(pos, n))) {
-                        if (a_truthy(a_eq(a_array_get(chars, pos), a_string("\"")))) {
-                            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+                    if (a_truthy(a_lt(hp, n))) {
+                        if (a_truthy(a_eq(a_array_get(chars, hp), a_string("\"")))) {
+                            { AValue __old = pos; pos = a_add(hp, a_int(1)); a_release(__old); }
                             { AValue __old = content; content = a_string(""); a_release(__old); }
                             { AValue __old = found; found = a_bool(0); a_release(__old); }
                             while (a_truthy(a_lt(pos, n))) {
@@ -1103,6 +1104,7 @@ __fn_cleanup:
     a_release(content);
     a_release(hash_start);
     a_release(hashes);
+    a_release(hp);
     a_release(found);
     a_release(hi);
     a_release(ok);

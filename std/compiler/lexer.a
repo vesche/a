@@ -102,10 +102,11 @@ fn lex(src: str) -> [str] {
     }
 
     ; raw strings: r"..." or r#"..."#
+    ; Note: c = chars[pos] so pos still points at 'r'; peek ahead with pos+1
     if c == "r" {
-      if pos < n {
-        if chars[pos] == "\"" {
-          pos = pos + 1
+      if pos + 1 < n {
+        if chars[pos + 1] == "\"" {
+          pos = pos + 2
           let mut content = ""
           while pos < n {
             if chars[pos] == "\"" {
@@ -119,18 +120,19 @@ fn lex(src: str) -> [str] {
           toks = push(toks, content)
           continue
         }
-        if chars[pos] == "#" {
+        if chars[pos + 1] == "#" {
           let hash_start = pos
           let mut hashes = 0
-          while pos < n {
-            if chars[pos] == "#" {
+          let mut hp = pos + 1
+          while hp < n {
+            if chars[hp] == "#" {
               hashes = hashes + 1
-              pos = pos + 1
+              hp = hp + 1
             } else { break }
           }
-          if pos < n {
-            if chars[pos] == "\"" {
-              pos = pos + 1
+          if hp < n {
+            if chars[hp] == "\"" {
+              pos = hp + 1
               let mut content = ""
               let mut found = false
               while pos < n {

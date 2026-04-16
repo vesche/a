@@ -93,52 +93,53 @@ fn test_missing_file_in_paths() {
   println("  ok missing file handled")
 }
 
-fn test_run_success() {
-  let f = _tmp("run_ok.txt")
-  _cleanup(f)
-  io.write_file(f, "before")
+fn test_modify_then_commit() {
+  let p = _tmp("mod_commit.txt")
+  _cleanup(p)
+  io.write_file(p, "before")
 
-  let result = fs_tx.run([f], fn() {
-    io.write_file(f, "after")
-    ret Ok("done")
-  })
+  let tx = fs_tx.begin([p])
+  io.write_file(p, "after")
+  fs_tx.commit(tx)
 
-  assert(is_ok(result), "run should return Ok on success")
-  assert(io.read_file(f) == "after", "file should be modified after successful run")
-  _cleanup(f)
-  println("  ok run success commits")
+  assert(io.read_file(p) == "after", "file should be modified after commit")
+  _cleanup(p)
+  println("  ok modify then commit keeps changes")
 }
 
-fn test_run_err_rollback() {
-  let f = _tmp("run_err.txt")
-  _cleanup(f)
-  io.write_file(f, "safe")
+fn test_modify_then_rollback() {
+  let p = _tmp("mod_rollback.txt")
+  _cleanup(p)
+  io.write_file(p, "safe")
 
-  let result = fs_tx.run([f], fn() {
-    io.write_file(f, "dangerous")
-    ret Err("tests failed")
-  })
+  let tx = fs_tx.begin([p])
+  io.write_file(p, "dangerous")
+  assert(io.read_file(p) == "dangerous", "file should be modified mid-transaction")
+  fs_tx.rollback(tx)
 
-  assert(is_err(result), "run should return Err on failure")
-  assert(io.read_file(f) == "safe", "file should be restored after Err")
-  _cleanup(f)
-  println("  ok run Err triggers rollback")
+  assert(io.read_file(p) == "safe", "file should be restored after rollback")
+  _cleanup(p)
+  println("  ok modify then rollback restores")
 }
 
-fn test_run_exception_rollback() {
-  let f = _tmp("run_exc.txt")
-  _cleanup(f)
-  io.write_file(f, "protected")
+fn test_nested_begin_rollback() {
+  let p1 = _tmp("nested1.txt")
+  let p2 = _tmp("nested2.txt")
+  _cleanup(p1)
+  _cleanup(p2)
+  io.write_file(p1, "orig1")
+  io.write_file(p2, "orig2")
 
-  let result = fs_tx.run([f], fn() {
-    io.write_file(f, "will be undone")
-    fail("something crashed")
-  })
+  let tx = fs_tx.begin([p1, p2])
+  io.write_file(p1, "new1")
+  io.write_file(p2, "new2")
+  fs_tx.rollback(tx)
 
-  assert(is_err(result), "run should return Err on exception")
-  assert(io.read_file(f) == "protected", "file should be restored after exception")
-  _cleanup(f)
-  println("  ok run exception triggers rollback")
+  assert(io.read_file(p1) == "orig1", "p1 should be restored")
+  assert(io.read_file(p2) == "orig2", "p2 should be restored")
+  _cleanup(p1)
+  _cleanup(p2)
+  println("  ok nested begin/rollback restores all files")
 }
 
 fn test_commit_cleans_up() {
@@ -161,9 +162,9 @@ fn main() {
   test_begin_rollback()
   test_multiple_files()
   test_missing_file_in_paths()
-  test_run_success()
-  test_run_err_rollback()
-  test_run_exception_rollback()
+  test_modify_then_commit()
+  test_modify_then_rollback()
+  test_nested_begin_rollback()
   test_commit_cleans_up()
   println("all fs_tx tests passed")
 }

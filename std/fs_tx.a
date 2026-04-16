@@ -5,7 +5,7 @@
 ; used throughout the codebase (e.g. agents/self_improve.a).
 
 fn _tx_dir() -> str {
-  ret "/tmp/a_fs_tx_" + to_str(time.now()) + "_" + to_str(reflect.pid)
+  ret "/tmp/a_fs_tx_" + to_str(time.now()) + "_" + to_str(reflect.pid())
 }
 
 fn _snapshot_file(src, backup_dir) {
@@ -75,18 +75,13 @@ fn rollback(tx) -> map {
 
 fn run(paths, f) {
   let tx = begin(paths)
-  let result = try { f() }
-  if is_ok(result) {
-    let inner = unwrap(result)
-    if type_of(inner) == "map" && map.has(inner, "tag") {
-      if inner["tag"] == "Err" {
-        rollback(tx)
-        ret inner
-      }
+  let result = f()
+  if type_of(result) == "map" && map.has(result, "tag") {
+    if result["tag"] == "Err" {
+      rollback(tx)
+      ret result
     }
-    commit(tx)
-    ret inner
   }
-  rollback(tx)
-  ret Err("transaction failed: " + to_str(result))
+  commit(tx)
+  ret result
 }

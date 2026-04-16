@@ -111,7 +111,18 @@ fn _index_file(file, project_path) -> map {
 
   let fn_sigs = meta.fn_signatures(ast)
   let fn_list = meta.fn_names(ast)
-  let imports = meta.uses(ast)
+  let raw_imports = meta.uses(ast)
+  let mut imports = []
+  let mut ii = 0
+  while ii < len(raw_imports) {
+    let imp = raw_imports[ii]
+    if type_of(imp) == "array" {
+      imports = push(imports, str.join(imp, "."))
+    } else {
+      imports = push(imports, to_str(imp))
+    }
+    ii = ii + 1
+  }
   let cg = meta.call_graph(ast)
 
   let mut symbols = []
@@ -131,7 +142,7 @@ fn _index_file(file, project_path) -> map {
           "params": _param_count(item)
         })
       }
-      if item["tag"] == "TyDecl" {
+      if item["tag"] == "TypeDecl" {
         symbols = push(symbols, #{
           "name": item["name"],
           "kind": "type",
