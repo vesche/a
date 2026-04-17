@@ -1,0 +1,655 @@
+; agents/self_improve_ai.a -- LLM-powered self-improvement agent
+;
+; Uses a local Ollama model (Qwen3.6) via std/llm.a to generate tests
+; for untested modules, then progresses to code improvements.
+;
+; Run:
+;   ollama serve &
+;   ./a agent agents/self_improve_ai.a --name self-improver --no-restart
+;
+; Env overrides:
+;   OLLAMA_MODEL   -- model name (default: qwen3.6)
+;   OLLAMA_URL     -- base URL (default: http://localhost:11434/v1/chat/completions)
+;   LLM_PROVIDER   -- "openai" for Ollama, or "anthropic"/"google" for cloud
+;   MAX_RETRIES    -- per-module retry count (default: 3)
+
+use std.agent
+use std.llm
+use std.codegen
+use std.git
+use std.fs_tx
+
+fn _log(msg) {
+  eprintln("[self-improve-ai] " + msg)
+}
+
+fn _cli() -> str {
+  if map.has(env.all(), "A_COMPILER") {
+    let c = env.get("A_COMPILER")
+    if len(c) > 0 { ret c }
+  }
+  if fs.exists("./a") { ret "./a" }
+  ret "a"
+}
+
+fn _shell_quote(s) -> str {
+  let escaped = str.replace(s, "'", "'\\''")
+  ret "'" + escaped + "'"
+}
+
+fn _model() -> str {
+  if map.has(env.all(), "OLLAMA_MODEL") {
+    let m = env.get("OLLAMA_MODEL")
+    if len(m) > 0 { ret m }
+  }
+  ret "qwen3.6"
+}
+
+fn _provider() -> str {
+  if map.has(env.all(), "LLM_PROVIDER") {
+    let p = env.get("LLM_PROVIDER")
+    if len(p) > 0 { ret p }
+  }
+  ret "openai"
+}
+
+fn _llm_opts() -> map {
+  let mut opts = #{ "max_tokens": 8192 }
+  let provider = _provider()
+  if provider == "openai" {
+    let mut url = "http://localhost:11434/v1/chat/completions"
+    if map.has(env.all(), "OLLAMA_URL") {
+      let u = env.get("OLLAMA_URL")
+      if len(u) > 0 { url = u }
+    }
+    opts = map.set(opts, "base_url", url)
+    opts = map.set(opts, "api_key", "ollama")
+  }
+  ret opts
+}
+
+fn _max_retries() -> int {
+  if map.has(env.all(), "MAX_RETRIES") {
+    let v = env.get("MAX_RETRIES")
+    if len(v) > 0 { ret int(v) }
+  }
+  ret 3
+}
+
+; ── Module discovery ──
+
+fn _find_modules(dir) -> [str] {
+  let mut modules = []
+  if !fs.exists(dir) { ret modules }
+  let entries = fs.ls(dir)
+  let mut i = 0
+  while i < len(entries) {
+    let name = entries[i]["name"]
+    if str.ends_with(name, ".a") {
+      modules = push(modules, dir + "/" + name)
+    }
+    i = i + 1
+  }
+  ret modules
+}
+
+fn _basename(path) -> str {
+  let parts = str.split(path, "/")
+  ret parts[len(parts) - 1]
+}
+
+fn _test_for(module_path) -> str {
+  let name = str.replace(_basename(module_path), ".a", "")
+  let p = "tests/native/test_" + name + ".a"
+  if fs.exists(p) { ret p }
+  ret ""
+}
+
+fn _modules_needing_tests() -> [str] {
+  let all = concat_arr(_find_modules("std"), _find_modules("std/compiler"))
+  let mut need = []
+  let mut i = 0
+  while i < len(all) {
+    if len(_test_for(all[i])) == 0 {
+      need = push(need, all[i])
+    }
+    i = i + 1
+  }
+  ret need
+}
+
+; ── Prompt construction ──
+
+fn _lang_reference() -> str {
+  let nl = "\n"
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let mut p = "# The 'a' Programming Language -- Quick Reference" + nl + nl
+  p = p + "## Syntax" + nl
+  p = p + "- Functions: fn name(param1, param2) " + lb + " body " + rb + nl
+  p = p + "- Typed params: fn name(x: int, s: str) -> str " + lb + " ... " + rb + nl
+  p = p + "- Variables: let x = expr   or   let mut x = expr" + nl
+  p = p + "- Return: ret expr" + nl
+  p = p + "- Strings: double quotes only. Interpolation: \"hello " + lb + "name" + rb + "\"" + nl
+  p = p + "- Maps: #" + lb + "\"key\": value, \"key2\": value2" + rb + nl
+  p = p + "- Arrays: [1, 2, 3]" + nl
+  p = p + "- Comments: ; (semicolon to end of line)" + nl
+  p = p + "- If/else: if cond " + lb + " ... " + rb + " else " + lb + " ... " + rb + nl
+  p = p + "- While loop: while cond " + lb + " ... " + rb + nl
+  p = p + "- For loop: for item in iterable " + lb + " ... " + rb + nl
+  p = p + "- Results: Ok(value), Err(msg), is_ok(r), is_err(r), unwrap(r)" + nl
+  p = p + "- Pipe: expr |> fn_name" + nl
+  p = p + "- Lambda: fn(x) => x + 1" + nl
+  p = p + "- Import: use std.module_name  (then call as module_name.fn())" + nl
+  p = p + "- Boolean: true, false" + nl
+  p = p + "- Mutable reassign: x = new_val  (only if declared let mut)" + nl
+  p = p + "- continue / break in loops" + nl
+  p = p + "- Concatenation: arrays with concat_arr(a, b), strings with +" + nl + nl
+
+  p = p + "## Key Builtins" + nl
+  p = p + "- println(x), print(x), eprintln(x)" + nl
+  p = p + "- len(x), push(arr, item), pop(arr), slice(arr, start, end)" + nl
+  p = p + "- to_str(x), int(x), float(x), type_of(x)" + nl
+  p = p + "- str.split, str.join, str.contains, str.replace, str.trim" + nl
+  p = p + "- str.starts_with, str.ends_with, str.upper, str.lower" + nl
+  p = p + "- str.chars, str.lines, str.slice, str.find, str.count, str.concat" + nl
+  p = p + "- map.get, map.set, map.has, map.keys, map.values, map.entries" + nl
+  p = p + "- sort(arr), contains(arr, item), range(n)" + nl
+  p = p + "- io.read_file(path), io.write_file(path, content)" + nl
+  p = p + "- fs.exists(path), fs.ls(dir), fs.mkdir(path), fs.rm(path)" + nl
+  p = p + "- exec(cmd) -> #" + lb + "\"stdout\": str, \"stderr\": str, \"code\": int" + rb + nl
+  p = p + "- json.parse(s), json.stringify(obj)" + nl
+  p = p + "- time.now(), time.sleep(ms)" + nl
+  p = p + "- env.get(name), env.all()" + nl
+  p = p + "- math.sqrt, math.abs, math.floor, math.ceil, math.pow" + nl
+  p = p + "- fail(msg) -- abort with error message" + nl
+  p = p + "- assert(cond) -- abort if false" + nl
+  p = p + "- char_code(ch), from_code(n), is_alpha(ch), is_digit(ch)" + nl + nl
+
+  p = p + "## CRITICAL RULES" + nl
+  p = p + "- There is NO 'return' keyword. Use 'ret' instead." + nl
+  p = p + "- There is NO 'elif' keyword. Use 'else " + lb + " if ... " + rb + "' or '" + rb + " else " + lb + "' followed by 'if'." + nl
+  p = p + "- There is NO 'def' or 'function' keyword. Use 'fn'." + nl
+  p = p + "- There is NO '===' operator. Use '=='." + nl
+  p = p + "- Semicolons are COMMENTS, not statement terminators." + nl
+  p = p + "- String interpolation uses bare braces: \"value is " + lb + "x" + rb + "\" not $" + lb + "x" + rb + "." + nl
+  p = p + "- Map literals use #" + lb + rb + " not " + lb + rb + "." + nl
+  p = p + "- The 'let' keyword is required for variable declarations." + nl
+  p = p + "- 'let' variables are immutable. Use 'let mut' for mutable." + nl
+  ret p
+}
+
+fn _test_format_instructions() -> str {
+  let nl = "\n"
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let mut p = "## Test File Format" + nl + nl
+  p = p + "A test file is a standalone program. It must:" + nl
+  p = p + "1. Import the module under test with 'use std.module_name'" + nl
+  p = p + "2. Define fn main() " + lb + " ... " + rb + " as the entry point" + nl
+  p = p + "3. Use fail(\"message\") to signal test failures" + nl
+  p = p + "4. Exit normally (code 0) if all tests pass" + nl
+  p = p + "5. Print a summary like println(\"all X tests passed\") at the end" + nl + nl
+  p = p + "You can define helper functions like assert and assert_eq:" + nl
+  p = p + "  fn assert(cond, msg) " + lb + nl
+  p = p + "    if !cond " + lb + " fail(\"FAIL: \" + msg) " + rb + nl
+  p = p + "  " + rb + nl + nl
+  p = p + "  fn assert_eq(a, b) " + lb + nl
+  p = p + "    if to_str(a) != to_str(b) " + lb + nl
+  p = p + "      fail(\"expected \" + to_str(b) + \", got \" + to_str(a))" + nl
+  p = p + "    " + rb + nl
+  p = p + "  " + rb + nl + nl
+  p = p + "IMPORTANT: Output ONLY the test source code. No markdown fences, no explanations." + nl
+  ret p
+}
+
+fn _example_test() -> str {
+  let nl = "\n"
+  let lb = from_code(123)
+  let rb = from_code(125)
+  let mut p = "; Example test file for std/path.a" + nl
+  p = p + "use std.path" + nl + nl
+  p = p + "fn assert_eq(a, b) " + lb + nl
+  p = p + "  if to_str(a) != to_str(b) " + lb + nl
+  p = p + "    fail(\"expected \" + to_str(b) + \", got \" + to_str(a))" + nl
+  p = p + "  " + rb + nl
+  p = p + rb + nl + nl
+  p = p + "fn main() " + lb + nl
+  p = p + "  assert_eq(path.join(\"a\", \"b\"), \"a/b\")" + nl
+  p = p + "  assert_eq(path.basename(\"/foo/bar.txt\"), \"bar.txt\")" + nl
+  p = p + "  assert_eq(path.extension(\"file.txt\"), \"txt\")" + nl
+  p = p + "  assert_eq(path.is_absolute(\"/foo\"), true)" + nl
+  p = p + "  assert_eq(path.is_absolute(\"foo\"), false)" + nl
+  p = p + "  println(\"all path tests passed\")" + nl
+  p = p + rb + nl
+  ret p
+}
+
+fn _build_test_prompt(module_path, source) -> [map] {
+  let mod_name = str.replace(_basename(module_path), ".a", "")
+  let sys = _lang_reference() + "\n" + _test_format_instructions()
+
+  let nl = "\n"
+  let mut user = "Write a comprehensive test file for the following module: std/" + mod_name + nl + nl
+  user = user + "The test file should import it with: use std." + mod_name + nl
+  user = user + "Then call the module's public functions as: " + mod_name + ".function_name(...)" + nl + nl
+  user = user + "Here is an example of a well-written test file:" + nl
+  user = user + "---" + nl
+  user = user + _example_test() + nl
+  user = user + "---" + nl + nl
+  user = user + "Now here is the module source to write tests for:" + nl
+  user = user + "---" + nl
+  user = user + source + nl
+  user = user + "---" + nl + nl
+  user = user + "Write thorough tests covering:" + nl
+  user = user + "- Normal / happy-path cases for each public function" + nl
+  user = user + "- Edge cases (empty strings, empty arrays, zero, negative numbers, etc.)" + nl
+  user = user + "- Any error handling paths" + nl + nl
+  user = user + "Do NOT test private functions (those starting with underscore)." + nl
+  user = user + "Do NOT use any features not shown in the language reference." + nl
+  user = user + "Do NOT include markdown fences or explanations. Output ONLY valid 'a' source code." + nl
+
+  ret [
+    #{ "role": "system", "content": sys },
+    #{ "role": "user", "content": user }
+  ]
+}
+
+fn _build_fix_prompt(messages, code, error) -> [map] {
+  let nl = "\n"
+  let mut fix_msg = "The test code you generated failed validation." + nl + nl
+  fix_msg = fix_msg + "Error:" + nl + error + nl + nl
+  fix_msg = fix_msg + "Here is the code that failed:" + nl
+  fix_msg = fix_msg + "---" + nl + code + nl + "---" + nl + nl
+  fix_msg = fix_msg + "Fix the code. Output ONLY the corrected source code, no explanations." + nl
+  fix_msg = fix_msg + "Remember: use 'ret' not 'return', use '; ' for comments, use '#" + from_code(123) + from_code(125) + "' for maps, no 'elif'." + nl
+
+  ret push(messages, #{ "role": "user", "content": fix_msg })
+}
+
+; ── LLM call ──
+
+fn _call_llm(messages) -> map {
+  let provider = _provider()
+  let model = _model()
+
+  if provider == "openai" {
+    ret _call_ollama(model, messages)
+  }
+
+  ; Cloud fallback via std/llm
+  let opts = _llm_opts()
+  let result = llm.chat(provider, model, messages, opts)
+  if is_err(result) {
+    ret #{ "ok": false, "error": to_str(result), "content": "" }
+  }
+  let response = result
+  if type_of(response) == "map" {
+    let mut content = ""
+    if map.has(response, "content") { content = response["content"] }
+    let mut usage = #{}
+    if map.has(response, "usage") { usage = response["usage"] }
+    ret #{ "ok": true, "content": content, "usage": usage }
+  }
+  ret #{ "ok": false, "error": "unexpected response type", "content": "" }
+}
+
+fn _call_ollama(model, messages) -> map {
+  let mut base = "http://localhost:11434"
+  if map.has(env.all(), "OLLAMA_URL") {
+    let u = env.get("OLLAMA_URL")
+    if len(u) > 0 { base = u }
+  }
+  let url = base + "/api/chat"
+
+  let body = #{
+    "model": model,
+    "messages": messages,
+    "stream": false,
+    "think": false,
+    "options": #{
+      "num_ctx": 8192,
+      "num_predict": 4096,
+      "num_thread": 20
+    }
+  }
+
+  let body_str = json.stringify(body)
+  let tmp_req = "/tmp/a_si_req_" + to_str(time.now()) + ".json"
+  io.write_file(tmp_req, body_str)
+
+  _log("  calling Ollama via curl (" + to_str(len(body_str)) + " bytes)...")
+  let cmd = "curl -s --max-time 600 -X POST " + url + " -H 'Content-Type: application/json' -d @" + tmp_req + " 2>&1"
+  let result = exec(cmd)
+  fs.rm(tmp_req)
+
+  if result["code"] != 0 {
+    ret #{ "ok": false, "error": "curl failed (exit " + to_str(result["code"]) + "): " + str.trim(result["stdout"]), "content": "" }
+  }
+
+  let resp_body = result["stdout"]
+  if len(resp_body) == 0 {
+    ret #{ "ok": false, "error": "empty response from Ollama", "content": "" }
+  }
+
+  let data = json.parse(resp_body)
+  if type_of(data) != "map" {
+    ret #{ "ok": false, "error": "invalid JSON response", "content": "" }
+  }
+
+  if map.has(data, "error") {
+    ret #{ "ok": false, "error": "API error: " + to_str(data["error"]), "content": "" }
+  }
+
+  if !map.has(data, "message") {
+    ret #{ "ok": false, "error": "no message in response", "content": "" }
+  }
+
+  let msg = data["message"]
+  let mut content = ""
+  if map.has(msg, "content") {
+    if type_of(msg["content"]) == "str" {
+      content = msg["content"]
+    }
+  }
+
+  let mut usage = #{}
+  if map.has(data, "prompt_eval_count") {
+    let mut in_tok = 0
+    let mut out_tok = 0
+    in_tok = data["prompt_eval_count"]
+    if map.has(data, "eval_count") { out_tok = data["eval_count"] }
+    usage = #{ "input_tokens": in_tok, "output_tokens": out_tok }
+  }
+
+  if map.has(data, "eval_duration") {
+    let dur_ns = data["eval_duration"]
+    let dur_s = dur_ns / 1000000000
+    let mut out_tok = 0
+    if map.has(data, "eval_count") { out_tok = data["eval_count"] }
+    if dur_s > 0 {
+      _log("  speed: " + to_str(out_tok) + " tokens in " + to_str(dur_s) + "s (" + to_str(out_tok / dur_s) + " tok/s)")
+    }
+  }
+
+  ret #{ "ok": true, "content": content, "usage": usage }
+}
+
+fn _extract_code(text) -> str {
+  if str.contains(text, "```") {
+    let lines = str.lines(text)
+    let mut in_block = false
+    let mut code_lines = []
+    let mut i = 0
+    while i < len(lines) {
+      let line = lines[i]
+      if str.starts_with(str.trim(line), "```") {
+        if in_block {
+          in_block = false
+        } else {
+          in_block = true
+        }
+        i = i + 1
+        continue
+      }
+      if in_block {
+        code_lines = push(code_lines, line)
+      }
+      i = i + 1
+    }
+    if len(code_lines) > 0 {
+      ret str.join(code_lines, "\n")
+    }
+  }
+  ret text
+}
+
+; ── Validation ──
+
+fn _validate_test(test_source, module_path) -> map {
+  let check = codegen.compile_check(test_source)
+  if !check["ok"] {
+    let mut err_msgs = []
+    let errors = check["errors"]
+    let mut i = 0
+    while i < len(errors) {
+      let e = errors[i]
+      if map.has(e, "msg") {
+        err_msgs = push(err_msgs, e["msg"])
+      }
+      i = i + 1
+    }
+    ret #{ "ok": false, "error": "compile_check failed: " + str.join(err_msgs, "; ") }
+  }
+
+  let mod_name = str.replace(_basename(module_path), ".a", "")
+  let test_path = "/tmp/a_si_test_" + mod_name + "_" + to_str(time.now()) + ".a"
+  io.write_file(test_path, test_source)
+
+  let build_out = "/tmp/a_si_bin_" + mod_name + "_" + to_str(time.now())
+  let build_cmd = _cli() + " build " + test_path + " -o " + build_out + " 2>&1"
+  let build_r = exec(build_cmd)
+  if build_r["code"] != 0 {
+    let err = build_r["stdout"] + build_r["stderr"]
+    fs.rm(test_path)
+    ret #{ "ok": false, "error": "build failed: " + str.trim(err) }
+  }
+
+  let run_cmd = "timeout 30 " + build_out + " 2>&1"
+  let run_r = exec(run_cmd)
+  fs.rm(test_path)
+  if fs.exists(build_out) { fs.rm(build_out) }
+
+  if run_r["code"] != 0 {
+    let err = run_r["stdout"] + run_r["stderr"]
+    ret #{ "ok": false, "error": "test run failed (exit " + to_str(run_r["code"]) + "): " + str.trim(err) }
+  }
+
+  ret #{ "ok": true, "output": str.trim(run_r["stdout"]) }
+}
+
+; ── Generate tests for one module ──
+
+fn _generate_test(module_path) -> map {
+  let source = io.read_file(module_path)
+  if type_of(source) == "void" || len(source) == 0 {
+    ret #{ "ok": false, "error": "empty module" }
+  }
+
+  let mod_name = str.replace(_basename(module_path), ".a", "")
+  let max_tries = _max_retries()
+  let mut messages = _build_test_prompt(module_path, source)
+  let mut attempt = 0
+  let mut last_error = ""
+  let mut total_tokens = 0
+
+  while attempt < max_tries {
+    attempt = attempt + 1
+    _log("  attempt " + to_str(attempt) + "/" + to_str(max_tries) + "...")
+
+    let resp = _call_llm(messages)
+    if !resp["ok"] {
+      _log("  LLM error: " + resp["error"])
+      last_error = resp["error"]
+      continue
+    }
+
+    if map.has(resp, "usage") {
+      if map.has(resp["usage"], "output_tokens") {
+        total_tokens = total_tokens + resp["usage"]["output_tokens"]
+      }
+    }
+
+    let raw = resp["content"]
+    if len(raw) == 0 {
+      _log("  LLM returned empty content")
+      last_error = "empty response from LLM"
+      continue
+    }
+
+    let code = _extract_code(raw)
+    _log("  got " + to_str(len(str.lines(code))) + " lines of code")
+
+    let val = _validate_test(code, module_path)
+    if val["ok"] {
+      _log("  VALIDATED! " + val["output"])
+      ret #{ "ok": true, "source": code, "tokens": total_tokens }
+    }
+
+    _log("  validation failed: " + val["error"])
+    last_error = val["error"]
+
+    if attempt < max_tries {
+      messages = _build_fix_prompt(messages, code, val["error"])
+    }
+  }
+
+  ret #{ "ok": false, "error": last_error, "tokens": total_tokens }
+}
+
+; ── Main cycle ──
+
+fn main() {
+  let name = "self-improver"
+  agent.register(name, ["test-gen", "llm", "self-improve"])
+  _log("registered (v" + agent.version() + ") -- LLM-powered")
+  _log("model: " + _model() + " via " + _provider())
+
+  let prev = agent.restore(name)
+  let mut runs = 0
+  let mut total_tests = 0
+  let mut total_tokens = 0
+  let mut done_modules = []
+  if is_ok(prev) {
+    let s = unwrap(prev)
+    if map.has(s, "runs") { runs = s["runs"] }
+    if map.has(s, "tests_gen") { total_tests = s["tests_gen"] }
+    if map.has(s, "tokens_used") { total_tokens = s["tokens_used"] }
+    if map.has(s, "done_modules") { done_modules = s["done_modules"] }
+    _log("restored: " + to_str(runs) + " runs, " + to_str(total_tests) + " tests, " + to_str(total_tokens) + " tokens")
+  }
+  runs = runs + 1
+  _log("=== run #" + to_str(runs) + " ===")
+
+  let branch = "self-improve/run-" + to_str(runs)
+  let branch_r = git.create_branch(".", branch)
+  if is_err(branch_r) {
+    _log("WARNING: could not create branch " + branch)
+  } else {
+    _log("created branch: " + branch)
+  }
+
+  let need = _modules_needing_tests()
+  _log("modules needing tests: " + to_str(len(need)))
+
+  ; Filter out already-attempted modules
+  let mut todo = []
+  let mut ni = 0
+  while ni < len(need) {
+    let mut already = false
+    let mut di = 0
+    while di < len(done_modules) {
+      if done_modules[di] == need[ni] { already = true }
+      di = di + 1
+    }
+    if !already {
+      todo = push(todo, need[ni])
+    }
+    ni = ni + 1
+  }
+  _log("remaining to attempt: " + to_str(len(todo)))
+
+  if len(todo) == 0 {
+    _log("all modules attempted -- resetting done list for next pass")
+    done_modules = []
+    todo = need
+  }
+
+  ; Process modules this cycle (up to 5 per run to keep cycles bounded)
+  let batch_size = 5
+  let mut count = 0
+  let mut tests_this_run = 0
+  let mut tokens_this_run = 0
+  let mut changed_files = []
+
+  while count < len(todo) && count < batch_size {
+    let mod_path = todo[count]
+    let mod_name = str.replace(_basename(mod_path), ".a", "")
+    _log("")
+    _log("--- " + _basename(mod_path) + " ---")
+
+    let result = _generate_test(mod_path)
+    done_modules = push(done_modules, mod_path)
+
+    if map.has(result, "tokens") {
+      tokens_this_run = tokens_this_run + result["tokens"]
+    }
+
+    if result["ok"] {
+      let test_path = "tests/native/test_" + mod_name + ".a"
+      io.write_file(test_path, result["source"])
+      _log("  wrote " + test_path)
+      tests_this_run = tests_this_run + 1
+      changed_files = push(changed_files, test_path)
+
+      git.add(".", [test_path])
+      git.commit(".", "test: add tests for std/" + mod_name + " (AI-generated, run " + to_str(runs) + ")")
+      _log("  committed")
+    } else {
+      _log("  FAILED after all retries: " + result["error"])
+    }
+
+    count = count + 1
+  }
+
+  total_tests = total_tests + tests_this_run
+  total_tokens = total_tokens + tokens_this_run
+  agent.checkpoint(name, #{
+    "runs": runs,
+    "tests_gen": total_tests,
+    "tokens_used": total_tokens,
+    "done_modules": done_modules
+  })
+
+  _log("")
+  _log("=== Run #" + to_str(runs) + " Summary ===")
+  _log("  Attempted:     " + to_str(count))
+  _log("  Tests created: " + to_str(tests_this_run))
+  _log("  Tokens used:   " + to_str(tokens_this_run))
+  _log("  Lifetime:      " + to_str(total_tests) + " tests, " + to_str(total_tokens) + " tokens across " + to_str(runs) + " runs")
+
+  if tests_this_run > 0 {
+    _log("pushing " + branch + " to origin...")
+    let push_r = git.push(".", "origin", branch)
+    if is_err(push_r) {
+      _log("WARNING: push failed -- changes committed locally")
+    } else {
+      _log("pushed to origin/" + branch)
+      let pr_title = "test: AI-generated tests (run " + to_str(runs) + ", " + to_str(tests_this_run) + " new)"
+      let pr_body = "Automated self-improvement run #" + to_str(runs) + " (LLM-powered).\n\n"
+      let pr_body2 = pr_body + "- Tests created: " + to_str(tests_this_run) + "\n"
+      let pr_body3 = pr_body2 + "- Model: " + _model() + "\n"
+      let pr_body4 = pr_body3 + "- Tokens used: " + to_str(tokens_this_run) + "\n\n"
+      let pr_body5 = pr_body4 + "All tests validated: compile + build + run before commit."
+      let pr_cmd = "gh pr create --title " + _shell_quote(pr_title) + " --body " + _shell_quote(pr_body5) + " --head " + branch + " --base main 2>&1"
+      let pr_r = exec(pr_cmd)
+      if pr_r["code"] == 0 {
+        _log("PR opened: " + str.trim(pr_r["stdout"]))
+      } else {
+        _log("WARNING: PR creation failed: " + str.trim(pr_r["stdout"]))
+      }
+    }
+    let co_r = git.checkout(".", "main")
+    if is_err(co_r) { _log("WARNING: could not checkout main") }
+  } else {
+    let co_r = git.checkout(".", "main")
+    if is_ok(co_r) {
+      exec("cd . && git branch -D " + branch + " 2>/dev/null")
+    }
+  }
+
+  agent.unregister(name)
+  _log("done -- requesting next cycle")
+  time.sleep(5000)
+  exit(42)
+}
