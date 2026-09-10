@@ -46,10 +46,12 @@ fn _find_runtime_dir() -> str {
   ret cache
 }
 
-fn _generate_c(source_path) -> str {
+; Returns Ok(c_source) or Err(message). Never exits, so callers that process
+; many files (the test runner) can report one failure and keep going.
+fn _try_generate_c(source_path) {
   let mut source = io.read_file(source_path)
   if type_of(source) == "void" || len(source) == 0 {
-    _die(str.concat("cannot read file: ", source_path))
+    ret Err("cannot read file: " + source_path)
   }
   if str.starts_with(source, "#!") {
     let lines = str.lines(source)
@@ -58,11 +60,25 @@ fn _generate_c(source_path) -> str {
   let prog_ast = parser.parse(source)
   if type_of(prog_ast) == "map" && map.has(prog_ast, "tag") {
     if prog_ast["tag"] == "ParseError" {
-      _die(str.concat("parse error: ", str.concat(prog_ast["msg"], str.concat(" at token ", to_str(prog_ast["pos"])))))
+      ret Err("parse error: " + prog_ast["msg"] + " at token " + to_str(prog_ast["pos"]))
     }
   }
   let bm = cgen._builtin_map()
-  ret cgen.emit_program(prog_ast, bm)
+  ret Ok(cgen.emit_program(prog_ast, bm))
+}
+
+fn _err_message(r) -> str {
+  match r {
+    Err(e) => { ret to_str(e) }
+    _ => { ret "" }
+  }
+  ret ""
+}
+
+fn _generate_c(source_path) -> str {
+  let r = _try_generate_c(source_path)
+  if is_err(r) { _die(_err_message(r)) }
+  ret unwrap(r)
 }
 
 fn _gcc_flags() -> str {
@@ -176,20 +192,30 @@ fn cmd_wat(source_path, out_file) {
   }
 }
 
+; Runs `a cc` in a subprocess. A clean non-zero exit (parse error, missing
+; module) is reported once and is final. Only a crash (killed by a signal,
+; which /bin/sh reports as 128+n) is retried, and every retry is announced:
+; a flaky compiler is a bug to fix, not something to paper over quietly.
 fn _codegen_subprocess(source_path, c_path) {
   let self = argv0()
   let cmd = str.join([self, "cc", source_path, "-o", c_path], " ")
+  let max_attempts = 3
   let mut attempts = 0
-  let max_attempts = 5
   while attempts < max_attempts {
-    let result = exec(cmd)
+    let result = exec_timeout(cmd, 0)
     if result["code"] == 0 { ret }
     attempts = attempts + 1
-    if attempts == max_attempts {
-      eprintln(cli.red(str.concat("codegen failed after ", str.concat(to_str(max_attempts), " attempts"))))
-      if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+    let crashed = result["code"] > 128
+    if !crashed || attempts == max_attempts {
+      if len(result["stderr"]) > 0 { eprintln(str.trim(result["stderr"])) }
+      if crashed {
+        eprintln(cli.red("codegen crashed (exit " + to_str(result["code"]) + ") " + to_str(attempts) + " times; giving up"))
+      } else {
+        eprintln(cli.red("codegen failed"))
+      }
       exit(1)
     }
+    eprintln(cli.yellow("codegen crashed (exit " + to_str(result["code"]) + "), retrying (" + to_str(attempts) + "/" + to_str(max_attempts) + ")"))
   }
 }
 
@@ -369,27 +395,55 @@ fn _ensure_cache_dir() {
   }
 }
 
-fn _cached_bin(source_path) -> str {
+; Files reachable through `use` lines, transitively. A cheap textual scan is
+; enough here: the goal is cache invalidation, not name resolution.
+fn _use_closure(source_path, seen) -> [str] {
+  if contains(seen, source_path) { ret seen }
+  seen = push(seen, source_path)
   let source = io.read_file(source_path)
-  if type_of(source) == "void" || len(source) == 0 {
-    ret ""
+  if type_of(source) == "void" { ret seen }
+  for line in str.lines(source) {
+    let t = str.trim(line)
+    if str.starts_with(t, "use ") {
+      let spec = str.trim(str.slice(t, 4, len(t)))
+      let dotted = str.split(spec, " ")[0]
+      let file = cgen._use_path_to_file(str.split(dotted, "."))
+      if fs.exists(file) { seen = _use_closure(file, seen) }
+    }
   }
-  let h = hash.sha256(source)
-  let cache_path = str.concat(_cache_dir(), str.concat("/", h))
-  if fs.exists(cache_path) {
-    ret cache_path
+  ret seen
+}
+
+; The run cache must miss whenever anything that shaped the binary changed:
+; the source, any module it imports, the compiler, or the C runtime.
+fn _cache_key(source_path) -> str {
+  let source = io.read_file(source_path)
+  if type_of(source) == "void" || len(source) == 0 { ret "" }
+  let mut acc = "a-" + _version() + "\n"
+  let rt = io.read_file(_find_runtime_dir() + "/runtime.c")
+  if type_of(rt) != "void" { acc = acc + hash.sha256(rt) + "\n" }
+  for f in sort(_use_closure(source_path, [])) {
+    let content = io.read_file(f)
+    if type_of(content) != "void" { acc = acc + f + ":" + hash.sha256(content) + "\n" }
   }
+  ret hash.sha256(acc)
+}
+
+fn _cached_bin(source_path) -> str {
+  let h = _cache_key(source_path)
+  if len(h) == 0 { ret "" }
+  let cache_path = _cache_dir() + "/" + h
+  if fs.exists(cache_path) { ret cache_path }
   ret ""
 }
 
 fn _store_cache(source_path, bin_path) {
-  let source = io.read_file(source_path)
-  if type_of(source) == "void" || len(source) == 0 { ret "" }
+  let h = _cache_key(source_path)
+  if len(h) == 0 { ret "" }
   _ensure_cache_dir()
-  let h = hash.sha256(source)
-  let cache_path = str.concat(_cache_dir(), str.concat("/", h))
+  let cache_path = _cache_dir() + "/" + h
   fs.cp(bin_path, cache_path)
-  exec(str.concat("chmod +x ", cache_path))
+  exec("chmod +x " + cache_path)
   ret ""
 }
 
@@ -427,58 +481,129 @@ fn cmd_run(source_path, extra_args) {
   if result["code"] != 0 { exit(result["code"]) }
 }
 
-fn cmd_test(test_dir) {
+; a test <dir> [--timeout SECONDS] [--filter SUBSTR] [--verbose]
+;
+; Every test binary runs in its own process group with a deadline (default
+; 60s). On deadline or exit the whole group is killed, so a test can never
+; leave servers, forked tasks, or shells behind.
+fn cmd_test(test_dir, opts) {
   let runtime_dir = _find_runtime_dir()
-  let self = argv0()
+  let timeout_ms = opts["timeout_ms"]
+  let filter = opts["filter"]
+  let verbose = opts["verbose"]
   let entries = fs.ls(test_dir)
   let mut test_files = []
   for entry in entries {
     let name = entry["name"]
     if str.starts_with(name, "test_") && str.ends_with(name, ".a") {
-      test_files = push(test_files, path.join(test_dir, name))
+      if len(filter) == 0 || str.contains(name, filter) {
+        test_files = push(test_files, path.join(test_dir, name))
+      }
     }
   }
 
   if len(test_files) == 0 {
-    eprintln(str.concat("no test_*.a files found in ", test_dir))
+    eprintln("no matching test_*.a files found in " + test_dir)
     exit(1)
   }
 
   test_files = sort(test_files)
   let mut passed = 0
   let mut failed = 0
+  let mut timed_out = 0
+  let suite_start = time.now()
+
+  ; Tests must never touch the real ~/.a. Give the suite a private A_HOME
+  ; unless the caller deliberately set one.
+  let mut a_home = env.get("A_HOME")
+  let mut own_a_home = false
+  if type_of(a_home) != "str" || len(a_home) == 0 {
+    a_home = "/tmp/a_test_home_" + to_str(time.now())
+    env.set("A_HOME", a_home)
+    own_a_home = true
+  }
+  if !fs.exists(a_home) { fs.mkdir(a_home) }
 
   for src in test_files {
     let name = path.basename(src)
     let c_path = _tmp_path(".c")
     let bin_path = _tmp_path("")
 
-    let c_code = _generate_c(src)
-    io.write_file(c_path, c_code)
-
-    let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
-    fs.rm(c_path)
-
-    if gcc_code != 0 {
-      println(str.concat("  ", str.concat(cli.red("FAIL"), str.concat(" ", str.concat(name, " (compile error)")))))
+    let gen = _try_generate_c(src)
+    let mut gcc_code = 1
+    if is_err(gen) {
+      println("  " + cli.red("FAIL") + " " + name + " (" + _err_message(gen) + ")")
       failed = failed + 1
     } else {
-      let run_result = exec(bin_path)
-      fs.rm(bin_path)
-      if run_result["code"] == 0 {
-        println(str.concat("  ", str.concat(cli.green("PASS"), str.concat(" ", name))))
-        passed = passed + 1
-      } else {
-        println(str.concat("  ", str.concat(cli.red("FAIL"), str.concat(" ", str.concat(name, str.concat(" (exit ", str.concat(to_str(run_result["code"]), ")")))))))
-        if len(run_result["stdout"]) > 0 { println(run_result["stdout"]) }
+      io.write_file(c_path, unwrap(gen))
+      gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
+      fs.rm(c_path)
+      if gcc_code != 0 {
+        println("  " + cli.red("FAIL") + " " + name + " (compile error)")
         failed = failed + 1
+      }
+    }
+
+    if gcc_code == 0 {
+      let t0 = time.now()
+      let run_result = exec_timeout(bin_path, timeout_ms)
+      let elapsed = time.now() - t0
+      fs.rm(bin_path)
+      let secs = to_str(elapsed / 1000) + "." + to_str((elapsed % 1000) / 100) + "s"
+      if run_result["timed_out"] {
+        println("  " + cli.red("TIMEOUT") + " " + name + " (" + secs + ", killed process group)")
+        _print_test_output(run_result)
+        failed = failed + 1
+        timed_out = timed_out + 1
+      } else {
+        if run_result["code"] == 0 {
+          println("  " + cli.green("PASS") + " " + name + cli.dim(" " + secs))
+          if verbose { _print_test_output(run_result) }
+          passed = passed + 1
+        } else {
+          println("  " + cli.red("FAIL") + " " + name + " (exit " + to_str(run_result["code"]) + ", " + secs + ")")
+          _print_test_output(run_result)
+          failed = failed + 1
+        }
       }
     }
   }
 
+  if own_a_home { exec_timeout("rm -rf " + a_home, 10000) }
+
+  let total_secs = (time.now() - suite_start) / 1000
   println("")
-  println(str.concat(to_str(passed), str.concat(" passed, ", str.concat(to_str(failed), " failed"))))
+  let mut summary = to_str(passed) + " passed, " + to_str(failed) + " failed"
+  if timed_out > 0 { summary = summary + " (" + to_str(timed_out) + " timed out)" }
+  println(summary + " in " + to_str(total_secs) + "s")
   if failed > 0 { exit(1) }
+}
+
+fn _print_test_output(run_result) {
+  if len(run_result["stdout"]) > 0 { println(str.trim(run_result["stdout"])) }
+  if len(run_result["stderr"]) > 0 { eprintln(str.trim(run_result["stderr"])) }
+}
+
+fn _parse_test_opts(argv) -> map {
+  let mut opts = #{"timeout_ms": 60000, "filter": "", "verbose": false}
+  let mut i = 2
+  while i < len(argv) {
+    if argv[i] == "--timeout" && i + 1 < len(argv) {
+      opts = map.set(opts, "timeout_ms", int(argv[i + 1]) * 1000)
+      i = i + 2
+    } else {
+      if argv[i] == "--filter" && i + 1 < len(argv) {
+        opts = map.set(opts, "filter", argv[i + 1])
+        i = i + 2
+      } else {
+        if argv[i] == "--verbose" || argv[i] == "-v" {
+          opts = map.set(opts, "verbose", true)
+        }
+        i = i + 1
+      }
+    }
+  }
+  ret opts
 }
 
 fn cmd_cache_clean() {
@@ -1262,7 +1387,7 @@ fn _usage() {
   eprintln("  a fmt <file.a|dir/>        format source code")
   eprintln("  a ast <file.a>             dump parsed AST as JSON")
   eprintln("  a check <file.a>           type-check source file")
-  eprintln("  a test <dir/>              run test_*.a files in directory")
+  eprintln("  a test <dir/> [--timeout S] [--filter SUBSTR] [-v]  run test_*.a files (default timeout 60s)")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a watch <file.a>           recompile and run on file change")
   eprintln("  a agent <file.a> [opts]     deploy supervised long-running agent")
@@ -1374,7 +1499,7 @@ fn main() {
 
   if subcmd == "test" {
     if len(argv) < 2 { _die("test requires a directory") }
-    cmd_test(argv[1])
+    cmd_test(argv[1], _parse_test_opts(argv))
     ret
   }
 

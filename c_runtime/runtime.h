@@ -51,6 +51,16 @@ struct AValue {
     };
 };
 
+/* Heap cell behind a Result. `rval.inner` points at `val` (the first member),
+ * so `*inner` reads the payload directly and the box is recovered by a cast.
+ * The refcount makes Ok/Err values safe to copy, pass, and release like every
+ * other heap value; before this they were freed on the first release. */
+typedef struct AResultBox {
+    AValue val;
+    int rc;
+} AResultBox;
+#define A_RESULT_BOX(v) ((AResultBox*)(v).rval.inner)
+
 typedef AValue (*AClosureFn)(AValue env, int argc, AValue* argv);
 
 struct AClosure {
@@ -136,6 +146,7 @@ AValue a_concat_arr(AValue a, AValue b);
 /* Maps */
 AValue a_map_new(int n, ...);
 AValue a_map_get(AValue m, AValue key);
+AValue a_map_get_borrow(AValue m, const char* key);
 AValue a_map_set(AValue m, AValue key, AValue val);
 AValue a_map_has(AValue m, AValue key);
 AValue a_map_keys(AValue m);
@@ -161,6 +172,8 @@ AValue a_fs_is_dir(AValue path);
 
 /* System */
 AValue a_exec(AValue cmd);
+AValue a_exec_timeout(AValue cmd, AValue ms);
+void a_exit_fatal(int code);
 AValue a_env_get(AValue key);
 
 /* JSON */

@@ -34,7 +34,7 @@ fn _builtin_arity() -> map {
     "time.now": 0, "time.sleep": 1,
     "datetime.now": 0, "datetime.iso": 1,
     "hash.sha256": 1, "hash.md5": 1,
-    "exec": 1, "argv0": 0, "args": 0,
+    "exec": 1, "exec_timeout": 2, "argv0": 0, "args": 0,
     "uuid.v4": 0,
     "proc.spawn": 1, "proc.write": 2, "proc.read_line": 1, "proc.kill": 1,
     "proc.wait": 1, "proc.is_running": 1,

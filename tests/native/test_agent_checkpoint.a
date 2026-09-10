@@ -1,12 +1,9 @@
 use std.testing
 use std.agent
+use std.path
 
 fn _cleanup_state_db() {
-  let home = env.get("HOME")
-  let mut db_path = "/tmp/a_agent_state.db"
-  if type_of(home) != "void" && len(home) > 0 {
-    db_path = home + "/.a/agent_state.db"
-  }
+  let db_path = path.a_home() + "/agent_state.db"
   if fs.exists(db_path) { fs.rm(db_path) }
   let wal = db_path + "-wal"
   if fs.exists(wal) { fs.rm(wal) }

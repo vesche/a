@@ -28,7 +28,7 @@ a run hello.a
 | `a cc file.a [-o out]` | Emit generated C to stdout (or file with `-o`) |
 | `a wat file.a [-o out]` | Emit WebAssembly Text Format |
 | `a targets` | List cross-compile targets and detected toolchains |
-| `a test dir/` | Find `test_*.a` files, compile, run, report |
+| `a test dir/ [--timeout S] [--filter SUBSTR] [-v]` | Find `test_*.a` files, compile, run, report. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed, so tests cannot leak servers or forked tasks. Sets a private `A_HOME` unless one is already set. |
 | `a check file.a` | Static analysis (undefined vars, arity, unused) |
 | `a fmt file.a` | Format to canonical style |
 | `a fmt dir/` | Format all `.a` files in directory |
@@ -716,11 +716,15 @@ if resp.status == 200 {
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `exec(cmd)` | str -> {stdout, stderr, code} | Run shell command |
+| `exec(cmd)` | str -> {stdout, stderr, code} | Run shell command. `stderr` is always `""` (it is inherited, not captured). No deadline. |
+| `exec_timeout(cmd, ms)` | str, i64 -> {stdout, stderr, code, timed_out} | Run shell command in its own process group with a deadline (`ms <= 0` = none). Captures both streams. On deadline: SIGTERM to the group, SIGKILL 2s later, `timed_out: true`, `code: -1`. When the shell exits, any descendants still alive in the group are killed. Prefer this over `exec` for anything that might hang or start background processes. |
 
 ```a
 let result = exec("ls -la")
 println(result.stdout)
+
+let r = exec_timeout("./slow_tool --flag", 30000)
+if r.timed_out { println("gave up after 30s") }
 if result.code != 0 {
   eprintln(result.stderr)
 }
@@ -820,7 +824,7 @@ if is_err(r) { println("timed out!") }
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `http.serve(port, handler)` | i64, fn -> void | Start HTTP server; handler receives `{method, path, headers, body}`, returns `{status, headers, body}` |
+| `http.serve(port, handler)` | i64, fn -> void | Start HTTP server; handler receives `{method, path, headers, body}`, returns `{status, headers, body}`. Returns when the handler's response map contains `"stop": true` (the response is still sent) or on SIGINT/SIGTERM. |
 | `http.serve_static(port, dir)` | i64, str -> void | Serve static files from directory |
 
 ### HTTP Streaming
@@ -873,10 +877,10 @@ let results = async.gather([h1, h2])
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `proc.spawn(cmd)` | str -> handle | Start subprocess with bidirectional pipes |
+| `proc.spawn(cmd)` | str -> handle | Start subprocess (via `/bin/sh -c`) with bidirectional pipes. The child is a process-group leader and dies with the parent (Linux). |
 | `proc.write(h, data)` | handle, str -> void | Write to subprocess stdin |
 | `proc.read_line(h)` | handle -> str | Read line from subprocess stdout |
-| `proc.kill(h)` | handle -> void | Kill subprocess |
+| `proc.kill(h)` | handle -> void | SIGTERM the subprocess and its whole process group; SIGKILL after 2s if still alive |
 | `proc.wait(h)` | handle -> i64 | Wait for exit, return exit code |
 | `proc.is_running(h)` | handle -> bool | Check if still running |
 
@@ -1042,6 +1046,9 @@ use std.path
 | `is_absolute(p)` | str -> bool | True if starts with `/` |
 | `segments(p)` | str -> [str] | Split into path components |
 | `normalize(p)` | str -> str | Collapse `//`, resolve `.` and `..` |
+| `home()` | -> str | `$HOME` (or `$USERPROFILE`) |
+| `temp()` | -> str | Temp directory from `$TMPDIR`/`$TEMP`, else `/tmp` |
+| `a_home()` | -> str | Where `a` persists user state (plugins, agent checkpoints): `$A_HOME` if set, else `~/.a`, else `/tmp/a_home`. Every stdlib module that writes to the home directory goes through this, so setting `A_HOME` sandboxes them all. |
 
 ### std.datetime
 

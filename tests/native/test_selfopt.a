@@ -1,8 +1,16 @@
 ; tests/native/test_selfopt.a -- Tests for v1.9 Self-Optimization features
 ; Validates runtime profiling builtins, profile data parsing, and CLI presence.
-; NOTE: No subprocess calls to 'a profile' -- those are tested manually.
+;
+; CLI checks run `./a` from the repo root. Never use argv0() for this: inside a
+; test binary argv0() is the test itself, and exec'ing it recursively forks
+; without bound.
 
 use std.testing
+
+fn _a_bin() -> str {
+  if fs.exists("./a") { ret "./a" }
+  ret ""
+}
 
 fn _lb() -> str { ret from_code(123) }
 fn _rb() -> str { ret from_code(125) }
@@ -187,22 +195,34 @@ fn test_hot_ratio_calculation() {
 }
 
 fn test_profile_error_no_source() {
-  let self_bin = argv0()
-  let r = exec(self_bin + " profile")
+  let a = _a_bin()
+  if len(a) == 0 {
+    println("SKIP: 'a profile' check (no ./a in cwd)")
+    ret
+  }
+  let r = exec_timeout(a + " profile", 10000)
   assert_true(r["code"] != 0)
   println("PASS: 'a profile' without source fails")
 }
 
 fn test_optimize_error_no_args() {
-  let self_bin = argv0()
-  let r = exec(self_bin + " optimize")
+  let a = _a_bin()
+  if len(a) == 0 {
+    println("SKIP: 'a optimize' check (no ./a in cwd)")
+    ret
+  }
+  let r = exec_timeout(a + " optimize", 10000)
   assert_true(r["code"] != 0)
   println("PASS: 'a optimize' without args fails")
 }
 
 fn test_gentests_error_no_source() {
-  let self_bin = argv0()
-  let r = exec(self_bin + " gentests")
+  let a = _a_bin()
+  if len(a) == 0 {
+    println("SKIP: 'a gentests' check (no ./a in cwd)")
+    ret
+  }
+  let r = exec_timeout(a + " gentests", 10000)
   assert_true(r["code"] != 0)
   println("PASS: 'a gentests' without source fails")
 }

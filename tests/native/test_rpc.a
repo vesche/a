@@ -5,9 +5,10 @@ fn main() {
   ; Clean up any stale registry entries
   rpc.unregister("test-rpc-agent")
 
-  ; Start RPC server in background (redirect output to avoid blocking exec)
+  ; The server is a child of this process: proc.kill stops it below, and the
+  ; runtime kills it with us if an assertion aborts the test first.
   exec("./a build tests/native/_rpc_server.a -o /tmp/_rpc_srv_test 2>/dev/null")
-  exec("/tmp/_rpc_srv_test > /dev/null 2>&1 &")
+  let srv = proc.spawn("exec /tmp/_rpc_srv_test > /dev/null 2>&1")
   time.sleep(2000)
 
   ; --- Test 1: discover finds registered agent ---
@@ -88,7 +89,7 @@ fn main() {
   println("PASS: /health endpoint")
 
   ; Clean up
-  exec("pkill -f '_rpc_srv_test' 2>/dev/null || true")
+  proc.kill(srv)
   rpc.unregister("test-rpc-agent")
 
   println("")

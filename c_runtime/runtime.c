@@ -51,6 +51,46 @@ jmp_buf a_try_stack[A_TRY_STACK_MAX];
 AValue a_try_err;
 int a_try_depth = 0;
 
+/* Set in every fork()ed child. Fatal paths must _exit() in a child so that
+ * atexit handlers, stdio flushing, and other parent-owned teardown never run
+ * twice, and so a child can never fall through into the parent's code. */
+static int a_in_forked_child = 0;
+
+void a_exit_fatal(int code) {
+    fflush(stderr);
+    if (a_in_forked_child) _exit(code);
+    exit(code);
+}
+
+#if !defined(_WIN32) && !defined(WASM_BUILD)
+#include <signal.h>
+#include <errno.h>
+#include <sys/time.h>
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+/* Called first thing in a fork()ed child. Ensures the child dies with its
+ * parent (Linux: PDEATHSIG; elsewhere: parent-pid check) so runtime tasks can
+ * never outlive the program that created them. If own_group is set, the child
+ * becomes a process-group leader so the parent can kill its entire subtree. */
+static void a_child_init(pid_t parent, int own_group) {
+    a_in_forked_child = 1;
+    if (own_group) setpgid(0, 0);
+#ifdef __linux__
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
+#endif
+    if (getppid() != parent) _exit(1);
+}
+
+/* Kill a process group, then reap the leader. */
+static void a_kill_group(pid_t pid) {
+    kill(-pid, SIGKILL);
+    kill(pid, SIGKILL);
+    int status;
+    waitpid(pid, &status, 0);
+}
+#endif
+
 /* --- Constructors --- */
 
 AValue a_int(int64_t v) { return (AValue){.tag = TAG_INT, .ival = v}; }
@@ -83,6 +123,7 @@ AValue a_retain(AValue v) {
     else if (v.tag == TAG_ARRAY && v.aval) v.aval->rc++;
     else if (v.tag == TAG_MAP && v.mval) v.mval->rc++;
     else if (v.tag == TAG_CLOSURE && v.cval) v.cval->rc++;
+    else if (v.tag == TAG_RESULT && v.rval.inner) A_RESULT_BOX(v)->rc++;
     return v;
 }
 
@@ -115,8 +156,12 @@ void a_release(AValue v) {
             free(v.mval);
         }
     } else if (v.tag == TAG_RESULT && v.rval.inner) {
-        a_release(*v.rval.inner);
-        free(v.rval.inner);
+        AResultBox* box = A_RESULT_BOX(v);
+        if (box->rc <= 0) return;
+        if (--box->rc == 0) {
+            a_release(box->val);
+            free(box);
+        }
     }
 }
 
@@ -174,7 +219,7 @@ AValue a_mul(AValue a, AValue b) {
 
 AValue a_div(AValue a, AValue b) {
     if (a.tag == TAG_INT && b.tag == TAG_INT) {
-        if (b.ival == 0) { fprintf(stderr, "division by zero\n"); exit(1); }
+        if (b.ival == 0) { fprintf(stderr, "division by zero\n"); a_exit_fatal(1); }
         return a_int(a.ival / b.ival);
     }
     double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
@@ -642,6 +687,14 @@ AValue a_map_get(AValue m, AValue key) {
     return idx >= 0 ? a_retain(m.mval->vals[idx]) : a_void();
 }
 
+/* Borrowed lookup for generated pattern-matching code: no retain, no key
+ * allocation. The caller must retain if it stores the value. */
+AValue a_map_get_borrow(AValue m, const char* key) {
+    if (m.tag != TAG_MAP) return a_void();
+    int idx = map_find(m.mval, key);
+    return idx >= 0 ? m.mval->vals[idx] : a_void();
+}
+
 AValue a_map_set(AValue m, AValue key, AValue val) {
     AMap* old = (m.tag == TAG_MAP) ? m.mval : NULL;
     int olen = old ? old->len : 0;
@@ -881,6 +934,7 @@ AValue a_proc_spawn(AValue cmd) {
     if (pipe(to_child) < 0 || pipe(from_child) < 0)
         return a_err(a_string("proc.spawn: pipe failed"));
 
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         close(to_child[0]); close(to_child[1]);
@@ -889,6 +943,7 @@ AValue a_proc_spawn(AValue cmd) {
     }
 
     if (pid == 0) {
+        a_child_init(parent, 1);
         close(to_child[1]);
         close(from_child[0]);
         dup2(to_child[0], STDIN_FILENO);
@@ -956,9 +1011,16 @@ AValue a_proc_kill(AValue handle) {
         return a_err(a_string("proc.kill: invalid handle"));
     close(subprocs[h].stdin_fd);
     close(subprocs[h].stdout_fd);
+    /* The child is a process-group leader (see a_child_init), so signal the
+     * whole group: shells and servers spawned by the command die with it. */
+    kill(-subprocs[h].pid, SIGTERM);
     kill(subprocs[h].pid, SIGTERM);
     int status;
-    waitpid(subprocs[h].pid, &status, 0);
+    for (int i = 0; i < 20; i++) {
+        if (waitpid(subprocs[h].pid, &status, WNOHANG) != 0) break;
+        usleep(100000);
+    }
+    a_kill_group(subprocs[h].pid);
     subprocs[h].active = 0;
     return a_void();
 }
@@ -1062,12 +1124,14 @@ AValue a_spawn(AValue closure) {
     int pipefd[2];
     if (pipe(pipefd) < 0) return a_err(a_string("spawn: pipe failed"));
     fflush(stdout); fflush(stderr);
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         close(pipefd[0]); close(pipefd[1]);
         return a_err(a_string("spawn: fork failed"));
     }
     if (pid == 0) {
+        a_child_init(parent, 0);
         close(pipefd[0]);
         task_child_run(pipefd[1], closure, 0, NULL);
     }
@@ -1126,6 +1190,7 @@ AValue a_parallel_map(AValue arr, AValue func) {
                 launched++; continue;
             }
             fflush(stdout); fflush(stderr);
+            pid_t parent = getpid();
             pid_t pid = fork();
             if (pid < 0) {
                 close(pipefd[0]); close(pipefd[1]);
@@ -1134,6 +1199,7 @@ AValue a_parallel_map(AValue arr, AValue func) {
                 launched++; continue;
             }
             if (pid == 0) {
+                a_child_init(parent, 0);
                 close(pipefd[0]);
                 AValue arg = arr.aval->items[launched];
                 task_child_run(pipefd[1], func, 1, &arg);
@@ -1193,12 +1259,15 @@ AValue a_timeout(AValue ms_val, AValue func) {
     int pipefd[2];
     if (pipe(pipefd) < 0) return a_err(a_string("timeout: pipe failed"));
     fflush(stdout); fflush(stderr);
+    pid_t parent = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         close(pipefd[0]); close(pipefd[1]);
         return a_err(a_string("timeout: fork failed"));
     }
     if (pid == 0) {
+        /* Own process group so that anything the closure forks dies with it. */
+        a_child_init(parent, 1);
         close(pipefd[0]);
         task_child_run(pipefd[1], func, 0, NULL);
     }
@@ -1207,12 +1276,129 @@ AValue a_timeout(AValue ms_val, AValue func) {
     struct pollfd pfd = { .fd = pipefd[0], .events = POLLIN };
     int ready = poll(&pfd, 1, ms);
     if (ready <= 0) {
-        kill(pid, SIGKILL);
-        waitpid(pid, NULL, 0);
+        a_kill_group(pid);
         close(pipefd[0]);
         return a_err(a_string("timeout"));
     }
-    return task_read_result(pipefd[0], pid);
+    AValue r = task_read_result(pipefd[0], pid);
+    kill(-pid, SIGKILL);
+    return r;
+}
+
+/* --- exec with deadline and process-group isolation --- */
+
+static int64_t tv_ms_between(struct timeval a, struct timeval b) {
+    return (int64_t)(b.tv_sec - a.tv_sec) * 1000 + (b.tv_usec - a.tv_usec) / 1000;
+}
+
+static void exec_drain_fd(int fd, char** buf, size_t* len, size_t* cap, int* open) {
+    if (!*open) return;
+    for (;;) {
+        if (*len + 4096 > *cap) { *cap *= 2; *buf = realloc(*buf, *cap); }
+        ssize_t n = read(fd, *buf + *len, *cap - *len - 1);
+        if (n > 0) { *len += (size_t)n; continue; }
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) return;
+        *open = 0;
+        return;
+    }
+}
+
+/* exec_timeout(cmd, ms) -> #{stdout, stderr, code, timed_out}
+ *
+ * Runs `cmd` via /bin/sh in its own process group. On deadline the whole
+ * group gets SIGTERM, then SIGKILL two seconds later. When the shell exits,
+ * any descendants still alive in the group are killed, so a command can
+ * never leave background processes behind. ms <= 0 means no deadline. */
+AValue a_exec_timeout(AValue cmd, AValue ms_val) {
+    if (cmd.tag != TAG_STRING) return a_err(a_string("exec_timeout: expected string command"));
+    int64_t ms = 0;
+    if (ms_val.tag == TAG_INT) ms = ms_val.ival;
+    else if (ms_val.tag == TAG_FLOAT) ms = (int64_t)ms_val.fval;
+
+    int out_pipe[2], err_pipe[2];
+    if (pipe(out_pipe) < 0) return a_err(a_string("exec_timeout: pipe failed"));
+    if (pipe(err_pipe) < 0) { close(out_pipe[0]); close(out_pipe[1]); return a_err(a_string("exec_timeout: pipe failed")); }
+
+    fflush(stdout); fflush(stderr);
+    pid_t parent = getpid();
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(out_pipe[0]); close(out_pipe[1]); close(err_pipe[0]); close(err_pipe[1]);
+        return a_err(a_string("exec_timeout: fork failed"));
+    }
+    if (pid == 0) {
+        a_child_init(parent, 1);
+        close(out_pipe[0]); close(err_pipe[0]);
+        dup2(out_pipe[1], STDOUT_FILENO);
+        dup2(err_pipe[1], STDERR_FILENO);
+        close(out_pipe[1]); close(err_pipe[1]);
+        execl("/bin/sh", "sh", "-c", cmd.sval->data, (char*)NULL);
+        _exit(127);
+    }
+    close(out_pipe[1]); close(err_pipe[1]);
+    fcntl(out_pipe[0], F_SETFL, O_NONBLOCK);
+    fcntl(err_pipe[0], F_SETFL, O_NONBLOCK);
+
+    size_t ocap = 4096, olen = 0, ecap = 4096, elen = 0;
+    char* obuf = malloc(ocap);
+    char* ebuf = malloc(ecap);
+    int oopen = 1, eopen = 1;
+
+    struct timeval t0, now, exit_at = {0, 0}, term_at = {0, 0};
+    gettimeofday(&t0, NULL);
+    int status = 0, reaped = 0, timed_out = 0, sent_term = 0;
+
+    for (;;) {
+        struct pollfd pfds[2];
+        int n = 0;
+        if (oopen) { pfds[n].fd = out_pipe[0]; pfds[n].events = POLLIN; n++; }
+        if (eopen) { pfds[n].fd = err_pipe[0]; pfds[n].events = POLLIN; n++; }
+        poll(pfds, n, 50);
+        exec_drain_fd(out_pipe[0], &obuf, &olen, &ocap, &oopen);
+        exec_drain_fd(err_pipe[0], &ebuf, &elen, &ecap, &eopen);
+        gettimeofday(&now, NULL);
+
+        if (!reaped && waitpid(pid, &status, WNOHANG) == pid) { reaped = 1; exit_at = now; }
+
+        if (reaped) {
+            /* The shell is done. Pipes stay open only if a descendant
+             * inherited them; allow a short flush window, then stop. */
+            if (!oopen && !eopen) break;
+            if (tv_ms_between(exit_at, now) >= 200) break;
+            continue;
+        }
+
+        if (ms > 0 && tv_ms_between(t0, now) >= ms) {
+            if (!sent_term) {
+                timed_out = 1; sent_term = 1; term_at = now;
+                kill(-pid, SIGTERM);
+                kill(pid, SIGTERM);
+            } else if (tv_ms_between(term_at, now) >= 2000) {
+                kill(-pid, SIGKILL);
+                kill(pid, SIGKILL);
+            }
+        }
+    }
+
+    /* Whatever is left in the group dies here. */
+    kill(-pid, SIGKILL);
+    if (!reaped) waitpid(pid, &status, 0);
+    close(out_pipe[0]); close(err_pipe[0]);
+
+    int code;
+    if (timed_out) code = -1;
+    else if (WIFEXITED(status)) code = WEXITSTATUS(status);
+    else if (WIFSIGNALED(status)) code = 128 + WTERMSIG(status);
+    else code = -1;
+
+    obuf[olen] = '\0'; ebuf[elen] = '\0';
+    AValue r = a_map_new(0);
+    r = a_map_set(r, a_string("stdout"), a_string_len(obuf, (int)olen));
+    r = a_map_set(r, a_string("stderr"), a_string_len(ebuf, (int)elen));
+    r = a_map_set(r, a_string("code"), a_int(code));
+    r = a_map_set(r, a_string("timed_out"), a_bool(timed_out));
+    free(obuf); free(ebuf);
+    return r;
 }
 
 #else /* _WIN32 || WASM_BUILD: stub out proc/spawn */
@@ -1228,6 +1414,7 @@ AValue a_await_all(AValue h) { return a_err(a_string("await_all: not available")
 AValue a_parallel_map(AValue a, AValue f) { return a_err(a_string("parallel_map: not available")); }
 AValue a_parallel_each(AValue a, AValue f) { return a_err(a_string("parallel_each: not available")); }
 AValue a_timeout(AValue ms, AValue f) { return a_err(a_string("timeout: not available")); }
+AValue a_exec_timeout(AValue cmd, AValue ms) { return a_err(a_string("exec_timeout: not available on this platform")); }
 #endif /* !_WIN32 && !WASM_BUILD */
 
 AValue a_env_get(AValue key) {
@@ -1346,21 +1533,18 @@ AValue a_json_parse(AValue input) {
 
 /* --- Result --- */
 
-AValue a_ok(AValue v) {
+static AValue result_new(int is_ok, AValue v) {
+    AResultBox* box = malloc(sizeof(AResultBox));
+    box->val = v;
+    box->rc = 1;
     AValue r; r.tag = TAG_RESULT;
-    r.rval.is_ok = 1;
-    r.rval.inner = malloc(sizeof(AValue));
-    *r.rval.inner = v;
+    r.rval.is_ok = is_ok;
+    r.rval.inner = &box->val;
     return r;
 }
 
-AValue a_err(AValue v) {
-    AValue r; r.tag = TAG_RESULT;
-    r.rval.is_ok = 0;
-    r.rval.inner = malloc(sizeof(AValue));
-    *r.rval.inner = v;
-    return r;
-}
+AValue a_ok(AValue v) { return result_new(1, v); }
+AValue a_err(AValue v) { return result_new(0, v); }
 
 AValue a_is_ok(AValue v) { return a_bool(v.tag == TAG_RESULT && v.rval.is_ok); }
 AValue a_is_err(AValue v) { return a_bool(v.tag == TAG_RESULT && !v.rval.is_ok); }
@@ -1370,7 +1554,7 @@ AValue a_unwrap(AValue v) {
         if (v.rval.is_ok) return a_retain(*v.rval.inner);
         fprintf(stderr, "unwrap on Err: ");
         a_eprintln(*v.rval.inner);
-        exit(1);
+        a_exit_fatal(1);
     }
     return v;
 }
@@ -1384,7 +1568,7 @@ AValue a_try_unwrap(AValue v) {
         }
         fprintf(stderr, "uncaught error: ");
         a_eprintln(*v.rval.inner);
-        exit(1);
+        a_exit_fatal(1);
     }
     return v;
 }
@@ -1425,7 +1609,7 @@ AValue a_argv0(void) {
 void a_fail(AValue v) {
     fprintf(stderr, "runtime error: ");
     a_eprintln(v);
-    exit(1);
+    a_exit_fatal(1);
 }
 
 AValue a_to_int(AValue v) {
@@ -1489,7 +1673,7 @@ AValue a_expect(AValue v, AValue msg) {
         a_eprintln(msg);
         fprintf(stderr, "  error was: ");
         a_eprintln(*v.rval.inner);
-        exit(1);
+        a_exit_fatal(1);
     }
     return v;
 }
@@ -2031,9 +2215,28 @@ AValue a_uuid_v4(void) {
 
 static AValue signal_handlers[32];
 static volatile sig_atomic_t signal_pending[32];
+/* Set on SIGINT/SIGTERM; long-running accept loops (http.serve) check it. */
+static volatile sig_atomic_t a_stop_requested = 0;
 
 static void signal_dispatcher(int signum) {
     if (signum >= 0 && signum < 32) signal_pending[signum] = 1;
+    if (signum == SIGINT || signum == SIGTERM) a_stop_requested = 1;
+}
+
+/* Install a non-restarting handler for SIGINT/SIGTERM if the program has not
+ * registered its own, so that blocking accept() returns EINTR and the serve
+ * loop can exit cleanly instead of being unkillable without SIGKILL. */
+static void a_install_stop_handlers(void) {
+    int sigs[2] = { SIGINT, SIGTERM };
+    for (int i = 0; i < 2; i++) {
+        if (signal_handlers[sigs[i]].tag == TAG_CLOSURE) continue;
+        struct sigaction sa;
+        memset(&sa, 0, sizeof(sa));
+        sa.sa_handler = signal_dispatcher;
+        sigemptyset(&sa.sa_mask);
+        sa.sa_flags = 0;
+        sigaction(sigs[i], &sa, NULL);
+    }
 }
 
 void a_signal_check(void) {
@@ -2073,6 +2276,8 @@ AValue a_signal_on(AValue name, AValue handler) {
     return a_void();
 }
 #else /* _WIN32 || NO_SIGNAL */
+static volatile int a_stop_requested = 0;
+static void a_install_stop_handlers(void) {}
 void a_signal_check(void) {}
 AValue a_signal_on(AValue name, AValue handler) { return a_err(a_string("signal: not available on this platform")); }
 #endif
@@ -2084,6 +2289,9 @@ AValue a_signal_on(AValue name, AValue handler) { return a_err(a_string("signal:
 __attribute__((constructor))
 static void a_reflect_init(void) {
     gettimeofday(&g_process_start_tv, NULL);
+    /* Line-buffer stdout when piped so that output written before a crash,
+     * a kill, or a test-runner timeout is not lost in a stdio buffer. */
+    if (!isatty(STDOUT_FILENO)) setvbuf(stdout, NULL, _IOLBF, 0);
 }
 
 AValue a_reflect_uptime_ms(void) {
@@ -3360,12 +3568,19 @@ AValue a_http_serve(AValue port, AValue handler) {
     }
 
     fprintf(stderr, "listening on http://0.0.0.0:%d\n", (int)port.ival);
+    a_install_stop_handlers();
 
-    for (;;) {
+    /* The loop ends on SIGINT/SIGTERM, or when the handler returns a map
+     * containing "stop": true (the response is still sent first). */
+    int stop = 0;
+    while (!stop && !a_stop_requested) {
         struct sockaddr_in client;
         socklen_t clen = sizeof(client);
         int fd = accept(srv, (struct sockaddr*)&client, &clen);
-        if (fd < 0) continue;
+        if (fd < 0) {
+            a_signal_check();
+            continue;
+        }
 
         char buf[65536];
         int n = http_recv_all(fd, buf, sizeof(buf));
@@ -3380,12 +3595,17 @@ AValue a_http_serve(AValue port, AValue handler) {
             err_resp = a_map_set(err_resp, a_string("body"), a_string("Internal Server Error"));
             http_send_response(fd, err_resp);
         } else {
+            AValue stop_key = a_string("stop");
+            AValue stop_v = a_map_get(resp, stop_key);
+            a_release(stop_key);
+            if (stop_v.tag == TAG_BOOL && stop_v.bval) stop = 1;
             http_send_response(fd, resp);
         }
 
         close(fd);
         a_release(req);
         a_release(resp);
+        a_signal_check();
     }
 
     close(srv);

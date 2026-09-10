@@ -39,7 +39,7 @@ fn _builtin_map() -> map {
     "fs.rm": "a_fs_rm", "fs.mv": "a_fs_mv", "fs.cp": "a_fs_cp",
     "fs.abs": "a_fs_abs", "fs.is_file": "a_fs_is_file",
     "fs.stat": "a_fs_stat", "fs.watch": "a_fs_watch",
-    "exec": "a_exec",
+    "exec": "a_exec", "exec_timeout": "a_exec_timeout",
     "proc.spawn": "a_proc_spawn", "proc.write": "a_proc_write",
     "proc.read_line": "a_proc_read_line", "proc.kill": "a_proc_kill",
     "proc.wait": "a_proc_wait", "proc.is_running": "a_proc_is_running",
@@ -939,7 +939,7 @@ fn _emit_pat_cond(pat, target, bm, ctx, li) {
       ; Add nested value conditions
       let sub = e["pattern"]
       if sub["tag"] != "PatIdent" && sub["tag"] != "PatWildcard" {
-        let val_expr = str.concat("a_map_get(", str.concat(target, str.concat(", a_string(\"", str.concat(_escape_c_str(key), "\"))"))))
+        let val_expr = "a_map_get_borrow(" + target + ", \"" + _escape_c_str(key) + "\")"
         let sc = _emit_pat_cond(sub, val_expr, bm, ctx, li)
         li = sc[1]
         lifted = concat_arr(lifted, sc[2])
@@ -959,7 +959,11 @@ fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
   if tag == "PatWildcard" { ret _R("", li) }
 
   if tag == "PatIdent" {
-    ret _R(str.concat(ind, str.concat(_mangle(pat["name"]), str.concat(" = ", str.concat(target, ";")))), li)
+    ; Pattern targets are borrowed views into the matched value (result inner,
+    ; array slot, map slot). The binding is a function-scoped local released in
+    ; the cleanup epilogue, so it must own its reference.
+    let v = _mangle(pat["name"])
+    ret _R(ind + "\{ AValue __old = " + v + "; " + v + " = a_retain(" + target + "); a_release(__old); \}", li)
   }
 
   if tag == "PatLiteral" { ret _R("", li) }
@@ -996,9 +1000,11 @@ fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
         idx = idx + 1
       }
       if e["tag"] == "PatRest" {
-        let rest_expr = str.concat("a_drop(", str.concat(target, str.concat(", a_int(", str.concat(to_str(idx), "))"))))
+        ; a_drop returns a fresh owned array; release whatever the slot held before.
+        let rest_expr = "a_drop(" + target + ", a_int(" + to_str(idx) + "))"
+        let rv = _mangle(e["name"])
         if len(code) > 0 { code = str.concat(code, "\n") }
-        code = str.concat(code, str.concat(ind, str.concat(_mangle(e["name"]), str.concat(" = ", str.concat(rest_expr, ";")))))
+        code = code + ind + "\{ AValue __old = " + rv + "; " + rv + " = " + rest_expr + "; a_release(__old); \}"
       }
     }
     ret _RL(code, li, lifted)
@@ -1010,7 +1016,7 @@ fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
     let mut lifted = []
     for e in entries {
       let key = e["key"]
-      let val_expr = str.concat("a_map_get(", str.concat(target, str.concat(", a_string(\"", str.concat(_escape_c_str(key), "\"))"))))
+      let val_expr = "a_map_get_borrow(" + target + ", \"" + _escape_c_str(key) + "\")"
       let br = _emit_pat_bind(e["pattern"], val_expr, depth, bm, ctx, li)
       if len(br[0]) > 0 {
         if len(code) > 0 { code = str.concat(code, "\n") }
@@ -1663,7 +1669,17 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   if type_of(source) == "void" || len(source) == 0 {
     source = io.read_file(file_path)
   }
+  if type_of(source) == "void" || len(source) == 0 {
+    fail("cannot load module " + use_key + ": file not found: " + file_path)
+  }
   let mod_ast = parser.parse(source)
+  ; A module that fails to parse must stop the build here. Silently emitting
+  ; nothing for it produces baffling "implicit declaration" errors from gcc.
+  if type_of(mod_ast) == "map" && map.has(mod_ast, "tag") {
+    if mod_ast["tag"] == "ParseError" {
+      fail("parse error in module " + use_key + " (" + file_path + "): " + mod_ast["msg"] + " at token " + to_str(mod_ast["pos"]))
+    }
+  }
   let items = mod_ast["items"]
   let short = _use_path_short_name(path_arr)
 

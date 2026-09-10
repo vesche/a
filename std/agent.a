@@ -13,6 +13,8 @@
 ; Self-update:
 ;   agent.update("src/my_agent.a")   ; rebuilds and exits with code 42
 
+use std.path
+
 ; --- Operational primitives ---
 
 fn retry(max_attempts: int, delay_ms: int, f) {
@@ -213,11 +215,7 @@ fn delegate(target, task, params) {
 ; --- Checkpoint / Restore ---
 
 fn _state_db_path() -> str {
-  let home = env.get("HOME")
-  if type_of(home) == "void" || len(home) == 0 {
-    ret "/tmp/a_agent_state.db"
-  }
-  let dir = home + "/.a"
+  let dir = path.a_home()
   if !fs.exists(dir) { fs.mkdir(dir) }
   ret dir + "/agent_state.db"
 }

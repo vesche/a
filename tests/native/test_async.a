@@ -4,8 +4,10 @@ fn main() {
   let port = 9879
   let addr = str.concat("http://127.0.0.1:", to_str(port))
 
+  ; The server is a child of this process: proc.kill stops it below, and the
+  ; runtime kills it with us if an assertion aborts the test first.
   exec("./a build tests/native/_http_server_async.a -o /tmp/_async_srv_test 2>/dev/null")
-  exec("/tmp/_async_srv_test > /dev/null 2>&1 &")
+  let srv = proc.spawn("exec /tmp/_async_srv_test > /dev/null 2>&1")
   time.sleep(1000)
 
   ; --- Test 1: async.http_get + async.await returns same shape as http.get ---
@@ -98,7 +100,7 @@ fn main() {
   testing.assert_eq(to_str(parsed["ok"]), "true")
   println("PASS: async response body parses as JSON")
 
-  exec("pkill -f '_async_srv_test' 2>/dev/null || true")
+  proc.kill(srv)
 
   println("")
   println("All async tests passed!")

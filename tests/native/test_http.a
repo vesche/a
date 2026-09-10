@@ -4,9 +4,10 @@ fn main() {
   let port = 9877
   let addr = str.concat("http://127.0.0.1:", to_str(port))
 
-  ; Launch server in background via exec
+  ; The server is a child of this process: proc.kill stops it below, and the
+  ; runtime kills it with us if an assertion aborts the test first.
   exec("./a build tests/native/_http_server.a -o /tmp/_http_srv_test 2>/dev/null")
-  exec("/tmp/_http_srv_test > /dev/null 2>&1 &")
+  let srv = proc.spawn("exec /tmp/_http_srv_test > /dev/null 2>&1")
   time.sleep(1000)
 
   ; --- Test 1: GET returns status, body, headers ---
@@ -51,8 +52,7 @@ fn main() {
   testing.assert_eq(r7.body, "not found")
   println("PASS: 404 for unknown path")
 
-  ; Kill the background server
-  exec("pkill -f '_http_srv_test' 2>/dev/null || true")
+  proc.kill(srv)
 
   println("")
   println("All HTTP tests passed!")

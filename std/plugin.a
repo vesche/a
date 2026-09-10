@@ -1,9 +1,10 @@
 ; std/plugin.a -- Plugin system for runtime extensibility
-; Plugins are "a" modules installed to ~/.a/plugins/ with metadata.
+; Plugins are "a" modules installed to <a_home>/plugins/ with metadata,
+; where <a_home> is $A_HOME or ~/.a (see path.a_home).
+use std.path
 
 fn _plugins_dir() -> str {
-  let home = env.get("HOME")
-  ret home + "/.a/plugins"
+  ret path.a_home() + "/plugins"
 }
 
 fn _ensure_plugins_dir() {

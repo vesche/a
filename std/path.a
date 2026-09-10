@@ -136,6 +136,17 @@ fn home() -> str {
   ret env.get("USERPROFILE")
 }
 
+; Directory for everything `a` persists on behalf of the user (plugins,
+; agent state, caches). `A_HOME` overrides it so tests and sandboxes never
+; touch the real home directory; otherwise ~/.a, or /tmp/a_home without HOME.
+fn a_home() -> str {
+  let override = env.get("A_HOME")
+  if type_of(override) == "str" && len(override) > 0 { ret override }
+  let h = home()
+  if type_of(h) == "str" && len(h) > 0 { ret h + "/.a" }
+  ret "/tmp/a_home"
+}
+
 fn temp() -> str {
   let t = env.get("TMPDIR")
   if t != "" { ret t }
