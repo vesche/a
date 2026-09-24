@@ -7,12 +7,26 @@ use std.compiler.lexer
 use std.compiler.ast
 
 ; --- Token helpers (local shorthand) ---
+;
+; `toks` is the triple returned by lexer.lex_pos: [stream, lines, cols].
+; Parse functions never look inside it except through these accessors.
 
-fn tk(toks, i) { ret toks[i * 2] }
-fn tv(toks, i) { ret toks[i * 2 + 1] }
+fn tk(toks, i) { ret toks[0][i * 2] }
+fn tv(toks, i) { ret toks[0][i * 2 + 1] }
+fn tline(toks, i) { ret toks[1][i] }
+fn tcol(toks, i) { ret toks[2][i] }
 
 fn err(msg, pos) {
   ret [#{"tag": "ParseError", "msg": msg, "pos": pos}, pos]
+}
+
+; Stamp a node with the position of the token where it started. Errors and
+; non-map results pass through untouched.
+fn _at(toks, start, r) {
+  if _is_perr(r) { ret r }
+  if type_of(r[0]) != "map" { ret r }
+  let node = map.set(map.set(r[0], "line", tline(toks, start)), "col", tcol(toks, start))
+  ret [node, r[1]]
 }
 
 fn _is_perr(r) {
@@ -29,7 +43,7 @@ fn skip_nl(toks, pos) {
   ret pos
 }
 
-fn expect(toks, pos, kind) {
+fn expect_tok(toks, pos, kind) {
   if tk(toks, pos) == kind {
     ret [tv(toks, pos), pos + 1]
   }
@@ -56,9 +70,35 @@ fn expect_nl_or_eof(toks, pos) {
 ; --- Entry point ---
 
 fn parse(src) {
-  let toks = lexer.lex(src)
+  let toks = lexer.lex_pos(src)
   let r = parse_program(toks, 0)
-  ret r[0]
+  let node = r[0]
+  if type_of(node) == "map" && map.has(node, "tag") && node["tag"] == "ParseError" {
+    ; Errors carry the token index internally; report it as a source position.
+    let p = node["pos"]
+    let mut line = 0
+    let mut col = 0
+    if p >= 0 && p < len(toks[1]) {
+      line = tline(toks, p)
+      col = tcol(toks, p)
+    }
+    ret map.set(map.set(node, "line", line), "col", col)
+  }
+  ret node
+}
+
+; --- Statements and expressions carry their start position ---
+
+fn parse_top_level(toks, pos) {
+  ret _at(toks, pos, _parse_top_level(toks, pos))
+}
+
+fn parse_stmt(toks, pos) {
+  ret _at(toks, pos, _parse_stmt(toks, pos))
+}
+
+fn parse_expr(toks, pos) {
+  ret _at(toks, pos, parse_pipe_expr(toks, pos))
 }
 
 ; --- Program ---
@@ -77,7 +117,7 @@ fn parse_program(toks, pos) {
 
 ; --- Top-level declarations ---
 
-fn parse_top_level(toks, pos) {
+fn _parse_top_level(toks, pos) {
   let k = tk(toks, pos)
   if k == "KwFn" { ret parse_fn_decl(toks, pos) }
   if k == "KwTy" { ret parse_type_decl(toks, pos) }
@@ -88,7 +128,7 @@ fn parse_top_level(toks, pos) {
 }
 
 fn parse_fn_decl(toks, pos) {
-  let r = expect(toks, pos, "KwFn")
+  let r = expect_tok(toks, pos, "KwFn")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -97,7 +137,7 @@ fn parse_fn_decl(toks, pos) {
   let name = r[0]
   pos = r[1]
 
-  let r = expect(toks, pos, "LParen")
+  let r = expect_tok(toks, pos, "LParen")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -109,7 +149,7 @@ fn parse_fn_decl(toks, pos) {
     pos = r[1]
   }
 
-  let r = expect(toks, pos, "RParen")
+  let r = expect_tok(toks, pos, "RParen")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -137,14 +177,14 @@ fn parse_fn_decl(toks, pos) {
   let mut precond = ast.mk_void_lit()
   if tk(toks, pos) == "KwPre" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
     let r = parse_expr(toks, pos)
     if _is_perr(r) { ret r }
     precond = r[0]
     pos = skip_nl(toks, r[1])
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
   }
@@ -152,14 +192,14 @@ fn parse_fn_decl(toks, pos) {
   let mut postcond = ast.mk_void_lit()
   if tk(toks, pos) == "KwPost" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
     let r = parse_expr(toks, pos)
     if _is_perr(r) { ret r }
     postcond = r[0]
     pos = skip_nl(toks, r[1])
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
   }
@@ -173,11 +213,11 @@ fn parse_fn_decl(toks, pos) {
 }
 
 fn parse_extern_fn(toks, pos) {
-  let r = expect(toks, pos, "KwExtern")
+  let r = expect_tok(toks, pos, "KwExtern")
   if _is_perr(r) { ret r }
   pos = r[1]
 
-  let r = expect(toks, pos, "KwFn")
+  let r = expect_tok(toks, pos, "KwFn")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -186,7 +226,7 @@ fn parse_extern_fn(toks, pos) {
   let name = r[0]
   pos = r[1]
 
-  let r = expect(toks, pos, "LParen")
+  let r = expect_tok(toks, pos, "LParen")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -198,7 +238,7 @@ fn parse_extern_fn(toks, pos) {
     pos = r[1]
   }
 
-  let r = expect(toks, pos, "RParen")
+  let r = expect_tok(toks, pos, "RParen")
   if _is_perr(r) { ret r }
   pos = r[1]
 
@@ -251,10 +291,10 @@ fn parse_param(toks, pos) {
 }
 
 fn parse_effects(toks, pos) {
-  let r = expect(toks, pos, "KwEffects")
+  let r = expect_tok(toks, pos, "KwEffects")
   if _is_perr(r) { ret r }
   pos = r[1]
-  let r = expect(toks, pos, "LBracket")
+  let r = expect_tok(toks, pos, "LBracket")
   if _is_perr(r) { ret r }
   pos = r[1]
   let mut effs = []
@@ -269,21 +309,21 @@ fn parse_effects(toks, pos) {
     effs = push(effs, r[0])
     pos = r[1]
   }
-  let r = expect(toks, pos, "RBracket")
+  let r = expect_tok(toks, pos, "RBracket")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [effs, pos]
 }
 
 fn parse_mod_decl(toks, pos) {
-  let r = expect(toks, pos, "KwMod")
+  let r = expect_tok(toks, pos, "KwMod")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = expect_ident(toks, pos)
   if _is_perr(r) { ret r }
   let name = r[0]
   pos = skip_nl(toks, r[1])
-  let r = expect(toks, pos, "LBrace")
+  let r = expect_tok(toks, pos, "LBrace")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut items = []
@@ -293,14 +333,14 @@ fn parse_mod_decl(toks, pos) {
     items = push(items, r[0])
     pos = skip_nl(toks, r[1])
   }
-  let r = expect(toks, pos, "RBrace")
+  let r = expect_tok(toks, pos, "RBrace")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [ast.mk_mod_decl(name, items), pos]
 }
 
 fn parse_use_decl(toks, pos) {
-  let r = expect(toks, pos, "KwUse")
+  let r = expect_tok(toks, pos, "KwUse")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = expect_ident(toks, pos)
@@ -323,7 +363,7 @@ fn parse_use_decl(toks, pos) {
 ; --- Type declarations ---
 
 fn parse_type_decl(toks, pos) {
-  let r = expect(toks, pos, "KwTy")
+  let r = expect_tok(toks, pos, "KwTy")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = expect_ident(toks, pos)
@@ -337,7 +377,7 @@ fn parse_type_decl(toks, pos) {
     type_params = r[0]
     pos = r[1]
   }
-  let r = expect(toks, pos, "Eq")
+  let r = expect_tok(toks, pos, "Eq")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let r = parse_type_body(toks, pos)
@@ -351,7 +391,7 @@ fn parse_type_decl(toks, pos) {
 }
 
 fn parse_type_params(toks, pos) {
-  let r = expect(toks, pos, "Lt")
+  let r = expect_tok(toks, pos, "Lt")
   if _is_perr(r) { ret r }
   pos = r[1]
   let mut params = []
@@ -366,7 +406,7 @@ fn parse_type_params(toks, pos) {
     params = push(params, r[0])
     pos = r[1]
   }
-  let r = expect(toks, pos, "Gt")
+  let r = expect_tok(toks, pos, "Gt")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [params, pos]
@@ -413,14 +453,14 @@ fn parse_type_body(toks, pos) {
   let mut where_expr = ast.mk_void_lit()
   if tk(toks, pos) == "KwWhere" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
     let r = parse_expr(toks, pos)
     if _is_perr(r) { ret r }
     where_expr = r[0]
     pos = skip_nl(toks, r[1])
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     pos = r[1]
   }
@@ -446,7 +486,7 @@ fn parse_variant(toks, pos) {
       fields = push(fields, r[0])
       pos = r[1]
     }
-    let r = expect(toks, pos, "RParen")
+    let r = expect_tok(toks, pos, "RParen")
     if _is_perr(r) { ret r }
     pos = r[1]
   }
@@ -454,7 +494,7 @@ fn parse_variant(toks, pos) {
 }
 
 fn parse_record_fields(toks, pos) {
-  let r = expect(toks, pos, "LBrace")
+  let r = expect_tok(toks, pos, "LBrace")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut fields = []
@@ -473,7 +513,7 @@ fn parse_record_fields(toks, pos) {
     }
   }
   pos = skip_nl(toks, pos)
-  let r = expect(toks, pos, "RBrace")
+  let r = expect_tok(toks, pos, "RBrace")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [fields, pos]
@@ -484,7 +524,7 @@ fn parse_field(toks, pos) {
   if _is_perr(r) { ret r }
   let name = r[0]
   pos = r[1]
-  let r = expect(toks, pos, "Colon")
+  let r = expect_tok(toks, pos, "Colon")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_type_expr(toks, pos)
@@ -519,7 +559,7 @@ fn parse_type_expr(toks, pos) {
     if _is_perr(r) { ret r }
     let inner = r[0]
     pos = r[1]
-    let r = expect(toks, pos, "RBracket")
+    let r = expect_tok(toks, pos, "RBracket")
     if _is_perr(r) { ret r }
     ret [ast.mk_ty_array(inner), r[1]]
   }
@@ -540,7 +580,7 @@ fn parse_type_expr(toks, pos) {
         pos = r[1]
       }
     }
-    let r = expect(toks, pos, "RParen")
+    let r = expect_tok(toks, pos, "RParen")
     if _is_perr(r) { ret r }
     pos = r[1]
     ret [ast.mk_ty_tuple(types), pos]
@@ -548,7 +588,7 @@ fn parse_type_expr(toks, pos) {
 
   if k == "KwFn" {
     pos = pos + 1
-    let r = expect(toks, pos, "LParen")
+    let r = expect_tok(toks, pos, "LParen")
     if _is_perr(r) { ret r }
     pos = r[1]
     let mut params = []
@@ -565,10 +605,10 @@ fn parse_type_expr(toks, pos) {
         pos = r[1]
       }
     }
-    let r = expect(toks, pos, "RParen")
+    let r = expect_tok(toks, pos, "RParen")
     if _is_perr(r) { ret r }
     pos = r[1]
-    let r = expect(toks, pos, "Arrow")
+    let r = expect_tok(toks, pos, "Arrow")
     if _is_perr(r) { ret r }
     pos = r[1]
     let r = parse_type_expr(toks, pos)
@@ -578,21 +618,21 @@ fn parse_type_expr(toks, pos) {
 
   if k == "Hash" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = r[1]
     let r = parse_type_expr(toks, pos)
     if _is_perr(r) { ret r }
     let key_ty = r[0]
     pos = r[1]
-    let r = expect(toks, pos, "Colon")
+    let r = expect_tok(toks, pos, "Colon")
     if _is_perr(r) { ret r }
     pos = r[1]
     let r = parse_type_expr(toks, pos)
     if _is_perr(r) { ret r }
     let val_ty = r[0]
     pos = r[1]
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     ret [ast.mk_ty_map(key_ty, val_ty), r[1]]
   }
@@ -614,7 +654,7 @@ fn parse_type_expr(toks, pos) {
         type_args = push(type_args, r[0])
         pos = r[1]
       }
-      let r = expect(toks, pos, "Gt")
+      let r = expect_tok(toks, pos, "Gt")
       if _is_perr(r) { ret r }
       pos = r[1]
     }
@@ -627,7 +667,7 @@ fn parse_type_expr(toks, pos) {
 ; --- Block ---
 
 fn parse_block(toks, pos) {
-  let r = expect(toks, pos, "LBrace")
+  let r = expect_tok(toks, pos, "LBrace")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut stmts = []
@@ -640,7 +680,7 @@ fn parse_block(toks, pos) {
     stmts = push(stmts, r[0])
     pos = skip_nl(toks, r[1])
   }
-  let r = expect(toks, pos, "RBrace")
+  let r = expect_tok(toks, pos, "RBrace")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [ast.mk_block(stmts), pos]
@@ -648,7 +688,7 @@ fn parse_block(toks, pos) {
 
 ; --- Statements ---
 
-fn parse_stmt(toks, pos) {
+fn _parse_stmt(toks, pos) {
   let k = tk(toks, pos)
 
   if k == "KwLet" { ret parse_let_stmt(toks, pos) }
@@ -692,7 +732,7 @@ fn parse_stmt(toks, pos) {
 }
 
 fn parse_let_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwLet")
+  let r = expect_tok(toks, pos, "KwLet")
   if _is_perr(r) { ret r }
   pos = r[1]
   let mut mutable = false
@@ -717,7 +757,7 @@ fn parse_let_stmt(toks, pos) {
     typ = r[0]
     pos = r[1]
   }
-  let r = expect(toks, pos, "Eq")
+  let r = expect_tok(toks, pos, "Eq")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let r = parse_expr(toks, pos)
@@ -730,7 +770,7 @@ fn parse_let_stmt(toks, pos) {
 }
 
 fn parse_let_destructure(toks, pos) {
-  let r = expect(toks, pos, "LBracket")
+  let r = expect_tok(toks, pos, "LBracket")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut bindings = []
@@ -765,10 +805,10 @@ fn parse_let_destructure(toks, pos) {
     } else { break }
   }
   pos = skip_nl(toks, pos)
-  let r = expect(toks, pos, "RBracket")
+  let r = expect_tok(toks, pos, "RBracket")
   if _is_perr(r) { ret r }
   pos = r[1]
-  let r = expect(toks, pos, "Eq")
+  let r = expect_tok(toks, pos, "Eq")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let r = parse_expr(toks, pos)
@@ -783,7 +823,7 @@ fn parse_let_destructure(toks, pos) {
 }
 
 fn parse_ret_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwRet")
+  let r = expect_tok(toks, pos, "KwRet")
   if _is_perr(r) { ret r }
   pos = r[1]
   let k = tk(toks, pos)
@@ -802,7 +842,7 @@ fn parse_ret_stmt(toks, pos) {
 }
 
 fn parse_if_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwIf")
+  let r = expect_tok(toks, pos, "KwIf")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_expr(toks, pos)
@@ -832,14 +872,14 @@ fn parse_if_stmt(toks, pos) {
 }
 
 fn parse_match_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwMatch")
+  let r = expect_tok(toks, pos, "KwMatch")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_expr(toks, pos)
   if _is_perr(r) { ret r }
   let expr = r[0]
   pos = skip_nl(toks, r[1])
-  let r = expect(toks, pos, "LBrace")
+  let r = expect_tok(toks, pos, "LBrace")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut arms = []
@@ -849,7 +889,7 @@ fn parse_match_stmt(toks, pos) {
     arms = push(arms, r[0])
     pos = skip_nl(toks, r[1])
   }
-  let r = expect(toks, pos, "RBrace")
+  let r = expect_tok(toks, pos, "RBrace")
   if _is_perr(r) { ret r }
   pos = r[1]
   ret [ast.mk_match_stmt(expr, arms), pos]
@@ -868,7 +908,7 @@ fn parse_match_arm(toks, pos) {
     guard = r[0]
     pos = r[1]
   }
-  let r = expect(toks, pos, "FatArrow")
+  let r = expect_tok(toks, pos, "FatArrow")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut body = ast.mk_void_lit()
@@ -888,7 +928,7 @@ fn parse_match_arm(toks, pos) {
 }
 
 fn parse_for_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwFor")
+  let r = expect_tok(toks, pos, "KwFor")
   if _is_perr(r) { ret r }
   pos = r[1]
   if tk(toks, pos) == "LBracket" {
@@ -906,7 +946,7 @@ fn parse_for_stmt(toks, pos) {
     typ = r[0]
     pos = r[1]
   }
-  let r = expect(toks, pos, "KwIn")
+  let r = expect_tok(toks, pos, "KwIn")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_expr(toks, pos)
@@ -919,7 +959,7 @@ fn parse_for_stmt(toks, pos) {
 }
 
 fn parse_for_destructure(toks, pos) {
-  let r = expect(toks, pos, "LBracket")
+  let r = expect_tok(toks, pos, "LBracket")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut bindings = []
@@ -933,10 +973,10 @@ fn parse_for_destructure(toks, pos) {
     } else { break }
   }
   pos = skip_nl(toks, pos)
-  let r = expect(toks, pos, "RBracket")
+  let r = expect_tok(toks, pos, "RBracket")
   if _is_perr(r) { ret r }
   pos = r[1]
-  let r = expect(toks, pos, "KwIn")
+  let r = expect_tok(toks, pos, "KwIn")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_expr(toks, pos)
@@ -949,7 +989,7 @@ fn parse_for_destructure(toks, pos) {
 }
 
 fn parse_while_stmt(toks, pos) {
-  let r = expect(toks, pos, "KwWhile")
+  let r = expect_tok(toks, pos, "KwWhile")
   if _is_perr(r) { ret r }
   pos = r[1]
   let r = parse_expr(toks, pos)
@@ -1005,14 +1045,14 @@ fn parse_pattern(toks, pos) {
         pos = pos + 1
       } else { break }
     }
-    let r = expect(toks, pos, "RBracket")
+    let r = expect_tok(toks, pos, "RBracket")
     if _is_perr(r) { ret r }
     ret [ast.mk_pat_array(elems), r[1]]
   }
 
   if k == "Hash" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = r[1]
     let mut entries = []
@@ -1029,7 +1069,7 @@ fn parse_pattern(toks, pos) {
           ret err("expected string key in map pattern", pos)
         }
       }
-      let r = expect(toks, pos, "Colon")
+      let r = expect_tok(toks, pos, "Colon")
       if _is_perr(r) { ret r }
       pos = r[1]
       let r = parse_pattern(toks, pos)
@@ -1040,7 +1080,7 @@ fn parse_pattern(toks, pos) {
         pos = pos + 1
       } else { break }
     }
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     ret [ast.mk_pat_map(entries), r[1]]
   }
@@ -1064,7 +1104,7 @@ fn parse_pattern(toks, pos) {
           pos = r[1]
         }
       }
-      let r = expect(toks, pos, "RParen")
+      let r = expect_tok(toks, pos, "RParen")
       if _is_perr(r) { ret r }
       ret [ast.mk_pat_constructor(name, pats), r[1]]
     }
@@ -1086,10 +1126,6 @@ fn parse_pattern(toks, pos) {
 }
 
 ; --- Expression parsing (precedence climbing) ---
-
-fn parse_expr(toks, pos) {
-  ret parse_pipe_expr(toks, pos)
-}
 
 fn parse_pipe_expr(toks, pos) {
   let r = parse_or_expr(toks, pos)
@@ -1341,7 +1377,7 @@ fn parse_postfix_expr(toks, pos) {
         }
       }
       pos = skip_nl(toks, pos)
-      let r = expect(toks, pos, "RParen")
+      let r = expect_tok(toks, pos, "RParen")
       if _is_perr(r) { ret r }
       pos = r[1]
       expr = ast.mk_call(expr, args)
@@ -1364,7 +1400,7 @@ fn parse_postfix_expr(toks, pos) {
           if _is_perr(r) { ret r }
           let idx = r[0]
           pos = r[1]
-          let r = expect(toks, pos, "RBracket")
+          let r = expect_tok(toks, pos, "RBracket")
           if _is_perr(r) { ret r }
           pos = r[1]
           expr = ast.mk_index(expr, idx)
@@ -1423,7 +1459,7 @@ fn parse_primary_expr(toks, pos) {
   ; lambda: fn(params) => expr  or  fn(params) { block }
   if k == "KwFn" {
     pos = pos + 1
-    let r = expect(toks, pos, "LParen")
+    let r = expect_tok(toks, pos, "LParen")
     if _is_perr(r) { ret r }
     pos = r[1]
     let mut params = []
@@ -1433,7 +1469,7 @@ fn parse_primary_expr(toks, pos) {
       params = r[0]
       pos = r[1]
     }
-    let r = expect(toks, pos, "RParen")
+    let r = expect_tok(toks, pos, "RParen")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
     let mut body = ast.mk_void_lit()
@@ -1460,7 +1496,7 @@ fn parse_primary_expr(toks, pos) {
   ; map literal: #{...}
   if k == "Hash" {
     pos = pos + 1
-    let r = expect(toks, pos, "LBrace")
+    let r = expect_tok(toks, pos, "LBrace")
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
     let mut entries = []
@@ -1469,7 +1505,7 @@ fn parse_primary_expr(toks, pos) {
       if _is_perr(r) { ret r }
       let key = r[0]
       pos = r[1]
-      let r = expect(toks, pos, "Colon")
+      let r = expect_tok(toks, pos, "Colon")
       if _is_perr(r) { ret r }
       pos = skip_nl(toks, r[1])
       let r = parse_expr(toks, pos)
@@ -1483,7 +1519,7 @@ fn parse_primary_expr(toks, pos) {
         if _is_perr(r) { ret r }
         let key = r[0]
         pos = r[1]
-        let r = expect(toks, pos, "Colon")
+        let r = expect_tok(toks, pos, "Colon")
         if _is_perr(r) { ret r }
         pos = skip_nl(toks, r[1])
         let r = parse_expr(toks, pos)
@@ -1493,7 +1529,7 @@ fn parse_primary_expr(toks, pos) {
       }
     }
     pos = skip_nl(toks, pos)
-    let r = expect(toks, pos, "RBrace")
+    let r = expect_tok(toks, pos, "RBrace")
     if _is_perr(r) { ret r }
     ret [ast.mk_map_literal(entries), r[1]]
   }
@@ -1504,7 +1540,7 @@ fn parse_primary_expr(toks, pos) {
     let r = parse_expr(toks, pos)
     if _is_perr(r) { ret r }
     pos = skip_nl(toks, r[1])
-    let r2 = expect(toks, pos, "RParen")
+    let r2 = expect_tok(toks, pos, "RParen")
     if _is_perr(r2) { ret r2 }
     ret [r[0], r2[1]]
   }
@@ -1528,7 +1564,7 @@ fn parse_primary_expr(toks, pos) {
       }
     }
     pos = skip_nl(toks, pos)
-    let r = expect(toks, pos, "RBracket")
+    let r = expect_tok(toks, pos, "RBracket")
     if _is_perr(r) { ret r }
     ret [ast.mk_array(elems), r[1]]
   }

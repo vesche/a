@@ -16,7 +16,7 @@ fn _builtin_map() -> map {
     "concat_arr": "a_concat_arr", "args": "a_args", "slice": "a_array_slice",
     "char_code": "a_char_code", "from_code": "a_from_code",
     "is_alpha": "a_is_alpha", "is_digit": "a_is_digit", "is_alnum": "a_is_alnum",
-    "Ok": "a_ok", "Err": "a_err", "unwrap": "a_unwrap",
+    "Ok": "a_ok", "Err": "a_err", "unwrap": "a_unwrap", "expect": "a_expect",
     "is_ok": "a_is_ok", "is_err": "a_is_err", "unwrap_or": "a_unwrap_or"
   }
   let m2 = #{
@@ -168,6 +168,18 @@ fn _is_intra_module_call(fname, ctx) -> bool {
 
 fn _R(code, li) { ret [code, li, []] }
 fn _RL(code, li, lifted) { ret [code, li, lifted] }
+
+; True for `name = push(name, <expr>)` where `push` is the builtin.
+fn _is_self_push(assign, name: str) -> bool {
+  let v = assign["value"]
+  if type_of(v) != "map" || v["tag"] != "Call" { ret false }
+  let f = v["func"]
+  if type_of(f) != "map" || f["tag"] != "Ident" || f["name"] != "push" { ret false }
+  let args = v["args"]
+  if len(args) != 2 { ret false }
+  let a0 = args[0]
+  ret type_of(a0) == "map" && a0["tag"] == "Ident" && a0["name"] == name
+}
 
 fn _is_ident(node) -> bool {
   if type_of(node) != "map" { ret false }
@@ -487,6 +499,26 @@ fn emit_expr(node, bm, ctx, li) {
     let a = node["args"]
     let fname = _resolve_call_name(func)
 
+    if fname == "__unknown__" {
+      let dotted = _dotted_path(func)
+      if len(dotted) > 0 {
+        let short = _last_two_segments(dotted)
+        _compile_error(node, ctx, "cannot call " + dotted + ": a module is referenced by its last segment, e.g. " + short)
+      }
+      ; Any other callee is an expression producing a closure: arr[0](x), m["f"](x), f()(x)
+      let fr = emit_expr(func, bm, ctx, li)
+      let mut li2 = fr[1]
+      let mut lifted2 = fr[2]
+      let mut call_args = [to_str(len(a))]
+      for arg in a {
+        let ar = emit_expr(arg, bm, ctx, li2)
+        call_args = push(call_args, ar[0])
+        li2 = ar[1]
+        lifted2 = concat_arr(lifted2, ar[2])
+      }
+      ret _RL("a_closure_call(" + fr[0] + ", " + str.join(call_args, ", ") + ")", li2, lifted2)
+    }
+
     if fname == "fail" {
       if len(a) > 0 {
         let ar = emit_expr(a[0], bm, ctx, li)
@@ -695,7 +727,11 @@ fn emit_expr(node, bm, ctx, li) {
     ; Load params from argv
     let mut pi = 0
     for p in params {
-      fn_code = str.concat(fn_code, str.concat("\n    AValue ", str.concat(_mangle(p["name"]), str.concat(" = __argv[", str.concat(to_str(pi), "];")))))
+      ; A caller may pass fewer arguments than the lambda declares (e.g. a
+      ; 2-arg comparator handed to a 1-arg key function). Missing ones are void.
+      ; Params are owned like every other named variable (released in the
+      ; cleanup below), so assigning to one, or pushing onto one in place, is safe.
+      fn_code = fn_code + "\n    AValue " + _mangle(p["name"]) + " = __argc > " + to_str(pi) + " ? a_retain(__argv[" + to_str(pi) + "]) : a_void();"
       pi = pi + 1
     }
 
@@ -734,6 +770,7 @@ fn emit_expr(node, bm, ctx, li) {
 
       let mut lambda_cleanup = []
       for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
+      for p in params { lambda_cleanup = push(lambda_cleanup, _mangle(p["name"])) }
       lambda_cleanup = concat_arr(lambda_cleanup, decl_vars)
       lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
       lambda_ctx = map.set(lambda_ctx, "goto_cleanup", false)
@@ -747,7 +784,11 @@ fn emit_expr(node, bm, ctx, li) {
         if is_last && s["tag"] == "ExprStmt" {
           let er = emit_expr(s["expr"], bm, lambda_ctx, next_li)
           let cleanup = _emit_cleanup(lambda_cleanup, 1)
-          fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(er[0], str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
+          ; The returned value must be owned by the caller; a bare variable is
+          ; about to be released by the cleanup, so hand out a fresh reference.
+          let mut ret_expr = er[0]
+          if _is_ident(s["expr"]) { ret_expr = "a_retain(" + ret_expr + ")" }
+          fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(ret_expr, str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
           next_li = er[1]
           body_lifted = concat_arr(body_lifted, er[2])
           has_return = true
@@ -769,11 +810,14 @@ fn emit_expr(node, bm, ctx, li) {
       let lambda_ctx = map.set(ctx, "enclosing_vars", lambda_vars)
       let mut lambda_cleanup = []
       for cap in captures { lambda_cleanup = push(lambda_cleanup, _mangle(cap)) }
+      for p in params { lambda_cleanup = push(lambda_cleanup, _mangle(p["name"])) }
       lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
       lambda_ctx = map.set(lambda_ctx, "goto_cleanup", false)
       let er = emit_expr(body, bm, lambda_ctx, next_li)
       let cleanup = _emit_cleanup(lambda_cleanup, 1)
-      fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(er[0], str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
+      let mut ret_expr = er[0]
+      if _is_ident(body) { ret_expr = "a_retain(" + ret_expr + ")" }
+      fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(ret_expr, str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
       next_li = er[1]
       body_lifted = concat_arr(body_lifted, er[2])
     }
@@ -861,6 +905,37 @@ fn emit_expr(node, bm, ctx, li) {
   }
 
   ret _R(str.concat("/* unhandled expr: ", str.concat(tag, " */a_void()")), li)
+}
+
+; "a.b.c" for a pure Ident/FieldAccess chain, "" otherwise.
+fn _dotted_path(e) -> str {
+  if type_of(e) != "map" { ret "" }
+  if e["tag"] == "Ident" { ret e["name"] }
+  if e["tag"] == "FieldAccess" {
+    let base = _dotted_path(e["expr"])
+    if len(base) == 0 { ret "" }
+    ret base + "." + e["field"]
+  }
+  ret ""
+}
+
+fn _last_two_segments(dotted: str) -> str {
+  let parts = str.split(dotted, ".")
+  let n = len(parts)
+  if n < 2 { ret dotted }
+  ret parts[n - 2] + "." + parts[n - 1]
+}
+
+; Abort compilation with a gcc-style located error. Nodes produced by
+; parse_stmt/parse_expr carry line/col; others fall back to the file alone.
+fn _compile_error(node, ctx, msg: str) {
+  let mut loc = ""
+  if type_of(ctx) == "map" && map.has(ctx, "file") { loc = ctx["file"] }
+  if type_of(node) == "map" && map.has(node, "line") && node["line"] > 0 {
+    loc = loc + ":" + to_str(node["line"]) + ":" + to_str(node["col"])
+  }
+  if len(loc) == 0 { fail("error: " + msg) }
+  fail(loc + ": error: " + msg)
 }
 
 fn _resolve_call_name(func) -> str {
@@ -1230,7 +1305,19 @@ fn _emit_match_expr_body(body, bm, ctx, li) {
 ; --- Statement emission ---
 ; Returns [code, li, [lifted_fns]]
 
+; Every statement is preceded by a `#line` directive pointing at its `a`
+; source, so C compiler diagnostics, sanitizer reports and debuggers all
+; speak in terms of the program the user wrote. Callers must splice statement
+; code at the start of a line (see the `else if` case).
 fn emit_stmt(node, depth: int, bm, ctx, li) {
+  let mut r = _emit_stmt(node, depth, bm, ctx, li)
+  if type_of(node) == "map" && map.has(node, "line") && node["line"] > 0 && map.has(ctx, "file") && len(ctx["file"]) > 0 {
+    r[0] = "#line " + to_str(node["line"]) + " \"" + ctx["file"] + "\"\n" + r[0]
+  }
+  ret r
+}
+
+fn _emit_stmt(node, depth: int, bm, ctx, li) {
   let tag = node["tag"]
   let ind = _indent(depth)
 
@@ -1249,7 +1336,11 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
 
   if tag == "LetDestructure" {
     let vr = emit_expr(node["value"], bm, ctx, li)
-    let mut code = str.concat(ind, str.concat("__dest = ", str.concat(vr[0], ";")))
+    ; __dest is released in the epilogue, so it must own its reference: retain
+    ; when the value is a variable that is itself released there.
+    let mut src = vr[0]
+    if _is_ident(node["value"]) { src = "a_retain(" + src + ")" }
+    let mut code = ind + "\{ AValue __old = __dest; __dest = " + src + "; a_release(__old); \}"
     let bindings = node["bindings"]
     let mut i = 0
     for b in bindings {
@@ -1268,8 +1359,16 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
   if tag == "Assign" {
     let target = node["target"]
     if target["tag"] == "Ident" {
-      let vr = emit_expr(node["value"], bm, ctx, li)
       let tname = _mangle(target["name"])
+      ; `xs = push(xs, v)`: the variable's own reference is consumed by the
+      ; call, so the runtime may append in place when nobody else holds the
+      ; array. Turns the ubiquitous accumulate loop from O(n^2) into O(n).
+      if _is_self_push(node, target["name"]) {
+        let ar = emit_expr(node["value"]["args"][1], bm, ctx, li)
+        let code = ind + tname + " = a_array_push_move(" + tname + ", " + ar[0] + ");"
+        ret _RL(code, ar[1], ar[2])
+      }
+      let vr = emit_expr(node["value"], bm, ctx, li)
       let assign_expr = vr[0]
       let mut code = ""
       if _is_ident(node["value"]) {
@@ -1358,7 +1457,7 @@ fn emit_stmt(node, depth: int, bm, ctx, li) {
       }
       if else_branch["tag"] == "ElseIf" {
         let sr = emit_stmt(else_branch["stmt"], depth, bm, ctx, li)
-        out = str.concat(out, str.concat(" else ", sr[0]))
+        out = str.concat(out, str.concat(" else\n", sr[0]))
         li = sr[1]
         lifted = concat_arr(lifted, sr[2])
       }
@@ -1677,7 +1776,11 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   ; nothing for it produces baffling "implicit declaration" errors from gcc.
   if type_of(mod_ast) == "map" && map.has(mod_ast, "tag") {
     if mod_ast["tag"] == "ParseError" {
-      fail("parse error in module " + use_key + " (" + file_path + "): " + mod_ast["msg"] + " at token " + to_str(mod_ast["pos"]))
+      let mut loc = file_path
+      if map.has(mod_ast, "line") && mod_ast["line"] > 0 {
+        loc = file_path + ":" + to_str(mod_ast["line"]) + ":" + to_str(mod_ast["col"])
+      }
+      fail(loc + ": error: " + mod_ast["msg"] + " (while loading module " + use_key + ")")
     }
   }
   let items = mod_ast["items"]
@@ -1697,7 +1800,7 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   }
 
   let fn_names = _collect_fn_names(items)
-  let ctx = #{"prefix": short, "fns": fn_names}
+  let ctx = #{"prefix": short, "fns": fn_names, "file": file_path}
   let mut aliases = #{}
 
   for item in items {
@@ -1872,7 +1975,9 @@ fn emit_program(prog_ast, bm) -> str {
     }
   }
 
-  let main_ctx = #{"prefix": "", "fns": main_fn_names, "import_aliases": import_aliases}
+  let mut main_file = ""
+  if map.has(prog_ast, "file") { main_file = prog_ast["file"] }
+  let main_ctx = #{"prefix": "", "fns": main_fn_names, "import_aliases": import_aliases, "file": main_file}
 
   for item in items {
     if item["tag"] == "FnDecl" {

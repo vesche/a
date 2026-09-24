@@ -110,7 +110,7 @@ This is real code. It runs. It recursively walks a directory, reads files, count
 
 ## What it does
 
-**181+ builtins** covering everything an agent needs -- native compilation to C, optional WASM, supervised agent deployment, swarm coordination, and persistent state:
+**177 builtins** (the exact list is generated into [STATUS.md](STATUS.md)) covering everything an agent needs -- native compilation to C, optional WASM, supervised agent deployment, swarm coordination, and persistent state:
 
 | Domain | Operations |
 |--------|-----------|
@@ -238,7 +238,7 @@ The "a" compiler and CLI are fully self-hosting. The native `./a` binary compile
 ./a3 run examples/hello.a            # a3 works
 ```
 
-The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~16,500 lines of C with reference-counted ownership, goto-based cleanup epilogues, and 181+ native builtins. All 58 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), profile-guided optimization (`profile`/`optimize`/`gentests`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
+The entire language bootstraps from a single C compiler. `build.sh` compiles the pre-generated `bootstrap/cli.c` with gcc, then uses the resulting binary to recompile itself from `src/cli.a`. No Rust, no cargo, no external tools. The C code generator compiles itself -- including the lexer, parser, checker, and AST modules -- into ~25,000 lines of C (every statement preceded by a `#line` directive back to its `a` source) with reference-counted ownership, goto-based cleanup epilogues, and 177 native builtins. All 58 standard library modules compile natively. Closures, lambdas, HOFs, pattern matching, try/catch, destructuring, I/O, module imports, the pipe operator, C FFI (`extern fn`), memory management, SHA-256/MD5 hashing, HTTP client, async HTTP (`poll()`-based event loop), JSON stringify, compression (deflate/gzip), subprocess pipes, image processing, package management, static analysis, fork-based concurrency (`spawn`/`await`/`parallel_map`/`timeout`), self-improvement loop (`codegen`/`refactor`), profile-guided optimization (`profile`/`optimize`/`gentests`), and POSIX time/fs/env all compile natively. Clean under AddressSanitizer.
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 

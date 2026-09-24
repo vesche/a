@@ -590,6 +590,27 @@ AValue a_array_push(AValue arr, AValue val) {
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
+/* push that consumes the caller's reference to `arr`. Emitted by cgen for
+ * `xs = push(xs, v)`, where the variable's old reference dies with the
+ * assignment. If that was the only reference (rc == 1) nobody can observe
+ * the mutation, so append in place with amortised doubling; otherwise fall
+ * back to the copying push and drop the consumed reference. */
+AValue a_array_push_move(AValue arr, AValue val) {
+    if (arr.tag == TAG_ARRAY && arr.aval->rc == 1) {
+        AArray* a = arr.aval;
+        if (a->len == a->cap) {
+            int ncap = a->cap < 8 ? 8 : a->cap * 2;
+            a->items = realloc(a->items, sizeof(AValue) * ncap);
+            a->cap = ncap;
+        }
+        a->items[a->len++] = a_retain(val);
+        return arr;
+    }
+    AValue out = a_array_push(arr, val);
+    a_release(arr);
+    return out;
+}
+
 AValue a_array_slice(AValue arr, AValue start, AValue end) {
     if (arr.tag != TAG_ARRAY) return a_array_new(0);
     int st = (start.tag == TAG_INT) ? (int)start.ival : 0;
@@ -1533,9 +1554,12 @@ AValue a_json_parse(AValue input) {
 
 /* --- Result --- */
 
+/* Like every other constructor (a_array_new, map literals), a Result retains
+ * its payload rather than taking ownership: `Ok(x)` must not steal x's
+ * reference from the variable that still holds it. */
 static AValue result_new(int is_ok, AValue v) {
     AResultBox* box = malloc(sizeof(AResultBox));
-    box->val = v;
+    box->val = a_retain(v);
     box->rc = 1;
     AValue r; r.tag = TAG_RESULT;
     r.rval.is_ok = is_ok;

@@ -45,12 +45,17 @@ fn main() {
   if expanded[0] != 1 { fail("flat_map: first should be 1") }
   if expanded[1] != 10 { fail("flat_map: second should be 10") }
 
-  ; min_by / max_by return Ok-wrapped results
+  ; min_by / max_by take a key function and return Ok-wrapped results
   let items = [3, 1, 4, 1, 5]
-  let smallest = min_by(items, fn(a, b) => a - b)
+  let smallest = min_by(items, fn(x) => x)
   if !is_ok(smallest) { fail("min_by: should return Ok") }
-  let largest = max_by(items, fn(a, b) => a - b)
+  if unwrap(smallest) != 1 { fail("min_by: expected 1") }
+  let largest = max_by(items, fn(x) => x)
   if !is_ok(largest) { fail("max_by: should return Ok") }
+  if unwrap(largest) != 5 { fail("max_by: expected 5") }
+  let words = ["ccc", "a", "bb"]
+  if unwrap(min_by(words, fn(w) => len(w))) != "a" { fail("min_by: key function not applied") }
+  if unwrap(max_by(words, fn(w) => len(w))) != "ccc" { fail("max_by: key function not applied") }
 
   ; enumerate
   let letters = ["a", "b", "c"]

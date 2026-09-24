@@ -209,7 +209,7 @@ fn benchmark(source_path, runs) -> map {
   let mut ri = 0
   while ri < runs {
     let t0 = time.now()
-    let run_r = exec(tmp_bin + " 2>&1")
+    exec(tmp_bin + " 2>&1")
     let t1 = time.now()
     times = push(times, t1 - t0)
     ri = ri + 1
@@ -243,7 +243,6 @@ fn report(source_path, profile_path) -> str {
   let source = io.read_file(source_path)
   let prof = analyze_profile(profile_path)
   let suggs = suggest(source, prof)
-  let bin_info = measure_binary(source_path)
 
   let mut out = "=== Optimization Report ===\n\n"
   out = out + "Profile: " + profile_path + "\n"

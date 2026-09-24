@@ -42,110 +42,35 @@ jobs:
           fi
           echo "bootstrap/cli.c is up to date."
 
-      - name: Detect platform flags
-        id: flags
+      # Generated files must match their sources: the checker's arity table
+      # comes from the C runtime prototypes, STATUS.md from the compiler's
+      # builtin table cross-checked against REFERENCE.md and the tests.
+      - name: Verify generated files are up to date
         run: |
-          OS=$(uname -s)
-          if [ "$OS" = "Darwin" ]; then
-            echo "stack=-Wl,-stack_size,0x10000000" >> "$GITHUB_OUTPUT"
-            echo "tls=-framework Security -framework CoreFoundation" >> "$GITHUB_OUTPUT"
-          else
-            echo "stack=" >> "$GITHUB_OUTPUT"
-            echo "tls=-ldl" >> "$GITHUB_OUTPUT"
-          fi
+          ./a run scripts/gen_builtin_arity.a > /tmp/arity.a
+          diff -u std/compiler/builtin_arity.a /tmp/arity.a || { echo "std/compiler/builtin_arity.a is stale: ./a run scripts/gen_builtin_arity.a > std/compiler/builtin_arity.a"; exit 1; }
+          ./a run scripts/status.a > /tmp/STATUS.md
+          diff -u STATUS.md /tmp/STATUS.md || { echo "STATUS.md is stale: ./a run scripts/status.a > STATUS.md"; exit 1; }
 
-      - name: Native test suite
+      # The static checker must be clean on everything we ship.
+      - name: Static check (a check)
         run: |
-          STACK="${{ steps.flags.outputs.stack }}"
-          TLS="${{ steps.flags.outputs.tls }}"
-          SQLITE="-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
-          PASS=0; FAIL=0; SKIP=0
-          TEST_TIMEOUT=60
-          RT=c_runtime
-
-          # Portable timeout
-          if command -v timeout >/dev/null 2>&1; then
-            TIMEOUT_CMD="timeout"
-          elif command -v gtimeout >/dev/null 2>&1; then
-            TIMEOUT_CMD="gtimeout"
-          else
-            TIMEOUT_CMD=""
-          fi
-
-          # ── Pre-compile the C runtime objects ONCE (in parallel) ──
-          # sqlite3.c alone is 261K lines; recompiling per-test was the #1 bottleneck.
-          echo "Pre-compiling runtime objects..."
-          gcc -c $RT/runtime.c  -o /tmp/rt_runtime.o  -I $RT -O2 $SQLITE &
-          gcc -c $RT/sqlite3.c  -o /tmp/rt_sqlite3.o  -I $RT -O2 $SQLITE &
-          gcc -c $RT/miniz.c    -o /tmp/rt_miniz.o    -I $RT -O2 &
-          gcc -c $RT/stb_impl.c -o /tmp/rt_stb.o      -I $RT -O2 &
-          gcc -c $RT/embedded.c -o /tmp/rt_embedded.o  -I $RT -O2 &
-          wait
-          RT_OBJS="/tmp/rt_runtime.o /tmp/rt_sqlite3.o /tmp/rt_miniz.o /tmp/rt_stb.o /tmp/rt_embedded.o"
-          echo "done."
-
-          # Pre-build cgen as a native binary once
-          echo "Building cgen binary..."
-          ./a build std/compiler/cgen.a -o /tmp/cgen
-          echo ""
-
-          # Tests that hang or need external resources in CI
-          SKIP_TESTS="test_http.a test_watch.a test_stream.a test_selfopt.a"
-
-          for src in tests/native/test_*.a; do
-            name=$(basename "$src")
-
-            skip=false
-            for s in $SKIP_TESTS; do
-              if [ "$name" = "$s" ]; then skip=true; break; fi
-            done
-            if [ "$skip" = "true" ]; then
-              echo "  SKIP $name"
-              SKIP=$((SKIP + 1))
-              continue
-            fi
-
-            # Generate C
-            C_FILE=$(mktemp /tmp/a_test_XXXXXX.c)
-            if ! /tmp/cgen "$src" > "$C_FILE" 2>/dev/null; then
-              echo "  FAIL $name (codegen error)"
-              rm -f "$C_FILE"
-              FAIL=$((FAIL + 1))
-              continue
-            fi
-
-            # Compile test against pre-built runtime objects (link-only)
-            BIN_FILE=$(mktemp /tmp/a_test_XXXXXX)
-            if ! gcc "$C_FILE" $RT_OBJS \
-                -o "$BIN_FILE" -I $RT -lm -O2 $STACK $TLS 2>/dev/null; then
-              echo "  FAIL $name (compile error)"
-              rm -f "$C_FILE" "$BIN_FILE"
-              FAIL=$((FAIL + 1))
-              continue
-            fi
-            rm -f "$C_FILE"
-
-            # Run test binary with timeout
-            if [ -n "$TIMEOUT_CMD" ]; then
-              RUN_CMD="$TIMEOUT_CMD $TEST_TIMEOUT $BIN_FILE"
-            else
-              RUN_CMD="$BIN_FILE"
-            fi
-            if $RUN_CMD 2>/dev/null; then
-              echo "  PASS $name"
-              PASS=$((PASS + 1))
-            else
-              EXIT_CODE=$?
-              if [ "$EXIT_CODE" -eq 124 ]; then
-                echo "  FAIL $name (timeout after ${TEST_TIMEOUT}s)"
-              else
-                echo "  FAIL $name (exit $EXIT_CODE)"
-              fi
-              FAIL=$((FAIL + 1))
-            fi
-            rm -f "$BIN_FILE"
+          rc=0
+          for f in src/*.a std/*.a std/compiler/*.a scripts/*.a tests/native/*.a; do
+            ./a check "$f" > /tmp/check.out 2>&1 || { echo "== $f"; cat /tmp/check.out; rc=1; }
           done
+          exit $rc
 
-          echo ""
-          echo "$PASS passed, $FAIL failed, $SKIP skipped"
-          if [ "$FAIL" -gt 0 ]; then exit 1; fi
+      # The same runner developers use. Every test binary runs in its own
+      # process group with a deadline, so a hanging test is a TIMEOUT line,
+      # not a stuck job. Nothing is skipped: the tests previously excluded
+      # here for "hanging" were a fork bomb (test_selfopt) and fixtures that
+      # leaked servers; both are fixed.
+      - name: Native test suite
+        run: ./a test tests/native/ --timeout 90
+
+      # Memory correctness: runtime, compiler, and every test under
+      # AddressSanitizer. Any report fails the build.
+      - name: Memory check (AddressSanitizer)
+        if: runner.os == 'Linux'
+        run: bash scripts/asan.sh

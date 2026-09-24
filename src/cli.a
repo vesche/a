@@ -14,7 +14,12 @@ use std.plugin
 fn _version() -> str { ret "2.1.1" }
 
 fn _die(msg) {
-  eprintln(cli.red(str.concat("error: ", msg)))
+  ; Messages already in `file:line:col: error: ...` form are printed as-is.
+  if str.contains(msg, ": error: ") {
+    eprintln(cli.red(msg))
+  } else {
+    eprintln(cli.red("error: " + msg))
+  }
   exit(1)
 }
 
@@ -46,6 +51,16 @@ fn _find_runtime_dir() -> str {
   ret cache
 }
 
+; Diagnostics use the gcc-style `file:line:col: severity: message` form so
+; that editors and other programs can locate them without parsing prose.
+fn _format_parse_error(file, perr) -> str {
+  let mut loc = file
+  if map.has(perr, "line") && perr["line"] > 0 {
+    loc = file + ":" + to_str(perr["line"]) + ":" + to_str(perr["col"])
+  }
+  ret loc + ": error: " + perr["msg"]
+}
+
 ; Returns Ok(c_source) or Err(message). Never exits, so callers that process
 ; many files (the test runner) can report one failure and keep going.
 fn _try_generate_c(source_path) {
@@ -54,15 +69,17 @@ fn _try_generate_c(source_path) {
     ret Err("cannot read file: " + source_path)
   }
   if str.starts_with(source, "#!") {
-    let lines = str.lines(source)
-    source = str.join(drop(lines, 1), "\n")
+    ; blank the shebang line rather than dropping it so line numbers stay true
+    let nl = str.find(source, "\n")
+    if nl < 0 { source = "" } else { source = str.slice(source, nl, len(source)) }
   }
-  let prog_ast = parser.parse(source)
+  let mut prog_ast = parser.parse(source)
   if type_of(prog_ast) == "map" && map.has(prog_ast, "tag") {
     if prog_ast["tag"] == "ParseError" {
-      ret Err("parse error: " + prog_ast["msg"] + " at token " + to_str(prog_ast["pos"]))
+      ret Err(_format_parse_error(source_path, prog_ast))
     }
   }
+  prog_ast = map.set(prog_ast, "file", source_path)
   let bm = cgen._builtin_map()
   ret Ok(cgen.emit_program(prog_ast, bm))
 }
@@ -125,6 +142,11 @@ fn _ensure_runtime_objs(runtime_dir) -> str {
 }
 
 fn _gcc_try(c_path, out_path, runtime_dir) -> int {
+  ret _gcc_run(c_path, out_path, runtime_dir)["code"]
+}
+
+; Returns the exec result of the failing step, or one with code 0.
+fn _gcc_run(c_path, out_path, runtime_dir) -> map {
   let obj_dir = _ensure_runtime_objs(runtime_dir)
   let inc = "-I " + runtime_dir
   let flags = _gcc_flags()
@@ -132,10 +154,10 @@ fn _gcc_try(c_path, out_path, runtime_dir) -> int {
   if len(obj_dir) > 0 {
     let user_o = _tmp_path(".o")
     let compile = str.join(["gcc -c", c_path, inc, "-O2", sf, "-o", user_o], " ")
-    let cr = exec(compile)
+    let cr = exec_timeout(compile, 0)
     if cr["code"] != 0 {
       fs.rm(user_o)
-      ret cr["code"]
+      ret cr
     }
     let link = str.join([
       "gcc", user_o,
@@ -144,9 +166,9 @@ fn _gcc_try(c_path, out_path, runtime_dir) -> int {
       obj_dir + "/embedded.o",
       "-o", out_path, flags
     ], " ")
-    let lr = exec(link)
+    let lr = exec_timeout(link, 0)
     fs.rm(user_o)
-    ret lr["code"]
+    ret lr
   }
   let cmd = str.join([
     "gcc", c_path,
@@ -155,16 +177,43 @@ fn _gcc_try(c_path, out_path, runtime_dir) -> int {
     runtime_dir + "/embedded.c",
     "-o", out_path, inc, flags, sf
   ], " ")
-  let result = exec(cmd)
-  ret result["code"]
+  ret exec_timeout(cmd, 0)
 }
 
+; The generated C must always compile. If it does not, that is a bug in the
+; compiler, not in the user's program -- so it is reported as an internal
+; compiler error, located in `a` source via the #line directives cgen emits,
+; and the .c file is kept for the bug report.
 fn _gcc(c_path, out_path, runtime_dir) {
-  let code = _gcc_try(c_path, out_path, runtime_dir)
-  if code != 0 {
-    eprintln(cli.red("gcc compilation failed"))
-    exit(1)
+  let result = _gcc_run(c_path, out_path, runtime_dir)
+  if result["code"] == 0 { ret }
+  let stderr = result["stderr"]
+  ; A missing symbol is the user's problem (an `extern fn` nothing provides),
+  ; not a compiler bug.
+  for line in str.lines(stderr) {
+    if str.contains(line, "undefined reference to") {
+      let q = str.find(line, "`")
+      let mut sym = str.slice(line, q + 1, len(line))
+      let e = str.find(sym, "'")
+      if e > 0 { sym = str.slice(sym, 0, e) }
+      _die("link error: undefined symbol " + sym + " -- check `extern fn` declarations and link flags")
+    }
   }
+  let mut loc = ""
+  let mut first = ""
+  for line in str.lines(stderr) {
+    if str.contains(line, ": error: ") && len(first) == 0 {
+      first = line
+      let p = str.find(line, ": error: ")
+      loc = str.slice(line, 0, p)
+    }
+  }
+  ; only trust a location that #line mapped back into `a` source
+  if !str.contains(loc, ".a:") { loc = c_path }
+  eprintln(loc + ": " + cli.red("internal compiler error") + ": generated C did not compile")
+  if len(first) > 0 { eprintln("  " + str.trim(first)) }
+  eprintln("  C source kept at " + c_path + " -- please report this with the .a source")
+  exit(1)
 }
 
 fn _tmp_path(suffix) -> str {
@@ -207,10 +256,15 @@ fn _codegen_subprocess(source_path, c_path) {
     attempts = attempts + 1
     let crashed = result["code"] > 128
     if !crashed || attempts == max_attempts {
-      if len(result["stderr"]) > 0 { eprintln(str.trim(result["stderr"])) }
+      let mut stderr = str.trim(result["stderr"])
+      ; cgen reports located compile errors via fail(); they are not runtime errors
+      if str.starts_with(stderr, "runtime error: ") && str.contains(stderr, ": error: ") {
+        stderr = str.slice(stderr, len("runtime error: "), len(stderr))
+      }
+      if len(stderr) > 0 { eprintln(stderr) }
       if crashed {
         eprintln(cli.red("codegen crashed (exit " + to_str(result["code"]) + ") " + to_str(attempts) + " times; giving up"))
-      } else {
+      } else if !str.contains(stderr, ": error: ") {
         eprintln(cli.red("codegen failed"))
       }
       exit(1)
@@ -490,14 +544,21 @@ fn cmd_test(test_dir, opts) {
   let runtime_dir = _find_runtime_dir()
   let timeout_ms = opts["timeout_ms"]
   let filter = opts["filter"]
+  let skip = opts["skip"]
   let verbose = opts["verbose"]
   let entries = fs.ls(test_dir)
   let mut test_files = []
+  let mut skipped = 0
   for entry in entries {
     let name = entry["name"]
     if str.starts_with(name, "test_") && str.ends_with(name, ".a") {
       if len(filter) == 0 || str.contains(name, filter) {
-        test_files = push(test_files, path.join(test_dir, name))
+        if contains(skip, name) || contains(skip, path.stem(name)) {
+          println("  " + cli.dim("SKIP") + " " + name)
+          skipped = skipped + 1
+        } else {
+          test_files = push(test_files, path.join(test_dir, name))
+        }
       }
     }
   }
@@ -575,6 +636,7 @@ fn cmd_test(test_dir, opts) {
   println("")
   let mut summary = to_str(passed) + " passed, " + to_str(failed) + " failed"
   if timed_out > 0 { summary = summary + " (" + to_str(timed_out) + " timed out)" }
+  if skipped > 0 { summary = summary + ", " + to_str(skipped) + " skipped" }
   println(summary + " in " + to_str(total_secs) + "s")
   if failed > 0 { exit(1) }
 }
@@ -585,7 +647,7 @@ fn _print_test_output(run_result) {
 }
 
 fn _parse_test_opts(argv) -> map {
-  let mut opts = #{"timeout_ms": 60000, "filter": "", "verbose": false}
+  let mut opts = #{"timeout_ms": 60000, "filter": "", "skip": [], "verbose": false}
   let mut i = 2
   while i < len(argv) {
     if argv[i] == "--timeout" && i + 1 < len(argv) {
@@ -594,6 +656,9 @@ fn _parse_test_opts(argv) -> map {
     } else {
       if argv[i] == "--filter" && i + 1 < len(argv) {
         opts = map.set(opts, "filter", argv[i + 1])
+        i = i + 2
+      } else if argv[i] == "--skip" && i + 1 < len(argv) {
+        opts = map.set(opts, "skip", str.split(argv[i + 1], ","))
         i = i + 2
       } else {
         if argv[i] == "--verbose" || argv[i] == "-v" {
@@ -796,7 +861,7 @@ fn cmd_profile(source_path, profile_out) {
   }
 
   eprintln("running instrumented binary...")
-  let run_result = exec(bin_path)
+  exec(bin_path)
   fs.rm(bin_path)
 
   if fs.exists(prof_out) {
@@ -864,7 +929,6 @@ fn cmd_eval(expr, extra_args) {
 }
 
 fn cmd_lsp() {
-  let runtime_dir = _find_runtime_dir()
   let lsp_source = "src/lsp.a"
   if !fs.exists(lsp_source) {
     _die("cannot find src/lsp.a -- run from the project root")
@@ -881,7 +945,7 @@ fn _parse_source(source_path) -> map {
   let ast = parser.parse(source)
   if type_of(ast) == "map" && map.has(ast, "tag") {
     if ast["tag"] == "ParseError" {
-      _die("parse error: " + ast["msg"] + " at token " + to_str(ast["pos"]))
+      _die(_format_parse_error(source_path, ast))
     }
   }
   ret ast
@@ -945,20 +1009,13 @@ fn cmd_check(source_path: str) {
   }
   let mut errors = 0
   let mut warnings = 0
-  let mut i = 0
-  while i < len(diagnostics) {
-    let d = diagnostics[i]
+  for d in diagnostics {
     let sev = map.get(d, "severity")
-    let line = map.get(d, "line")
-    let msg = map.get(d, "msg")
-    if sev == "error" {
-      eprintln(cli.red("error") + " (line " + to_str(line) + "): " + msg)
-      errors = errors + 1
-    } else {
-      eprintln(cli.yellow("warning") + " (line " + to_str(line) + "): " + msg)
-      warnings = warnings + 1
-    }
-    i = i + 1
+    let mut colored = cli.yellow(sev)
+    if sev == "error" { colored = cli.red(sev) }
+    let plain = checker.format_diag(source_path, d)
+    eprintln(str.replace(plain, ": " + sev + ": ", ": " + colored + ": "))
+    if sev == "error" { errors = errors + 1 } else { warnings = warnings + 1 }
   }
   println("")
   println(to_str(errors) + " error(s), " + to_str(warnings) + " warning(s)")
@@ -1197,7 +1254,7 @@ fn cmd_spawn(source, agent_name) {
 
   ; Launch in background with agent name in environment
   let run_cmd = "A_AGENT_NAME=" + agent_name + " " + bin_name + " &"
-  let r = exec(run_cmd)
+  exec(run_cmd)
 
   eprintln(cli.green("[spawn]") + " launched agent " + cli.bold(agent_name) + " from " + source)
 }

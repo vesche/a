@@ -70,14 +70,47 @@ fn process_escape(c: str) -> str {
   ret c
 }
 
+; Token stream: flat array [kind, value, kind, value, ...].
 fn lex(src: str) -> [str] {
+  ret lex_pos(src)[0]
+}
+
+; Token stream with positions: [toks, lines, cols] where lines[i] and cols[i]
+; are the 1-based line and column of token i (i indexes tokens, not the flat
+; array). Every token is emitted inside one iteration of the main loop, so the
+; position of each token is the position where that iteration began.
+fn lex_pos(src: str) -> [any] {
   let chars = str.chars(src)
   let n = len(chars)
   let mut pos = 0
   let mut toks: [str] = []
   let mut interp_depth = 0
 
+  let mut lines = []
+  let mut cols = []
+  let mut line = 1
+  let mut line_start = 0
+  let mut scan = 0
+  let mut iter_line = 1
+  let mut iter_col = 1
+
   while pos < n {
+    ; Assign the previous iteration's start position to every token it
+    ; emitted, then advance line/col bookkeeping to the current pos.
+    while len(lines) < len(toks) / 2 {
+      lines = push(lines, iter_line)
+      cols = push(cols, iter_col)
+    }
+    while scan < pos {
+      if chars[scan] == "\n" {
+        line = line + 1
+        line_start = scan + 1
+      }
+      scan = scan + 1
+    }
+    iter_line = line
+    iter_col = pos - line_start + 1
+
     let c = chars[pos]
 
     if c == "\n" {
@@ -543,9 +576,22 @@ fn lex(src: str) -> [str] {
     pos = pos + 1
   }
 
+  while len(lines) < len(toks) / 2 {
+    lines = push(lines, iter_line)
+    cols = push(cols, iter_col)
+  }
   toks = push(toks, "Eof")
   toks = push(toks, "")
-  ret toks
+  while scan < n {
+    if chars[scan] == "\n" {
+      line = line + 1
+      line_start = scan + 1
+    }
+    scan = scan + 1
+  }
+  lines = push(lines, line)
+  cols = push(cols, n - line_start + 1)
+  ret [toks, lines, cols]
 }
 
 ; Token access helpers

@@ -503,7 +503,13 @@ fn _publish_diagnostics(uri, content, docs) {
   let mut i = 0
   while i < len(errors) {
     let err = errors[i]
-    let lc = _token_pos_to_lc(content, err["pos"])
+    ; The parser reports 1-based line/col; LSP wants 0-based.
+    let mut lc = #{"line": 0, "character": 0}
+    if map.has(err, "line") && err["line"] > 0 {
+      lc = #{"line": err["line"] - 1, "character": err["col"] - 1}
+    } else {
+      lc = _token_pos_to_lc(content, err["pos"])
+    }
     diags = push(diags, _make_diag(err["msg"], lc))
     i = i + 1
   }
@@ -808,7 +814,6 @@ fn _handle_prepare_rename(id, docs, params) {
     _respond_error(id, -32602, "no symbol at cursor")
     ret ""
   }
-  let lc_start = pos["character"] - len(word) + len(word)
   let lines = str.lines(content)
   let line_text = lines[pos["line"]]
   let idx = str.find(str.slice(line_text, 0, pos["character"] + len(word)), word)
@@ -896,7 +901,6 @@ fn _handle_code_actions(id, docs, params) {
     let prefix = mod_prefixes[mi]
     let mod_path = known_mods[mi]
     if str.contains(content, prefix) && !map.has(has_use, mod_path) {
-      let mod_short = str.split(mod_path, ".")[len(str.split(mod_path, ".")) - 1]
       actions = push(actions, #{
         "title": "Add 'use " + mod_path + "'",
         "kind": "quickfix",
@@ -917,10 +921,10 @@ fn _handle_code_actions(id, docs, params) {
 ; --- Workspace symbols ---
 
 fn _handle_workspace_symbols(id, params) {
-  let query = ""
+  let mut query = ""
   if map.has(params, "query") {
     let q = params["query"]
-    if type_of(q) == "str" { }
+    if type_of(q) == "str" { query = str.lower(q) }
   }
   let mut symbols = []
   let cwd = fs.cwd()
@@ -983,6 +987,9 @@ fn _handle_workspace_symbols(id, params) {
       }
     }
     di = di + 1
+  }
+  if len(query) > 0 {
+    symbols = filter(symbols, fn(s) => str.contains(str.lower(s["name"]), query))
   }
   _respond(id, symbols)
 }

@@ -137,6 +137,7 @@ AValue a_str_ends_with(AValue s, AValue suf);
 AValue a_array_new(int n, ...);
 AValue a_array_get(AValue arr, AValue idx);
 AValue a_array_push(AValue arr, AValue val);
+AValue a_array_push_move(AValue arr, AValue val);
 AValue a_array_slice(AValue arr, AValue start, AValue end);
 AValue a_sort(AValue arr);
 AValue a_contains(AValue arr, AValue val);

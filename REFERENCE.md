@@ -28,8 +28,8 @@ a run hello.a
 | `a cc file.a [-o out]` | Emit generated C to stdout (or file with `-o`) |
 | `a wat file.a [-o out]` | Emit WebAssembly Text Format |
 | `a targets` | List cross-compile targets and detected toolchains |
-| `a test dir/ [--timeout S] [--filter SUBSTR] [-v]` | Find `test_*.a` files, compile, run, report. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed, so tests cannot leak servers or forked tasks. Sets a private `A_HOME` unless one is already set. |
-| `a check file.a` | Static analysis (undefined vars, arity, unused) |
+| `a test dir/ [--timeout S] [--filter SUBSTR] [--skip a,b] [-v]` | Find `test_*.a` files, compile, run, report. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed, so tests cannot leak servers or forked tasks. Sets a private `A_HOME` unless one is already set. |
+| `a check file.a` | Static analysis: undefined names, unknown builtins, arity, unused variables, unreachable code, builtin shadowing. Exit 1 on errors. |
 | `a fmt file.a` | Format to canonical style |
 | `a fmt dir/` | Format all `.a` files in directory |
 | `a ast file.a` | Dump parsed AST as JSON |
@@ -49,6 +49,16 @@ a run hello.a
 | `a pkg add name source` | Add a dependency |
 | `a pkg install` | Install all dependencies |
 | `a cache clean` | Clear the compilation cache |
+
+### Diagnostics
+
+Every message about a program has the form `file:line:col: severity: message`
+(gcc style, so editors and agents can parse it). Parse errors, checker
+diagnostics, and compile errors all use it. If the generated C ever fails to
+compile, that is a compiler bug: `a` reports
+`file.a:L:C: internal compiler error: generated C did not compile`, shows the
+first C compiler line, and keeps the `.c` file for the report. A missing
+`extern fn` symbol is reported as `link error: undefined symbol NAME`.
 
 ---
 
@@ -395,6 +405,13 @@ arr[0]            ; indexing
 println("hello")  ; function call
 ```
 
+Call resolution for a bare name `f(...)`: if `f` is a builtin, it is the
+builtin -- even if the current module defines a function `f` or a variable `f`
+is in scope. A module function that shares a builtin's name is reachable only
+as `module.f(...)` from another module; `a check` warns about such
+definitions. Non-builtin names resolve to a function in the current module or
+program, then to a closure held in a variable.
+
 ---
 
 ## 8. Strings
@@ -492,12 +509,19 @@ use std.math
 use std.cli
 ```
 
-After import, access functions with dotted names:
+After import, a module's functions are reachable two ways: qualified by the
+module's last path segment, or unqualified (every `use` imports all of the
+module's functions into the program's namespace):
 
 ```a
 use std.math
-let nums = std.math.range(1, 10)
+let a = math.clamp(15, 1, 10)   ; qualified
+let b = clamp(15, 1, 10)        ; unqualified -- same function
 ```
+
+`std.math.clamp(...)` is not valid; the compiler reports an error pointing at
+the call. Unqualified names lose to builtins: if a module defines `push`, only
+`module.push(...)` reaches it.
 
 ---
 
@@ -545,7 +569,6 @@ if is_err(result) {
 | `print(val)` | any -> void | Print without newline |
 | `println(val)` | any -> void | Print with newline |
 | `eprintln(val)` | any -> void | Print to stderr |
-| `io.write(val)` | any -> void | Write to stdout |
 | `io.read_file(path)` | str -> str | Read file contents (or Err) |
 | `io.write_file(path, data)` | str, str -> void | Write file (or Err) |
 | `io.read_line()` | -> str | Read one line from stdin |
@@ -565,11 +588,14 @@ if is_err(result) {
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `len(val)` | str/array/map -> i64 | Length of string (chars), array, or map |
-| `sqrt(n)` | float -> float | Square root |
-| `abs(n)` | int/float -> int/float | Absolute value |
-| `floor(n)` | float -> i64 | Floor to integer |
-| `ceil(n)` | float -> i64 | Ceiling to integer |
-| `round(n)` | float -> i64 | Round to nearest integer |
+| `math.sqrt(n)` | float -> float | Square root |
+| `math.abs(n)` | int/float -> int/float | Absolute value |
+| `math.floor(n)` | float -> i64 | Floor to integer |
+| `math.ceil(n)` | float -> i64 | Ceiling to integer |
+| `math.round(n)` | float -> i64 | Round to nearest integer |
+| `math.pow(base, exp)` | num, num -> num | Exponentiation |
+| `math.min(a, b)` | num, num -> num | Smaller of two numbers |
+| `math.max(a, b)` | num, num -> num | Larger of two numbers |
 
 ### Array Operations
 
@@ -640,26 +666,8 @@ if is_err(result) {
 
 ### Regex
 
-All patterns are strings using standard regex syntax. Invalid patterns produce runtime errors.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `regex.is_match(pat, text)` | str, str -> bool | Test if pattern matches anywhere |
-| `regex.find(pat, text)` | str, str -> map/false | First match: `#{"match": str, "start": i64, "end": i64}` or `false` |
-| `regex.find_all(pat, text)` | str, str -> [str] | All matching substrings |
-| `regex.replace(pat, text, rep)` | str, str, str -> str | Replace first match |
-| `regex.replace_all(pat, text, rep)` | str, str, str -> str | Replace all matches |
-| `regex.split(pat, text)` | str, str -> [str] | Split on pattern |
-| `regex.captures(pat, text)` | str, str -> [str]/false | Capture groups (index 0 = full match) or `false` |
-
-```a
-regex.is_match(r"\d+", "abc123")         ; true
-regex.find(r"\d+", "abc123def")          ; #{"match": "123", "start": 3, "end": 6}
-regex.find_all(r"\d+", "a1b22c333")      ; ["1", "22", "333"]
-regex.replace_all(r"\s+", "a  b  c", " ") ; "a b c"
-regex.split(r",\s*", "one, two, three")  ; ["one", "two", "three"]
-regex.captures(r"(\d{4})-(\d{2})", "2024-03") ; ["2024-03", "2024", "03"]
-```
+There are no `regex.*` builtins in the native compiler. Use `std.re` (section 13),
+a regex engine written in `a`.
 
 ### JSON
 
@@ -702,7 +710,8 @@ if resp.status == 200 {
 | `fs.cp(from, to)` | str, str -> void | Copy |
 | `fs.cwd()` | -> str | Current working directory |
 | `fs.abs(path)` | str -> str | Absolute path |
-| `fs.glob(pattern)` | str -> [str] | Glob match from cwd |
+| `fs.stat(path)` | str -> map | `#{"size", "is_dir", "is_file", "mtime"}` or Err |
+| `fs.watch(path, f)` | str, fn(map) -> void | Blocks, calling `f(#{"path", "event"})` on each change until `f` returns an `Err` |
 
 ### Environment
 
@@ -756,25 +765,14 @@ if result.code != 0 {
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `eval(code, args...)` | str, any... -> any | Compile and run "a" code at runtime |
 | `args()` | -> [str] | Program command-line arguments |
+| `argv0()` | -> str | Path of the running executable |
+| `embedded_file(name)` | str -> str | Contents of a file embedded at build time |
 | `exit(code?)` | i64? -> never | Terminate with exit code (default 0) |
 | `fail(msg?)` | str? -> never | Abort with runtime error |
 
-`eval` auto-wraps bare expressions: `eval("1 + 2")` returns `3`. Full programs work too:
-
-```a
-let result = eval(r#"
-  fn fib(n) {
-    if n < 2 { ret n }
-    ret fib(n - 1) + fib(n - 2)
-  }
-  fn main() { ret fib(10) }
-"#)
-; result = 55
-```
-
-Errors return strings starting with `"eval error:"` instead of crashing.
+There is no `eval`: an `a` program is compiled to C ahead of time. To run
+code at runtime, write it to a file and use `exec_timeout("a run file.a", ms)`.
 
 ### Concurrency
 
@@ -926,9 +924,26 @@ Native image processing via bundled stb_image (native CLI only).
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `reflect.memory_usage` | -> i64 | RSS in bytes (via mach/procfs) |
-| `reflect.uptime_ms` | -> i64 | Process uptime in milliseconds |
-| `reflect.pid` | -> i64 | Process ID |
+| `reflect.memory_usage()` | -> i64 | RSS in bytes (via mach/procfs) |
+| `reflect.uptime_ms()` | -> i64 | Process uptime in milliseconds |
+| `reflect.pid()` | -> i64 | Process ID |
+
+### Profiling
+
+Counters are only present in binaries built with `a profile`.
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `profile.get_counters()` | -> map | Current instrumentation counters |
+| `profile.reset()` | -> void | Zero all counters |
+| `profile.dump(path)` | str -> void | Write counters as JSON |
+
+### Pointers (FFI)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `ptr.null()` | -> ptr | Null pointer for `extern fn` calls |
+| `ptr.is_null(p)` | ptr -> bool | Null check |
 
 ### Stdin
 
@@ -1015,7 +1030,7 @@ fn test_addition() -> bool {
 
 ### std.re
 
-Pure "a" regex engine (no Rust dependency). For most use cases, the builtin `regex.*` functions are faster. This module exists for bootstrap/self-hosting scenarios.
+Regex engine written in `a`. This is the only regex implementation; there are no `regex.*` builtins.
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
