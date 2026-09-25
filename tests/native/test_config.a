@@ -55,5 +55,8 @@ fn main() {
   assert_eq(map.get(cfg, "port"), 9090)
   assert_eq(map.get(cfg, "name"), "test")
 
+  let missing = config.load("/tmp/a_config_missing.toml")
+  assert(is_err(missing), "missing file should be Err")
+
   println("all config tests passed")
 }

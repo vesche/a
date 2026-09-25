@@ -5,7 +5,7 @@ use std.yaml
 
 fn load(path: str) -> map {
   let text = io.read_file(path)
-  if is_err(text) { ret text }
+  if is_err(text) { ret Err("config.load: cannot read " + path) }
   if str.ends_with(path, ".toml") {
     ret toml.parse(text)
   }
