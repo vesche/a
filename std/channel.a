@@ -10,6 +10,10 @@
 ;   channel.close(ch)
 ;   channel.destroy("tasks")              ; deletes the channel entirely
 
+fn _sql_str(s: str) -> str {
+  ret "'" + str.replace(to_str(s), "'", "''") + "'"
+}
+
 fn _channel_dir() -> str {
   ret "/tmp/a_channels"
 }
@@ -56,7 +60,7 @@ fn open_as(name, cursor_name) -> map {
 fn send(ch, msg) {
   let data = json.stringify(msg)
   let now = time.now()
-  db.exec(ch["db"], "INSERT INTO messages (data, ts) VALUES ('" + str.replace(data, "'", "''") + "', " + to_str(now) + ")")
+  db.exec(ch["db"], "INSERT INTO messages (data, ts) VALUES (" + _sql_str(data) + ", " + to_str(now) + ")")
 }
 
 fn _get_cursor_pos(ch) -> int {
@@ -70,7 +74,7 @@ fn _get_cursor_pos(ch) -> int {
 
 fn _set_cursor_pos(ch, pos) {
   let cursor = ch["cursor"]
-  db.exec(ch["db"], "INSERT OR REPLACE INTO cursors (name, pos) VALUES ('" + str.replace(cursor, "'", "''") + "', " + to_str(pos) + ")")
+  db.exec(ch["db"], "INSERT OR REPLACE INTO cursors (name, pos) VALUES (" + _sql_str(cursor) + ", " + to_str(pos) + ")")
 }
 
 fn try_recv(ch) {

@@ -156,7 +156,6 @@ fn parse(html) {
             tag = str.concat(tag, chars[j])
             j = j + 1
           }
-          let tag_lower = str.lower(str.trim(tag))
           let slen = len(stack)
           if slen > 1 {
             let node = stack[slen - 1]

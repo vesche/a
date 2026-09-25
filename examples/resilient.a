@@ -2,7 +2,7 @@ mod resilient {
   ty HttpResp = {status: i64, body: str, headers: #{str: str}}
   ty ApiResult = {name: str, data: str}
 
-  fn safe_fetch(url: str) -> str effects [io] {
+  fn safe_fetch(url: str) -> str effects [io, net] {
     let result: str = try {
       let resp: HttpResp = http.get(url)
       if resp.status != 200 {
@@ -13,7 +13,7 @@ mod resilient {
     ret result
   }
 
-  fn safe_read(path: str) -> str effects [io] {
+  fn safe_read(path: str) -> str effects [io, fs_read] {
     ret try {
       io.read_file(path)?
     }
@@ -25,7 +25,7 @@ mod resilient {
     }
   }
 
-  fn try_multiple_sources() -> str effects [io] {
+  fn try_multiple_sources() -> str effects [io, net] {
     let urls: [str] = ["https://httpbin.org/status/404", "https://httpbin.org/status/500", "https://httpbin.org/get"]
 
     let found: str = ""
@@ -38,7 +38,7 @@ mod resilient {
     ret found
   }
 
-  fn main() -> void effects [io] {
+  fn main() -> void effects [io, fs_read, net] {
     println("=== resilient error handling ===")
     println("")
 

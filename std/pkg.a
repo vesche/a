@@ -46,8 +46,12 @@ fn _git_url(source: map) -> str {
   ret "https://" + host + "/" + repo + ".git"
 }
 
+fn _q(s: str) -> str {
+  ret "'" + str.replace(s, "'", "'\\''") + "'"
+}
+
 fn _fetch_tags(url: str) -> [str] {
-  let result = exec("git ls-remote --tags " + url + " 2>/dev/null")
+  let result = exec("git ls-remote --tags " + _q(url) + " 2>/dev/null")
   if map.get(result, "code") != 0 { ret [] }
   let lines = str.lines(map.get(result, "stdout"))
   let mut tags = []
@@ -72,14 +76,14 @@ fn _fetch_tags(url: str) -> [str] {
 
 fn _clone_at_tag(url: str, tag: str, dest: str) -> bool {
   let tag_ref = "v" + tag
-  let r = exec("git clone --depth 1 --branch " + tag_ref + " " + url + " " + dest + " 2>/dev/null")
+  let r = exec("git clone --depth 1 --branch " + _q(tag_ref) + " " + _q(url) + " " + _q(dest) + " 2>/dev/null")
   if map.get(r, "code") == 0 { ret true }
-  let r2 = exec("git clone --depth 1 --branch " + tag + " " + url + " " + dest + " 2>/dev/null")
+  let r2 = exec("git clone --depth 1 --branch " + _q(tag) + " " + _q(url) + " " + _q(dest) + " 2>/dev/null")
   ret map.get(r2, "code") == 0
 }
 
 fn _get_commit(dest: str) -> str {
-  let r = exec("git -C " + dest + " rev-parse HEAD 2>/dev/null")
+  let r = exec("git -C " + _q(dest) + " rev-parse HEAD 2>/dev/null")
   if map.get(r, "code") == 0 {
     ret str.trim(map.get(r, "stdout"))
   }

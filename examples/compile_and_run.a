@@ -68,7 +68,7 @@ fn dump_program(prog) {
 }
 
 fn main() -> void
-  effects [io]
+  effects [io, fs_read, exec]
 {
   let argv = args()
   if len(argv) < 1 {

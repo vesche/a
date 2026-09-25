@@ -361,7 +361,7 @@ Annotations now mean something. The order was the one the previous log asked for
 
 **Deliverables**
 
-- Effect inference pass in the checker; `E0010 undeclared effect`, `E0011 pure fn calls effectful`.
+- Effect inference pass in the checker; `E0011 undeclared effect`, `E0012 unknown effect name` (codes as assigned in std/compiler/diag_codes.a).
 - cgen emission of contract checks with a `A_RELEASE` define.
 - `std/sandbox.a` rewritten on top of the checker.
 - `a check --effects file.a` prints the inferred effect set per function.
@@ -371,6 +371,25 @@ Annotations now mean something. The order was the one the previous log asked for
 - The `effects.a` probe (Appendix A) fails to compile with `E0011` at the `io.write_file` call.
 - The `contracts.a` probe fails at runtime with the precondition message and passes with `--release` (documented as the intended trade-off).
 - `agents/self_improve_ai.a` is annotated with its true effect set and compiles.
+
+**Progress log -- sixth session: effects are inferred and checked; the sandbox is derived, not regexed (done); contracts (not started)**
+
+I chose this over the `#strict` migration because `std/sandbox.a` was the most dangerous lie left in the repository: its "guard" was `str.replace("exec(", ...)` -- defeated by `exec_timeout(`, `fs.mv(`, a space before the parenthesis, a function value passed to `map`, or any helper in a `use`d module -- and it ignored its own `timeout_ms`. `codegen.run_in_sandbox`, which agents use to run LLM-generated code, was not a sandbox at all: `exec` with full permissions and no deadline. A sandbox that lies is worse than none, because someone will trust it.
+
+*Effects in the signature table.* `builtin_sigs.effect_table()` tags every builtin that touches the world; unlisted builtins are pure. The vocabulary is finer than the one sketched above because the sandbox needs `fs_read` and `fs_write` apart, and I added `time`, `rand`, `ffi`, and `call`: io, fs_read, fs_write, net, exec, db, env, spawn, time, rand, ffi, call.
+
+*`std/compiler/effect_check.a`.* A whole-program analysis, deliberately simple: collect every function in the program and in every `use`d module (transitively); walk each body generically, resolving call targets (builtin, program function, extern, variant constructor, or unknown); union over callees to a fixpoint; reachability from `main`. Two decisions carry the soundness: a lambda's effects belong to the function that *creates* it (so `map(xs, fn(x) => io.write_file(...))` is `fs_write` in the enclosing function), and a function *referenced as a value* counts as a callee (so `apply(writer, 1)` inherits `writer`'s effects). Calling a closure whose origin the analysis cannot see -- a parameter -- is the effect `call`; for a sandbox it can be ignored, because whatever that closure does was attributed to its creator inside the same program. The result over-approximates and never under-approximates, which is the only property a sandbox needs. Cost: about 0.6 s for the whole compiler (15k lines transitively), invisible for a normal program.
+
+*Declarations are checked.* `E0011` names the origin (`log_it is declared effects [pure] but has effect io (println)`, `via helper` for inherited ones); `E0012` rejects unknown names. `effects [pure]` means the empty set, so a pure function cannot call a closure parameter -- the analysis cannot know what it does, and a guarantee it cannot check is not a guarantee. All twelve `effects [pure]` functions in `std/re.a` were genuinely pure. Every one of the 54 other declarations in the repository (`effects [io]` on functions that read files, ran shells, or made HTTP calls) was decorative, exactly as §1.2 said; they now state their true sets. `a check --effects` prints inferred sets per function and per program.
+
+*The sandbox.* `sandbox.run(source, caps)` parses, checks, infers, and refuses with `denied: [effects]` before compiling anything; otherwise runs under `exec_timeout` with the deadline actually enforced (`timed_out: true`, `killed after N ms`). Capabilities are booleans per effect (`io`, `time`, `rand` granted by default; the rest denied). I removed the path and host lists from `allow_read_only(paths)` / `allow_network(hosts)` rather than keep parameters the implementation cannot honour; the reference says plainly that path-level restriction needs an OS sandbox. `codegen.run_in_sandbox` now goes through it. The test includes the bypasses that beat the old guard.
+
+**Contracts (`pre`/`post` at runtime, stripped with `--release`) landed in the seventh session.** `emit_fn` inserts the checks under `#ifndef A_RELEASE`; `ret` in `post` is the returned value. See that log.
+
+**Revised beliefs**
+
+- The signature table keeps paying: adding effects was one map literal, because every other consumer (checker, cgen, LSP, tests) already read the same file. Any future per-builtin fact (documentation string, deprecation, availability per target) goes there too.
+- "Derived, not regexed" is a general rule, not a sandbox rule: every place where a stdlib module inspects source text with `str.contains` to decide something (`codegen`, `refactor`, `testgen`) is a candidate for the same treatment now that the parser and checker are cheap to call.
 
 ### v2.5 -- The Feedback Loop
 
@@ -383,6 +402,46 @@ Annotations now mean something. The order was the one the previous log asked for
 - **`a describe`.** Emits a compact, machine-oriented description of the language (grammar summary, builtin signatures with effects, stdlib module index) as JSON or as a ~2,000-token prompt block. This replaces the hand-concatenated `_lang_reference()` in the agent. When an LLM needs to know what `a` is, it asks the compiler.
 - **Coverage.** `a test --coverage` reuses the v1.9 profiler counters to report per-function hit counts; functions with zero hits across the suite are listed. This is the input the self-improvement agent has been missing.
 - **`proc.run(argv, opts)`.** Argv-array process execution with no shell. `exec(str)` stays but is tagged with the `exec` effect and a `W0030 shell string built from variables` lint. `std/git.a` and `std/pkg.a` are migrated.
+
+**Progress log -- fifth session: stack traces and `try` catches failures (done)**
+
+I took the stack-trace item out of order, ahead of v2.4, because it was the thing I kept missing while doing v2.3: three times a `runtime error: expected "0" got "1"` from an assertion told me nothing about *where*, and I bisected by hand. A language whose users repair programs from the error text alone cannot afford a runtime error without a position.
+
+*Stack traces.* Every generated function and lambda opens a shadow frame (`A_FRAME`, popped on every exit path via the C `cleanup` attribute, so early `ret`, `goto __fn_cleanup`, and `?` all pop correctly for free) and each statement records its line (`A_LINE`). An uncaught failure prints `runtime error: msg` followed by `at f (file:line)` for every live frame, innermost first, lambdas as `<lambda in f>`. Overhead is one store per statement -- not measurable on `fib(30)`. `a build --release` / `A_RELEASE=1` compiles both macros to nothing and the run cache key includes the flag. The recursion cap (1024 frames) keeps overwriting the last slot, so a runaway recursion still shows where it died.
+
+*`try` now catches runtime failures.* This was the roadmap's decision under v2.3 but had never been implemented: `try { fail("x") }` killed the process. `fail`, `unwrap` on Err, `expect`, and integer division by zero now route through one `a_fatal`, which `longjmp`s to the nearest `try` (evaluating to `Err(msg)`) or prints the trace and exits. The `try` landing site restores the frame depth, because `longjmp` skips the cleanup attributes. The reference documents the leak-on-unwind trade-off honestly: `try` is for turning a failure into a value, not for control flow in a hot loop.
+
+*The payoff showed up immediately.* The first run of the new `test_trace.a` failed, and the trace said `at assert_eq (std/testing.a:8) / at main (tests/native/test_trace.a:56)` -- the assertion for the lambda frame -- which is how I found that expression-bodied lambdas had no statement to record a line from. `a test` output for any failing assertion now includes this trace.
+
+**Not done (updated seventh session):** an `Err` that propagates out of `main` now prints the snapshot of the live stack at the moment `main` returns (`error: payload` plus `at main (file:line)`). Frames of functions that already returned `Err` as a value are gone, which is honest. A trace attached to the `Err` value itself is still future work.
+
+**Progress log -- seventh session: make it faster, stop lying, close the holes (done)**
+
+A review of the tree after v2.3–v2.5, written for an agent that has to live in this language. The decisions below are what I would have wanted yesterday.
+
+*Parse once.* `cgen.load_module_source` is a process-level parse cache. The checker, effect analysis, and codegen all read it. `a check` over 206 files went 26s → 4s. A compile of `src/cli.a` parses each imported module once instead of three times.
+
+*`a test` is cached.* Unchanged tests reuse the `a run` binary cache. A second suite run is ~50s instead of ~170s. The object-cache test no longer depends on a global `/tmp/a_obj/units` count (it was colliding with itself).
+
+*`a check` is equivalent to "will this build?" for imports.* Missing `use` is E0013; a module that does not parse is E0014. Before this, `a check` silently skipped both and agents treated a clean check as a compile.
+
+*`a check --json`.* One `{"file","line","col","code","severity","message"}` per diagnostic. This is the structured-error promise the README has claimed since v0.
+
+*Contracts fire.* `pre`/`post` are runtime checks, stripped by `--release`. `ret` in `post` is the returned value. Keyword trap: `pre`/`post` cannot be variable names (the first compile of this session died on `let pre = ...`).
+
+*Err-from-main has a trace.* The last frame is snapshotted when `main` pops, so `a_main_exit_code` can print it.
+
+*Non-exhaustive `match` is a runtime failure*, not a silent no-op, when the checker is bypassed.
+
+*Test files may omit `main`.* Nullary `fn test_*()` get a synthesized main. The docs said this already; the compiler did not.
+
+*`std/git.a` quotes every path, ref, URL, and message.* `_run` quotes the `cd` path. Agents passing a branch name can no longer inject a second command.
+
+*`a watch` follows the real `use` closure*, not a naive `std/foo` → `std/foo.a` join from cwd.
+
+*Docs.* README no longer claims JSON-everywhere, `.ac` bytecode caches, or decorative contracts. REFERENCE matches.
+
+**Not started this session:** `#strict` / zero-`any` compiler migration; `a describe` / `a doc`; `proc.run(argv)` (quoting is the stopgap); `from_code(123)` corpus cleanup; `--jobs`.
 
 **Exit criteria**
 

@@ -4,6 +4,7 @@ use std.compiler.parser
 use std.compiler.emitter
 use std.compiler.checker
 use std.compiler.diag_codes
+use std.compiler.effect_check
 use std.compiler.profiler
 use std.compiler.optimizer
 use std.testgen
@@ -25,7 +26,9 @@ fn _die(msg) {
 }
 
 fn _find_runtime_dir() -> str {
-  let candidates = ["c_runtime", "../c_runtime"]
+  let mut candidates = ["c_runtime", "../c_runtime"]
+  let root = cgen.install_root()
+  if len(root) > 0 { candidates = push(candidates, root + "/c_runtime") }
   for dir in candidates {
     if fs.exists(str.concat(dir, "/runtime.c")) { ret dir }
   }
@@ -62,9 +65,11 @@ fn _format_parse_error(file, perr) -> str {
   ret loc + ": error: " + perr["msg"]
 }
 
-; Returns Ok(c_source) or Err(message). Never exits, so callers that process
-; many files (the test runner) can report one failure and keep going.
-fn _try_generate_c(source_path) {
+; Returns Ok(#{"main", "units", "single"}) or Err(message): the program as
+; compilation units (what `a build` compiles, one cached object per module)
+; and as one translation unit (what `a cc` prints). Never exits, so callers
+; that process many files (the test runner) can report one failure and go on.
+fn _try_generate(source_path) {
   let mut source = io.read_file(source_path)
   if type_of(source) == "void" || len(source) == 0 {
     ret Err("cannot read file: " + source_path)
@@ -84,15 +89,31 @@ fn _try_generate_c(source_path) {
   ; The checker runs before codegen: an undefined name or a non-exhaustive
   ; match is a diagnostic at an `a` source line, never a C compiler error.
   ; A_NO_CHECK=1 bypasses it (escape hatch for a checker bug).
+  let mut cache = #{}
   if env.get("A_NO_CHECK") != "1" {
+    let cr = checker.check_cached(prog_ast, cache)
+    cache = cr["cache"]
     let mut errs = []
-    for d in checker.check(prog_ast) {
+    for d in cr["diags"] {
       if d["severity"] == "error" { errs = push(errs, checker.format_diag(source_path, d)) }
     }
     if len(errs) > 0 { ret Err(str.join(errs, "\n")) }
   }
   let bm = cgen._builtin_map()
-  ret Ok(cgen.emit_program(prog_ast, bm))
+  ret Ok(cgen.emit_units_cached(prog_ast, bm, cache))
+}
+
+; Returns Ok(c_source) of the whole program as one translation unit.
+fn _try_generate_c(source_path) {
+  let r = _try_generate(source_path)
+  if is_err(r) { ret r }
+  ret Ok(unwrap(r)["single"])
+}
+
+fn _generate(source_path) -> map {
+  let r = _try_generate(source_path)
+  if is_err(r) { _die(_err_message(r)) }
+  ret unwrap(r)
 }
 
 fn _err_message(r) -> str {
@@ -122,10 +143,28 @@ fn _sqlite_flags() -> str {
   ret "-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"
 }
 
+; The object cache is keyed by everything that goes into the objects: a
+; header-only change (runtime.h) alters the ABI of every cached .o, so it must
+; produce a new key. The two vendored libraries are keyed by size only; they
+; are large and never edited in place.
+fn _runtime_cache_key(runtime_dir) -> str {
+  let mut key = ""
+  for name in ["runtime.h", "runtime.c", "gguf.c", "embedded.c", "stb_impl.c"] {
+    let src = io.read_file(runtime_dir + "/" + name)
+    if type_of(src) != "str" || len(src) == 0 { ret "" }
+    key = key + hash.sha256(src)
+  }
+  for name in ["sqlite3.c", "miniz.c"] {
+    let st = fs.stat(runtime_dir + "/" + name)
+    if type_of(st) != "map" { ret "" }
+    key = key + "|" + to_str(st["size"])
+  }
+  ret hash.sha256(key)
+}
+
 fn _ensure_runtime_objs(runtime_dir) -> str {
-  let sentinel = io.read_file(runtime_dir + "/runtime.c")
-  if type_of(sentinel) == "void" || len(sentinel) == 0 { ret "" }
-  let h = hash.sha256(sentinel)
+  let h = _runtime_cache_key(runtime_dir)
+  if len(h) == 0 { ret "" }
   let obj_dir = "/tmp/a_obj/" + h
   if fs.exists(obj_dir + "/runtime.o") { ret obj_dir }
   eprintln("precompiling runtime (one-time)...")
@@ -152,6 +191,13 @@ fn _ensure_runtime_objs(runtime_dir) -> str {
   ret obj_dir
 }
 
+; `a build --release` (or A_RELEASE=1) compiles out the shadow call stack that
+; gives runtime failures their a-level stack trace.
+fn _user_defines() -> str {
+  if env.get("A_RELEASE") == "1" { ret "-DA_RELEASE" }
+  ret ""
+}
+
 fn _gcc_try(c_path, out_path, runtime_dir) -> int {
   ret _gcc_run(c_path, out_path, runtime_dir)["code"]
 }
@@ -164,7 +210,7 @@ fn _gcc_run(c_path, out_path, runtime_dir) -> map {
   let sf = _sqlite_flags()
   if len(obj_dir) > 0 {
     let user_o = _tmp_path(".o")
-    let compile = str.join(["gcc -c", c_path, inc, "-O2", sf, "-o", user_o], " ")
+    let compile = str.join(["gcc -c", c_path, inc, "-O2", sf, _user_defines(), "-o", user_o], " ")
     let cr = exec_timeout(compile, 0)
     if cr["code"] != 0 {
       fs.rm(user_o)
@@ -186,7 +232,7 @@ fn _gcc_run(c_path, out_path, runtime_dir) -> map {
     runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
     runtime_dir + "/miniz.c", runtime_dir + "/stb_impl.c",
     runtime_dir + "/embedded.c",
-    "-o", out_path, inc, flags, sf
+    "-o", out_path, inc, flags, sf, _user_defines()
   ], " ")
   ret exec_timeout(cmd, 0)
 }
@@ -195,9 +241,114 @@ fn _gcc_run(c_path, out_path, runtime_dir) -> map {
 ; compiler, not in the user's program -- so it is reported as an internal
 ; compiler error, located in `a` source via the #line directives cgen emits,
 ; and the .c file is kept for the bug report.
-fn _gcc(c_path, out_path, runtime_dir) {
-  let result = _gcc_run(c_path, out_path, runtime_dir)
-  if result["code"] == 0 { ret }
+; --- Compilation units and the object cache ---
+;
+; `a build`, `a run` and `a test` compile every module as its own translation
+; unit and cache the object under a hash of the unit's C text plus everything
+; else that shapes the object (runtime sources, defines, flags). A module that
+; did not change is linked from the cache, never recompiled; the same module
+; used by sixty test programs is compiled once.
+
+fn _unit_obj_dir() -> str { ret "/tmp/a_obj/units" }
+
+fn _unit_cflags() -> str {
+  ret str.join(["-O2", _sqlite_flags(), _user_defines()], " ")
+}
+
+; Keeps the object cache bounded: past 600 objects the oldest are removed
+; down to 300. Runs only on a cache miss, so it costs nothing on warm builds.
+fn _prune_unit_cache() {
+  let dir = _unit_obj_dir()
+  let entries = fs.ls(dir)
+  if type_of(entries) != "array" || len(entries) <= 600 { ret }
+  let mut aged = []
+  for e in entries {
+    let p = dir + "/" + e["name"]
+    let st = fs.stat(p)
+    if type_of(st) == "map" { aged = push(aged, [st["mtime"], p]) }
+  }
+  aged = sort_by(aged, fn(x, y) { x[0] - y[0] })
+  let mut i = 0
+  while i < len(aged) - 300 {
+    fs.rm(aged[i][1])
+    i = i + 1
+  }
+}
+
+; Compiles one unit to its cached object. Returns #{"code", "stderr", "obj",
+; "c_path"}; on failure c_path is the unit's C source, kept for the report.
+fn _unit_object(unit_c, runtime_dir, rt_key) -> map {
+  let dir = _unit_obj_dir()
+  let key = hash.sha256(unit_c + "\n" + rt_key + "\n" + _unit_cflags() + "\n" + _self_identity())
+  let obj = dir + "/" + key + ".o"
+  if fs.exists(obj) { ret #{"code": 0, "stderr": "", "obj": obj, "c_path": ""} }
+  if !fs.exists(dir) { exec("mkdir -p " + dir) }
+  _prune_unit_cache()
+  let c_path = _tmp_path(".c")
+  io.write_file(c_path, unit_c)
+  let tmp_o = _tmp_path(".o")
+  let cmd = str.join(["gcc -c", c_path, "-I " + runtime_dir, _unit_cflags(), "-o", tmp_o], " ")
+  let r = exec_timeout(cmd, 0)
+  if r["code"] != 0 {
+    fs.rm(tmp_o)
+    ret #{"code": r["code"], "stderr": r["stderr"], "obj": "", "c_path": c_path}
+  }
+  ; rename is atomic, so two builds racing on the same unit both end up
+  ; with a complete object
+  fs.mv(tmp_o, obj)
+  fs.rm(c_path)
+  ret #{"code": 0, "stderr": "", "obj": obj, "c_path": ""}
+}
+
+; Compiles and links a generated program (#{"main", "units", "single"}).
+; Returns an exec-style result (#{"code", "stderr"}) plus "c_path" when a
+; unit failed to compile. Falls back to one translation unit built from the
+; runtime sources when the runtime could not be precompiled.
+fn _build_units(gen, out_path, runtime_dir) -> map {
+  let obj_dir = _ensure_runtime_objs(runtime_dir)
+  if len(obj_dir) == 0 {
+    let c_path = _tmp_path(".c")
+    io.write_file(c_path, gen["single"])
+    let r = _gcc_run(c_path, out_path, runtime_dir)
+    if r["code"] == 0 { fs.rm(c_path) }
+    ret map.set(r, "c_path", c_path)
+  }
+  let rt_key = _runtime_cache_key(runtime_dir)
+  let mut objs = []
+  for u in gen["units"] {
+    let r = _unit_object(u["c"], runtime_dir, rt_key)
+    if r["code"] != 0 { ret r }
+    objs = push(objs, r["obj"])
+  }
+  let mr = _unit_object(gen["main"], runtime_dir, rt_key)
+  if mr["code"] != 0 { ret mr }
+  objs = push(objs, mr["obj"])
+  let link = str.join([
+    "gcc", str.join(objs, " "),
+    obj_dir + "/runtime.o", obj_dir + "/gguf.o", obj_dir + "/sqlite3.o",
+    obj_dir + "/miniz.o", obj_dir + "/stb_impl.o", obj_dir + "/embedded.o",
+    "-o", out_path, _gcc_flags()
+  ], " ")
+  let lr = exec_timeout(link, 0)
+  ret map.set(lr, "c_path", "")
+}
+
+fn _gcc_units_try(gen, out_path, runtime_dir) -> int {
+  let r = _build_units(gen, out_path, runtime_dir)
+  if r["code"] != 0 && len(r["c_path"]) > 0 { fs.rm(r["c_path"]) }
+  ret r["code"]
+}
+
+fn _gcc_units(gen, out_path, runtime_dir) {
+  let r = _build_units(gen, out_path, runtime_dir)
+  if r["code"] == 0 { ret }
+  _gcc_report(r, r["c_path"])
+}
+
+; Explains a failed C compile or link. A missing symbol is the user's problem
+; (an `extern fn` nothing provides); anything else is an internal compiler
+; error, located in `a` source via the #line directives cgen emits.
+fn _gcc_report(result, c_path) {
   let stderr = result["stderr"]
   ; A missing symbol is the user's problem (an `extern fn` nothing provides),
   ; not a compiler bug.
@@ -221,15 +372,22 @@ fn _gcc(c_path, out_path, runtime_dir) {
   }
   ; only trust a location that #line mapped back into `a` source
   if !str.contains(loc, ".a:") { loc = c_path }
+  if len(loc) == 0 { loc = "<link>" }
   eprintln(loc + ": " + cli.red("internal compiler error") + ": generated C did not compile")
   if len(first) > 0 { eprintln("  " + str.trim(first)) }
-  eprintln("  C source kept at " + c_path + " -- please report this with the .a source")
+  if len(c_path) > 0 {
+    eprintln("  C source kept at " + c_path + " -- please report this with the .a source")
+  } else if len(str.trim(stderr)) > 0 {
+    eprintln(str.trim(stderr))
+  }
   exit(1)
 }
 
+; Unique per call even when several `a` processes run in the same
+; millisecond (the test runner and a build side by side, say).
 fn _tmp_path(suffix) -> str {
-  let ts = to_str(time.now())
-  ret str.concat("/tmp/a_cli_", str.concat(ts, suffix))
+  let tag = to_str(time.now()) + "_" + str.slice(uuid.v4(), 0, 8)
+  ret str.concat("/tmp/a_cli_", str.concat(tag, suffix))
 }
 
 fn cmd_cc(source_path, out_file) {
@@ -252,44 +410,21 @@ fn cmd_wat(source_path, out_file) {
   }
 }
 
-; Runs `a cc` in a subprocess. A clean non-zero exit (parse error, missing
-; module) is reported once and is final. Only a crash (killed by a signal,
-; which /bin/sh reports as 128+n) is retried, and every retry is announced:
-; a flaky compiler is a bug to fix, not something to paper over quietly.
-fn _codegen_subprocess(source_path, c_path) {
-  let self = argv0()
-  let cmd = str.join([self, "cc", source_path, "-o", c_path], " ")
-  let max_attempts = 3
-  let mut attempts = 0
-  while attempts < max_attempts {
-    let result = exec_timeout(cmd, 0)
-    if result["code"] == 0 { ret }
-    attempts = attempts + 1
-    let crashed = result["code"] > 128
-    if !crashed || attempts == max_attempts {
-      let mut stderr = str.trim(result["stderr"])
-      ; cgen reports located compile errors via fail(); they are not runtime errors
-      if str.starts_with(stderr, "runtime error: ") && str.contains(stderr, ": error: ") {
-        stderr = str.slice(stderr, len("runtime error: "), len(stderr))
-      }
-      if len(stderr) > 0 { eprintln(stderr) }
-      if crashed {
-        eprintln(cli.red("codegen crashed (exit " + to_str(result["code"]) + ") " + to_str(attempts) + " times; giving up"))
-      } else if !str.contains(stderr, ": error: ") {
-        eprintln(cli.red("codegen failed"))
-      }
-      exit(1)
-    }
-    eprintln(cli.yellow("codegen crashed (exit " + to_str(result["code"]) + "), retrying (" + to_str(attempts) + "/" + to_str(max_attempts) + ")"))
+; Compiles a REPL snippet; a diagnostic is printed, a C failure is not (the
+; snippet is transient, the caller reports the failure in REPL terms).
+fn _repl_compile(src_path, bin_path, runtime_dir) -> int {
+  let gen = _try_generate(src_path)
+  if is_err(gen) {
+    eprintln(_err_message(gen))
+    ret 1
   }
+  ret _gcc_units_try(unwrap(gen), bin_path, runtime_dir)
 }
 
 fn cmd_build(source_path, out_path) {
   let runtime_dir = _find_runtime_dir()
-  let c_path = _tmp_path(".c")
-  _codegen_subprocess(source_path, c_path)
-  _gcc(c_path, out_path, runtime_dir)
-  fs.rm(c_path)
+  let gen = _generate(source_path)
+  _gcc_units(gen, out_path, runtime_dir)
   eprintln(str.concat(cli.green("built"), str.concat(" ", out_path)))
 }
 
@@ -384,7 +519,7 @@ fn _target_emcc_flags() -> str {
 fn cmd_build_target(source_path, out_path, tgt) {
   let runtime_dir = _find_runtime_dir()
   let c_path = _tmp_path(".c")
-  _codegen_subprocess(source_path, c_path)
+  io.write_file(c_path, _generate_c(source_path))
 
   let cc = _target_compiler(tgt)
   if len(cc) == 0 {
@@ -404,7 +539,7 @@ fn cmd_build_target(source_path, out_path, tgt) {
       runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
       runtime_dir + "/miniz.c",
       runtime_dir + "/embedded.c",
-      "-o", out_path, inc, flags, sf, emcc_extra
+      "-o", out_path, inc, flags, sf, emcc_extra, _user_defines()
     ], " ")
   } else {
     if tgt == "wasm32-wasi" && cc == "clang" {
@@ -414,7 +549,7 @@ fn cmd_build_target(source_path, out_path, tgt) {
         runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
         runtime_dir + "/miniz.c",
         runtime_dir + "/embedded.c",
-        "-o", out_path, inc, flags, sf
+        "-o", out_path, inc, flags, sf, _user_defines()
       ], " ")
     } else {
       cmd = str.join([
@@ -422,7 +557,7 @@ fn cmd_build_target(source_path, out_path, tgt) {
         runtime_dir + "/runtime.c", runtime_dir + "/gguf.c", runtime_dir + "/sqlite3.c",
         runtime_dir + "/miniz.c", runtime_dir + "/stb_impl.c",
         runtime_dir + "/embedded.c",
-        "-o", out_path, inc, flags, sf
+        "-o", out_path, inc, flags, sf, _user_defines()
       ], " ")
     }
   }
@@ -481,12 +616,28 @@ fn _use_closure(source_path, seen) -> [str] {
 
 ; The run cache must miss whenever anything that shaped the binary changed:
 ; the source, any module it imports, the compiler, or the C runtime.
+; Identity of the running compiler binary. The cache must not survive a
+; rebuild of `a` itself: two compilers with the same version string can emit
+; different C (the version string moves far less often than codegen does).
+fn _self_identity() -> str {
+  let mut exe = "/proc/self/exe"
+  if !fs.exists(exe) {
+    exe = argv0()
+    if !str.contains(exe, "/") {
+      let w = exec_timeout("which " + exe, 2000)
+      if w["code"] == 0 { exe = str.trim(w["stdout"]) }
+    }
+  }
+  let st = fs.stat(exe)
+  if type_of(st) != "map" { ret _version() }
+  ret _version() + ":" + to_str(st["size"]) + ":" + to_str(st["mtime"])
+}
+
 fn _cache_key(source_path) -> str {
   let source = io.read_file(source_path)
   if type_of(source) == "void" || len(source) == 0 { ret "" }
-  let mut acc = "a-" + _version() + "\n"
-  let rt = io.read_file(_find_runtime_dir() + "/runtime.c")
-  if type_of(rt) != "void" { acc = acc + hash.sha256(rt) + "\n" }
+  let mut acc = "a-" + _self_identity() + " " + _user_defines() + "\n"
+  acc = acc + _runtime_cache_key(_find_runtime_dir()) + "\n"
   for f in sort(_use_closure(source_path, [])) {
     let content = io.read_file(f)
     if type_of(content) != "void" { acc = acc + f + ":" + hash.sha256(content) + "\n" }
@@ -502,39 +653,53 @@ fn _cached_bin(source_path) -> str {
   ret ""
 }
 
-fn _store_cache(source_path, bin_path) {
+; Copies the binary into the cache; returns the cache path, or "" when the
+; program cannot be cached.
+fn _store_cache(source_path, bin_path) -> str {
   let h = _cache_key(source_path)
   if len(h) == 0 { ret "" }
   _ensure_cache_dir()
   let cache_path = _cache_dir() + "/" + h
   fs.cp(bin_path, cache_path)
   exec("chmod +x " + cache_path)
-  ret ""
+  ret cache_path
+}
+
+; Hands the process over to the compiled program: its stdin, streaming
+; stdout/stderr, exit code and signals are all the program's own. `a run`
+; is a launcher, not a wrapper.
+fn _exec_program(bin_path, extra_args) {
+  proc.exec(bin_path, extra_args)
+  ; only reached when execv itself failed (Windows, or an unrunnable file)
+  let mut run_cmd = bin_path
+  if len(extra_args) > 0 {
+    run_cmd = str.concat(bin_path, str.concat(" ", str.join(extra_args, " ")))
+  }
+  let result = exec(run_cmd)
+  if len(result["stdout"]) > 0 { print(result["stdout"]) }
+  if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
+  if result["code"] != 0 { exit(result["code"]) }
 }
 
 fn cmd_run(source_path, extra_args) {
   let cached = _cached_bin(source_path)
   if len(cached) > 0 {
-    let mut run_cmd = cached
-    if len(extra_args) > 0 {
-      run_cmd = str.concat(cached, str.concat(" ", str.join(extra_args, " ")))
-    }
-    let result = exec(run_cmd)
-    if len(result["stdout"]) > 0 { print(result["stdout"]) }
-    if len(result["stderr"]) > 0 { eprintln(result["stderr"]) }
-    if result["code"] != 0 { exit(result["code"]) }
-    ret ""
+    _exec_program(cached, extra_args)
+    ret
   }
 
   let runtime_dir = _find_runtime_dir()
-  let c_path = _tmp_path(".c")
   let bin_path = _tmp_path("")
-  _codegen_subprocess(source_path, c_path)
-  _gcc(c_path, bin_path, runtime_dir)
-  fs.rm(c_path)
+  let gen = _generate(source_path)
+  _gcc_units(gen, bin_path, runtime_dir)
 
-  _store_cache(source_path, bin_path)
-
+  let cache_path = _store_cache(source_path, bin_path)
+  if len(cache_path) > 0 {
+    fs.rm(bin_path)
+    _exec_program(cache_path, extra_args)
+    ret
+  }
+  ; not cacheable: run the temporary and remove it afterwards
   let mut run_cmd = bin_path
   if len(extra_args) > 0 {
     run_cmd = str.concat(bin_path, str.concat(" ", str.join(extra_args, " ")))
@@ -598,21 +763,29 @@ fn cmd_test(test_dir, opts) {
 
   for src in test_files {
     let name = path.basename(src)
-    let c_path = _tmp_path(".c")
-    let bin_path = _tmp_path("")
-
-    let gen = _try_generate_c(src)
+    let cached = _cached_bin(src)
+    let mut bin_path = cached
     let mut gcc_code = 1
-    if is_err(gen) {
-      println("  " + cli.red("FAIL") + " " + name + " (" + _err_message(gen) + ")")
-      failed = failed + 1
+    if len(cached) > 0 {
+      gcc_code = 0
     } else {
-      io.write_file(c_path, unwrap(gen))
-      gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
-      fs.rm(c_path)
-      if gcc_code != 0 {
-        println("  " + cli.red("FAIL") + " " + name + " (compile error)")
+      bin_path = _tmp_path("")
+      let gen = _try_generate(src)
+      if is_err(gen) {
+        println("  " + cli.red("FAIL") + " " + name + " (" + _err_message(gen) + ")")
         failed = failed + 1
+      } else {
+        gcc_code = _gcc_units_try(unwrap(gen), bin_path, runtime_dir)
+        if gcc_code != 0 {
+          println("  " + cli.red("FAIL") + " " + name + " (compile error)")
+          failed = failed + 1
+        } else {
+          let stored = _store_cache(src, bin_path)
+          if len(stored) > 0 {
+            fs.rm(bin_path)
+            bin_path = stored
+          }
+        }
       }
     }
 
@@ -620,7 +793,7 @@ fn cmd_test(test_dir, opts) {
       let t0 = time.now()
       let run_result = exec_timeout(bin_path, timeout_ms)
       let elapsed = time.now() - t0
-      fs.rm(bin_path)
+      if !str.starts_with(bin_path, _cache_dir()) { fs.rm(bin_path) }
       let secs = to_str(elapsed / 1000) + "." + to_str((elapsed % 1000) / 100) + "s"
       if run_result["timed_out"] {
         println("  " + cli.red("TIMEOUT") + " " + name + " (" + secs + ", killed process group)")
@@ -699,7 +872,8 @@ fn _profile_insert_fn_hits(c_code, fn_names, fn_hit_map) -> str {
   let mut new_lines = []
   for ln in lines {
     new_lines = push(new_lines, ln)
-    let trimmed = str.trim(ln)
+    let mut trimmed = str.trim(ln)
+    if str.starts_with(trimmed, "static ") { trimmed = str.slice(trimmed, 7, len(trimmed)) }
     for fn2 in fn_names {
       let mangled = str.replace(str.replace(str.replace(fn2, ".", "_"), "-", "_"), "!", "_bang")
       let sig_start = "AValue fn_" + mangled + "("
@@ -857,8 +1031,11 @@ fn cmd_profile(source_path, profile_out) {
   let new_main = "g_argc = argc; g_argv = argv;" + nl + "    a_profile_init();" + nl + reg_lines
   c_code = str.replace(c_code, old_main, new_main)
 
-  let old_end = "fn_main();" + nl + "    return 0;"
-  let new_end = "fn_main();" + nl + "    a_profile_dump_json(a_string(" + q + prof_out + q + "));" + nl + "    return 0;"
+  let mut exit_fn = "a_main_exit_code"
+  if str.contains(c_code, "    return a_main_exit_code_int(fn_main());") { exit_fn = "a_main_exit_code_int" }
+  let old_end = "    return " + exit_fn + "(fn_main());"
+  let new_end = "    AValue __main_result = fn_main();" + nl + "    a_profile_dump_json(a_string(" + q + prof_out + q + "));" + nl + "    return " + exit_fn + "(__main_result);"
+  if !str.contains(c_code, old_end) { _die("profiler: generated C has an unexpected entry point (internal error)") }
   c_code = str.replace(c_code, old_end, new_end)
 
   let c_path = _tmp_path("_prof.c")
@@ -1028,11 +1205,33 @@ fn _collect_a_files(target: str, acc: [str]) -> [str] {
 
 ; `a check FILE|DIR ...` -- every path is checked; directories recurse.
 ; Exit status is 1 if any file has an error.
-fn cmd_check(targets: [str]) {
+; `a check --effects`: the inferred effect set of every function, and of the
+; program as a whole (what std.sandbox decides on).
+fn cmd_effects(targets: [str]) {
+  let mut files = []
+  for t in targets { files = _collect_a_files(t, files) }
+  let mut cache = #{}
+  for f in sort(files) {
+    let ast = _parse_source(f)
+    if type_of(ast) != "map" || ast["tag"] != "Program" { continue }
+    let r = effect_check.analyze_cached(ast, cache)
+    cache = r["cache"]
+    println(f + ": program effects [" + str.join(r["program"], ", ") + "]")
+    for k in sort(map.keys(r["fns"])) {
+      let e = r["fns"][k]
+      let mut decl = ""
+      if map.has(e, "declared") { decl = "  (declared [" + str.join(e["declared"], ", ") + "])" }
+      println("  " + k + ": [" + str.join(e["effects"], ", ") + "]" + decl)
+    }
+  }
+}
+
+fn cmd_check(targets: [str], as_json: bool) {
   let mut files = []
   for t in targets { files = _collect_a_files(t, files) }
   let mut errors = 0
   let mut warnings = 0
+  let mut cache = #{}
   for source_path in files {
     let source = io.read_file(source_path)
     if type_of(source) == "void" { _die("cannot read file: " + source_path) }
@@ -1041,16 +1240,26 @@ fn cmd_check(targets: [str]) {
     if type_of(ast) == "map" && ast["tag"] == "ParseError" {
       diags = [#{"severity": "error", "line": ast["line"], "col": ast["col"], "msg": ast["msg"]}]
     } else {
-      diags = checker.check(ast)
+      let cr = checker.check_cached(ast, cache)
+      cache = cr["cache"]
+      diags = cr["diags"]
     }
     for d in diags {
       let sev = map.get(d, "severity")
-      let mut colored = cli.yellow(sev)
-      if sev == "error" { colored = cli.red(sev) }
-      let plain = checker.format_diag(source_path, d)
-      eprintln(str.replace(plain, ": " + sev, ": " + colored))
+      if as_json {
+        println(checker.format_diag_json(source_path, d))
+      } else {
+        let mut colored = cli.yellow(sev)
+        if sev == "error" { colored = cli.red(sev) }
+        let plain = checker.format_diag(source_path, d)
+        eprintln(str.replace(plain, ": " + sev, ": " + colored))
+      }
       if sev == "error" { errors = errors + 1 } else { warnings = warnings + 1 }
     }
+  }
+  if as_json {
+    if errors > 0 { exit(1) }
+    ret
   }
   if errors == 0 && warnings == 0 {
     println(cli.green("no issues found") + " (" + to_str(len(files)) + " file(s))")
@@ -1144,12 +1353,9 @@ fn cmd_repl() {
       let src = _repl_build_source(fns, push(bindings, input), "")
       let tmp = _tmp_path("_repl.a")
       io.write_file(tmp, src)
-      let c_path = _tmp_path("_repl.c")
       let bin_path = _tmp_path("_repl")
-      _codegen_subprocess(tmp, c_path)
-      let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
+      let gcc_code = _repl_compile(tmp, bin_path, runtime_dir)
       fs.rm(tmp)
-      fs.rm(c_path)
       if gcc_code != 0 {
         eprintln(cli.red("error: ") + "invalid binding")
       } else {
@@ -1163,12 +1369,9 @@ fn cmd_repl() {
     let src = _repl_build_source(fns, bindings, expr_line)
     let tmp = _tmp_path("_repl.a")
     io.write_file(tmp, src)
-    let c_path = _tmp_path("_repl.c")
     let bin_path = _tmp_path("_repl")
-    _codegen_subprocess(tmp, c_path)
-    let gcc_code = _gcc_try(c_path, bin_path, runtime_dir)
+    let gcc_code = _repl_compile(tmp, bin_path, runtime_dir)
     fs.rm(tmp)
-    fs.rm(c_path)
     if gcc_code != 0 {
       eprintln(cli.red("error: ") + "cannot evaluate expression")
     } else {
@@ -1200,22 +1403,7 @@ fn cmd_pkg_install() {
 }
 
 fn _collect_watch_files(source_path) -> [str] {
-  let mut files = [source_path]
-  let source = io.read_file(source_path)
-  if type_of(source) == "void" { ret files }
-  let lines = str.lines(source)
-  for line in lines {
-    let trimmed = str.trim(line)
-    if str.starts_with(trimmed, "use ") {
-      let mod_path = str.trim(str.slice(trimmed, 4, len(trimmed)))
-      let parts = str.split(mod_path, ".")
-      let file = str.join(parts, "/") + ".a"
-      if fs.exists(file) {
-        files = push(files, file)
-      }
-    }
-  }
-  ret files
+  ret _use_closure(source_path, [])
 }
 
 fn _get_mtimes(files) -> [int] {
@@ -1475,6 +1663,7 @@ fn _usage() {
   eprintln("  a run <file.a> [args...]    compile and run (cached)")
   eprintln("  a build <file.a> [-o out]   compile to native binary")
   eprintln("  a build <file.a> --target T cross-compile (wasm32-wasi, linux-x86_64, ...)")
+  eprintln("  a build <file.a> --release  no runtime stack traces (smaller, faster)")
   eprintln("  a targets                  list available cross-compilation targets")
   eprintln("  a eval <expr>              evaluate an expression")
   eprintln("  a repl                     interactive read-eval-print loop")
@@ -1483,6 +1672,8 @@ fn _usage() {
   eprintln("  a fmt <file.a|dir/>        format source code")
   eprintln("  a ast <file.a>             dump parsed AST as JSON")
   eprintln("  a check <path...>          check files/dirs (errors carry codes like E0007)")
+  eprintln("  a check --json <path...>   same, one JSON object per diagnostic")
+  eprintln("  a check --effects <path...> print the inferred effects of every function")
   eprintln("  a explain [CODE]           explain a diagnostic code, or list them all")
   eprintln("  a test <dir/> [--timeout S] [--filter SUBSTR] [-v]  run test_*.a files (default timeout 60s)")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
@@ -1557,6 +1748,9 @@ fn main() {
         if argv[i] == "--target" && i + 1 < len(argv) {
           tgt = argv[i + 1]
           i = i + 2
+        } else if argv[i] == "--release" {
+          env.set("A_RELEASE", "1")
+          i = i + 1
         } else {
           i = i + 1
         }
@@ -1584,7 +1778,9 @@ fn main() {
     let source = argv[1]
     let mut extra = []
     if len(argv) > 2 {
+      ; a leading `--` only separates the program's arguments from ours
       let mut i = 2
+      if argv[2] == "--" { i = 3 }
       while i < len(argv) {
         extra = push(extra, argv[i])
         i = i + 1
@@ -1627,8 +1823,16 @@ fn main() {
   }
 
   if subcmd == "check" {
-    if len(argv) < 2 { _die("check requires a source file or directory") }
-    cmd_check(slice(argv, 1, len(argv)))
+    let mut targets = []
+    let mut show_effects = false
+    let mut as_json = false
+    for a in slice(argv, 1, len(argv)) {
+      if a == "--effects" { show_effects = true }
+      else if a == "--json" { as_json = true }
+      else { targets = push(targets, a) }
+    }
+    if len(targets) == 0 { _die("check requires a source file or directory") }
+    if show_effects { cmd_effects(targets) } else { cmd_check(targets, as_json) }
     ret
   }
 

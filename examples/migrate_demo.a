@@ -26,7 +26,6 @@ fn main() {
   let mut i = 0
   while i < len(st) {
     let row = st[i]
-    let mark = ""
     if map.get(row, "applied") { println("  [x] " + map.get(row, "file")) }
     if !map.get(row, "applied") { println("  [ ] " + map.get(row, "file")) }
     i = i + 1

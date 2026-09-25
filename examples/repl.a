@@ -7,7 +7,7 @@
 ;   ./a run examples/repl.a
 
 fn main() -> void
-  effects [io]
+  effects [io, fs_write, exec]
 {
   println("a REPL -- type 'exit' to quit")
   let mut defs = ""

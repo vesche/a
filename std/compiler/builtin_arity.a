@@ -127,6 +127,7 @@ fn table() -> map {
     "parallel_map": 2,
     "print": 1,
     "println": 1,
+    "proc.exec": 2,
     "proc.is_running": 1,
     "proc.kill": 1,
     "proc.read_line": 1,

@@ -30,6 +30,11 @@ fn main() {
   if restored["y"] != true { fail("roundtrip: y should be true") }
   if len(restored["x"]) != 3 { fail("roundtrip: x should have 3 elements") }
 
+  ; invalid JSON is Err, not the same void as JSON null
+  if !is_err(json.parse("not json")) { fail("json.parse: garbage should be Err") }
+  if !is_err(json.parse("null extra")) { fail("json.parse: trailing junk should be Err") }
+  if type_of(json.parse("null")) != "void" { fail("json.parse: null should still be void") }
+
   ; json.pretty
   let pretty = json.pretty(#{"a": 1})
   if !str.contains(pretty, "\n") { fail("pretty: should contain newlines") }

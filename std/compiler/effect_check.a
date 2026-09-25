@@ -1,0 +1,328 @@
+; Effect inference.
+;
+; A function's effects are the union of the effects of everything it calls:
+; builtins (std/compiler/builtin_sigs.a, effect_table()), other functions in the
+; program (transitively, through every `use`d module), lambdas it creates, and
+; `call` for a closure it did not define (a parameter, a value from elsewhere),
+; whose effects are unknown. Calling an `extern fn` is `ffi`.
+;
+; The analysis is deliberately whole-program and over-approximating: it never
+; misses an effect, and it may attribute one to a function that only creates a
+; closure with that effect. That is what makes `effects [pure]` a guarantee and
+; what lets std/sandbox.a refuse a program by looking at the result alone.
+;
+; analyze(ast) -> #{
+;   "fns":     #{key: #{"effects": [str], "origins": #{eff: str}, "declared": [str] | void,
+;                       "line": int, "col": int, "name": str}}
+;              keys are "f" (main program), "m.f" (module m), "<top>" (top-level lets)
+;   "program": [str]   effects reachable from main
+;   "diags":   [map]   E0011 undeclared effect, E0012 unknown effect name
+; }
+
+use std.compiler.parser
+use std.compiler.cgen
+use std.compiler.builtin_sigs
+
+; --- scopes: one per file / inline mod ---------------------------------------
+
+fn _new_scope(prefix: str) -> map {
+  ret #{"prefix": prefix, "fns": [], "externs": [], "uses": [], "variants": []}
+}
+
+fn _key(scope: map, name: str) -> str {
+  if scope["prefix"] == "" { ret name }
+  ret scope["prefix"] + "." + name
+}
+
+; Loads every module reachable through `use`, once. Returns
+; #{"scopes": #{prefix: scope}, "fns": #{key: fn_record}}.
+fn _collect(ast, cache) -> map {
+  let mut acc = #{"scopes": #{}, "fns": #{}, "loaded": #{}, "sigs": builtin_sigs.sigs(), "eff": builtin_sigs.effect_table(), "cache": cache}
+  acc = _collect_items(acc, "", ast["items"], true)
+  ret acc
+}
+
+; `local`: the items belong to the file being checked (or an inline mod in it),
+; so declaration diagnostics are reported. A `use`d module's declarations are
+; checked when that module is checked itself.
+fn _collect_items(acc0: map, prefix: str, items, local: bool) -> map {
+  let mut acc = acc0
+  let mut scope = _new_scope(prefix)
+  let mut pending_mods = []
+  let mut pending_uses = []
+  for item in items {
+    if type_of(item) != "map" { continue }
+    let tag = item["tag"]
+    if tag == "FnDecl" {
+      scope = map.set(scope, "fns", push(scope["fns"], item["name"]))
+      acc = map.set(acc, "fns", map.set(acc["fns"], _key(scope, item["name"]), _fn_record(item, prefix, local)))
+    } else if tag == "ExternFn" {
+      scope = map.set(scope, "externs", push(scope["externs"], item["name"]))
+    } else if tag == "UseDecl" {
+      let short = _short_name(item["path"])
+      scope = map.set(scope, "uses", push(scope["uses"], short))
+      pending_uses = push(pending_uses, item)
+    } else if tag == "ModDecl" {
+      scope = map.set(scope, "uses", push(scope["uses"], item["name"]))
+      pending_mods = push(pending_mods, item)
+    } else if tag == "TypeDecl" {
+      let body = item["body"]
+      if type_of(body) == "map" && body["tag"] == "TypeSum" {
+        for v in body["variants"] {
+          if type_of(v) == "map" { scope = map.set(scope, "variants", push(scope["variants"], v["name"])) }
+        }
+      }
+    } else if tag == "Let" || tag == "ExprStmt" {
+      ; top-level statements run before main; treat them as one pseudo-function
+      let k = _key(scope, "<top>")
+      if !map.has(acc["fns"], k) {
+        acc = map.set(acc, "fns", map.set(acc["fns"], k, #{"name": "<top>", "prefix": prefix, "declared": _no_decl(), "line": 0, "col": 0, "bodies": [], "local": local}))
+      }
+      let rec = acc["fns"][k]
+      acc = map.set(acc, "fns", map.set(acc["fns"], k, map.set(rec, "bodies", push(rec["bodies"], item))))
+    }
+  }
+  acc = map.set(acc, "scopes", map.set(acc["scopes"], prefix, scope))
+  for m in pending_mods {
+    acc = _collect_items(acc, m["name"], m["items"], local)
+  }
+  for u in pending_uses {
+    let short = _short_name(u["path"])
+    if map.has(acc["loaded"], short) { continue }
+    acc = map.set(acc, "loaded", map.set(acc["loaded"], short, true))
+    let loaded = cgen.load_module_source(u["path"], acc["cache"])
+    acc = map.set(acc, "cache", loaded["cache"])
+    let got = loaded["got"]
+    if got["status"] == "ok" {
+      let mod_ast = got["ast"]
+      if type_of(mod_ast) == "map" && mod_ast["tag"] == "Program" {
+        acc = _collect_items(acc, short, mod_ast["items"], false)
+      }
+    }
+  }
+  ret acc
+}
+
+; A marker distinct from an empty declaration: "no `effects [...]` clause".
+fn _no_decl() { ret #{"none": true} }
+
+fn _fn_record(item, prefix: str, local: bool) -> map {
+  let mut declared = _no_decl()
+  ; the parser yields [] for "no effects clause" (`effects []` cannot be written)
+  let effs = item["effects"]
+  if type_of(effs) == "array" && len(effs) > 0 {
+    declared = effs
+  }
+  let mut line = 0
+  let mut col = 0
+  if map.has(item, "line") { line = item["line"] }
+  if map.has(item, "col") { col = item["col"] }
+  ret #{"name": item["name"], "prefix": prefix, "declared": declared, "line": line, "col": col, "bodies": [item["body"]], "local": local}
+}
+
+fn _short_name(path) -> str {
+  if type_of(path) == "str" {
+    let parts = str.split(path, ".")
+    ret parts[len(parts) - 1]
+  }
+  ret path[len(path) - 1]
+}
+
+; --- resolving a call target ---------------------------------------------------
+
+; Returns #{"kind": "builtin"|"fn"|"extern"|"ctor"|"unknown", "target": str}
+fn _resolve(acc: map, scope: map, func) -> map {
+  if type_of(func) != "map" { ret #{"kind": "unknown", "target": "?"} }
+  let tag = func["tag"]
+  if tag == "Ident" {
+    let name = func["name"]
+    if name == "Ok" || name == "Err" { ret #{"kind": "ctor", "target": name} }
+    if map.has(acc["sigs"], name) { ret #{"kind": "builtin", "target": name} }
+    if contains(scope["variants"], name) { ret #{"kind": "ctor", "target": name} }
+    if contains(scope["fns"], name) { ret #{"kind": "fn", "target": _key(scope, name)} }
+    if contains(scope["externs"], name) { ret #{"kind": "extern", "target": name} }
+    ; `use m` makes m's functions callable unqualified
+    for u in scope["uses"] {
+      if map.has(acc["scopes"], u) {
+        let us = acc["scopes"][u]
+        if contains(us["fns"], name) { ret #{"kind": "fn", "target": u + "." + name} }
+        if contains(us["externs"], name) { ret #{"kind": "extern", "target": name} }
+        if contains(us["variants"], name) { ret #{"kind": "ctor", "target": name} }
+      }
+    }
+    ret #{"kind": "unknown", "target": name}
+  }
+  if tag == "FieldAccess" {
+    let base = func["expr"]
+    if type_of(base) == "map" && base["tag"] == "Ident" {
+      let dotted = base["name"] + "." + func["field"]
+      if map.has(acc["sigs"], dotted) { ret #{"kind": "builtin", "target": dotted} }
+      if contains(scope["uses"], base["name"]) && map.has(acc["scopes"], base["name"]) {
+        let us = acc["scopes"][base["name"]]
+        if contains(us["fns"], func["field"]) { ret #{"kind": "fn", "target": dotted} }
+        if contains(us["externs"], func["field"]) { ret #{"kind": "extern", "target": dotted} }
+      }
+      ret #{"kind": "unknown", "target": dotted}
+    }
+    ret #{"kind": "unknown", "target": "." + func["field"]}
+  }
+  ret #{"kind": "unknown", "target": tag}
+}
+
+; --- walking a body: direct effects + callees -----------------------------------
+
+; st: #{"effects": #{eff: origin}, "callees": #{key: true}}
+fn _walk(acc: map, scope: map, node, st: map) -> map {
+  if type_of(node) == "array" {
+    let mut s = st
+    for x in node { s = _walk(acc, scope, x, s) }
+    ret s
+  }
+  if type_of(node) != "map" { ret st }
+  let mut s = st
+  if map.has(node, "tag") {
+    let tag = node["tag"]
+    if tag == "Call" {
+      s = _call(acc, scope, node["func"], s)
+    } else if tag == "Ident" || tag == "FieldAccess" {
+      ; a function used as a value (`map(xs, writer)`) may be called anywhere
+      ; downstream: count it as a callee so its effects are not lost
+      let r = _resolve(acc, scope, node)
+      if r["kind"] == "fn" { s = map.set(s, "callees", map.set(s["callees"], r["target"], true)) }
+      if r["kind"] == "extern" { s = _add(s, "ffi", "extern fn " + r["target"]) }
+    } else if tag == "Pipe" {
+      ; `x |> f` with a bare callee is a call too
+      let r = node["right"]
+      if type_of(r) == "map" && (r["tag"] == "Ident" || r["tag"] == "FieldAccess") { s = _call(acc, scope, r, s) }
+    } else if tag == "ExternFn" || tag == "TypeDecl" || tag == "UseDecl" {
+      ret s
+    }
+  }
+  for k in map.keys(node) {
+    if k == "tag" || k == "line" || k == "col" || k == "type" || k == "ret_type" { continue }
+    s = _walk(acc, scope, node[k], s)
+  }
+  ret s
+}
+
+fn _call(acc: map, scope: map, func, st: map) -> map {
+  let r = _resolve(acc, scope, func)
+  let mut s = st
+  if r["kind"] == "builtin" {
+    let tbl = acc["eff"]
+    if map.has(tbl, r["target"]) {
+      for e in tbl[r["target"]] { s = _add(s, e, r["target"]) }
+    }
+  } else if r["kind"] == "fn" {
+    s = map.set(s, "callees", map.set(s["callees"], r["target"], true))
+  } else if r["kind"] == "extern" {
+    s = _add(s, "ffi", "extern fn " + r["target"])
+  } else if r["kind"] == "unknown" {
+    s = _add(s, "call", r["target"])
+  }
+  ret s
+}
+
+fn _add(st: map, eff: str, origin: str) -> map {
+  if map.has(st["effects"], eff) { ret st }
+  ret map.set(st, "effects", map.set(st["effects"], eff, origin))
+}
+
+; --- fixpoint ---------------------------------------------------------------------
+
+fn analyze(ast) -> map {
+  ret analyze_cached(ast, #{})
+}
+
+fn analyze_cached(ast, cache) -> map {
+  if type_of(ast) != "map" || ast["tag"] != "Program" { ret #{"fns": #{}, "program": [], "diags": [], "cache": cache} }
+  let acc = _collect(ast, cache)
+  let fns = acc["fns"]
+  ; direct effects and call edges per function
+  let mut direct = #{}
+  for k in map.keys(fns) {
+    let rec = fns[k]
+    let scope = acc["scopes"][rec["prefix"]]
+    let mut st = #{"effects": #{}, "callees": #{}}
+    for b in rec["bodies"] { st = _walk(acc, scope, b, st) }
+    direct = map.set(direct, k, st)
+  }
+  ; propagate: effects(f) = direct(f) U effects(callees); origins name the callee
+  let mut total = #{}
+  for k in map.keys(direct) { total = map.set(total, k, direct[k]["effects"]) }
+  let mut changed = true
+  while changed {
+    changed = false
+    for k in map.keys(direct) {
+      let mut mine = total[k]
+      for c in map.keys(direct[k]["callees"]) {
+        if !map.has(total, c) { continue }
+        for e in map.keys(total[c]) {
+          if !map.has(mine, e) {
+            mine = map.set(mine, e, "via " + c)
+            changed = true
+          }
+        }
+      }
+      total = map.set(total, k, mine)
+    }
+  }
+  ; reachability from main (and top-level statements)
+  let mut reach = #{}
+  let mut work = []
+  if map.has(direct, "main") { work = push(work, "main") }
+  if map.has(direct, "<top>") { work = push(work, "<top>") }
+  while len(work) > 0 {
+    let k = work[len(work) - 1]
+    work = slice(work, 0, len(work) - 1)
+    if map.has(reach, k) { continue }
+    reach = map.set(reach, k, true)
+    for c in map.keys(direct[k]["callees"]) { work = push(work, c) }
+  }
+  let mut program = #{}
+  for k in map.keys(reach) {
+    for e in map.keys(total[k]) { program = map.set(program, e, true) }
+  }
+  ; results + diagnostics
+  let mut out = #{}
+  let mut diags = []
+  let names = builtin_sigs.effect_names()
+  for k in map.keys(fns) {
+    let rec = fns[k]
+    let effs = sort(map.keys(total[k]))
+    let declared = rec["declared"]
+    let mut r = #{"name": rec["name"], "effects": effs, "origins": total[k], "line": rec["line"], "col": rec["col"], "local": rec["local"]}
+    if type_of(declared) == "array" && rec["local"] {
+      let mut allowed = #{}
+      for d in declared {
+        if d == "pure" { continue }
+        if !contains(names, d) {
+          diags = push(diags, #{"severity": "error", "code": "E0012", "line": rec["line"], "col": rec["col"],
+            "msg": "unknown effect " + d + " in " + rec["name"] + " (effects are: " + str.join(names, ", ") + ")"})
+          continue
+        }
+        allowed = map.set(allowed, d, true)
+      }
+      for e in effs {
+        if !map.has(allowed, e) {
+          let shown = "[" + str.join(declared, ", ") + "]"
+          diags = push(diags, #{"severity": "error", "code": "E0011", "line": rec["line"], "col": rec["col"],
+            "msg": rec["name"] + " is declared effects " + shown + " but has effect " + e + " (" + total[k][e] + ")"})
+        }
+      }
+      r = map.set(r, "declared", declared)
+    }
+    out = map.set(out, k, r)
+  }
+  ret #{"fns": out, "program": sort(map.keys(program)), "diags": diags, "cache": acc["cache"]}
+}
+
+; Convenience for callers that only want the diagnostics.
+fn check(ast) -> [map] {
+  ret analyze(ast)["diags"]
+}
+
+fn check_cached(ast, cache) -> map {
+  let r = analyze_cached(ast, cache)
+  ret #{"diags": r["diags"], "cache": r["cache"]}
+}

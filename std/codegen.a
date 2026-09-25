@@ -4,6 +4,7 @@
 use std.compiler.parser
 use std.compiler.checker
 use std.compiler.emitter
+use std.sandbox
 use std.meta
 use std.llm
 
@@ -59,16 +60,11 @@ fn _find_cli() -> str {
   ret "a"
 }
 
+; Runs generated code under std.sandbox: compute-and-print only unless `opts`
+; grants more (same keys as sandbox.capabilities).
 fn run_in_sandbox(source, opts) {
-  let ts = to_str(time.now())
-  let tmp = "/tmp/a_sandbox_" + ts + ".a"
-  io.write_file(tmp, source)
-  let cli = _find_cli()
-  let cmd = cli + " run " + tmp
-  let r = exec(cmd)
-  fs.rm(tmp)
-  let code = r["code"]
-  ret #{"stdout": r["stdout"], "stderr": r["stderr"], "code": code, "ok": code == 0}
+  let r = sandbox.run(source, sandbox.capabilities(opts))
+  ret #{"stdout": r["stdout"], "stderr": r["stderr"], "code": r["code"], "ok": r["ok"], "denied": r["denied"], "effects": r["effects"]}
 }
 
 ; --- test ---

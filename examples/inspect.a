@@ -4,7 +4,7 @@ use std.cli
 
 ty DirEntry = {name: str, is_dir: bool}
 
-fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+fn collect_files(dir: str, ext: str) -> [str] effects [io, fs_read] {
   let entries: [DirEntry] = fs.ls(dir)
   let mut out = []
   for e in entries {
@@ -204,7 +204,7 @@ fn is_builtin_or_std(name: str) -> bool effects [pure] {
   ret contains(builtins, name)
 }
 
-fn analyze_file(path: str, json_mode: bool) -> [i64] effects [io] {
+fn analyze_file(path: str, json_mode: bool) -> [i64] effects [io, fs_read] {
   let src = io.read_file(path)
   let toks = lexer.lex(src)
   let fns = extract_functions(toks)
@@ -389,7 +389,7 @@ fn print_json(path: str, fns: [[str]], all_calls: [[str]], all_metrics: [[i64]],
   println("\}")
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let a = args()
   if len(a) < 1 {
     println(cli.bold("inspect.a") + " -- code intelligence for 'a' source files")

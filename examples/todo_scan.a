@@ -6,7 +6,7 @@ use std.cli
 
 ty DirEntry = {name: str, is_dir: bool}
 
-fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+fn collect_files(dir: str, ext: str) -> [str] effects [io, fs_read] {
   let entries: [DirEntry] = fs.ls(dir)
   let mut out = []
   for e in entries {
@@ -50,7 +50,7 @@ fn find_tag(line: str) -> str {
   ret ""
 }
 
-fn scan_file(path: str) -> [str] effects [io] {
+fn scan_file(path: str) -> [str] effects [io, fs_read] {
   let result = try { io.read_file(path)? }
   let mut hits = []
   if is_ok(result) == false {
@@ -79,7 +79,7 @@ fn scan_file(path: str) -> [str] effects [io] {
   ret hits
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let a = args()
   let mut dir = "."
   let mut ext = ".a"

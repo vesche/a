@@ -24,7 +24,6 @@ fn main() {
   println("PASS: status before execution")
 
   ; --- Test 4: execute all steps successfully ---
-  let results_log = []
   let p5 = plan.execute(p4, fn(step) {
     ret Ok("done: " + step["id"])
   })
@@ -110,7 +109,6 @@ fn main() {
   let pp = plan.add_step(pp, "b", "task b", [])
   let pp = plan.add_step(pp, "c", "task c", [])
   let pp = plan.add_step(pp, "final", "join", ["a", "b", "c"])
-  let mut exec_order = []
   let pp = plan.execute(pp, fn(step) {
     ret Ok(step["id"])
   })

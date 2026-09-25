@@ -1,174 +1,159 @@
-; std/sandbox.a -- Capability-based sandboxed code execution
-; Run untrusted "a" code with restricted permissions.
+; std/sandbox.a -- run untrusted `a` code under a capability set.
+;
+; The decision is made by effect inference, not by rewriting source: the
+; program (and every module it uses) is parsed, checked, and its whole-program
+; effect set computed (std/compiler/effect_check.a). If that set contains an
+; effect the capabilities do not grant, the program is refused before it is
+; compiled. There is nothing to bypass: every builtin that touches the outside
+; world carries its effect in std/compiler/builtin_sigs.a, and every call site
+; of every function in the program is attributed to something reachable from
+; main.
+;
+; What this does NOT do: restrict *which* files or hosts a granted effect may
+; reach. `fs_read: true` means the program may read any file the process can.
+; Path- or host-level restriction needs an OS sandbox, not a compiler.
+;
+; Capabilities: #{
+;   "io": bool        stdout/stderr/stdin              (default true)
+;   "time": bool      clock, sleep                     (default true)
+;   "rand": bool      uuid                             (default true)
+;   "fs_read": bool   read files/directories           (default false)
+;   "fs_write": bool  create/modify/delete files       (default false)
+;   "net": bool       http/ws client and server        (default false)
+;   "exec": bool      run programs, shells             (default false)
+;   "db": bool        sqlite                           (default false)
+;   "env": bool       environment, process info        (default false)
+;   "spawn": bool     tasks, signal handlers           (default false)
+;   "ffi": bool       raw pointers, extern fn          (default false)
+;   "max_output": int bytes of stdout kept             (default 65536)
+;   "timeout_ms": int deadline for the run             (default 5000)
+; }
+
+use std.compiler.parser
+use std.compiler.checker
+use std.compiler.effect_check
+use std.compiler.builtin_sigs
 
 fn capabilities(opts) -> map {
   let mut c = #{
-    "fs_read": [],
-    "fs_write": [],
-    "net": [],
-    "exec": false,
-    "db": false,
-    "env": false,
+    "io": true, "time": true, "rand": true,
+    "fs_read": false, "fs_write": false, "net": false, "exec": false,
+    "db": false, "env": false, "spawn": false, "ffi": false,
     "max_output": 65536,
     "timeout_ms": 5000
   }
-  let kk = map.keys(opts)
-  let mut i = 0
-  while i < len(kk) {
-    c = map.set(c, kk[i], opts[kk[i]])
-    i = i + 1
-  }
+  for k in map.keys(opts) { c = map.set(c, k, opts[k]) }
   ret c
 }
 
-fn _lb() -> str { ret from_code(123) }
-fn _rb() -> str { ret from_code(125) }
-fn _q() -> str { ret from_code(34) }
+; Compute-and-print only.
+fn deny_all() -> map { ret capabilities(#{}) }
 
-fn _block(body) -> str {
-  ret _lb() + " " + body + " " + _rb()
+fn allow_all() -> map {
+  let mut c = capabilities(#{"timeout_ms": 30000})
+  for e in builtin_sigs.effect_names() { c = map.set(c, e, true) }
+  ret c
 }
 
-fn _fn_line(name, params, body) -> str {
-  ret "fn " + name + "(" + params + ") " + _block(body) + "\n"
+fn allow_read_only() -> map { ret capabilities(#{"fs_read": true}) }
+
+fn allow_network() -> map { ret capabilities(#{"net": true}) }
+
+; Effects of `source` that `caps` does not grant. `call` (a closure of unknown
+; origin) is not itself denied: whatever that closure does is attributed to the
+; function that created it, which is in the same program.
+fn denied_effects(program_effects: [str], caps: map) -> [str] {
+  let mut out = []
+  for e in program_effects {
+    if e == "call" { continue }
+    if map.has(caps, e) && caps[e] == true { continue }
+    out = push(out, e)
+  }
+  ret out
 }
 
-fn _deny(msg) -> str {
-  ret "fail(" + _q() + msg + _q() + ")"
+; Wraps bare statements in `fn main() { ... }` so snippets can be run.
+fn _as_program(source: str) -> str {
+  if str.contains(source, "fn main(") { ret source }
+  ret "fn main() \{\n" + source + "\n\}\n"
 }
 
-fn _generate_guard(caps) -> str {
-  let mut g = ""
-
-  if len(caps["fs_read"]) == 0 {
-    g = g + _fn_line("__sb_io_read_file", "p", _deny("sandbox - fs read denied"))
-  } else {
-    g = g + _fn_line("__sb_io_read_file", "p", "ret io.read_file(p)")
+; Parse + check + infer. Returns #{"ok": bool, "effects": [str], "errors": [str], "ast": map}.
+fn analyze(source: str) -> map {
+  let ast = parser.parse(_as_program(source))
+  if type_of(ast) != "map" || ast["tag"] != "Program" {
+    let mut msg = "parse error"
+    if type_of(ast) == "map" && map.has(ast, "msg") { msg = to_str(ast["line"]) + ":" + to_str(ast["col"]) + ": " + ast["msg"] }
+    ret #{"ok": false, "effects": [], "errors": [msg], "ast": #{}}
   }
-
-  if len(caps["fs_write"]) == 0 {
-    g = g + _fn_line("__sb_io_write_file", "p, d", _deny("sandbox - fs write denied"))
-    g = g + _fn_line("__sb_fs_mkdir", "p", _deny("sandbox - fs write denied"))
-    g = g + _fn_line("__sb_fs_rm", "p", _deny("sandbox - fs write denied"))
-  } else {
-    g = g + _fn_line("__sb_io_write_file", "p, d", "io.write_file(p, d)")
-    g = g + _fn_line("__sb_fs_mkdir", "p", "fs.mkdir(p)")
-    g = g + _fn_line("__sb_fs_rm", "p", "fs.rm(p)")
+  let mut errors = []
+  for d in checker.check(ast) {
+    if d["severity"] == "error" { errors = push(errors, checker.format_diag("<sandbox>", d)) }
   }
-
-  if len(caps["net"]) == 0 {
-    g = g + _fn_line("__sb_http_get", "u, h", _deny("sandbox - net denied"))
-    g = g + _fn_line("__sb_http_post", "u, b, h", _deny("sandbox - net denied"))
-  } else {
-    g = g + _fn_line("__sb_http_get", "u, h", "ret http.get(u, h)")
-    g = g + _fn_line("__sb_http_post", "u, b, h", "ret http.post(u, b, h)")
-  }
-
-  if !caps["exec"] {
-    g = g + _fn_line("__sb_exec", "cmd", _deny("sandbox - exec denied"))
-  } else {
-    g = g + _fn_line("__sb_exec", "cmd", "ret exec(cmd)")
-  }
-
-  if !caps["db"] {
-    g = g + _fn_line("__sb_db_open", "p", _deny("sandbox - db denied"))
-  } else {
-    g = g + _fn_line("__sb_db_open", "p", "ret db.open(p)")
-  }
-
-  if !caps["env"] {
-    g = g + _fn_line("__sb_env_get", "k", _deny("sandbox - env denied"))
-    g = g + _fn_line("__sb_env_set", "k, v", _deny("sandbox - env denied"))
-  } else {
-    g = g + _fn_line("__sb_env_get", "k", "ret env.get(k)")
-    g = g + _fn_line("__sb_env_set", "k, v", "env.set(k, v)")
-  }
-
-  ret g
+  if len(errors) > 0 { ret #{"ok": false, "effects": [], "errors": errors, "ast": ast} }
+  let r = effect_check.analyze(ast)
+  ret #{"ok": true, "effects": r["program"], "errors": [], "ast": ast}
 }
 
-fn _rewrite_source(source) -> str {
-  let mut s = source
-  s = str.replace(s, "io.read_file(", "__sb_io_read_file(")
-  s = str.replace(s, "io.write_file(", "__sb_io_write_file(")
-  s = str.replace(s, "fs.mkdir(", "__sb_fs_mkdir(")
-  s = str.replace(s, "fs.rm(", "__sb_fs_rm(")
-  s = str.replace(s, "http.get(", "__sb_http_get(")
-  s = str.replace(s, "http.post(", "__sb_http_post(")
-  s = str.replace(s, "exec(", "__sb_exec(")
-  s = str.replace(s, "db.open(", "__sb_db_open(")
-  s = str.replace(s, "env.get(", "__sb_env_get(")
-  s = str.replace(s, "env.set(", "__sb_env_set(")
-  ret s
+; Static verdict without running: #{"safe": bool, "effects": [str], "issues": [map]}.
+; "safe" means the program needs nothing beyond deny_all().
+fn validate(source) -> map {
+  let a = analyze(source)
+  let mut issues = []
+  for e in a["errors"] { issues = push(issues, #{"severity": "error", "message": e}) }
+  let denied = denied_effects(a["effects"], deny_all())
+  for e in denied { issues = push(issues, #{"severity": "warning", "message": "needs " + e + ": " + _describe(e)}) }
+  ret #{"safe": a["ok"] && len(denied) == 0, "effects": a["effects"], "issues": issues, "issue_count": len(issues)}
 }
 
+fn _describe(e: str) -> str {
+  let d = #{
+    "io": "reads stdin or writes to stdout/stderr",
+    "fs_read": "reads the filesystem", "fs_write": "writes the filesystem",
+    "net": "uses the network", "exec": "runs other programs", "db": "opens a database",
+    "env": "reads or writes environment variables", "spawn": "starts tasks or handles signals",
+    "time": "reads the clock", "rand": "uses randomness", "ffi": "uses raw pointers or extern functions"
+  }
+  if map.has(d, e) { ret d[e] }
+  ret e
+}
+
+; Refuses (ok: false, denied: [...]) or runs under the deadline.
 fn run(source, caps) -> map {
-  let sb_guard = _generate_guard(caps)
-  let rewritten = _rewrite_source(source)
-  let lb = from_code(123)
-  let rb = from_code(125)
-  let needs_main = !str.contains(source, "fn main(")
-  let mut body = rewritten
-  if needs_main {
-    body = "fn main() " + lb + "\n" + rewritten + "\n" + rb + "\n"
+  let a = analyze(source)
+  if !a["ok"] {
+    ret #{"ok": false, "code": 1, "stdout": "", "stderr": "sandbox: " + str.join(a["errors"], "\n"), "denied": [], "effects": [], "timed_out": false}
   }
-  let full = sb_guard + "\n" + body
-
-  let ts = to_str(time.now())
-  let tmp_file = "/tmp/a_sandbox_" + ts + ".a"
-  io.write_file(tmp_file, full)
-
-  let cli = _find_cli()
-  let r = exec(cli + " run " + tmp_file + " 2>&1")
+  let denied = denied_effects(a["effects"], caps)
+  if len(denied) > 0 {
+    ret #{"ok": false, "code": 1, "stdout": "",
+      "stderr": "sandbox: program needs " + str.join(denied, ", ") + " which the capabilities do not grant",
+      "denied": denied, "effects": a["effects"], "timed_out": false}
+  }
+  let tmp_file = "/tmp/a_sandbox_" + to_str(time.now()) + "_" + to_str(reflect.pid()) + ".a"
+  io.write_file(tmp_file, _as_program(source))
+  let r = exec_timeout(_find_cli() + " run " + tmp_file, caps["timeout_ms"])
   fs.rm(tmp_file)
+  let mut out = r["stdout"]
+  if len(out) > caps["max_output"] { out = str.slice(out, 0, caps["max_output"]) }
+  let mut stderr = r["stderr"]
+  if r["timed_out"] { stderr = stderr + "\nsandbox: killed after " + to_str(caps["timeout_ms"]) + " ms" }
+  ret #{"ok": r["code"] == 0, "code": r["code"], "stdout": out, "stderr": stderr,
+    "denied": [], "effects": a["effects"], "timed_out": r["timed_out"]}
+}
 
-  let stdout = r["stdout"]
-  let max_out = caps["max_output"]
-  let mut trimmed = stdout
-  if len(stdout) > max_out {
-    trimmed = str.slice(stdout, 0, max_out)
+fn run_file(fpath, caps) -> map {
+  let src = io.read_file(fpath)
+  if is_err(src) {
+    ret #{"ok": false, "code": 1, "stdout": "", "stderr": "sandbox: cannot read " + fpath,
+      "denied": [], "effects": [], "timed_out": false}
   }
-
-  ret #{ "stdout": trimmed, "stderr": r["stderr"], "code": r["code"], "ok": r["code"] == 0 }
+  ret run(src, caps)
 }
 
 fn _find_cli() -> str {
   if fs.exists("./a") { ret "./a" }
-  let which = exec("which a")
+  let which = exec_timeout("which a", 5000)
   if which["code"] == 0 { ret str.trim(which["stdout"]) }
   ret "a"
 }
-
-fn run_file(fpath, caps) -> map {
-  ret run(io.read_file(fpath), caps)
-}
-
-fn validate(source) -> map {
-  let mut issues = []
-  if str.contains(source, "exec(") {
-    issues = push(issues, #{ "severity": "warning", "message": "uses exec" })
-  }
-  if str.contains(source, "io.write_file(") || str.contains(source, "fs.rm(") {
-    issues = push(issues, #{ "severity": "warning", "message": "writes to filesystem" })
-  }
-  if str.contains(source, "http.get(") || str.contains(source, "http.post(") {
-    issues = push(issues, #{ "severity": "warning", "message": "makes network requests" })
-  }
-  if str.contains(source, "db.open(") {
-    issues = push(issues, #{ "severity": "warning", "message": "opens database" })
-  }
-  if str.contains(source, "env.get(") || str.contains(source, "env.set(") {
-    issues = push(issues, #{ "severity": "warning", "message": "accesses env vars" })
-  }
-  ret #{ "safe": len(issues) == 0, "issues": issues, "issue_count": len(issues) }
-}
-
-fn deny_all() -> map { ret capabilities(#{}) }
-
-fn allow_all() -> map {
-  ret capabilities(#{ "fs_read": ["*"], "fs_write": ["*"], "net": ["*"], "exec": true, "db": true, "env": true, "timeout_ms": 30000 })
-}
-
-fn allow_read_only(paths) -> map { ret capabilities(#{ "fs_read": paths }) }
-
-fn allow_network(hosts) -> map { ret capabilities(#{ "net": hosts }) }

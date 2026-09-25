@@ -4,7 +4,7 @@ use std.re
 
 ty DirEntry = {name: str, is_dir: bool}
 
-fn collect_files(dir: str, ext: str) -> [str] effects [io] {
+fn collect_files(dir: str, ext: str) -> [str] effects [io, fs_read] {
   let entries: [DirEntry] = fs.ls(dir)
   let mut out = []
   for e in entries {
@@ -37,7 +37,7 @@ fn highlight_match(line: str, pattern: str) -> str {
   ret str.concat(before, str.concat(cli.bold(cli.red(matched)), after))
 }
 
-fn search_file(path: str, pattern: str) -> i64 effects [io] {
+fn search_file(path: str, pattern: str) -> i64 effects [io, fs_read] {
   let result = try { io.read_file(path)? }
   if is_ok(result) == false {
     ret 0
@@ -61,7 +61,7 @@ fn search_file(path: str, pattern: str) -> i64 effects [io] {
   ret matches
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let a = args()
   if len(a) < 1 {
     println(cli.bold("search.a") + " -- regex search in files")

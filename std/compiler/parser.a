@@ -667,13 +667,14 @@ fn parse_type_expr(toks, pos) {
 ; --- Block ---
 
 fn parse_block(toks, pos) {
+  let open_pos = pos
   let r = expect_tok(toks, pos, "LBrace")
   if _is_perr(r) { ret r }
   pos = skip_nl(toks, r[1])
   let mut stmts = []
   while tk(toks, pos) != "RBrace" {
     if tk(toks, pos) == "Eof" {
-      ret err("unexpected end of file in block", pos)
+      ret err("unexpected end of file: the block opened at " + to_str(tline(toks, open_pos)) + ":" + to_str(tcol(toks, open_pos)) + " is never closed (a `;` starts a comment, so a `}` after `;` on the same line is part of the comment)", pos)
     }
     let r = parse_stmt(toks, pos)
     if _is_perr(r) { ret r }

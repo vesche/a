@@ -58,6 +58,26 @@ fn catalog() -> map {
       "text": "An operator's operands have known types it does not accept: `+ - * / %` need two numbers (or `+` on two strings), `< <= > >=` need two numbers or two strings, unary `-` needs a number, and indexing needs an array, map or string. At runtime these would silently produce `void`; the checker reports them instead.",
       "example": "fn main() \{\n  let s = \"a\" + 1      ; E0010: cannot apply + to str and int\n  let k = 5\n  println(k[0])        ; E0010: cannot index a value of type int\n\}"
     },
+    "E0011": #{
+      "title": "undeclared effect",
+      "text": "A function declares `effects [...]` but does something outside that set. Effects are inferred from everything the function calls -- builtins (`println` is `io`, `io.read_file` is `fs_read`, `exec` is `exec`, ...), other functions, lambdas it creates -- so the declaration is a guarantee, not a comment. `effects [pure]` declares the empty set.\n\nThe message names the origin: a builtin, `via f` for a callee, or a closure name for `call` (a closure whose effects cannot be known, such as a parameter). Either add the effect to the declaration or remove the call. Run `a check --effects file.a` to see the inferred set of every function.\n\nEffects: io, fs_read, fs_write, net, exec, db, env, spawn, time, rand, ffi, call.",
+      "example": "fn save(data: str) -> void effects [fs_write] \{\n  io.write_file(\"out.txt\", data)\n  println(\"saved\")   ; E0011: save is declared effects [fs_write] but has effect io (println)\n\}"
+    },
+    "E0012": #{
+      "title": "unknown effect name",
+      "text": "An `effects [...]` clause names something that is not an effect. The effects are: io, fs_read, fs_write, net, exec, db, env, spawn, time, rand, ffi, call -- and `pure` for none.",
+      "example": "fn f() effects [network] \{ ... \}   ; E0012: unknown effect network (use net)"
+    },
+    "E0013": #{
+      "title": "cannot load module",
+      "text": "A `use` path does not resolve to a file. Modules are looked up next to the program, then in `a_modules/`, then in the installation `std/`.\n\n`a check` reports this so a missing import is not a silent pass that only fails at `a build`.",
+      "example": "use std.nope   ; E0013: cannot load module nope: file not found: std/nope.a"
+    },
+    "E0014": #{
+      "title": "parse error in imported module",
+      "text": "A `use`d file exists but does not parse. The message is the module's own parse error; fix that file, not the importer.",
+      "example": "use broken   ; E0014: parse error in module broken: expected LBrace, found ..."
+    },
     "W0001": #{
       "title": "unused variable",
       "text": "A `let` binding is never read. Prefix the name with `_` to silence the warning when the binding is intentional (destructuring, a value kept for its side effects).",
@@ -69,9 +89,9 @@ fn catalog() -> map {
       "example": "fn f() -> int \{\n  ret 1\n  println(\"never\")   ; W0002\n\}"
     },
     "W0003": #{
-      "title": "function shadows a builtin",
-      "text": "A top-level function has the same name as a builtin (`map`, `filter`, `push`, `to_str`, ...). Unqualified calls always resolve to the builtin, so the function can only be reached with a module prefix. Rename it to avoid confusion.",
-      "example": "fn map(xs) \{ ... \}   ; W0003: function map shadows a builtin"
+      "title": "call resolves to a builtin, not the local function of that name",
+      "text": "A top-level function has the same name as a builtin (`map`, `filter`, `push`, `timeout`, ...), and this file calls that name unqualified with the local function's argument count. A bare call to a builtin name is always the builtin; the local function is only reachable as `module.name(...)`. Rename the function, or qualify the call if the builtin was meant.",
+      "example": "fn map(xs) \{ ... \}\nfn main() \{ map(xs) \}   ; W0003: the builtin map, not fn map"
     }
   }
 }

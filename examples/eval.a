@@ -730,10 +730,7 @@ fn eval_expr(node: any, env: any, fns: any) -> any {
   if kind == "field" {
     let obj = eval_expr(node[1], env, fns)
     let fname = node[2]
-    if type_of(obj) == "record" {
-      ; use the host runtime's field access by calling a helper
-      ret obj.fname
-    }
+    if type_of(obj) == "map" && map.has(obj, fname) { ret obj[fname] }
     ret 0
   }
 
@@ -985,7 +982,7 @@ fn load_module(mod_path: str, src_dir: str, fns: any) -> any {
 ; MAIN
 ; ============================================================
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let a = args()
   if len(a) < 1 {
     println("usage: a run examples/eval.a -- <source_file.a>")

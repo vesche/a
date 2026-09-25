@@ -22,15 +22,18 @@ a run hello.a
 
 | Command | Description |
 |---------|-------------|
-| `a run file.a [args...]` | Compile and run (cached -- instant on repeat) |
-| `a build file.a [-o out]` | Compile to native binary via C |
+| `a run file.a [-- args...]` | Compile and run (cached -- instant on repeat). The process becomes the program (`execv`): stdin, streaming output, exit code and signals are the program's own. A leading `--` is dropped. |
+| `a build file.a [-o out]` | Compile to native binary via C. Incremental: every module is its own translation unit, cached by the hash of its generated C (see Build Cache) |
 | `a build file.a --target T` | Cross-compile (WASM, Linux, Windows, macOS) |
+| `a build file.a --release` | Compile out the runtime stack-trace machinery (see Runtime Failures) |
 | `a cc file.a [-o out]` | Emit generated C to stdout (or file with `-o`) |
 | `a wat file.a [-o out]` | Emit WebAssembly Text Format |
 | `a targets` | List cross-compile targets and detected toolchains |
-| `a test dir/ [--timeout S] [--filter SUBSTR] [--skip a,b] [-v]` | Find `test_*.a` files, compile, run, report. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed, so tests cannot leak servers or forked tasks. Sets a private `A_HOME` unless one is already set. |
-| `a check PATH...` | Static analysis over files and directories (recursive): undefined names, unknown builtins, arity, type mismatches (gradual, see §3), record fields, non-exhaustive matches, misuse of `?`, unused variables, unreachable code, builtin shadowing. Exit 1 on errors. |
+| `a test dir/ [--timeout S] [--filter SUBSTR] [--skip a,b] [-v]` | Find `test_*.a` files, compile (cached like `a run`), run, report. Unchanged tests skip compile. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed. Sets a private `A_HOME` unless one is already set. A file with no `fn main` but with nullary `fn test_*()` gets a synthesized main that calls them. |
+| `a check PATH...` | Static analysis over files and directories (recursive): undefined names, unknown builtins, arity, type mismatches (gradual, see §3), record fields, non-exhaustive matches, misuse of `?`, missing/`use` parse errors (E0013/E0014), unused variables, unreachable code, builtin shadowing. Exit 1 on errors. |
+| `a check --json PATH...` | Same diagnostics, one JSON object per line: `{"file","line","col","code","severity","message"}` |
 | `a explain [CODE]` | Explain a diagnostic code (`a explain E0007`), or list all codes |
+| `a check --effects PATH...` | Print the inferred effect set of every function and of each program |
 | `a fmt file.a` | Format to canonical style |
 | `a fmt dir/` | Format all `.a` files in directory |
 | `a ast file.a` | Dump parsed AST as JSON |
@@ -50,6 +53,30 @@ a run hello.a
 | `a pkg add name source` | Add a dependency |
 | `a pkg install` | Install all dependencies |
 | `a cache clean` | Clear the compilation cache |
+
+### Build Cache
+
+`a build`, `a run` and `a test` compile each `use`d module as its own C
+translation unit and cache the object file under `/tmp/a_obj/units/` keyed by
+a hash of the unit's generated C plus everything else that shapes the object
+(runtime sources, `-D` defines, flags). A module whose generated C did not
+change is linked from the cache, never recompiled -- sixty test programs that
+import the compiler compile it once, and editing one module recompiles that
+module alone. (Line numbers are part of the generated C, so inserting a line
+above code does change it; a trailing comment does not.)
+The runtime objects are cached the same way under `/tmp/a_obj/<hash>/`, keyed
+by every runtime source including `runtime.h`. `a run` additionally caches
+the linked binary in `.a_cache/`, keyed by the sources, the runtime and the
+identity (size and mtime) of the `a` binary itself, so rebuilding the
+compiler invalidates it. The object cache is pruned to 300 entries once it
+passes 600.
+
+### Exit Status
+
+`fn main() -> int` (or any sized integer type) makes the returned integer the
+process exit status. An `Err` escaping `main` prints `error: <payload>` plus
+the stack trace and exits 1. Any other `main` exits 0; a tail expression that
+merely happens to be an integer does not become an exit status.
 
 ### Diagnostics
 
@@ -73,12 +100,41 @@ them all. The catalog is `std/compiler/diag_codes.a`:
 | `E0008` | `ret value` in a `-> void` function |
 | `E0009` | unknown field on a named record |
 | `E0010` | operator on incompatible types (`"a" + 1`, `xs < 3`, `5[0]`, `-"x"`) |
+| `E0011` | a function does something its `effects [...]` declaration does not allow |
+| `E0012` | unknown effect name in an `effects [...]` clause |
+| `E0013` | `use` path does not resolve to a file |
+| `E0014` | `use`d file exists but does not parse |
 | `W0001` | unused variable (prefix with `_` to silence) |
 | `W0002` | unreachable code after `ret` |
-| `W0003` | function shadows a builtin |
+| `W0003` | bare call resolves to a builtin, not to the local function of that name |
 
 The language server (`a-lsp`) publishes the same diagnostics, with the code in
-the LSP `code` field. `a build`, `a run`, and `a test`
+the LSP `code` field.
+
+### Runtime Failures
+
+A failure at runtime -- `fail(msg)`, `unwrap` on an `Err`, `expect`, integer
+division by zero, an uncaught `?` -- prints the message and an `a`-level stack
+trace, innermost frame first, then exits with status 1:
+
+```
+runtime error: not a number: x
+  at parse_num (calc.a:2)
+  at total (calc.a:8)
+  at <lambda in main> (calc.a:14)
+  at main (calc.a:15)
+```
+
+Each line is the function and the source line it was executing (for outer
+frames, the line of the call). Lambdas appear as `<lambda in f>`. Generated
+code keeps a shadow call stack for this (one store per statement, not
+measurable on call-heavy code); `a build --release` (or `A_RELEASE=1`) compiles
+it out, and failures then print only the message. Assertion failures under
+`a test` show the same trace, so a failing test points at both the assertion
+and the line in the test that called it.
+
+Inside a `try { ... }` block the same failures do not exit: the block evaluates
+to `Err(msg)` instead (see Error Handling). `a build`, `a run`, and `a test`
 run the static checker before generating C, so an undefined name, a wrong
 arity, or a non-exhaustive match stops the build with a diagnostic at the `a`
 source line (warnings are only shown by `a check`). `A_NO_CHECK=1` bypasses
@@ -123,7 +179,7 @@ Only four forms are allowed at the top level of a file:
 
 ### Entry Point
 
-Programs must define `fn main()` as the entry point. Test files define `fn test_*()` functions instead.
+Programs must define `fn main()` as the entry point. A file with no `main` but with one or more nullary `fn test_*()` functions gets a synthesized `main` that calls them in source order -- so a test file can omit `main`.
 
 ---
 
@@ -336,13 +392,52 @@ let process = fn(x) {
 
 ### Effects
 
-Declare side effects a function may perform:
+A function may declare the effects it performs; the checker verifies the
+declaration against what the function actually does:
 
 ```a
-fn save(data: str) -> void effects [io] {
+fn save(data: str) -> void effects [fs_write, io] {
   io.write_file("out.txt", data)
+  println("saved")
 }
+
+fn area(r: float) -> float effects [pure] { ret 3.14159 * r * r }
 ```
+
+Effects are inferred, not trusted. Every builtin carries its effect in the
+signature table (`std/compiler/builtin_sigs.a`): `println` is `io`,
+`io.read_file` is `fs_read`, `exec` is `exec`, and so on. A function's
+inferred set is the union over everything it calls -- builtins, other
+functions in the program (through every `use`d module), and lambdas it
+creates -- plus `ffi` for an `extern fn` and `call` for a closure it did not
+define (a parameter, a value from elsewhere), whose effects cannot be known.
+A declaration that is smaller than the inferred set is `E0011`, with the
+origin named: `save is declared effects [io] but has effect fs_write
+(io.write_file)`, or `(via helper)` for an effect inherited from a callee.
+`effects [pure]` declares the empty set, so a pure function may not call a
+closure parameter either (`call`). Functions without a declaration are
+unconstrained but still have an inferred set.
+
+| Effect | Meaning |
+|--------|---------|
+| `io` | stdout, stderr, stdin |
+| `fs_read` | reads files or directories |
+| `fs_write` | creates, modifies or deletes files |
+| `net` | HTTP / WebSocket client or server |
+| `exec` | runs another program or a shell |
+| `db` | sqlite |
+| `env` | environment variables, process introspection |
+| `spawn` | tasks, `parallel_*`, signal handlers |
+| `time` | clock, sleep |
+| `rand` | nondeterministic output (`uuid.v4`) |
+| `ffi` | raw pointers, `extern fn` |
+| `call` | calls a closure whose effects are not known |
+
+`a check --effects file.a` prints the inferred set of every function and of
+the program as a whole (everything reachable from `main`). The analysis
+over-approximates: it never misses an effect, but it may attribute one to a
+function that only creates a closure with that effect. That is what makes a
+declaration a guarantee, and what `std.sandbox` decides on.
 
 ### Contracts
 
@@ -357,10 +452,10 @@ fn divide(a: f64, b: f64) -> f64
 }
 ```
 
-Inside `post`, `ret` names the returned value. Contracts are parsed and
-checked for well-formedness by `a check`, but **not yet enforced at runtime**:
-the native compiler currently ignores them. Runtime enforcement (behind a
-build flag) is a roadmap item.
+Inside `post`, `ret` names the returned value. Contracts are runtime checks
+in a normal build: a false `pre` prints `precondition failed: <fn>` (with a
+stack trace) and exits; a false `post` prints `postcondition failed: <fn>`.
+`a build --release` / `A_RELEASE=1` compiles them out.
 
 ---
 
@@ -503,7 +598,8 @@ let data = io.read_file("config.txt")?
 function. It is only allowed in a function that returns `Result` (or has no
 declared return type); `?` in a function declared `-> i64` is a compile error.
 Inside `try { ... }` the `Err` is caught by the block instead. An `Err` that
-propagates out of `main` prints `error: <payload>` and exits with status 1.
+propagates out of `main` prints `error: <payload>` plus the stack trace and
+exits with status 1.
 
 ### Equality
 
@@ -696,7 +792,29 @@ let parsed = try {
 `?` is a compile error in a function declared with a non-Result return type
 (`-> i64`, `-> str`, ...). A function with no declared return type may use it
 and then returns either its normal value or an `Err`. An `Err` escaping `main`
-is printed as `error: <payload>` with exit status 1.
+is printed as `error: <payload>` plus the stack trace, with exit status 1.
+
+### Catching Runtime Failures
+
+`try { ... }` also catches runtime failures that would otherwise end the
+program: `fail(msg)`, `unwrap` on an `Err`, `expect`, and integer division by
+zero. The block evaluates to `Err(msg)` (for `fail`, the message; for
+`unwrap`, the `Err` payload; `Err("division by zero")`):
+
+```a
+let r = try { parse_config(text) }   ; parse_config may call fail(...)
+match r {
+  Ok(cfg) => { run(cfg) }
+  Err(msg) => { println("bad config: " + msg) }
+}
+```
+
+A failure anywhere below the block -- in a called function, in a lambda passed
+to `map` -- is caught by the nearest enclosing `try`. Values allocated between
+the `try` and the failure are not released (the unwind is a `longjmp`), so do
+not use `try` as a control-flow construct in a hot loop; it is for turning a
+failure into a value. Without an enclosing `try`, a runtime failure prints a
+stack trace and exits 1 (see Runtime Failures under Diagnostics).
 
 ---
 
@@ -865,7 +983,7 @@ if resp.status == 200 {
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `exec(cmd)` | str -> {stdout, stderr, code} | Run shell command. `stderr` is always `""` (it is inherited, not captured). No deadline. |
+| `exec(cmd)` | str -> {stdout, stderr, code, timed_out} | Run shell command; the same as `exec_timeout(cmd, 0)`: both streams captured, own process group, no deadline. |
 | `exec_timeout(cmd, ms)` | str, i64 -> {stdout, stderr, code, timed_out} | Run shell command in its own process group with a deadline (`ms <= 0` = none). Captures both streams. On deadline: SIGTERM to the group, SIGKILL 2s later, `timed_out: true`, `code: -1`. When the shell exits, any descendants still alive in the group are killed. Prefer this over `exec` for anything that might hang or start background processes. |
 
 ```a
@@ -897,9 +1015,9 @@ if result.code != 0 {
 | `Err(msg)` | any -> Result | Construct error result |
 | `is_ok(val)` | any -> bool | True if Ok result |
 | `is_err(val)` | any -> bool | True if Err result |
-| `unwrap(result)` | Result -> any | Extract Ok value (error if Err) |
+| `unwrap(result)` | Result -> any | Extract Ok value; on Err a runtime failure (`try` catches it as the Err) |
 | `unwrap_or(result, default)` | Result, any -> any | Extract Ok or use default |
-| `expect(result, msg)` | Result, str -> any | Extract Ok (error with msg if Err) |
+| `expect(result, msg)` | Result, str -> any | Extract Ok; on Err a runtime failure with `msg` (`try` catches it as `Err(msg)`) |
 
 ### Runtime
 
@@ -909,7 +1027,7 @@ if result.code != 0 {
 | `argv0()` | -> str | Path of the running executable |
 | `embedded_file(name)` | str -> str | Contents of a file embedded at build time |
 | `exit(code?)` | i64? -> never | Terminate with exit code (default 0) |
-| `fail(msg?)` | str? -> never | Abort with runtime error |
+| `fail(msg?)` | str? -> never | Runtime failure: caught by an enclosing `try { }` as `Err(msg)`, otherwise prints `runtime error: msg` plus a stack trace and exits 1 |
 
 There is no `eval`: an `a` program is compiled to C ahead of time. To run
 code at runtime, write it to a file and use `exec_timeout("a run file.a", ms)`.
@@ -1016,6 +1134,7 @@ let results = async.gather([h1, h2])
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `proc.spawn(cmd)` | str -> handle | Start subprocess (via `/bin/sh -c`) with bidirectional pipes. The child is a process-group leader and dies with the parent (Linux). |
+| `proc.exec(path, args)` | str, [str] -> Err | Replace this process with the program at `path` (`execv`: no shell, arguments passed as given). Returns only on failure. This is how `a run` hands over to the compiled program. |
 | `proc.write(h, data)` | handle, str -> void | Write to subprocess stdin |
 | `proc.read_line(h)` | handle -> str | Read line from subprocess stdout |
 | `proc.kill(h)` | handle -> void | SIGTERM the subprocess and its whole process group; SIGKILL after 2s if still alive |
@@ -1696,17 +1815,29 @@ Runtime self-inspection with profiling and health checks.
 
 ### std.sandbox
 
-Capability-based sandboxed code execution.
+Run untrusted `a` code under a capability set. The decision is made by effect
+inference (see Effects): the program and every module it uses are parsed,
+checked, and their whole-program effect set computed; if it contains an effect
+the capabilities do not grant, the program is refused *before it is compiled*.
+Nothing is rewritten, so there is nothing to bypass -- `exec_timeout`, a
+function value passed to `map`, a lambda, a helper in a `use`d module all
+carry their effects. Granted effects are unrestricted: `fs_read: true` means
+any file the process can read (path- or host-level limits need an OS sandbox).
 
 | Function | Signature | Description |
 |----------|-----------|-------------|
-| `run(source, caps)` | str, map -> map | Execute code with restricted capabilities |
-| `validate(source)` | str -> map | Check code safety without running |
-| `capabilities(opts)` | map -> map | Create capability set from options |
-| `deny_all()` | -> map | No permissions |
-| `allow_all()` | -> map | All permissions |
-| `allow_read_only(paths)` | [str] -> map | Read-only filesystem access |
-| `allow_network(hosts)` | [str] -> map | Network access to specific hosts |
+| `run(source, caps)` | str, map -> map | Refuse (`ok: false`, `denied: [effects]`) or run under `timeout_ms` (killed on deadline, `timed_out: true`). Result also has `stdout` (cut to `max_output`), `stderr`, `code`, `effects` |
+| `run_file(path, caps)` | str, map -> map | `run` on a file's contents |
+| `validate(source)` | str -> map | Static verdict: `safe` (needs nothing beyond `deny_all()`), `effects`, `issues` |
+| `analyze(source)` | str -> map | Parse + check + infer: `ok`, `effects`, `errors` |
+| `capabilities(opts)` | map -> map | Defaults (`io`, `time`, `rand` granted; everything else denied; 5 s; 64 KiB) overridden by `opts` |
+| `deny_all()` | -> map | Compute-and-print only |
+| `allow_all()` | -> map | Every effect, 30 s |
+| `allow_read_only()` | -> map | `deny_all` plus `fs_read` |
+| `allow_network()` | -> map | `deny_all` plus `net` |
+| `denied_effects(effects, caps)` | [str], map -> [str] | Effects in the list that `caps` does not grant |
+
+A snippet without `fn main` is wrapped in one, so `sandbox.run("println(1 + 2)", sandbox.deny_all())` works.
 
 ### std.plugin
 
@@ -1753,7 +1884,7 @@ Compile-time checking, sandboxed execution, and LLM-assisted code generation.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `compile_check(source)` | str -> map | Parse and check code for errors |
-| `run_in_sandbox(source, opts)` | str, map -> map | Run code in sandbox |
+| `run_in_sandbox(source, opts)` | str, map -> map | Run code through `std.sandbox` with `sandbox.capabilities(opts)` -- compute-and-print only unless `opts` grants more |
 | `test(source, test_cases)` | str, [map] -> map | Run code against test cases |
 | `generate(description, context, opts)` | str, str, map -> map | LLM-generate code from description |
 

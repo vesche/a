@@ -242,7 +242,7 @@ The entire language bootstraps from a single C compiler. `build.sh` compiles the
 
 **Fixed point reached:** the native compiler compiles its own source and produces byte-identical output. The language exists independently.
 
-**Module precompilation:** `use` statements automatically cache compiled bytecode to `.ac` files, making subsequent imports near-instant.
+**Module precompilation:** each `use`d module is its own C translation unit, cached as an object file under `/tmp/a_obj/units/` by the hash of its generated C. Subsequent builds of programs that import the same module skip gcc for it.
 
 **Metaprogramming toolkit:** `std.meta` provides `parse`, `emit`, `walk`, `search`, `transform`, `analyze`, and `generate` -- full programmatic access to the AST for code generation, refactoring, and analysis.
 
@@ -280,10 +280,10 @@ fn main() -> void {
 | Principle | Implementation |
 |-----------|---------------|
 | **Unambiguous grammar** | LL(1), context-free, explicit delimiters, no operator precedence surprises |
-| **Explicit where it matters** | Effect system (`effects [io]`), function signatures, pre/post contracts; type inference handles the rest |
+| **Explicit where it matters** | Gradual types, inferred-and-checked effects (`effects [io]`), runtime `pre`/`post` (stripped by `--release`) |
 | **Token efficient** | 2-3 char keywords (`fn`, `ty`, `let`, `ret`, `mut`), type inference, multi-line expressions |
 | **Local reasoning** | Module functions are self-contained, complete signatures, no implicit imports |
-| **Structured errors** | All errors are JSON: `{"kind":"TypeError","message":"...","span":{"line":5,"col":3}}` |
+| **Structured errors** | `file:line:col: severity[CODE]: message`. `a check --json` emits one `{"file","line","col","code","severity","message"}` per diagnostic. `a explain CODE` documents the code. |
 | **Canonical formatting** | `a fmt` produces one true form, no style debates |
 
 ## Tools written in "a"

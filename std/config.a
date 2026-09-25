@@ -5,6 +5,7 @@ use std.yaml
 
 fn load(path: str) -> map {
   let text = io.read_file(path)
+  if is_err(text) { ret text }
   if str.ends_with(path, ".toml") {
     ret toml.parse(text)
   }
@@ -37,6 +38,7 @@ fn from_env(prefix: str) -> map {
 
 fn dotenv(path: str) -> void {
   let text = io.read_file(path)
+  if is_err(text) { ret }
   let lines = str.lines(text)
   let mut i = 0
   while i < len(lines) {

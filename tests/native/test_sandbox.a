@@ -2,92 +2,103 @@ use std.testing
 use std.sandbox
 
 fn main() {
-  ; --- Test 1: capabilities defaults ---
+  ; --- Test 1: capabilities defaults: compute-and-print only ---
   let c1 = sandbox.capabilities(#{})
-  testing.assert_eq(to_str(c1["exec"]), "false")
-  testing.assert_eq(to_str(c1["db"]), "false")
-  testing.assert_eq(to_str(c1["env"]), "false")
-  testing.assert_eq(to_str(c1["timeout_ms"]), "5000")
-  testing.assert_eq(to_str(c1["max_output"]), "65536")
-  testing.assert_eq(to_str(len(c1["fs_read"])), "0")
-  testing.assert_eq(to_str(len(c1["net"])), "0")
+  testing.assert_eq(c1["io"], true)
+  testing.assert_eq(c1["exec"], false)
+  testing.assert_eq(c1["db"], false)
+  testing.assert_eq(c1["env"], false)
+  testing.assert_eq(c1["fs_read"], false)
+  testing.assert_eq(c1["net"], false)
+  testing.assert_eq(c1["timeout_ms"], 5000)
+  testing.assert_eq(c1["max_output"], 65536)
   println("PASS: capabilities defaults")
 
   ; --- Test 2: capabilities override ---
   let c2 = sandbox.capabilities(#{ "exec": true, "timeout_ms": 10000 })
-  testing.assert_eq(to_str(c2["exec"]), "true")
-  testing.assert_eq(to_str(c2["timeout_ms"]), "10000")
-  testing.assert_eq(to_str(c2["db"]), "false")
+  testing.assert_eq(c2["exec"], true)
+  testing.assert_eq(c2["timeout_ms"], 10000)
+  testing.assert_eq(c2["db"], false)
   println("PASS: capabilities override")
 
-  ; --- Test 3: deny_all ---
+  ; --- Test 3: presets ---
   let c3 = sandbox.deny_all()
-  testing.assert_eq(to_str(c3["exec"]), "false")
-  testing.assert_eq(to_str(c3["env"]), "false")
-  testing.assert_eq(to_str(c3["db"]), "false")
-  testing.assert_eq(to_str(len(c3["fs_read"])), "0")
-  println("PASS: deny_all")
-
-  ; --- Test 4: allow_all ---
+  testing.assert_eq(c3["exec"], false)
+  testing.assert_eq(c3["fs_read"], false)
   let c4 = sandbox.allow_all()
-  testing.assert_eq(to_str(c4["exec"]), "true")
-  testing.assert_eq(to_str(c4["env"]), "true")
-  testing.assert_eq(to_str(c4["db"]), "true")
-  testing.assert_eq(to_str(c4["timeout_ms"]), "30000")
-  println("PASS: allow_all")
+  testing.assert_eq(c4["exec"], true)
+  testing.assert_eq(c4["env"], true)
+  testing.assert_eq(c4["fs_write"], true)
+  testing.assert_eq(c4["timeout_ms"], 30000)
+  let c5 = sandbox.allow_read_only()
+  testing.assert_eq(c5["fs_read"], true)
+  testing.assert_eq(c5["fs_write"], false)
+  let c6 = sandbox.allow_network()
+  testing.assert_eq(c6["net"], true)
+  testing.assert_eq(c6["exec"], false)
+  println("PASS: presets")
 
-  ; --- Test 5: allow_read_only ---
-  let c5 = sandbox.allow_read_only(["/data", "/tmp"])
-  testing.assert_eq(to_str(len(c5["fs_read"])), "2")
-  testing.assert_eq(to_str(c5["exec"]), "false")
-  println("PASS: allow_read_only")
-
-  ; --- Test 6: allow_network ---
-  let c6 = sandbox.allow_network(["api.example.com"])
-  testing.assert_eq(to_str(len(c6["net"])), "1")
-  testing.assert_eq(to_str(c6["exec"]), "false")
-  println("PASS: allow_network")
-
-  ; --- Test 7: validate safe code ---
+  ; --- Test 4: validate is effect inference, not string matching ---
   let v1 = sandbox.validate("let x = 1 + 2\nprintln(to_str(x))")
-  testing.assert_eq(to_str(v1["safe"]), "true")
-  testing.assert_eq(to_str(v1["issue_count"]), "0")
-  println("PASS: validate safe code")
-
-  ; --- Test 8: validate unsafe code ---
+  testing.assert_eq(v1["safe"], true)
+  testing.assert_eq(v1["effects"], ["io"])
+  testing.assert_eq(v1["issue_count"], 0)
   let q = from_code(34)
-  let unsafe_src = "exec(" + q + "ls" + q + ")\nio.write_file(" + q + "/x" + q + ", " + q + "y" + q + ")"
+  let unsafe_src = "let r = exec(" + q + "ls" + q + ")\nio.write_file(" + q + "/x" + q + ", " + q + "y" + q + ")\nprintln(r)"
   let v2 = sandbox.validate(unsafe_src)
-  testing.assert_eq(to_str(v2["safe"]), "false")
-  testing.assert_eq(to_str(v2["issue_count"] >= 2), "true")
-  println("PASS: validate unsafe code")
+  testing.assert_eq(v2["safe"], false)
+  testing.assert_eq(v2["effects"], ["exec", "fs_write", "io"])
+  testing.assert_eq(v2["issue_count"], 2)
+  ; the old string-matching guard missed all of these
+  let sneaky = str.join([
+    "fn helper(cmd) \{ ret exec_timeout(cmd, 1000) \}",
+    "fn main() \{",
+    "  let f = helper",
+    "  println(f(" + q + "id" + q + "))",
+    "  fs.mv (" + q + "/a" + q + ", " + q + "/b" + q + ")",
+    "  println(map([1], fn(i) => env.get(" + q + "HOME" + q + ")))",
+    "\}"
+  ], "\n")
+  let v3 = sandbox.validate(sneaky)
+  testing.assert_eq(v3["safe"], false)
+  testing.assert_eq(v3["effects"], ["call", "env", "exec", "fs_write", "io"])
+  println("PASS: validate infers effects")
 
-  ; --- Test 9: run simple code ---
-  let c9 = sandbox.deny_all()
-  let r9 = sandbox.run("println(to_str(1 + 2))", c9)
-  testing.assert_eq(to_str(r9["ok"]), "true")
+  ; --- Test 5: a program with errors is refused before it runs ---
+  let v4 = sandbox.validate("println(nope)")
+  testing.assert_eq(v4["safe"], false)
+  testing.assert_eq(v4["issues"][0]["severity"], "error")
+  println("PASS: validate refuses programs that do not check")
+
+  ; --- Test 6: run simple code ---
+  let r9 = sandbox.run("println(to_str(1 + 2))", sandbox.deny_all())
+  testing.assert_eq(r9["ok"], true)
   testing.assert_eq(str.trim(r9["stdout"]), "3")
+  testing.assert_eq(r9["effects"], ["io"])
   println("PASS: run simple code")
 
-  ; --- Test 10: run code with exec denied ---
-  let c10 = sandbox.deny_all()
+  ; --- Test 7: run with exec denied: refused, not executed ---
   let src10 = "let r = exec(" + q + "echo hi" + q + ")\nprintln(r)"
-  let r10 = sandbox.run(src10, c10)
-  testing.assert_eq(to_str(r10["ok"]), "false")
-  println("PASS: run exec denied")
+  let r10 = sandbox.run(src10, sandbox.deny_all())
+  testing.assert_eq(r10["ok"], false)
+  testing.assert_eq(r10["denied"], ["exec"])
+  testing.assert_eq(r10["stdout"], "")
+  testing.assert_eq(str.contains(r10["stderr"], "needs exec"), true)
+  ; ... and runs once the capability is granted
+  let r10b = sandbox.run(src10, sandbox.capabilities(#{"exec": true}))
+  testing.assert_eq(r10b["ok"], true)
+  testing.assert_eq(str.contains(r10b["stdout"], "hi"), true)
+  println("PASS: run honours capabilities")
 
-  ; --- Test 11: run arithmetic ---
-  let c11 = sandbox.deny_all()
-  let r11 = sandbox.run("let a = 10\nlet b = 20\nprintln(to_str(a + b))", c11)
-  testing.assert_eq(to_str(r11["ok"]), "true")
-  testing.assert_eq(str.trim(r11["stdout"]), "30")
-  println("PASS: run arithmetic")
+  ; --- Test 8: the deadline is enforced ---
+  let r11 = sandbox.run("let mut i = 0\nwhile true \{ i = i + 1 \}", sandbox.capabilities(#{"timeout_ms": 1500}))
+  testing.assert_eq(r11["ok"], false)
+  testing.assert_eq(r11["timed_out"], true)
+  testing.assert_eq(str.contains(r11["stderr"], "killed after 1500 ms"), true)
+  println("PASS: deadline enforced")
 
-  ; --- Test 12: max_output setting ---
-  let c12 = sandbox.capabilities(#{ "max_output": 5 })
-  testing.assert_eq(to_str(c12["max_output"]), "5")
-  println("PASS: max_output setting")
-
-  println("")
-  println("12 passed, 0 failed")
+  ; --- Test 9: max_output ---
+  let r12 = sandbox.run("println(" + q + "abcdefghij" + q + ")", sandbox.capabilities(#{"max_output": 5}))
+  testing.assert_eq(r12["stdout"], "abcde")
+  println("PASS: max_output")
 }

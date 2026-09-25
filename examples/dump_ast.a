@@ -1,7 +1,7 @@
 use std.compiler.parser
 
 fn main() -> void
-  effects [io]
+  effects [io, fs_read]
 {
   let argv = args()
   if len(argv) < 1 {

@@ -149,6 +149,7 @@ fn sigs() -> map {
     "exec": "fn(str) -> map",
     "exec_timeout": "fn(str, int) -> map",
     "proc.spawn": "fn(str) -> any",
+    "proc.exec": "fn(str, [str]) -> Result",
     "proc.write": "fn(any, str) -> void",
     "proc.read_line": "fn(any) -> str",
     "proc.wait": "fn(any) -> int",
@@ -231,4 +232,40 @@ fn min_arity() -> map {
     "http.get": 1, "http.delete": 1, "http.post": 1, "http.put": 1, "http.patch": 1,
     "async.http_get": 1, "async.http_delete": 1, "async.http_post": 1, "async.http_put": 1, "async.http_patch": 1
   }
+}
+
+; The effect vocabulary. A function's effects are the union of its callees'
+; (std/compiler/effect_check.a); `effects [pure]` declares the empty set. Builtins
+; not listed in effect_table() are pure.
+;
+;   io        stdout / stderr / stdin
+;   fs_read   reads the filesystem
+;   fs_write  writes the filesystem
+;   net       network client or server
+;   exec      runs another program or a shell
+;   db        sqlite
+;   env       reads or writes environment variables, process introspection
+;   spawn     forks tasks or installs signal handlers
+;   time      reads the clock or sleeps
+;   rand      nondeterministic output (uuid)
+;   ffi       raw pointers, extern fn
+;   call      calls a closure whose effects are not known (never a builtin's)
+fn effect_names() -> [str] {
+  ret ["io", "fs_read", "fs_write", "net", "exec", "db", "env", "spawn", "time", "rand", "ffi", "call"]
+}
+
+fn effect_table() -> map {
+  let mut e = #{}
+  for n in ["print", "println", "eprintln", "exit", "io.read_line", "io.read_stdin", "io.flush"] { e = map.set(e, n, ["io"]) }
+  for n in ["io.read_file", "io.read_bytes", "fs.exists", "fs.is_dir", "fs.is_file", "fs.ls", "fs.abs", "fs.cwd", "fs.stat", "fs.watch", "image.load", "local_llm.load"] { e = map.set(e, n, ["fs_read"]) }
+  for n in ["io.write_file", "fs.mkdir", "fs.rm", "fs.cp", "fs.mv", "image.save", "profile.dump"] { e = map.set(e, n, ["fs_write"]) }
+  for n in ["http.get", "http.post", "http.put", "http.patch", "http.delete", "http.serve", "http.serve_static", "http.stream", "http.stream_read", "http.stream_close", "ws.connect", "ws.send", "ws.recv", "ws.close", "async.http_get", "async.http_post", "async.http_put", "async.http_patch", "async.http_delete"] { e = map.set(e, n, ["net"]) }
+  for n in ["exec", "exec_timeout", "proc.spawn", "proc.exec", "proc.write", "proc.read_line", "proc.wait", "proc.kill", "proc.is_running"] { e = map.set(e, n, ["exec"]) }
+  for n in ["db.open", "db.exec", "db.query", "db.close"] { e = map.set(e, n, ["db"]) }
+  for n in ["env.get", "env.set", "env.all", "reflect.memory_usage", "reflect.pid"] { e = map.set(e, n, ["env"]) }
+  for n in ["spawn", "await", "await_all", "timeout", "async.await", "async.gather", "parallel_map", "parallel_each", "signal.on"] { e = map.set(e, n, ["spawn"]) }
+  for n in ["time.now", "time.sleep", "reflect.uptime_ms"] { e = map.set(e, n, ["time"]) }
+  for n in ["uuid.v4"] { e = map.set(e, n, ["rand"]) }
+  for n in ["ptr.null", "ptr.is_null"] { e = map.set(e, n, ["ffi"]) }
+  ret e
 }

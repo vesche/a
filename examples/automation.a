@@ -1,11 +1,11 @@
 mod automation {
   ty CmdResult = {stdout: str, stderr: str, code: i64}
 
-  fn run_cmd(cmd: str) -> CmdResult effects [io] {
+  fn run_cmd(cmd: str) -> CmdResult effects [io, exec] {
     ret exec(cmd)
   }
 
-  fn main() -> void effects [io] {
+  fn main() -> void effects [io, exec, env] {
     println("=== a-lang system automation ===")
 
     let host: CmdResult = run_cmd("hostname")

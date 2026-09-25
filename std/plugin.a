@@ -3,6 +3,10 @@
 ; where <a_home> is $A_HOME or ~/.a (see path.a_home).
 use std.path
 
+fn _q(s: str) -> str {
+  ret "'" + str.replace(s, "'", "'\\''") + "'"
+}
+
 fn _plugins_dir() -> str {
   ret path.a_home() + "/plugins"
 }
@@ -10,7 +14,7 @@ fn _plugins_dir() -> str {
 fn _ensure_plugins_dir() {
   let d = _plugins_dir()
   if !fs.exists(d) {
-    exec("mkdir -p " + d)
+    exec("mkdir -p " + _q(d))
   }
 }
 
@@ -75,9 +79,9 @@ fn install(source_dir) {
 
   let dest = _plugins_dir() + "/" + name
   if fs.exists(dest) {
-    exec("rm -rf " + dest)
+    exec("rm -rf " + _q(dest))
   }
-  exec("cp -r " + source_dir + " " + dest)
+  exec("cp -r " + _q(source_dir) + " " + _q(dest))
 
   let mut reg = _load_registry()
   let mut plugins = reg["plugins"]
@@ -99,12 +103,14 @@ fn install_git(repo) {
   _ensure_plugins_dir()
   let tmp = "/tmp/a_plugin_" + to_str(time.now())
   let url = "https://github.com/" + repo + ".git"
-  let result = exec("git clone --depth 1 " + url + " " + tmp + " 2>&1")
+  let result = exec("git clone --depth 1 " + _q(url) + " " + _q(tmp) + " 2>&1")
   if result["code"] != 0 {
-    ret Err("git clone failed: " + result["stderr"])
+    let detail = result["stdout"]
+    if len(result["stderr"]) > 0 { detail = result["stderr"] }
+    ret Err("git clone failed: " + detail)
   }
   let r = install(tmp)
-  exec("rm -rf " + tmp)
+  exec("rm -rf " + _q(tmp))
   ret r
 }
 
@@ -144,7 +150,7 @@ fn remove(name) {
   let info = plugins[name]
   let pdir = info["dir"]
   if fs.exists(pdir) {
-    exec("rm -rf " + pdir)
+    exec("rm -rf " + _q(pdir))
   }
   let new_plugins = map.delete(plugins, name)
   _save_registry(map.set(reg, "plugins", new_plugins))

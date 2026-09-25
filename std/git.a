@@ -2,9 +2,22 @@
 ;
 ; All functions return structured maps instead of raw strings.
 ; Uses `exec("git ...")` internally -- git must be on PATH.
+; Every path, ref, URL, and message is single-quoted so user data cannot
+; become a second shell command.
+
+fn _shell_quote(s) -> str {
+  let escaped = str.replace(to_str(s), "'", "'\\''")
+  ret "'" + escaped + "'"
+}
+
+fn _qjoin(xs) -> str {
+  let mut out = []
+  for x in xs { out = push(out, _shell_quote(x)) }
+  ret str.join(out, " ")
+}
 
 fn _run(path, cmd) -> map {
-  let full = "cd " + path + " && git " + cmd + " 2>&1"
+  let full = "cd " + _shell_quote(path) + " && git " + cmd + " 2>&1"
   ret exec(full)
 }
 
@@ -33,9 +46,9 @@ fn clone(url, path, opts) {
     cmd = cmd + " --depth " + to_str(opts["depth"])
   }
   if map.has(opts, "branch") {
-    cmd = cmd + " --branch " + opts["branch"]
+    cmd = cmd + " --branch " + _shell_quote(opts["branch"])
   }
-  cmd = cmd + " " + url + " " + path
+  cmd = cmd + " " + _shell_quote(url) + " " + _shell_quote(path)
   let r = exec("git " + cmd + " 2>&1")
   if r["code"] != 0 {
     ret Err("git clone failed: " + str.trim(r["stdout"]))
@@ -83,7 +96,7 @@ fn diff(path, opts) -> [map] {
     cmd = cmd + " --cached"
   }
   if map.has(opts, "commit") {
-    cmd = cmd + " " + opts["commit"]
+    cmd = cmd + " " + _shell_quote(opts["commit"])
   }
   let r = _run(path, cmd)
   if r["code"] != 0 { ret [] }
@@ -96,7 +109,7 @@ fn diff_stat(path, opts) -> [map] {
     cmd = cmd + " --cached"
   }
   if map.has(opts, "commit") {
-    cmd = cmd + " " + opts["commit"]
+    cmd = cmd + " " + _shell_quote(opts["commit"])
   }
   let r = _run(path, cmd)
   if r["code"] != 0 { ret [] }
@@ -213,10 +226,10 @@ fn log(path, opts) -> [map] {
     cmd = cmd + " -n " + to_str(opts["limit"])
   }
   if map.has(opts, "since") {
-    cmd = cmd + " --since=" + opts["since"]
+    cmd = cmd + " --since=" + _shell_quote(opts["since"])
   }
   if map.has(opts, "path_filter") {
-    cmd = cmd + " -- " + opts["path_filter"]
+    cmd = cmd + " -- " + _shell_quote(opts["path_filter"])
   }
   let r = _run(path, cmd)
   if r["code"] != 0 { ret [] }
@@ -246,8 +259,7 @@ fn log_short(path, n) -> [map] {
 ; ── Staging ──
 
 fn add(path, files) {
-  let file_args = str.join(files, " ")
-  ret _run_ok(path, "add " + file_args)
+  ret _run_ok(path, "add " + _qjoin(files))
 }
 
 fn add_all(path) {
@@ -255,8 +267,7 @@ fn add_all(path) {
 }
 
 fn reset(path, files) {
-  let file_args = str.join(files, " ")
-  ret _run_ok(path, "reset " + file_args)
+  ret _run_ok(path, "reset " + _qjoin(files))
 }
 
 ; ── Commits ──
@@ -278,11 +289,6 @@ fn commit_all(path, message) {
   }
   let hash_r = _run(path, "rev-parse HEAD")
   ret Ok(#{"hash": str.trim(hash_r["stdout"]), "message": message})
-}
-
-fn _shell_quote(s) -> str {
-  let escaped = str.replace(s, "'", "'\\''")
-  ret "'" + escaped + "'"
 }
 
 ; ── Branches ──
@@ -315,19 +321,19 @@ fn branches(path) -> [map] {
 }
 
 fn checkout(path, branch_name) {
-  ret _run_ok(path, "checkout " + branch_name)
+  ret _run_ok(path, "checkout " + _shell_quote(branch_name))
 }
 
 fn create_branch(path, name) {
-  ret _run_ok(path, "checkout -b " + name)
+  ret _run_ok(path, "checkout -b " + _shell_quote(name))
 }
 
 fn delete_branch(path, name) {
-  ret _run_ok(path, "branch -d " + name)
+  ret _run_ok(path, "branch -d " + _shell_quote(name))
 }
 
 fn merge(path, branch_name) {
-  let r = _run(path, "merge " + branch_name)
+  let r = _run(path, "merge " + _shell_quote(branch_name))
   if r["code"] == 0 {
     ret Ok(#{"ok": true, "conflicts": []})
   }
@@ -369,7 +375,7 @@ fn remote(path) -> [map] {
 }
 
 fn remote_url(path, name) -> str {
-  let r = _run(path, "remote get-url " + name)
+  let r = _run(path, "remote get-url " + _shell_quote(name))
   if r["code"] != 0 { ret "" }
   ret str.trim(r["stdout"])
 }
@@ -377,25 +383,25 @@ fn remote_url(path, name) -> str {
 ; ── Push / Pull ──
 
 fn push(path, remote_name, branch_name) {
-  ret _run_ok(path, "push " + remote_name + " " + branch_name)
+  ret _run_ok(path, "push " + _shell_quote(remote_name) + " " + _shell_quote(branch_name))
 }
 
 fn pull(path, remote_name, branch_name) {
-  ret _run_ok(path, "pull " + remote_name + " " + branch_name)
+  ret _run_ok(path, "pull " + _shell_quote(remote_name) + " " + _shell_quote(branch_name))
 }
 
 fn fetch(path, remote_name) {
-  ret _run_ok(path, "fetch " + remote_name)
+  ret _run_ok(path, "fetch " + _shell_quote(remote_name))
 }
 
 ; ── Tags ──
 
 fn tag(path, name) {
-  ret _run_ok(path, "tag " + name)
+  ret _run_ok(path, "tag " + _shell_quote(name))
 }
 
 fn tag_annotated(path, name, message) {
-  ret _run_ok(path, "tag -a " + name + " -m " + _shell_quote(message))
+  ret _run_ok(path, "tag -a " + _shell_quote(name) + " -m " + _shell_quote(message))
 }
 
 fn tags(path) -> [str] {
@@ -405,7 +411,7 @@ fn tags(path) -> [str] {
 }
 
 fn delete_tag(path, name) {
-  ret _run_ok(path, "tag -d " + name)
+  ret _run_ok(path, "tag -d " + _shell_quote(name))
 }
 
 ; ── Stash ──
@@ -427,7 +433,7 @@ fn stash_list(path) -> [str] {
 ; ── Blame ──
 
 fn blame(path, file) -> [map] {
-  let r = _run(path, "blame --porcelain " + file)
+  let r = _run(path, "blame --porcelain " + _shell_quote(file))
   if r["code"] != 0 { ret [] }
   let lines = str.split(r["stdout"], "\n")
   let mut result = []
@@ -485,7 +491,7 @@ fn head_short(path) -> str {
 }
 
 fn show(path, ref, file) -> str {
-  let r = _run(path, "show " + ref + ":" + file)
+  let r = _run(path, "show " + _shell_quote(ref + ":" + file))
   if r["code"] != 0 { ret "" }
   ret r["stdout"]
 }
@@ -502,7 +508,7 @@ fn root(path) -> str {
 }
 
 fn changed_files(path, ref1, ref2) -> [str] {
-  let r = _run(path, "diff --name-only " + ref1 + " " + ref2)
+  let r = _run(path, "diff --name-only " + _shell_quote(ref1) + " " + _shell_quote(ref2))
   if r["code"] != 0 { ret [] }
   ret _lines(r["stdout"])
 }

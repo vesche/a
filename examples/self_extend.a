@@ -115,8 +115,6 @@ fn _demo_generate() {
     ret
   }
   println("Generating a function to compute Fibonacci numbers...")
-  let lb = _lb()
-  let rb = _rb()
   let desc = "Write a complete program with a fn fibonacci(n) that returns the nth Fibonacci number (0-indexed, fib(0)=0, fib(1)=1), and a fn main() that prints fibonacci(10). Use a while loop, not recursion."
   let context = #{"functions": ["println", "to_str"]}
   let r = codegen.generate(desc, context, #{})

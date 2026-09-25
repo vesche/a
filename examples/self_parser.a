@@ -836,7 +836,7 @@ fn parse_program(toks: [str], p: i64) -> [str] {
 
 ; MAIN
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let src: str = io.read_file("examples/hello.a")
   println("=== Lexing ===")
   let toks: [str] = lex(src)

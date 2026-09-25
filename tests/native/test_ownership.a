@@ -1,0 +1,131 @@
+; Value semantics under the in-place update paths (`xs = push(xs, v)`,
+; `m = map.set(m, k, v)`, `xs[i] = v`, `m[k] = v` mutate in place only when the
+; variable holds the sole reference), plus the ownership cases that used to
+; free live values: `r?` on a variable, `map.delete` of a missing key, sort_by
+; sharing elements, and higher-order functions.
+
+use std.testing
+
+fn shared_param(xs: [int]) -> [int] {
+  let mut ys = xs
+  ys = push(ys, 99)
+  ys[0] = -1
+  ret ys
+}
+
+fn unwrap_twice(r: Result) -> Result {
+  let a = r?
+  let b = r?
+  ret Ok(a + b)
+}
+
+fn propagate(r: Result) -> Result {
+  let v = r?
+  ret Ok(v)
+}
+
+fn cmp_str(p: str, q: str) -> int {
+  if p < q { ret -1 }
+  if p > q { ret 1 }
+  ret 0
+}
+
+fn main() {
+  ; --- arrays: an alias must not observe in-place pushes or stores ---
+  let mut a = [1, 2]
+  let b = a
+  a = push(a, 3)
+  a[0] = 9
+  testing.assert_eq(a, [9, 2, 3])
+  testing.assert_eq(b, [1, 2])
+
+  ; --- maps: same through an alias, an element, and a captured variable ---
+  let mut m = #{"x": 1}
+  let m2 = m
+  let holder = [m]
+  let peek = fn() { m["x"] }
+  m = map.set(m, "y", 2)
+  m["x"] = 5
+  testing.assert_eq(m, #{"x": 5, "y": 2})
+  testing.assert_eq(m2, #{"x": 1})
+  testing.assert_eq(holder[0], #{"x": 1})
+  testing.assert_eq(peek(), 1)
+
+  ; --- a parameter is shared with the caller ---
+  let orig = [7, 8]
+  testing.assert_eq(shared_param(orig), [-1, 8, 99])
+  testing.assert_eq(orig, [7, 8])
+
+  ; --- large map: hashed lookups agree with the linear ones ---
+  let mut big = #{}
+  let mut i = 0
+  while i < 500 {
+    big = map.set(big, "k" + to_str(i), i)
+    i = i + 1
+  }
+  testing.assert_eq(len(big), 500)
+  testing.assert_eq(big["k0"], 0)
+  testing.assert_eq(big["k499"], 499)
+  testing.assert_eq(map.has(big, "k500"), false)
+  let smaller = map.delete(big, "k250")
+  testing.assert_eq(len(smaller), 499)
+  testing.assert_eq(map.has(smaller, "k250"), false)
+  testing.assert_eq(map.has(big, "k250"), true)
+  let same = map.delete(big, "missing")
+  testing.assert_eq(len(same), 500)
+  testing.assert_eq(map.keys(big)[0], "k0")
+  let merged = map.merge(#{"a": 1, "b": 2}, #{"b": 3, "c": 4})
+  testing.assert_eq(merged, #{"a": 1, "b": 3, "c": 4})
+
+  ; --- `r?` on a variable leaves the variable usable ---
+  let ok = Ok("v")
+  testing.assert_eq(unwrap_twice(ok), Ok("vv"))
+  testing.assert_eq(propagate(Err("e")), Err("e"))
+  let err = Err("kept")
+  testing.assert_eq(propagate(err), Err("kept"))
+  testing.assert_eq(err, Err("kept"))
+
+  ; --- try blocks: locals, temporaries and the error payload ---
+  let t = try {
+    let inner = propagate(Err("inner " + to_str(1)))?
+    inner
+  }
+  testing.assert_eq(t, Err("inner 1"))
+  let t2 = try {
+    fail("boom " + to_str(2))
+  }
+  testing.assert_eq(t2, Err("boom 2"))
+
+  ; --- higher-order functions keep their inputs alive ---
+  let xs = ["b", "a", "c"]
+  let sorted = sort_by(xs, fn(p, q) { cmp_str(p, q) })
+  testing.assert_eq(sorted, ["a", "b", "c"])
+  testing.assert_eq(xs, ["b", "a", "c"])
+  let doubled = map(xs, fn(s) { s + s })
+  testing.assert_eq(filter(doubled, fn(s) { s != "aa" }), ["bb", "cc"])
+  testing.assert_eq(reduce(xs, "", fn(acc, s) { acc + s }), "bac")
+  testing.assert_eq(find(xs, fn(s) { s == "c" }), Ok("c"))
+  testing.assert_eq(min_by(xs, fn(s) { s }), Ok("a"))
+
+  ; --- loops: continue/break and destructuring per iteration ---
+  let mut seen = []
+  for x in [1, 2, 3, 4] {
+    if x == 2 { continue }
+    if x == 4 { break }
+    let [p, q] = [x, x * 10]
+    seen = push(seen, to_str(p) + ":" + to_str(q))
+  }
+  testing.assert_eq(seen, ["1:10", "3:30"])
+
+  ; --- a long accumulate loop stays flat in memory and fast ---
+  let mut total = 0
+  let mut n = 0
+  while n < 200000 {
+    let s = "item-" + to_str(n) + "-" + to_str(n * 2)
+    total = total + len(s)
+    n = n + 1
+  }
+  testing.assert_eq(total, 3433335)
+
+  println("PASS: ownership and value semantics")
+}

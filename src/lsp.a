@@ -1,6 +1,7 @@
 use std.compiler.parser
 use std.compiler.lexer
 use std.compiler.checker
+use std.compiler.cgen
 
 ; --- JSON-RPC wire protocol ---
 
@@ -324,9 +325,10 @@ fn _builtin_ns_signatures() {
   m = map.set(m, "fs.mv", "fn fs.mv(src, dst) -> void")
   m = map.set(m, "fs.cp", "fn fs.cp(src, dst) -> void")
   m = map.set(m, "fs.abs", "fn fs.abs(path) -> str")
-  m = map.set(m, "exec", "fn exec(cmd) -> map(stdout, stderr, code)")
+  m = map.set(m, "exec", "fn exec(cmd) -> map(stdout, stderr, code, timed_out) -- exec_timeout(cmd, 0): both streams captured, own process group")
   m = map.set(m, "exec_timeout", "fn exec_timeout(cmd, ms) -> map(stdout, stderr, code, timed_out) -- own process group, whole tree killed on deadline/exit")
   m = map.set(m, "proc.spawn", "fn proc.spawn(cmd) -> int | Err")
+  m = map.set(m, "proc.exec", "fn proc.exec(path, args) -> Err -- replace this process with the program at path (execv, no shell); returns only on failure")
   m = map.set(m, "proc.write", "fn proc.write(handle, data) -> void | Err")
   m = map.set(m, "proc.read_line", "fn proc.read_line(handle) -> str | Err")
   m = map.set(m, "proc.kill", "fn proc.kill(handle) -> void | Err")
@@ -663,7 +665,7 @@ fn _find_in_imports(ast, word) {
     let item = items[ii]
     if type_of(item) == "map" && map.has(item, "tag") && item["tag"] == "UseDecl" {
       let path_arr = item["path"]
-      let mod_file = str.concat(str.join(path_arr, "/"), ".a")
+      let mod_file = cgen._use_path_to_file(path_arr)
       if fs.exists(mod_file) {
         let mod_src = io.read_file(mod_file)
         if type_of(mod_src) == "str" && len(mod_src) > 0 {

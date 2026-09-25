@@ -44,7 +44,7 @@ fn make_vars(page, nav_html, build_time) {
   ret v
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read, fs_write, time] {
   let site_dir = "/tmp/a_site_gen"
   let build_dir = path.join(site_dir, "build")
 

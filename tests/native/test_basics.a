@@ -24,5 +24,15 @@ fn main() {
   let m2 = map.set(m, "c", 3)
   if m2["c"] != 3 { fail("map.set failed") }
 
+  ; && / || must return an owned value: releasing the result must not free
+  ; a variable that is still live (the old a_and/a_or handed back a borrow).
+  let s = "hello"
+  let both = s && "world"
+  if s != "hello" { fail("and must not steal the left operand") }
+  if both != "world" { fail("and should yield the right operand") }
+  let either = s || "world"
+  if either != "hello" { fail("or should yield the left operand") }
+  if s != "hello" { fail("or must not steal the left operand") }
+
   println("all basics passed")
 }

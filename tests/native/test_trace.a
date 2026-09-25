@@ -1,107 +1,83 @@
+; Runtime failures: `try { }` catches them, and an uncaught one prints an
+; a-level stack trace (`at fn (file:line)`), innermost frame first.
+; `a build --release` compiles the trace machinery out.
+
 use std.testing
-use std.trace
+
+fn boom(n: int) -> int {
+  if n == 0 { fail("zero") }
+  ret 10 / n
+}
 
 fn main() {
-  ; --- Test 1: create tracer ---
-  let t = trace.create("test-service")
-  testing.assert_eq(t["name"], "test-service")
-  testing.assert_eq(to_str(trace.count(t)), "0")
-  println("PASS: create tracer")
+  ; --- try catches every kind of runtime failure ---
+  testing.assert_eq(try { fail("boom") }, Err("boom"))
+  testing.assert_eq(try { 1 / 0 }, Err("division by zero"))
+  testing.assert_eq(try { unwrap(Err("e")) }, Err("e"))
+  testing.assert_eq(try { boom(0) }, Err("zero"))
+  testing.assert_eq(try { boom(5) }, Ok(2))
+  ; a failure inside a lambda inside a builtin is still caught by the enclosing try
+  testing.assert_eq(try { map([1, 0], fn(v) => 10 / v) }, Err("division by zero"))
+  ; catching does not corrupt the frame stack: later failures still trace to here
+  let after = try { boom(0) }
+  testing.assert_eq(is_err(after), true)
+  println("PASS: try catches runtime failures")
 
-  ; --- Test 2: begin/end span ---
-  let t2 = trace.begin(t, "fetch")
-  time.sleep(10)
-  let t3 = trace.end(t2, "fetch", #{ "rows": 42 })
-  testing.assert_eq(to_str(trace.count(t3)), "2")
-  println("PASS: begin/end span")
+  ; --- an uncaught failure prints the message and the trace to stderr ---
+  if !fs.exists("./a") { fail("./a binary not found -- run from project root") }
+  let dir = "/tmp/a_trace_test_" + to_str(time.now())
+  fs.mkdir(dir)
+  let prog = dir + "/crash.a"
+  io.write_file(prog, str.join([
+    "fn parse_num(s: str) -> int \{",
+    "  if s == \"x\" \{ fail(\"not a number: \" + s) \}",
+    "  ret int(s)",
+    "\}",
+    "fn total(xs: [str]) -> int \{",
+    "  let mut t = 0",
+    "  for x in xs \{",
+    "    t = t + parse_num(x)",
+    "  \}",
+    "  ret t",
+    "\}",
+    "fn main() \{",
+    "  println(total([\"1\", \"2\"]))",
+    "  let f = fn(v) => total([v])",
+    "  println(f(\"x\"))",
+    "\}"
+  ], "\n") + "\n")
+  let r = exec_timeout("./a run " + prog, 60000)
+  testing.assert_eq(r["code"], 1)
+  testing.assert_eq(str.trim(r["stdout"]), "3")
+  let err = r["stderr"]
+  testing.assert_eq(str.contains(err, "runtime error: not a number: x\n"), true)
+  testing.assert_eq(str.contains(err, "  at parse_num (" + prog + ":2)\n"), true)
+  testing.assert_eq(str.contains(err, "  at total (" + prog + ":8)\n"), true)
+  testing.assert_eq(str.contains(err, "  at <lambda in main> (" + prog + ":14)\n"), true)
+  testing.assert_eq(str.contains(err, "  at main (" + prog + ":15)\n"), true)
+  println("PASS: uncaught failure prints a stack trace")
 
-  ; --- Test 3: instant event ---
-  let t4 = trace.event(t3, "cache_hit", #{ "key": "users" })
-  testing.assert_eq(to_str(trace.count(t4)), "3")
-  println("PASS: instant event")
+  ; --- --release: same message, no trace ---
+  let bin = dir + "/crash"
+  let b = exec_timeout("./a build " + prog + " --release -o " + bin, 120000)
+  testing.assert_eq(b["code"], 0)
+  let r2 = exec_timeout(bin, 60000)
+  testing.assert_eq(r2["code"], 1)
+  testing.assert_eq(str.contains(r2["stderr"], "runtime error: not a number: x"), true)
+  testing.assert_eq(str.contains(r2["stderr"], "  at "), false)
+  println("PASS: --release strips the trace")
 
-  ; --- Test 4: counter event ---
-  let t5 = trace.counter(t4, "requests", #{ "total": 100 })
-  testing.assert_eq(to_str(trace.count(t5)), "4")
-  println("PASS: counter event")
+  ; --- an Err that propagates out of main still has a trace ---
+  let errp = dir + "/errmain.a"
+  io.write_file(errp, "fn boom() \{ ret Err(\"deep\") \}\nfn main() \{ boom()? \}\n")
+  let re = exec_timeout("./a run " + errp, 60000)
+  testing.assert_eq(re["code"], 1)
+  testing.assert_eq(str.contains(re["stderr"], "error: deep"), true)
+  testing.assert_eq(str.contains(re["stderr"], "  at main (" + errp), true)
+  println("PASS: Err escaping main prints a stack trace")
 
-  ; --- Test 5: spans extraction ---
-  let sp = trace.spans(t5)
-  testing.assert_eq(to_str(len(sp)), "1")
-  testing.assert_eq(sp[0]["name"], "fetch")
-  testing.assert_eq(to_str(sp[0]["data"]["rows"]), "42")
-  let dur = sp[0]["duration_ms"]
-  testing.assert_eq(to_str(dur >= 0), "true")
-  println("PASS: spans extraction")
-
-  ; --- Test 6: find_events ---
-  let found = trace.find_events(t5, "cache_hit")
-  testing.assert_eq(to_str(len(found)), "1")
-  testing.assert_eq(found[0]["data"]["key"], "users")
-  println("PASS: find_events")
-
-  ; --- Test 7: duration_ms ---
-  let d = trace.duration_ms(t5)
-  testing.assert_eq(to_str(d >= 0), "true")
-  println("PASS: duration_ms")
-
-  ; --- Test 8: export_json ---
-  let j = trace.export_json(t5)
-  let parsed = json.parse(j)
-  testing.assert_eq(parsed["name"], "test-service")
-  testing.assert_eq(to_str(parsed["event_count"]), "4")
-  println("PASS: export_json")
-
-  ; --- Test 9: export_chrome ---
-  let chrome = trace.export_chrome(t5)
-  let events = json.parse(chrome)
-  testing.assert_eq(type_of(events), "array")
-  ; Should have: B (begin), E (end), i (instant), C (counter) = 4
-  testing.assert_eq(to_str(len(events)), "4")
-  testing.assert_eq(events[0]["ph"], "B")
-  testing.assert_eq(events[0]["name"], "fetch")
-  testing.assert_eq(events[1]["ph"], "E")
-  testing.assert_eq(events[2]["ph"], "i")
-  testing.assert_eq(events[3]["ph"], "C")
-  println("PASS: export_chrome format")
-
-  ; --- Test 10: export_otel ---
-  let otel = trace.export_otel(t5)
-  let odata = json.parse(otel)
-  testing.assert_eq(to_str(len(odata["resourceSpans"])), "1")
-  testing.assert_eq(odata["resourceSpans"][0]["operationName"], "fetch")
-  println("PASS: export_otel format")
-
-  ; --- Test 11: measure helper ---
-  let m = trace.measure(t, "work", fn() { ret Ok(42) })
-  testing.assert_eq(to_str(trace.count(m["trace"])), "2")
-  testing.assert_eq(is_ok(m["result"]), true)
-  testing.assert_eq(is_ok(m["result"]), true)
-  println("PASS: measure helper (ok)")
-
-  ; --- Test 12: measure with error ---
-  let m2 = trace.measure(t, "fail_work", fn() { ret Err("boom") })
-  testing.assert_eq(is_err(m2["result"]), true)
-  let fail_spans = trace.spans(m2["trace"])
-  testing.assert_eq(to_str(len(fail_spans)), "1")
-  println("PASS: measure helper (error)")
-
-  ; --- Test 13: nested spans ---
-  let tn = trace.begin(t, "outer")
-  let tn = trace.begin(tn, "inner")
-  let tn = trace.end(tn, "inner", #{})
-  let tn = trace.end(tn, "outer", #{})
-  let ns = trace.spans(tn)
-  testing.assert_eq(to_str(len(ns)), "2")
-  testing.assert_eq(ns[0]["name"], "inner")
-  testing.assert_eq(ns[1]["name"], "outer")
-  println("PASS: nested spans")
-
-  ; --- Test 14: clear ---
-  let tc = trace.clear(t5)
-  testing.assert_eq(to_str(trace.count(tc)), "0")
-  println("PASS: clear")
-
-  println("")
-  println("All trace tests passed!")
+  fs.rm(prog)
+  fs.rm(bin)
+  fs.rm(errp)
+  fs.rm(dir)
 }

@@ -3,7 +3,7 @@ use std.compiler.parser
 use std.compiler.serialize
 
 fn main() -> void
-  effects [io]
+  effects [io, fs_read, fs_write, exec]
 {
   let argv = args()
   if len(argv) < 1 {

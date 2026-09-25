@@ -1,6 +1,7 @@
 ; Test assertion library for "a".
-; Assertions call fail() on mismatch, which throws a catchable RuntimeError.
-; Use with `a test <file>` to auto-discover and run test_* functions.
+; Assertions call fail() on mismatch, which is a catchable runtime failure.
+; `a test` runs every `test_*.a` file. If a file has no `fn main` but has
+; nullary `fn test_*()`, the compiler synthesizes a main that calls them.
 
 ; Compares any two values structurally (ints, strings, arrays, maps, variants).
 fn assert_eq(actual: any, expected: any) -> void effects [io] {

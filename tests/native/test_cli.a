@@ -1,0 +1,114 @@
+; The `a` command as a launcher and build tool: argument passing, exit
+; status, honest `exec`, and the compilation-unit object cache.
+
+use std.testing
+
+fn write_prog(dir: str, name: str, lines: [str]) -> str {
+  let p = dir + "/" + name
+  io.write_file(p, str.join(lines, "\n") + "\n")
+  ret p
+}
+
+fn main() {
+  if !fs.exists("./a") { fail("./a binary not found -- run from project root") }
+  let dir = "/tmp/a_cli_test_" + to_str(time.now())
+  fs.mkdir(dir)
+
+  ; --- a run passes arguments through; a leading `--` is only a separator ---
+  let echo = write_prog(dir, "echo.a", [
+    "fn main() \{ println(str.join(args(), \"|\")) \}"
+  ])
+  let r1 = exec_timeout("./a run " + echo + " -- 'a b' c", 60000)
+  testing.assert_eq(r1["code"], 0)
+  testing.assert_eq(str.trim(r1["stdout"]), "a b|c")
+  let r2 = exec_timeout("./a run " + echo + " x y", 60000)
+  testing.assert_eq(str.trim(r2["stdout"]), "x|y")
+  println("PASS: a run arguments")
+
+  ; --- fn main() -> int: the returned integer is the exit status ---
+  let code_prog = write_prog(dir, "code.a", [
+    "fn main() -> int \{",
+    "  println(\"working\")",
+    "  ret 7",
+    "\}"
+  ])
+  let r3 = exec_timeout("./a run " + code_prog, 60000)
+  testing.assert_eq(r3["code"], 7)
+  testing.assert_eq(str.trim(r3["stdout"]), "working")
+  ; an untyped main whose tail expression is an int still exits 0
+  let tail_prog = write_prog(dir, "tail.a", ["fn main() \{ 42 \}"])
+  testing.assert_eq(exec_timeout("./a run " + tail_prog, 60000)["code"], 0)
+  ; an Err escaping main is exit 1 with the payload on stderr
+  let err_prog = write_prog(dir, "err.a", ["fn main() \{ ret Err(\"bad\") \}"])
+  let r4 = exec_timeout("./a run " + err_prog, 60000)
+  testing.assert_eq(r4["code"], 1)
+  testing.assert_eq(str.contains(r4["stderr"], "error: bad"), true)
+  println("PASS: exit status")
+
+  ; --- exec captures stderr and the exit code, like exec_timeout ---
+  let ex = exec("echo out; echo err 1>&2; exit 3")
+  testing.assert_eq(str.trim(ex["stdout"]), "out")
+  testing.assert_eq(str.trim(ex["stderr"]), "err")
+  testing.assert_eq(ex["code"], 3)
+  println("PASS: exec captures both streams")
+
+  ; --- the object cache: a module compiles once; an edit that leaves the
+  ; generated C unchanged (a trailing comment) is a hit ---
+  ; A unique constant keeps this run's objects distinct from a previous
+  ; run of the same test, so a global count cannot collide with a stale hit.
+  let n = to_str(time.now() % 100000)
+  let modfile = write_prog(dir, "helper.a", [
+    "fn twice(x: int) -> int \{ ret x * 2 + " + n + " \}"
+  ])
+  write_prog(dir, "user.a", [
+    "use helper",
+    "fn main() \{ println(to_str(helper.twice(21))) \}"
+  ])
+  let cwd = fs.cwd()
+  let build = "cd " + dir + " && " + cwd + "/a build user.a -o user_bin"
+  let b1 = exec_timeout(build, 120000)
+  testing.assert_eq(b1["code"], 0)
+  let first_out = str.trim(exec_timeout(dir + "/user_bin", 10000)["stdout"])
+  testing.assert_eq(first_out, to_str(42 + int(n)))
+  let before = len(fs.ls("/tmp/a_obj/units"))
+  io.write_file(modfile, "fn twice(x: int) -> int \{ ret x * 2 + " + n + " \}\n; a trailing comment changes nothing in the generated C\n")
+  let b2 = exec_timeout(build, 120000)
+  testing.assert_eq(b2["code"], 0)
+  testing.assert_eq(len(fs.ls("/tmp/a_obj/units")), before)
+  ; a real edit produces exactly one new object (the module's), not two
+  io.write_file(modfile, "fn twice(x: int) -> int \{ ret x + x + " + n + " \}\n")
+  let b3 = exec_timeout(build, 120000)
+  testing.assert_eq(b3["code"], 0)
+  testing.assert_eq(len(fs.ls("/tmp/a_obj/units")), before + 1)
+  testing.assert_eq(str.trim(exec_timeout(dir + "/user_bin", 10000)["stdout"]), to_str(42 + int(n)))
+  println("PASS: compilation-unit cache")
+
+  ; --- a parse error names the unclosed block ---
+  let bad = write_prog(dir, "bad.a", ["fn main() \{ let x = 1; println(x) \}"])
+  let r5 = exec_timeout("./a run " + bad, 60000)
+  testing.assert_eq(r5["code"] != 0, true)
+  testing.assert_eq(str.contains(r5["stderr"], "block opened at 1:11 is never closed"), true)
+  println("PASS: unclosed block diagnostic")
+
+  ; --- a check --json: one machine-readable object per diagnostic ---
+  let jprog = write_prog(dir, "j.a", ["fn main() \{ println(missing) \}"])
+  let jr = exec_timeout("./a check --json " + jprog, 60000)
+  testing.assert_eq(jr["code"], 1)
+  testing.assert_eq(str.contains(jr["stdout"], "\"code\":\"E0001\""), true)
+  testing.assert_eq(str.contains(jr["stdout"], "\"severity\":\"error\""), true)
+  println("PASS: a check --json")
+
+  ; --- a file with only test_* and no main still runs ---
+  let tprog = write_prog(dir, "only_tests.a", [
+    "fn test_one() \{ println(\"one\") \}",
+    "fn test_two() \{ println(\"two\") \}"
+  ])
+  let tr = exec_timeout("./a run " + tprog, 60000)
+  testing.assert_eq(tr["code"], 0)
+  testing.assert_eq(str.contains(tr["stdout"], "one"), true)
+  testing.assert_eq(str.contains(tr["stdout"], "two"), true)
+  println("PASS: synthesized test main")
+
+  exec_timeout("rm -rf " + dir, 10000)
+  println("ALL PASS")
+}

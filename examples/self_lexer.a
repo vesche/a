@@ -167,8 +167,6 @@ fn lex(src: str) -> [str] effects [io] {
       continue
     }
 
-    let start_col: i64 = col
-
     if c == "(" {
       tokens = push(tokens, "{line}:{col}:LParen:(")
       pos = pos + 1
@@ -387,7 +385,7 @@ fn lex(src: str) -> [str] effects [io] {
   ret tokens
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let src: str = io.read_file("examples/self_lexer.a")
   let tokens: [str] = lex(src)
   println("{len(tokens)} tokens produced")

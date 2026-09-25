@@ -1,0 +1,67 @@
+; pre/post fire at runtime and are stripped by --release.
+
+use std.testing
+
+fn write_prog(dir: str, name: str, lines: [str]) -> str {
+  let p = dir + "/" + name
+  io.write_file(p, str.join(lines, "\n") + "\n")
+  ret p
+}
+
+fn main() {
+  if !fs.exists("./a") { fail("./a binary not found -- run from project root") }
+  let dir = "/tmp/a_contract_test_" + to_str(time.now())
+  fs.mkdir(dir)
+
+  let pre_prog = write_prog(dir, "pre.a", [
+    "fn divide(a: int, b: int) -> int",
+    "  pre \{ b != 0 \}",
+    "\{",
+    "  ret a / b",
+    "\}",
+    "fn main() \{ println(to_str(divide(10, 0))) \}"
+  ])
+  let r = exec_timeout("./a run " + pre_prog, 60000)
+  testing.assert_eq(r["code"], 1)
+  testing.assert_eq(str.contains(r["stderr"], "precondition failed: divide"), true)
+  testing.assert_eq(str.contains(r["stderr"], "  at divide ("), true)
+  println("PASS: pre fires")
+
+  let post_prog = write_prog(dir, "post.a", [
+    "fn abs(x: int) -> int",
+    "  post \{ ret >= 0 \}",
+    "\{",
+    "  ret x",
+    "\}",
+    "fn main() \{ println(to_str(abs(-3))) \}"
+  ])
+  let r2 = exec_timeout("./a run " + post_prog, 60000)
+  testing.assert_eq(r2["code"], 1)
+  testing.assert_eq(str.contains(r2["stderr"], "postcondition failed: abs"), true)
+  println("PASS: post fires")
+
+  let ok_prog = write_prog(dir, "ok.a", [
+    "fn divide(a: int, b: int) -> int",
+    "  pre \{ b != 0 \}",
+    "  post \{ true \}",
+    "\{",
+    "  ret a / b",
+    "\}",
+    "fn main() \{ println(to_str(divide(10, 2))) \}"
+  ])
+  let r3 = exec_timeout("./a run " + ok_prog, 60000)
+  testing.assert_eq(r3["code"], 0)
+  testing.assert_eq(str.trim(r3["stdout"]), "5")
+  println("PASS: contracts pass when true")
+
+  let bin = dir + "/pre_rel"
+  let b = exec_timeout("./a build " + pre_prog + " --release -o " + bin, 120000)
+  testing.assert_eq(b["code"], 0)
+  let r4 = exec_timeout(bin, 60000)
+  testing.assert_eq(r4["code"], 1)
+  testing.assert_eq(str.contains(r4["stderr"], "precondition failed"), false)
+  testing.assert_eq(str.contains(r4["stderr"], "division by zero"), true)
+  println("PASS: --release strips contracts")
+
+  exec_timeout("rm -rf " + dir, 10000)
+}

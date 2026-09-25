@@ -51,6 +51,93 @@ jmp_buf a_try_stack[A_TRY_STACK_MAX];
 AValue a_try_err;
 int a_try_depth = 0;
 
+AFrame a_frames[A_FRAME_MAX];
+int a_frame_depth = 0;
+int a_cur_line = 0;
+
+AValue* a_tmp_stack = NULL;
+int a_tmp_sp = 0;
+int a_tmp_cap = 0;
+void a_tmp_grow(void) {
+    a_tmp_cap = a_tmp_cap ? a_tmp_cap * 2 : 256;
+    a_tmp_stack = realloc(a_tmp_stack, sizeof(AValue) * a_tmp_cap);
+}
+
+/* The current line lives in one global (a plain store per statement, which is
+ * what keeps A_LINE nearly free for gcc). It belongs to the innermost frame:
+ * push saves the caller's line into the caller's slot, pop restores it. */
+static inline int a_top_slot(int depth) {
+    return depth <= A_FRAME_MAX ? depth - 1 : A_FRAME_MAX - 1;
+}
+
+int a_frame_push(const char* fn, const char* file) {
+    if (a_frame_depth > 0) a_frames[a_top_slot(a_frame_depth)].line = a_cur_line;
+    /* Past the cap the innermost frame keeps overwriting the last slot, so a
+     * runaway recursion still shows where it was when it died. */
+    int i = a_frame_depth < A_FRAME_MAX ? a_frame_depth : A_FRAME_MAX - 1;
+    a_frames[i].fn = fn; a_frames[i].file = file; a_frames[i].line = 0;
+    a_frame_depth++;
+    a_cur_line = 0;
+    return 0;
+}
+
+/* When the last frame (main) pops, keep a copy so an Err that propagated
+ * out of main can still print a trace -- a_main_exit_code runs after the
+ * cleanup attribute has already unwound the live stack. */
+static AFrame a_saved_frames[A_FRAME_MAX];
+static int a_saved_depth = 0;
+
+static void a_snapshot_trace(void) {
+    int depth = a_frame_depth < A_FRAME_MAX ? a_frame_depth : A_FRAME_MAX;
+    if (a_frame_depth > 0) a_frames[a_top_slot(a_frame_depth)].line = a_cur_line;
+    a_saved_depth = depth;
+    for (int i = 0; i < depth; i++) a_saved_frames[i] = a_frames[i];
+}
+
+void a_frame_pop_cb(int* unused) {
+    (void)unused;
+    if (a_frame_depth == 1) a_snapshot_trace();
+    a_frame_unwind_to(a_frame_depth - 1);
+}
+
+void a_frame_unwind_to(int depth) {
+    if (depth < 0) depth = 0;
+    a_frame_depth = depth;
+    a_cur_line = depth > 0 ? a_frames[a_top_slot(depth)].line : 0;
+}
+
+void a_print_trace(void) {
+    const AFrame* frames = a_frames;
+    int live = a_frame_depth < A_FRAME_MAX ? a_frame_depth : A_FRAME_MAX;
+    int depth = live;
+    int shown = 0;
+    if (live == 0 && a_saved_depth > 0) {
+        frames = a_saved_frames;
+        depth = a_saved_depth;
+    } else if (a_frame_depth > 0) {
+        a_frames[a_top_slot(a_frame_depth)].line = a_cur_line;
+    }
+    for (int i = depth - 1; i >= 0 && shown < 40; i--, shown++) {
+        const AFrame* f = &frames[i];
+        if (f->line > 0) fprintf(stderr, "  at %s (%s:%d)\n", f->fn, f->file, f->line);
+        else fprintf(stderr, "  at %s (%s)\n", f->fn, f->file);
+    }
+    int leftover = (live == 0 ? a_saved_depth : a_frame_depth) - shown;
+    if (leftover > 0) fprintf(stderr, "  ... %d more frame(s)\n", leftover);
+}
+
+void a_fatal(const char* prefix, AValue payload) {
+    if (a_try_depth > 0) {
+        /* owned by the landing site, which wraps it in a_err() and releases it */
+        a_try_err = a_retain(payload);
+        longjmp(a_try_stack[a_try_depth - 1], 1);
+    }
+    fprintf(stderr, "%s", prefix);
+    a_eprintln(payload);
+    a_print_trace();
+    a_exit_fatal(1);
+}
+
 /* Set in every fork()ed child. Fatal paths must _exit() in a child so that
  * atexit handlers, stdio flushing, and other parent-owned teardown never run
  * twice, and so a child can never fall through into the parent's code. */
@@ -153,6 +240,8 @@ void a_release(AValue v) {
             }
             free(v.mval->keys);
             free(v.mval->vals);
+            free(v.mval->hashes);
+            free(v.mval->index);
             free(v.mval);
         }
     } else if (v.tag == TAG_RESULT && v.rval.inner) {
@@ -219,7 +308,7 @@ AValue a_mul(AValue a, AValue b) {
 
 AValue a_div(AValue a, AValue b) {
     if (a.tag == TAG_INT && b.tag == TAG_INT) {
-        if (b.ival == 0) { fprintf(stderr, "division by zero\n"); a_exit_fatal(1); }
+        if (b.ival == 0) a_fatal("runtime error: ", a_string("division by zero"));
         return a_int(a.ival / b.ival);
     }
     double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
@@ -228,7 +317,10 @@ AValue a_div(AValue a, AValue b) {
 }
 
 AValue a_mod(AValue a, AValue b) {
-    if (a.tag == TAG_INT && b.tag == TAG_INT) return a_int(a.ival % b.ival);
+    if (a.tag == TAG_INT && b.tag == TAG_INT) {
+        if (b.ival == 0) a_fatal("runtime error: ", a_string("division by zero"));
+        return a_int(a.ival % b.ival);
+    }
     double fa = (a.tag == TAG_INT) ? (double)a.ival : a.fval;
     double fb = (b.tag == TAG_INT) ? (double)b.ival : b.fval;
     return a_float(fmod(fa, fb));
@@ -277,7 +369,7 @@ static int val_eq(AValue a, AValue b) {
             return 1;
         }
         case TAG_RESULT:
-            return a.rval.is_ok == b.rval.is_ok && val_eq(*a.rval.inner, *b.rval.inner);
+            return A_RESULT_OK(a) == A_RESULT_OK(b) && val_eq(*a.rval.inner, *b.rval.inner);
         case TAG_CLOSURE: return a.cval == b.cval;
         case TAG_PTR: return a.pval == b.pval;
         default: return 0;
@@ -306,8 +398,8 @@ AValue a_lteq(AValue a, AValue b) {
 }
 AValue a_gteq(AValue a, AValue b) { return a_lteq(b, a); }
 AValue a_not(AValue a) { return a_bool(!a_truthy(a)); }
-AValue a_and(AValue a, AValue b) { return a_truthy(a) ? b : a; }
-AValue a_or(AValue a, AValue b) { return a_truthy(a) ? a : b; }
+AValue a_and(AValue a, AValue b) { return a_truthy(a) ? a_retain(b) : a_retain(a); }
+AValue a_or(AValue a, AValue b) { return a_truthy(a) ? a_retain(a) : a_retain(b); }
 
 /* --- Strings --- */
 
@@ -347,7 +439,7 @@ static void val_to_buf(AValue v, char* buf, int cap) {
         case TAG_RESULT: {
             char tmp[256];
             val_to_buf(*v.rval.inner, tmp, 256);
-            if (v.rval.is_ok) snprintf(buf, cap, "Ok(%s)", tmp);
+            if (A_RESULT_OK(v)) snprintf(buf, cap, "Ok(%s)", tmp);
             else snprintf(buf, cap, "Err(%s)", tmp);
             break;
         }
@@ -490,7 +582,7 @@ AValue a_str_contains(AValue s, AValue sub) {
 }
 
 AValue a_str_replace(AValue s, AValue from, AValue to) {
-    if (s.tag != TAG_STRING || from.tag != TAG_STRING || to.tag != TAG_STRING) return s;
+    if (s.tag != TAG_STRING || from.tag != TAG_STRING || to.tag != TAG_STRING) return a_retain(s);
     const char* src = s.sval->data;
     const char* f = from.sval->data;
     const char* t = to.sval->data;
@@ -514,7 +606,7 @@ AValue a_str_replace(AValue s, AValue from, AValue to) {
 }
 
 AValue a_str_trim(AValue s) {
-    if (s.tag != TAG_STRING) return s;
+    if (s.tag != TAG_STRING) return a_retain(s);
     const char* d = s.sval->data;
     int start = 0, end = s.sval->len;
     while (start < end && isspace((unsigned char)d[start])) start++;
@@ -523,7 +615,7 @@ AValue a_str_trim(AValue s) {
 }
 
 AValue a_str_upper(AValue s) {
-    if (s.tag != TAG_STRING) return s;
+    if (s.tag != TAG_STRING) return a_retain(s);
     AString* ns = malloc(sizeof(AString) + s.sval->len + 1);
     ns->rc = 1; ns->len = s.sval->len;
     for (int i = 0; i < ns->len; i++) ns->data[i] = toupper((unsigned char)s.sval->data[i]);
@@ -532,7 +624,7 @@ AValue a_str_upper(AValue s) {
 }
 
 AValue a_str_lower(AValue s) {
-    if (s.tag != TAG_STRING) return s;
+    if (s.tag != TAG_STRING) return a_retain(s);
     AString* ns = malloc(sizeof(AString) + s.sval->len + 1);
     ns->rc = 1; ns->len = s.sval->len;
     for (int i = 0; i < ns->len; i++) ns->data[i] = tolower((unsigned char)s.sval->data[i]);
@@ -642,10 +734,10 @@ AValue a_array_get(AValue arr, AValue idx) {
 
 AValue a_index_set(AValue coll, AValue idx, AValue val) {
     if (coll.tag == TAG_MAP) return a_map_set(coll, idx, val);
-    if (coll.tag != TAG_ARRAY || idx.tag != TAG_INT) return coll;
+    if (coll.tag != TAG_ARRAY || idx.tag != TAG_INT) return a_retain(coll);
     int i = (int)idx.ival;
     int n = coll.aval->len;
-    if (i < 0 || i >= n) return coll;
+    if (i < 0 || i >= n) return a_retain(coll);
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * n);
@@ -653,6 +745,24 @@ AValue a_index_set(AValue coll, AValue idx, AValue val) {
         na->items[j] = (j == i) ? a_retain(val) : a_retain(coll.aval->items[j]);
     }
     return (AValue){.tag = TAG_ARRAY, .aval = na};
+}
+
+/* `xs[i] = v` / `m[k] = v`: consumes the caller's reference to `coll` and
+ * updates in place when it was the only one (see a_array_push_move). */
+AValue a_index_set_move(AValue coll, AValue idx, AValue val) {
+    if (coll.tag == TAG_MAP) return a_map_set_move(coll, idx, val);
+    if (coll.tag != TAG_ARRAY || idx.tag != TAG_INT) return coll;
+    int i = (int)idx.ival;
+    if (i < 0 || i >= coll.aval->len) return coll;
+    if (coll.aval->rc == 1) {
+        AValue old = coll.aval->items[i];
+        coll.aval->items[i] = a_retain(val);
+        a_release(old);
+        return coll;
+    }
+    AValue out = a_index_set(coll, idx, val);
+    a_release(coll);
+    return out;
 }
 
 AValue a_array_push(AValue arr, AValue val) {
@@ -709,7 +819,7 @@ static int sort_cmp(const void* a, const void* b) {
 }
 
 AValue a_sort(AValue arr) {
-    if (arr.tag != TAG_ARRAY) return arr;
+    if (arr.tag != TAG_ARRAY) return a_retain(arr);
     int n = arr.aval->len;
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
@@ -727,7 +837,7 @@ AValue a_contains(AValue arr, AValue val) {
 }
 
 AValue a_reverse_arr(AValue arr) {
-    if (arr.tag != TAG_ARRAY) return arr;
+    if (arr.tag != TAG_ARRAY) return a_retain(arr);
     int n = arr.aval->len;
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
@@ -749,26 +859,106 @@ AValue a_concat_arr(AValue a, AValue b) {
 
 /* --- Maps --- */
 
-AValue a_map_new(int n, ...) {
+static uint32_t map_hash(const char* s) {
+    uint32_t h = 2166136261u;
+    for (; *s; s++) { h ^= (unsigned char)*s; h *= 16777619u; }
+    return h;
+}
+
+static AMap* map_alloc(int cap) {
     AMap* m = malloc(sizeof(AMap));
-    m->rc = 1; m->len = n; m->cap = n > 0 ? n : 1;
+    m->rc = 1; m->len = 0; m->cap = cap > 0 ? cap : 1;
     m->keys = malloc(sizeof(char*) * m->cap);
     m->vals = malloc(sizeof(AValue) * m->cap);
+    m->hashes = malloc(sizeof(uint32_t) * m->cap);
+    m->index = NULL; m->index_cap = 0;
+    return m;
+}
+
+/* (Re)build the hash index so that it holds all len entries at <= 50% load. */
+static void map_reindex(AMap* m) {
+    int want = 16;
+    while (want < m->len * 2) want *= 2;
+    if (m->index_cap != want) {
+        free(m->index);
+        m->index = malloc(sizeof(int) * want);
+        m->index_cap = want;
+    }
+    memset(m->index, 0, sizeof(int) * want);
+    for (int i = 0; i < m->len; i++) {
+        int slot = m->hashes[i] & (want - 1);
+        while (m->index[slot]) slot = (slot + 1) & (want - 1);
+        m->index[slot] = i + 1;
+    }
+}
+
+/* Append a key (already strdup'd) + value (already retained) at the end. */
+static void map_append(AMap* m, char* key, uint32_t h, AValue val) {
+    if (m->len == m->cap) {
+        int ncap = m->cap < 8 ? 8 : m->cap * 2;
+        m->keys = realloc(m->keys, sizeof(char*) * ncap);
+        m->vals = realloc(m->vals, sizeof(AValue) * ncap);
+        m->hashes = realloc(m->hashes, sizeof(uint32_t) * ncap);
+        m->cap = ncap;
+    }
+    int i = m->len++;
+    m->keys[i] = key; m->vals[i] = val; m->hashes[i] = h;
+    if (m->index) {
+        if (m->len * 2 > m->index_cap) map_reindex(m);
+        else {
+            int slot = h & (m->index_cap - 1);
+            while (m->index[slot]) slot = (slot + 1) & (m->index_cap - 1);
+            m->index[slot] = i + 1;
+        }
+    } else if (m->len >= A_MAP_INDEX_MIN) {
+        map_reindex(m);
+    }
+}
+
+AValue a_map_new(int n, ...) {
+    AMap* m = map_alloc(n);
     va_list ap;
     va_start(ap, n);
     for (int i = 0; i < n; i++) {
         const char* k = va_arg(ap, const char*);
-        m->keys[i] = strdup(k);
-        m->vals[i] = a_retain(va_arg(ap, AValue));
+        AValue v = va_arg(ap, AValue);
+        map_append(m, strdup(k), map_hash(k), a_retain(v));
     }
     va_end(ap);
     return (AValue){.tag = TAG_MAP, .mval = m};
 }
 
-static int map_find(AMap* m, const char* key) {
+static int map_find_h(AMap* m, const char* key, uint32_t h) {
+    if (m->index) {
+        int mask = m->index_cap - 1;
+        int slot = h & mask;
+        while (m->index[slot]) {
+            int i = m->index[slot] - 1;
+            if (m->hashes[i] == h && strcmp(m->keys[i], key) == 0) return i;
+            slot = (slot + 1) & mask;
+        }
+        return -1;
+    }
     for (int i = 0; i < m->len; i++)
-        if (strcmp(m->keys[i], key) == 0) return i;
+        if (m->hashes[i] == h && strcmp(m->keys[i], key) == 0) return i;
     return -1;
+}
+
+static int map_find(AMap* m, const char* key) {
+    return map_find_h(m, key, map_hash(key));
+}
+
+/* Fresh map holding the same entries (keys copied, values retained). */
+static AMap* map_clone(AMap* old, int extra) {
+    AMap* nm = map_alloc(old->len + extra);
+    for (int i = 0; i < old->len; i++) {
+        nm->keys[i] = strdup(old->keys[i]);
+        nm->vals[i] = a_retain(old->vals[i]);
+        nm->hashes[i] = old->hashes[i];
+    }
+    nm->len = old->len;
+    if (nm->len >= A_MAP_INDEX_MIN) map_reindex(nm);
+    return nm;
 }
 
 static const char* val_as_key(AValue key) {
@@ -792,25 +982,60 @@ AValue a_map_get_borrow(AValue m, const char* key) {
     return idx >= 0 ? m.mval->vals[idx] : a_void();
 }
 
+/* Owned lookup by C string: `obj.field` without allocating the key. */
+AValue a_map_get_cstr(AValue m, const char* key) {
+    return a_retain(a_map_get_borrow(m, key));
+}
+
+int a_map_has_cstr(AValue m, const char* key) {
+    return m.tag == TAG_MAP && map_find(m.mval, key) >= 0;
+}
+
+/* `v["literal"]`: a_array_get with a string index, minus the key allocation. */
+AValue a_index_cstr(AValue v, const char* key) {
+    if (v.tag == TAG_MAP) return a_map_get_cstr(v, key);
+    return a_void();
+}
+
 AValue a_map_set(AValue m, AValue key, AValue val) {
-    AMap* old = (m.tag == TAG_MAP) ? m.mval : NULL;
-    int olen = old ? old->len : 0;
     const char* k = val_as_key(key);
-    int existing = old ? map_find(old, k) : -1;
-    int newlen = (existing >= 0) ? olen : olen + 1;
-    AMap* nm = malloc(sizeof(AMap));
-    nm->rc = 1; nm->len = newlen; nm->cap = newlen;
-    nm->keys = malloc(sizeof(char*) * nm->cap);
-    nm->vals = malloc(sizeof(AValue) * nm->cap);
-    for (int i = 0; i < olen; i++) {
-        nm->keys[i] = strdup(old->keys[i]);
-        nm->vals[i] = (i == existing) ? a_retain(val) : a_retain(old->vals[i]);
+    uint32_t h = map_hash(k);
+    if (m.tag != TAG_MAP) {
+        AMap* nm = map_alloc(1);
+        map_append(nm, strdup(k), h, a_retain(val));
+        return (AValue){.tag = TAG_MAP, .mval = nm};
     }
-    if (existing < 0) {
-        nm->keys[olen] = strdup(k);
-        nm->vals[olen] = a_retain(val);
+    int existing = map_find_h(m.mval, k, h);
+    AMap* nm = map_clone(m.mval, existing >= 0 ? 0 : 1);
+    if (existing >= 0) {
+        a_release(nm->vals[existing]);
+        nm->vals[existing] = a_retain(val);
+    } else {
+        map_append(nm, strdup(k), h, a_retain(val));
     }
     return (AValue){.tag = TAG_MAP, .mval = nm};
+}
+
+/* map.set that consumes the caller's reference to `m`. Emitted by cgen for
+ * `m = map.set(m, k, v)`; when that reference was the only one (rc == 1) the
+ * update is unobservable, so mutate in place instead of copying every key. */
+AValue a_map_set_move(AValue m, AValue key, AValue val) {
+    if (m.tag == TAG_MAP && m.mval->rc == 1) {
+        const char* k = val_as_key(key);
+        uint32_t h = map_hash(k);
+        int existing = map_find_h(m.mval, k, h);
+        if (existing >= 0) {
+            AValue old = m.mval->vals[existing];
+            m.mval->vals[existing] = a_retain(val);
+            a_release(old);
+        } else {
+            map_append(m.mval, strdup(k), h, a_retain(val));
+        }
+        return m;
+    }
+    AValue out = a_map_set(m, key, val);
+    a_release(m);
+    return out;
 }
 
 AValue a_map_has(AValue m, AValue key) {
@@ -837,32 +1062,32 @@ AValue a_map_values(AValue m) {
 }
 
 AValue a_map_merge(AValue a, AValue b) {
-    if (a.tag != TAG_MAP || b.tag != TAG_MAP) return a;
-    AValue result = a;
+    if (a.tag != TAG_MAP || b.tag != TAG_MAP) return a_retain(a);
+    AMap* nm = map_clone(a.mval, b.mval->len);
     for (int i = 0; i < b.mval->len; i++) {
-        AValue key = a_string(b.mval->keys[i]);
-        result = a_map_set(result, key, a_retain(b.mval->vals[i]));
-        a_release(key);
+        const char* k = b.mval->keys[i];
+        uint32_t h = b.mval->hashes[i];
+        int existing = map_find_h(nm, k, h);
+        if (existing >= 0) {
+            AValue old = nm->vals[existing];
+            nm->vals[existing] = a_retain(b.mval->vals[i]);
+            a_release(old);
+        } else {
+            map_append(nm, strdup(k), h, a_retain(b.mval->vals[i]));
+        }
     }
-    return result;
+    return (AValue){.tag = TAG_MAP, .mval = nm};
 }
 
 AValue a_map_delete(AValue m, AValue key) {
-    if (m.tag != TAG_MAP) return m;
+    if (m.tag != TAG_MAP) return a_retain(m);
     const char* k = val_as_key(key);
     int idx = map_find(m.mval, k);
-    if (idx < 0) return m;
-    AMap* nm = malloc(sizeof(AMap));
-    nm->rc = 1; nm->len = m.mval->len - 1;
-    nm->cap = nm->len > 0 ? nm->len : 1;
-    nm->keys = malloc(sizeof(char*) * nm->cap);
-    nm->vals = malloc(sizeof(AValue) * nm->cap);
-    int j = 0;
+    if (idx < 0) return a_retain(m);
+    AMap* nm = map_alloc(m.mval->len);
     for (int i = 0; i < m.mval->len; i++) {
         if (i == idx) continue;
-        nm->keys[j] = strdup(m.mval->keys[i]);
-        nm->vals[j] = a_retain(m.mval->vals[i]);
-        j++;
+        map_append(nm, strdup(m.mval->keys[i]), m.mval->hashes[i], a_retain(m.mval->vals[i]));
     }
     return (AValue){.tag = TAG_MAP, .mval = nm};
 }
@@ -912,12 +1137,14 @@ AValue a_io_read_file(AValue path) {
     if (!f) return a_err(a_string("read_file: cannot open file"));
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
+    if (sz < 0) { fclose(f); return a_err(a_string("read_file: not a regular file")); }
     fseek(f, 0, SEEK_SET);
-    char* buf = malloc(sz + 1);
-    size_t n = fread(buf, 1, sz, f);
+    char* buf = malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return a_err(a_string("read_file: out of memory")); }
+    size_t n = fread(buf, 1, (size_t)sz, f);
     buf[n] = '\0';
     fclose(f);
-    AValue result = a_string_len(buf, (int)sz);
+    AValue result = a_string_len(buf, (int)n);
     free(buf);
     return result;
 }
@@ -975,6 +1202,8 @@ AValue a_fs_is_dir(AValue path) {
     return a_bool(S_ISDIR(st.st_mode));
 }
 
+#if defined(_WIN32) || defined(WASM_BUILD)
+/* popen-based fallback: stdout only, stderr passes through. */
 AValue a_exec(AValue cmd) {
     if (cmd.tag != TAG_STRING) return a_err(a_string("exec: expected string"));
     FILE* p = popen(cmd.sval->data, "r");
@@ -1003,6 +1232,12 @@ AValue a_exec(AValue cmd) {
     r = a_map_set(r, a_string("code"), a_int(code));
     return r;
 }
+#else
+/* exec(cmd) is exec_timeout(cmd, 0): both streams captured, the command in
+ * its own process group so nothing it starts outlives us. Before this,
+ * exec() returned stderr as "" while the real stderr went to the terminal. */
+AValue a_exec(AValue cmd) { return a_exec_timeout(cmd, a_int(0)); }
+#endif
 
 /* --- Subprocess pipes (proc.*) --- */
 
@@ -1155,6 +1390,8 @@ AValue a_proc_is_running(AValue handle) {
     int status = 0;
     pid_t r = waitpid(subprocs[h].pid, &status, WNOHANG);
     if (r == 0) return a_bool(1);
+    close(subprocs[h].stdin_fd);
+    close(subprocs[h].stdout_fd);
     subprocs[h].active = 0;
     return a_bool(0);
 }
@@ -1498,7 +1735,29 @@ AValue a_exec_timeout(AValue cmd, AValue ms_val) {
     return r;
 }
 
+/* Replaces this process with `path` (execv: no shell, arguments passed as
+ * given). Only returns on failure, with Err. stdin/stdout/stderr, the exit
+ * code and signals all belong to the new program -- this is how `a run`
+ * hands over to the compiled binary. */
+AValue a_proc_exec(AValue path, AValue args) {
+    if (path.tag != TAG_STRING) return a_err(a_string("proc.exec: expected string path"));
+    if (args.tag != TAG_ARRAY) return a_err(a_string("proc.exec: expected array of string arguments"));
+    int n = args.aval->len;
+    for (int i = 0; i < n; i++) {
+        if (args.aval->items[i].tag != TAG_STRING) return a_err(a_string("proc.exec: arguments must be strings"));
+    }
+    char** argv = malloc(sizeof(char*) * (n + 2));
+    argv[0] = path.sval->data;
+    for (int i = 0; i < n; i++) argv[i + 1] = args.aval->items[i].sval->data;
+    argv[n + 1] = NULL;
+    fflush(stdout); fflush(stderr);
+    execv(path.sval->data, argv);
+    free(argv);
+    return a_err(a_str_concat(a_string("proc.exec: "), a_string(strerror(errno))));
+}
+
 #else /* _WIN32 || WASM_BUILD: stub out proc/spawn */
+AValue a_proc_exec(AValue path, AValue args) { return a_err(a_string("proc.exec: not available on this platform")); }
 AValue a_proc_spawn(AValue cmd) { return a_err(a_string("proc.spawn: not available on this platform")); }
 AValue a_proc_write(AValue h, AValue d) { return a_err(a_string("proc: not available")); }
 AValue a_proc_read_line(AValue h) { return a_err(a_string("proc: not available")); }
@@ -1625,7 +1884,15 @@ static AValue json_parse_value(const char** p) {
 AValue a_json_parse(AValue input) {
     if (input.tag != TAG_STRING) return a_err(a_string("json.parse: expected string"));
     const char* p = input.sval->data;
-    return json_parse_value(&p);
+    while (*p && isspace((unsigned char)*p)) p++;
+    const char* start = p;
+    AValue v = json_parse_value(&p);
+    while (*p && isspace((unsigned char)*p)) p++;
+    if (p == start || *p != '\0') {
+        a_release(v);
+        return a_err(a_string("json.parse: invalid JSON"));
+    }
+    return v;
 }
 
 /* --- Result --- */
@@ -1637,8 +1904,8 @@ static AValue result_new(int is_ok, AValue v) {
     AResultBox* box = malloc(sizeof(AResultBox));
     box->val = a_retain(v);
     box->rc = 1;
+    box->is_ok = is_ok;
     AValue r; r.tag = TAG_RESULT;
-    r.rval.is_ok = is_ok;
     r.rval.inner = &box->val;
     return r;
 }
@@ -1646,15 +1913,13 @@ static AValue result_new(int is_ok, AValue v) {
 AValue a_ok(AValue v) { return result_new(1, v); }
 AValue a_err(AValue v) { return result_new(0, v); }
 
-AValue a_is_ok(AValue v) { return a_bool(v.tag == TAG_RESULT && v.rval.is_ok); }
-AValue a_is_err(AValue v) { return a_bool(v.tag == TAG_RESULT && !v.rval.is_ok); }
+AValue a_is_ok(AValue v) { return a_bool(v.tag == TAG_RESULT && A_RESULT_OK(v)); }
+AValue a_is_err(AValue v) { return a_bool(v.tag == TAG_RESULT && !A_RESULT_OK(v)); }
 
 AValue a_unwrap(AValue v) {
     if (v.tag == TAG_RESULT) {
-        if (v.rval.is_ok) return a_retain(*v.rval.inner);
-        fprintf(stderr, "unwrap on Err: ");
-        a_eprintln(*v.rval.inner);
-        a_exit_fatal(1);
+        if (A_RESULT_OK(v)) return a_retain(*v.rval.inner);
+        a_fatal("unwrap on Err: ", *v.rval.inner);
     }
     return a_retain(v);
 }
@@ -1665,6 +1930,7 @@ int a_main_exit_code(AValue r) {
     if (a_is_err_raw(r)) {
         fprintf(stderr, "error: ");
         a_eprintln(*r.rval.inner);
+        a_print_trace();
         a_release(r);
         return 1;
     }
@@ -1672,15 +1938,32 @@ int a_main_exit_code(AValue r) {
     return 0;
 }
 
+/* For `fn main() -> int`: the returned integer is the exit status. Only
+ * cgen's knowledge of the declared type selects this, so a main whose tail
+ * expression merely happens to be an int still exits 0. */
+int a_main_exit_code_int(AValue r) {
+    if (r.tag == TAG_INT) return (int)(r.ival & 0xff);
+    return a_main_exit_code(r);
+}
+
+/* `x?` inside a `try { }`: hand the Err payload to the landing site and jump
+ * there, consuming the Result (nothing after the longjmp could release it). */
+void a_try_raise(AValue err_result) {
+    a_try_err = a_retain(*err_result.rval.inner);
+    a_release(err_result);
+    longjmp(a_try_stack[a_try_depth - 1], 1);
+}
+
 AValue a_try_unwrap(AValue v) {
     if (v.tag == TAG_RESULT) {
-        if (v.rval.is_ok) return *v.rval.inner;
+        if (A_RESULT_OK(v)) return *v.rval.inner;
         if (a_try_depth > 0) {
-            a_try_err = *v.rval.inner;
+            a_try_err = a_retain(*v.rval.inner);
             longjmp(a_try_stack[a_try_depth - 1], 1);
         }
         fprintf(stderr, "uncaught error: ");
         a_eprintln(*v.rval.inner);
+        a_print_trace();
         a_exit_fatal(1);
     }
     return v;
@@ -1720,9 +2003,7 @@ AValue a_argv0(void) {
 }
 
 void a_fail(AValue v) {
-    fprintf(stderr, "runtime error: ");
-    a_eprintln(v);
-    a_exit_fatal(1);
+    a_fatal("runtime error: ", v);
 }
 
 AValue a_to_int(AValue v) {
@@ -1775,17 +2056,19 @@ AValue a_is_alnum(AValue v) {
 /* --- Result extras --- */
 
 AValue a_unwrap_or(AValue v, AValue def) {
-    if (v.tag == TAG_RESULT && v.rval.is_ok) return a_retain(*v.rval.inner);
+    if (v.tag == TAG_RESULT && A_RESULT_OK(v)) return a_retain(*v.rval.inner);
     return a_retain(def);
 }
 
 AValue a_expect(AValue v, AValue msg) {
     if (v.tag == TAG_RESULT) {
-        if (v.rval.is_ok) return a_retain(*v.rval.inner);
+        if (A_RESULT_OK(v)) return a_retain(*v.rval.inner);
+        if (a_try_depth > 0) a_fatal("", msg);
         fprintf(stderr, "expect failed: ");
         a_eprintln(msg);
         fprintf(stderr, "  error was: ");
         a_eprintln(*v.rval.inner);
+        a_print_trace();
         a_exit_fatal(1);
     }
     return v;
@@ -1801,7 +2084,7 @@ AValue a_math_sqrt(AValue v) {
 AValue a_math_abs(AValue v) {
     if (v.tag == TAG_INT) return a_int(v.ival < 0 ? -v.ival : v.ival);
     if (v.tag == TAG_FLOAT) return a_float(fabs(v.fval));
-    return v;
+    return a_retain(v);
 }
 
 AValue a_math_floor(AValue v) {
@@ -2482,9 +2765,11 @@ AValue a_image_load(AValue path) {
     if (!f) return a_err(a_string("image.load: cannot open file"));
     fseek(f, 0, SEEK_END);
     long sz = ftell(f);
+    if (sz < 0) { fclose(f); return a_err(a_string("image.load: not a regular file")); }
     fseek(f, 0, SEEK_SET);
-    unsigned char* buf = malloc(sz);
-    size_t n = fread(buf, 1, sz, f);
+    unsigned char* buf = malloc((size_t)sz);
+    if (!buf) { fclose(f); return a_err(a_string("image.load: out of memory")); }
+    size_t n = fread(buf, 1, (size_t)sz, f);
     fclose(f);
     int w, h, ch;
     unsigned char* px = stbi_load_from_memory(buf, (int)n, &w, &h, &ch, 4);
@@ -3077,8 +3362,17 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
         }
     }
 
-    /* Format request */
-    size_t req_cap = 4096 + body_len;
+    /* Format request. Size for the headers up front so snprintf cannot
+     * underflow when custom headers are large. */
+    size_t hdr_extra = 256;
+    if (req_headers.tag == TAG_MAP) {
+        for (int i = 0; i < req_headers.mval->len; i++) {
+            hdr_extra += strlen(req_headers.mval->keys[i]) + 8;
+            if (req_headers.mval->vals[i].tag == TAG_STRING)
+                hdr_extra += (size_t)req_headers.mval->vals[i].sval->len;
+        }
+    }
+    size_t req_cap = 4096 + body_len + hdr_extra;
     char* req = malloc(req_cap);
     int rlen = snprintf(req, req_cap, "%s %s HTTP/1.1\r\nHost: %s\r\n", method, url.path, url.host);
 
@@ -4461,7 +4755,15 @@ static AValue async_http_start(const char* method, const char* url_str,
     strncpy(op->host, url.host, sizeof(op->host) - 1);
     op->port = url.port;
 
-    size_t req_cap = 4096 + body_len;
+    size_t hdr_extra = 256;
+    if (req_headers.tag == TAG_MAP) {
+        for (int i = 0; i < req_headers.mval->len; i++) {
+            hdr_extra += strlen(req_headers.mval->keys[i]) + 8;
+            if (req_headers.mval->vals[i].tag == TAG_STRING)
+                hdr_extra += (size_t)req_headers.mval->vals[i].sval->len;
+        }
+    }
+    size_t req_cap = 4096 + body_len + hdr_extra;
     op->req_buf = malloc(req_cap);
     int rlen = snprintf(op->req_buf, req_cap, "%s %s HTTP/1.1\r\nHost: %s\r\n",
                         method, url.path, url.host);
@@ -4570,7 +4872,7 @@ AValue a_async_http_delete(AValue url, AValue headers) {
 AValue a_async_await(AValue handle) {
     int slot = -1;
     if (handle.tag == TAG_RESULT) {
-        if (!handle.rval.is_ok) return a_err(a_retain(*handle.rval.inner));
+        if (!A_RESULT_OK(handle)) return a_err(a_retain(*handle.rval.inner));
         AValue inner = *handle.rval.inner;
         if (inner.tag != TAG_INT) return a_err(a_string("async.await: invalid handle"));
         slot = (int)inner.ival;
@@ -4600,7 +4902,7 @@ AValue a_async_gather(AValue handles) {
     for (int i = 0; i < n; i++) {
         AValue h = handles.aval->items[i];
         if (h.tag == TAG_RESULT) {
-            if (!h.rval.is_ok) {
+            if (!A_RESULT_OK(h)) {
                 slots[i] = -1;
                 is_err_handle[i] = 1;
                 err_vals[i] = a_err(a_retain(*h.rval.inner));
@@ -4760,9 +5062,7 @@ AValue a_closure(AClosureFn fn, AValue env) {
     AClosure* c = malloc(sizeof(AClosure));
     c->rc = 1;
     c->fn = fn;
-    c->env = env;
-    if (env.tag == TAG_ARRAY || env.tag == TAG_STRING || env.tag == TAG_MAP)
-        a_retain(env);
+    c->env = a_retain(env);
     AValue v;
     v.tag = TAG_CLOSURE;
     v.cval = c;
@@ -4785,13 +5085,18 @@ AValue a_closure_call(AValue closure, int argc, ...) {
 
 /* --- Higher-order functions --- */
 
+/* Items come out of a_array_get owned and closure results are owned, so each
+ * is released once it has been consumed; outputs grow with the in-place push
+ * (the result array has rc 1 until it is returned). */
 AValue a_hof_map(AValue arr, AValue fn) {
     int n = a_ilen(arr);
     AValue result = a_array_new(0);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
         AValue val = a_closure_call(fn, 1, item);
-        result = a_array_push(result, val);
+        result = a_array_push_move(result, val);
+        a_release(val);
+        a_release(item);
     }
     return result;
 }
@@ -4802,17 +5107,22 @@ AValue a_hof_filter(AValue arr, AValue fn) {
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
         AValue pred = a_closure_call(fn, 1, item);
-        if (a_truthy(pred)) result = a_array_push(result, item);
+        if (a_truthy(pred)) result = a_array_push_move(result, item);
+        a_release(pred);
+        a_release(item);
     }
     return result;
 }
 
 AValue a_hof_reduce(AValue arr, AValue init, AValue fn) {
     int n = a_ilen(arr);
-    AValue acc = init;
+    AValue acc = a_retain(init);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
-        acc = a_closure_call(fn, 2, acc, item);
+        AValue next = a_closure_call(fn, 2, acc, item);
+        a_release(acc);
+        a_release(item);
+        acc = next;
     }
     return acc;
 }
@@ -4821,7 +5131,8 @@ AValue a_hof_each(AValue arr, AValue fn) {
     int n = a_ilen(arr);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
-        a_closure_call(fn, 1, item);
+        a_release(a_closure_call(fn, 1, item));
+        a_release(item);
     }
     return a_void();
 }
@@ -4833,22 +5144,27 @@ static int closure_sort_cmp(const void* a, const void* b) {
     AValue va = *(const AValue*)a;
     AValue vb = *(const AValue*)b;
     AValue result = a_closure_call(closure_cmp_fn_global, 2, va, vb);
-    if (result.tag == TAG_INT) return (int)result.ival;
-    if (result.tag == TAG_FLOAT) return result.fval < 0 ? -1 : (result.fval > 0 ? 1 : 0);
-    return 0;
+    int out = 0;
+    if (result.tag == TAG_INT) out = (int)result.ival;
+    else if (result.tag == TAG_FLOAT) out = result.fval < 0 ? -1 : (result.fval > 0 ? 1 : 0);
+    a_release(result);
+    return out;
 }
 
 AValue a_hof_sort_by(AValue arr, AValue fn) {
-    if (arr.tag != TAG_ARRAY) return arr;
+    if (arr.tag != TAG_ARRAY) return a_retain(arr);
     int n = arr.aval->len;
     AArray* na = malloc(sizeof(AArray));
     na->rc = 1; na->len = n; na->cap = n;
     na->items = malloc(sizeof(AValue) * (n > 0 ? n : 1));
-    memcpy(na->items, arr.aval->items, sizeof(AValue) * n);
+    for (int i = 0; i < n; i++) na->items[i] = a_retain(arr.aval->items[i]);
+    AValue saved = closure_cmp_fn_global;
+    int saved_set = closure_cmp_fn_global_set;
     closure_cmp_fn_global = fn;
     closure_cmp_fn_global_set = 1;
     qsort(na->items, n, sizeof(AValue), closure_sort_cmp);
-    closure_cmp_fn_global_set = 0;
+    closure_cmp_fn_global = saved;
+    closure_cmp_fn_global_set = saved_set;
     return (AValue){.tag = TAG_ARRAY, .aval = na};
 }
 
@@ -4856,7 +5172,11 @@ AValue a_hof_find(AValue arr, AValue fn) {
     int n = a_ilen(arr);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
-        if (a_truthy(a_closure_call(fn, 1, item))) return a_ok(item);
+        AValue pred = a_closure_call(fn, 1, item);
+        int hit = a_truthy(pred);
+        a_release(pred);
+        if (hit) { AValue r = a_ok(item); a_release(item); return r; }
+        a_release(item);
     }
     return a_err(a_string("not found"));
 }
@@ -4865,7 +5185,11 @@ AValue a_hof_any(AValue arr, AValue fn) {
     int n = a_ilen(arr);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
-        if (a_truthy(a_closure_call(fn, 1, item))) return a_bool(1);
+        AValue pred = a_closure_call(fn, 1, item);
+        int hit = a_truthy(pred);
+        a_release(pred);
+        a_release(item);
+        if (hit) return a_bool(1);
     }
     return a_bool(0);
 }
@@ -4874,7 +5198,11 @@ AValue a_hof_all(AValue arr, AValue fn) {
     int n = a_ilen(arr);
     for (int i = 0; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
-        if (!a_truthy(a_closure_call(fn, 1, item))) return a_bool(0);
+        AValue pred = a_closure_call(fn, 1, item);
+        int hit = a_truthy(pred);
+        a_release(pred);
+        a_release(item);
+        if (!hit) return a_bool(0);
     }
     return a_bool(1);
 }
@@ -4887,15 +5215,17 @@ AValue a_hof_flat_map(AValue arr, AValue fn) {
         AValue sub = a_closure_call(fn, 1, item);
         if (sub.tag == TAG_ARRAY) {
             for (int j = 0; j < sub.aval->len; j++)
-                result = a_array_push(result, sub.aval->items[j]);
+                result = a_array_push_move(result, sub.aval->items[j]);
         } else {
-            result = a_array_push(result, sub);
+            result = a_array_push_move(result, sub);
         }
+        a_release(sub);
+        a_release(item);
     }
     return result;
 }
 
-AValue a_hof_min_by(AValue arr, AValue fn) {
+static AValue hof_extreme_by(AValue arr, AValue fn, int want_less) {
     int n = a_ilen(arr);
     if (n == 0) return a_err(a_string("empty"));
     AValue best = a_array_get(arr, a_int(0));
@@ -4903,23 +5233,21 @@ AValue a_hof_min_by(AValue arr, AValue fn) {
     for (int i = 1; i < n; i++) {
         AValue item = a_array_get(arr, a_int(i));
         AValue key = a_closure_call(fn, 1, item);
-        if (a_truthy(a_lt(key, best_key))) { best = item; best_key = key; }
+        int better = want_less ? a_truthy(a_lt(key, best_key)) : a_truthy(a_gt(key, best_key));
+        if (better) {
+            a_release(best); a_release(best_key);
+            best = item; best_key = key;
+        } else {
+            a_release(item); a_release(key);
+        }
     }
-    return a_ok(best);
+    AValue r = a_ok(best);
+    a_release(best); a_release(best_key);
+    return r;
 }
 
-AValue a_hof_max_by(AValue arr, AValue fn) {
-    int n = a_ilen(arr);
-    if (n == 0) return a_err(a_string("empty"));
-    AValue best = a_array_get(arr, a_int(0));
-    AValue best_key = a_closure_call(fn, 1, best);
-    for (int i = 1; i < n; i++) {
-        AValue item = a_array_get(arr, a_int(i));
-        AValue key = a_closure_call(fn, 1, item);
-        if (a_truthy(a_gt(key, best_key))) { best = item; best_key = key; }
-    }
-    return a_ok(best);
-}
+AValue a_hof_min_by(AValue arr, AValue fn) { return hof_extreme_by(arr, fn, 1); }
+AValue a_hof_max_by(AValue arr, AValue fn) { return hof_extreme_by(arr, fn, 0); }
 
 /* --- Array utilities --- */
 
@@ -4982,153 +5310,6 @@ AValue a_chunk(AValue arr, AValue n) {
         result = a_array_push(result, a_array_slice(arr, a_int(i), a_int(end)));
     }
     return result;
-}
-
-/* --- Garbage collector --- */
-
-static GCNode* gc_alloc_list = NULL;
-static int gc_alloc_count = 0;
-static int gc_threshold = 4096;
-
-#define GC_ROOT_STACK_MAX 8192
-static AValue* gc_root_stack[GC_ROOT_STACK_MAX];
-static int gc_root_sp = 0;
-
-static void gc_register(GCType type, void* obj) {
-    GCNode* node = malloc(sizeof(GCNode));
-    node->next = gc_alloc_list;
-    node->type = type;
-    node->mark = 0;
-    node->obj = obj;
-    gc_alloc_list = node;
-    gc_alloc_count++;
-}
-
-void a_gc_push_root(AValue* root) {
-    if (gc_root_sp < GC_ROOT_STACK_MAX)
-        gc_root_stack[gc_root_sp++] = root;
-}
-
-void a_gc_pop_roots(int n) {
-    gc_root_sp -= n;
-    if (gc_root_sp < 0) gc_root_sp = 0;
-}
-
-static GCNode* gc_find_node(void* obj) {
-    for (GCNode* n = gc_alloc_list; n; n = n->next)
-        if (n->obj == obj) return n;
-    return NULL;
-}
-
-static void gc_mark_value(AValue v) {
-    void* obj = NULL;
-    if (v.tag == TAG_STRING && v.sval) obj = v.sval;
-    else if (v.tag == TAG_ARRAY && v.aval) obj = v.aval;
-    else if (v.tag == TAG_MAP && v.mval) obj = v.mval;
-    else if (v.tag == TAG_CLOSURE && v.cval) obj = v.cval;
-    else return;
-
-    GCNode* node = gc_find_node(obj);
-    if (!node || node->mark) return;
-    node->mark = 1;
-
-    if (v.tag == TAG_ARRAY) {
-        for (int i = 0; i < v.aval->len; i++)
-            gc_mark_value(v.aval->items[i]);
-    } else if (v.tag == TAG_MAP) {
-        for (int i = 0; i < v.mval->len; i++)
-            gc_mark_value(v.mval->vals[i]);
-    } else if (v.tag == TAG_CLOSURE) {
-        gc_mark_value(v.cval->env);
-    }
-}
-
-static void gc_mark_roots(void) {
-    for (int i = 0; i < gc_root_sp; i++)
-        gc_mark_value(*gc_root_stack[i]);
-}
-
-static void gc_free_object(GCNode* node) {
-    switch (node->type) {
-        case GC_STRING:
-            free(node->obj);
-            break;
-        case GC_ARRAY: {
-            AArray* a = (AArray*)node->obj;
-            free(a->items);
-            free(a);
-            break;
-        }
-        case GC_MAP: {
-            AMap* m = (AMap*)node->obj;
-            for (int i = 0; i < m->len; i++) free(m->keys[i]);
-            free(m->keys);
-            free(m->vals);
-            free(m);
-            break;
-        }
-        case GC_CLOSURE:
-            free(node->obj);
-            break;
-    }
-}
-
-static void gc_sweep(void) {
-    GCNode** p = &gc_alloc_list;
-    while (*p) {
-        if (!(*p)->mark) {
-            GCNode* dead = *p;
-            *p = dead->next;
-            gc_alloc_count--;
-            gc_free_object(dead);
-            free(dead);
-        } else {
-            (*p)->mark = 0;
-            p = &(*p)->next;
-        }
-    }
-}
-
-void a_gc_collect(void) {
-    gc_mark_roots();
-    gc_sweep();
-    if (gc_alloc_count > gc_threshold / 2)
-        gc_threshold *= 2;
-}
-
-/* --- Arena allocator --- */
-
-AArena* a_arena_new(int initial_size) {
-    AArena* a = malloc(sizeof(AArena));
-    a->size = initial_size > 64 ? initial_size : 64;
-    a->buf = malloc(a->size);
-    a->pos = 0;
-    return a;
-}
-
-void a_arena_free(AArena* arena) {
-    if (!arena) return;
-    free(arena->buf);
-    free(arena);
-}
-
-void* a_arena_alloc(AArena* arena, int bytes) {
-    int aligned = (bytes + 7) & ~7;
-    if (arena->pos + aligned > arena->size) {
-        while (arena->pos + aligned > arena->size) arena->size *= 2;
-        arena->buf = realloc(arena->buf, arena->size);
-    }
-    void* ptr = arena->buf + arena->pos;
-    arena->pos += aligned;
-    return ptr;
-}
-
-int a_arena_save(AArena* arena) {
-    return arena->pos;
-}
-
-void a_arena_restore(AArena* arena, int saved_pos) {
-    arena->pos = saved_pos;
 }
 
 /* --- Compression (miniz) --- */

@@ -656,7 +656,7 @@ fn eblk_env(stmts: any, env: any, fns: any) -> any {
   ret ["__e__", ce]
 }
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read] {
   let a = args()
   if len(a) < 1 {
     println("usage: a run examples/boot.a -- <file.a>")

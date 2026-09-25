@@ -141,11 +141,15 @@ fn main() {
   testing.assert_eq(diag_line(ads, "fs.stat expects 1 argument(s), got 2"), 3)
   println("PASS: generated builtin arity")
 
-  ; --- shadowing a builtin is a warning, and the bare call is the builtin ---
+  ; --- a bare call to a builtin name is the builtin; W0003 marks the call
+  ; that could have meant the local function (same arg count). A library
+  ; API that merely shares a builtin's name (`git.push`) stays silent. ---
   let ssrc = "fn push(remote, branch) \{ ret remote + branch \}\nfn main() \{\n  let mut xs = []\n  xs = push(xs, 1)\n  println(xs)\n\}\n"
   let sds = diags_for(ssrc)
   testing.assert_eq(len(errors_of(sds)), 0)
-  testing.assert_eq(diag_line(sds, "function push shadows a builtin"), 1)
+  testing.assert_eq(diag_line(sds, "call to push resolves to the builtin, not to the function push declared on line 1"), 4)
+  let quiet = "fn push(remote) \{ ret remote \}\nfn main() \{\n  let mut xs = []\n  xs = push(xs, 1)\n  println(xs)\n\}\n"
+  testing.assert_eq(len(diags_for(quiet)), 0)
   println("PASS: builtin shadow warning")
 
   ; --- the compiler's own sources must check clean ---
@@ -294,6 +298,37 @@ fn main() {
   testing.assert_eq(len(errors_of(diags_for(gsrc))), 0)
   println("PASS: gradual typing has no false positives")
 
+  ; --- effects: declarations are checked against the inferred set ---
+  let esrc = str.join([
+    "fn square(x: int) -> int effects [pure] \{ ret x * x \}",
+    "fn apply(f, x) \{ ret f(x) \}",
+    "fn twice(x: int) -> int effects [pure] \{ ret apply(square, x) \}",
+    "fn log_it(x: int) -> int effects [pure] \{",
+    "  println(x)",
+    "  ret x",
+    "\}",
+    "fn lazy() effects [pure] \{ ret fn() => io.write_file(\"/tmp/x\", \"y\") \}",
+    "fn writer(x) \{ io.write_file(\"/tmp/x\", to_str(x)) \}",
+    "fn indirect() effects [io] \{ apply(writer, 1) \}",
+    "fn bad_name() effects [network] \{ ret 1 \}",
+    "fn ok_decl(p: str) -> str effects [fs_read, io] \{",
+    "  println(p)",
+    "  ret io.read_file(p)",
+    "\}",
+    "fn main() \{ println(twice(3) + log_it(1) + bad_name()) \}"
+  ], "\n") + "\n"
+  let eds = errors_of(diags_for(esrc))
+  testing.assert_eq(diag_line(eds, "twice is declared effects [pure] but has effect call (via apply)"), 3)
+  testing.assert_eq(diag_line(eds, "log_it is declared effects [pure] but has effect io (println)"), 4)
+  testing.assert_eq(diag_line(eds, "lazy is declared effects [pure] but has effect fs_write (io.write_file)"), 8)
+  testing.assert_eq(diag_line(eds, "indirect is declared effects [io] but has effect fs_write (via writer)"), 10)
+  testing.assert_eq(diag_line(eds, "unknown effect network in bad_name"), 11)
+  testing.assert_eq(has_code(eds, "E0011"), true)
+  testing.assert_eq(has_code(eds, "E0012"), true)
+  ; indirect also gets `call` via apply; ok_decl and main are fine
+  testing.assert_eq(len(eds), 6)
+  println("PASS: effect declarations")
+
   ; --- format_diag ---
   let line = checker.format_diag("x.a", #{"severity": "error", "line": 7, "col": 3, "msg": "boom"})
   testing.assert_eq(line, "x.a:7:3: error: boom")
@@ -313,5 +348,8 @@ fn main() {
   testing.assert_eq(has_code(mds, "E0002"), true)
   testing.assert_eq(str.contains(diag_codes.explain("e0007"), "type mismatch"), true)
   testing.assert_eq(diag_codes.explain("E9999"), "")
+  testing.assert_eq(has_code(errors_of(diags_for("use std.this_module_is_not_real\nfn main() \{\}\n")), "E0013"), true)
+  testing.assert_eq(str.contains(diag_codes.explain("E0013"), "cannot load module"), true)
+  testing.assert_eq(str.contains(diag_codes.explain("E0014"), "parse error"), true)
   println("PASS: format_diag")
 }

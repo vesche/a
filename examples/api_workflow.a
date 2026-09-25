@@ -1,13 +1,13 @@
 mod api_workflow {
   ty HttpResp = {status: i64, body: str, headers: #{str: str}}
 
-  fn fetch_repos(username: str) -> HttpResp effects [io] {
+  fn fetch_repos(username: str) -> HttpResp effects [io, net] {
     let url: str = "https://api.github.com/users/" + username + "/repos?per_page=5&sort=updated"
     let headers: #{str: str} = #{"User-Agent": "a-lang/0.4", "Accept": "application/json"}
     ret http.get(url, headers)
   }
 
-  fn process_repos(body: str) -> void effects [io] {
+  fn process_repos(body: str) -> void effects [io, fs_read, fs_write] {
     let repos: [#{str: str}] = json.parse(body)
     println("found {to_str(len(repos))} repos:")
     println("")
@@ -42,7 +42,7 @@ mod api_workflow {
     fs.rm("_output")
   }
 
-  fn main() -> void effects [io] {
+  fn main() -> void effects [io, fs_read, fs_write, net] {
     println("=== a-lang API workflow ===")
     println("")
 

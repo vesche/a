@@ -45,7 +45,7 @@ fn compare_functions(fns_a, fns_b, label_a, label_b) {
 }
 
 fn main() -> void
-  effects [io]
+  effects [io, fs_read]
 {
   let argv = args()
   if len(argv) < 2 {

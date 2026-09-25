@@ -11,9 +11,9 @@ is a documentation bug, listed at the bottom so it cannot hide.
 
 | | count |
 |---|---|
-| builtins implemented | 177 |
-| ... documented | 169 |
-| ... exercised by a native test | 141 |
+| builtins implemented | 178 |
+| ... documented | 170 |
+| ... exercised by a native test | 143 |
 | documented but NOT implemented | 0 |
 
 ## Builtins
@@ -123,7 +123,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 |---|---|---|
 | `fs.abs` | yes | - |
 | `fs.cp` | yes | - |
-| `fs.cwd` | yes | - |
+| `fs.cwd` | yes | yes |
 | `fs.exists` | yes | yes |
 | `fs.is_dir` | yes | yes |
 | `fs.is_file` | yes | - |
@@ -211,7 +211,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 | `map.get` | yes | yes |
 | `map.has` | yes | yes |
 | `map.keys` | yes | yes |
-| `map.merge` | yes | - |
+| `map.merge` | yes | yes |
 | `map.set` | yes | yes |
 | `map.values` | yes | yes |
 
@@ -232,6 +232,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 
 | builtin | documented | tested |
 |---|---|---|
+| `proc.exec` | yes | - |
 | `proc.is_running` | yes | - |
 | `proc.kill` | yes | yes |
 | `proc.read_line` | yes | yes |
@@ -318,7 +319,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 | `std.args` | yes | yes |
 | `std.cache` | yes | yes |
 | `std.channel` | yes | yes |
-| `std.cli` | yes | - |
+| `std.cli` | yes | yes |
 | `std.codegen` | yes | yes |
 | `std.collections` | - | - |
 | `std.config` | yes | yes |
@@ -389,7 +390,6 @@ None.
 - `expect`
 - `fs.abs`
 - `fs.cp`
-- `fs.cwd`
 - `fs.is_file`
 - `fs.mv`
 - `hash.md5`
@@ -402,12 +402,12 @@ None.
 - `io.read_bytes`
 - `io.read_line`
 - `io.read_stdin`
-- `map.merge`
 - `math.ceil`
 - `math.floor`
 - `math.pow`
 - `math.round`
 - `math.sqrt`
+- `proc.exec`
 - `proc.is_running`
 - `proc.wait`
 - `ptr.is_null`

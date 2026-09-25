@@ -69,7 +69,7 @@ fn _builtin_map() -> map {
     "fs.abs": "a_fs_abs", "fs.is_file": "a_fs_is_file",
     "fs.stat": "a_fs_stat", "fs.watch": "a_fs_watch",
     "exec": "a_exec", "exec_timeout": "a_exec_timeout",
-    "proc.spawn": "a_proc_spawn", "proc.write": "a_proc_write",
+    "proc.spawn": "a_proc_spawn", "proc.exec": "a_proc_exec", "proc.write": "a_proc_write",
     "proc.read_line": "a_proc_read_line", "proc.kill": "a_proc_kill",
     "proc.wait": "a_proc_wait", "proc.is_running": "a_proc_is_running",
     "env.get": "a_env_get",
@@ -198,16 +198,52 @@ fn _is_intra_module_call(fname, ctx) -> bool {
 fn _R(code, li) { ret [code, li, []] }
 fn _RL(code, li, lifted) { ret [code, li, lifted] }
 
-; True for `name = push(name, <expr>)` where `push` is the builtin.
-fn _is_self_push(assign, name: str) -> bool {
+; Ownership model of the generated C: every runtime/user call returns an owned
+; reference and borrows its arguments; a variable owns exactly one reference
+; (retained on `let x = y`, released on reassignment and at function exit).
+; A call result that is merely passed on (`f(g(x))`, `s + to_str(n)`, `[h()]`)
+; is therefore an owned reference nobody will release. _tmp wraps such
+; sub-expressions in A_T(), which parks the reference on the runtime's
+; temporary stack; emit_stmt flushes it after every statement. Variables and
+; scalar literals are borrowed/valueless and pass through untouched.
+fn _tmp(node, code: str, ctx) -> str {
+  if type_of(node) != "map" { ret code }
+  let t = node["tag"]
+  if t == "Int" || t == "Float" || t == "Bool" || t == "Void" { ret code }
+  if t == "Ident" {
+    let n = node["name"]
+    if n == "true" || n == "false" { ret code }
+    if _variant_arity(ctx, n) == 0 { ret "A_T(" + code + ")" }
+    ret code
+  }
+  if t == "UnaryOp" && node["op"] != "!" && node["op"] != "-" { ret _tmp(node["expr"], code, ctx) }
+  ret "A_T(" + code + ")"
+}
+
+; Wraps a statement's C code so temporaries it registered die with it.
+fn _tmp_scope(ind: str, code: str) -> str {
+  ret ind + "\{ int __tm = a_tmp_sp;\n" + code + "\n" + ind + "a_tmp_release(__tm); \}"
+}
+
+; Detects `name = <builtin>(name, ...)` for the accumulate builtins that have
+; a consuming (`_move`) runtime variant. Returns the builtin name or "".
+fn _self_update_builtin(assign, name: str) -> str {
   let v = assign["value"]
-  if type_of(v) != "map" || v["tag"] != "Call" { ret false }
+  if type_of(v) != "map" || v["tag"] != "Call" { ret "" }
   let f = v["func"]
-  if type_of(f) != "map" || f["tag"] != "Ident" || f["name"] != "push" { ret false }
+  if type_of(f) != "map" { ret "" }
+  let fname = _resolve_call_name(f)
   let args = v["args"]
-  if len(args) != 2 { ret false }
+  if fname == "push" {
+    if len(args) != 2 { ret "" }
+  } else if fname == "map.set" {
+    if len(args) != 3 { ret "" }
+  } else {
+    ret ""
+  }
   let a0 = args[0]
-  ret type_of(a0) == "map" && a0["tag"] == "Ident" && a0["name"] == name
+  if type_of(a0) == "map" && a0["tag"] == "Ident" && a0["name"] == name { ret fname }
+  ret ""
 }
 
 fn _is_ident(node) -> bool {
@@ -226,6 +262,12 @@ fn _emit_cleanup(vars, depth) -> str {
     out = str.concat(out, str.concat("\n", str.concat(ind, str.concat("a_release(", str.concat(v, ");")))))
   }
   ret out
+}
+
+; Cleanup for leaving a function or lambda body: release its variables and
+; every temporary registered since it was entered (__tm0).
+fn _emit_exit_cleanup(vars, depth) -> str {
+  ret _emit_cleanup(vars, depth) + "\n" + _indent(depth) + "a_tmp_release(__tm0);"
 }
 
 ; --- Escape analysis ---
@@ -505,8 +547,8 @@ fn emit_expr(node, bm, ctx, li) {
     let op = node["op"]
     let lr = emit_expr(node["left"], bm, ctx, li)
     let rr = emit_expr(node["right"], bm, ctx, lr[1])
-    let l = lr[0]
-    let r = rr[0]
+    let l = _tmp(node["left"], lr[0], ctx)
+    let r = _tmp(node["right"], rr[0], ctx)
     li = rr[1]
     let lifted = concat_arr(lr[2], rr[2])
     let mut code = ""
@@ -529,8 +571,9 @@ fn emit_expr(node, bm, ctx, li) {
 
   if tag == "UnaryOp" {
     let ir = emit_expr(node["expr"], bm, ctx, li)
-    if node["op"] == "!" { ret _RL(str.concat("a_not(", str.concat(ir[0], ")")), ir[1], ir[2]) }
-    if node["op"] == "-" { ret _RL(str.concat("a_neg(", str.concat(ir[0], ")")), ir[1], ir[2]) }
+    let inner = _tmp(node["expr"], ir[0], ctx)
+    if node["op"] == "!" { ret _RL("a_not(" + inner + ")", ir[1], ir[2]) }
+    if node["op"] == "-" { ret _RL("a_neg(" + inner + ")", ir[1], ir[2]) }
     ret ir
   }
 
@@ -552,17 +595,17 @@ fn emit_expr(node, bm, ctx, li) {
       let mut call_args = [to_str(len(a))]
       for arg in a {
         let ar = emit_expr(arg, bm, ctx, li2)
-        call_args = push(call_args, ar[0])
+        call_args = push(call_args, _tmp(arg, ar[0], ctx))
         li2 = ar[1]
         lifted2 = concat_arr(lifted2, ar[2])
       }
-      ret _RL("a_closure_call(" + fr[0] + ", " + str.join(call_args, ", ") + ")", li2, lifted2)
+      ret _RL("a_closure_call(" + _tmp(func, fr[0], ctx) + ", " + str.join(call_args, ", ") + ")", li2, lifted2)
     }
 
     if fname == "fail" {
       if len(a) > 0 {
         let ar = emit_expr(a[0], bm, ctx, li)
-        ret _RL(str.concat("(a_fail(", str.concat(ar[0], "), a_void())")), ar[1], ar[2])
+        ret _RL("(a_fail(" + _tmp(a[0], ar[0], ctx) + "), a_void())", ar[1], ar[2])
       }
       ret _R("(a_fail(a_string(\"assertion failed\")), a_void())", li)
     }
@@ -579,7 +622,7 @@ fn emit_expr(node, bm, ctx, li) {
     let mut lifted = []
     for arg in a {
       let ar = emit_expr(arg, bm, ctx, li)
-      arg_codes = push(arg_codes, ar[0])
+      arg_codes = push(arg_codes, _tmp(arg, ar[0], ctx))
       li = ar[1]
       lifted = concat_arr(lifted, ar[2])
     }
@@ -632,13 +675,18 @@ fn emit_expr(node, bm, ctx, li) {
   if tag == "FieldAccess" {
     let er = emit_expr(node["expr"], bm, ctx, li)
     let field = node["field"]
-    ret _RL(str.concat("a_map_get(", str.concat(er[0], str.concat(", a_string(\"", str.concat(field, "\"))")))), er[1], er[2])
+    ret _RL("a_map_get_cstr(" + _tmp(node["expr"], er[0], ctx) + ", \"" + _escape_c_str(field) + "\")", er[1], er[2])
   }
 
   if tag == "Index" {
     let er = emit_expr(node["expr"], bm, ctx, li)
     let ir = emit_expr(node["index"], bm, ctx, er[1])
-    ret _RL(str.concat("a_array_get(", str.concat(er[0], str.concat(", ", str.concat(ir[0], ")")))), ir[1], concat_arr(er[2], ir[2]))
+    let base = _tmp(node["expr"], er[0], ctx)
+    ; `m["key"]` on a map is the overwhelmingly common case: skip allocating the key
+    if node["index"]["tag"] == "String" {
+      ret _RL("a_index_cstr(" + base + ", \"" + _escape_c_str(node["index"]["value"]) + "\")", ir[1], concat_arr(er[2], ir[2]))
+    }
+    ret _RL("a_array_get(" + base + ", " + _tmp(node["index"], ir[0], ctx) + ")", ir[1], concat_arr(er[2], ir[2]))
   }
 
   if tag == "Array" {
@@ -652,18 +700,19 @@ fn emit_expr(node, bm, ctx, li) {
     let mut lifted = []
     if has_spread {
       ; Build incrementally: start empty, push or concat
+      ; Build incrementally; each intermediate array is a temporary of this statement.
       let mut code = "a_array_new(0)"
       for e in elems {
         if e["tag"] == "Spread" {
           let er = emit_expr(e["expr"], bm, ctx, li)
           li = er[1]
           lifted = concat_arr(lifted, er[2])
-          code = str.concat("a_concat_arr(", str.concat(code, str.concat(", ", str.concat(er[0], ")"))))
+          code = "a_concat_arr(A_T(" + code + "), " + _tmp(e["expr"], er[0], ctx) + ")"
         } else {
           let er = emit_expr(e, bm, ctx, li)
           li = er[1]
           lifted = concat_arr(lifted, er[2])
-          code = str.concat("a_array_push(", str.concat(code, str.concat(", ", str.concat(er[0], ")"))))
+          code = "a_array_push(A_T(" + code + "), " + _tmp(e, er[0], ctx) + ")"
         }
       }
       ret _RL(code, li, lifted)
@@ -672,7 +721,7 @@ fn emit_expr(node, bm, ctx, li) {
     let mut parts = []
     for e in elems {
       let er = emit_expr(e, bm, ctx, li)
-      parts = push(parts, er[0])
+      parts = push(parts, _tmp(e, er[0], ctx))
       li = er[1]
       lifted = concat_arr(lifted, er[2])
     }
@@ -691,7 +740,7 @@ fn emit_expr(node, bm, ctx, li) {
       let vr = emit_expr(e["value"], bm, ctx, li)
       li = vr[1]
       lifted = concat_arr(lifted, vr[2])
-      parts = push(parts, str.concat("\"", str.concat(_escape_c_str(key_str), str.concat("\", ", vr[0]))))
+      parts = push(parts, "\"" + _escape_c_str(key_str) + "\", " + _tmp(e["value"], vr[0], ctx))
     }
     ret _RL(str.concat("a_map_new(", str.concat(to_str(len(entries)), str.concat(", ", str.concat(str.join(parts, ", "), ")")))), li, lifted)
   }
@@ -702,12 +751,12 @@ fn emit_expr(node, bm, ctx, li) {
     let mut lifted = []
     for p in parts {
       if p["tag"] == "InterpLit" {
-        cparts = push(cparts, str.concat("a_string(\"", str.concat(_escape_c_str(p["value"]), "\")")))
+        cparts = push(cparts, "A_T(a_string(\"" + _escape_c_str(p["value"]) + "\"))")
       } else {
         let er = emit_expr(p["expr"], bm, ctx, li)
         li = er[1]
         lifted = concat_arr(lifted, er[2])
-        cparts = push(cparts, str.concat("a_to_str(", str.concat(er[0], ")")))
+        cparts = push(cparts, "A_T(a_to_str(" + _tmp(p["expr"], er[0], ctx) + "))")
       }
     }
     ret _RL(str.concat("a_concat_n(", str.concat(to_str(len(cparts)), str.concat(", ", str.concat(str.join(cparts, ", "), ")")))), li, lifted)
@@ -718,7 +767,12 @@ fn emit_expr(node, bm, ctx, li) {
     let tr = emit_expr(node["then"], bm, ctx, cr[1])
     let er = emit_expr(node["else"], bm, ctx, tr[1])
     let lifted = concat_arr(cr[2], concat_arr(tr[2], er[2]))
-    ret _RL(str.concat("(a_truthy(", str.concat(cr[0], str.concat(") ? ", str.concat(tr[0], str.concat(" : ", str.concat(er[0], ")")))))), er[1], lifted)
+    ; both branches must yield owned values: retain when a branch is a variable
+    let mut t = tr[0]
+    if _is_ident(node["then"]) { t = "a_retain(" + t + ")" }
+    let mut e = er[0]
+    if _is_ident(node["else"]) { e = "a_retain(" + e + ")" }
+    ret _RL("(a_truthy(" + _tmp(node["cond"], cr[0], ctx) + ") ? " + t + " : " + e + ")", er[1], lifted)
   }
 
   if tag == "MatchExpr" {
@@ -753,12 +807,12 @@ fn emit_expr(node, bm, ctx, li) {
     let lr = emit_expr(node["left"], bm, ctx, li)
     let rr = emit_expr(node["right"], bm, ctx, lr[1])
     let lifted = concat_arr(lr[2], rr[2])
-    ret _RL(str.concat("a_closure_call(", str.concat(rr[0], str.concat(", 1, ", str.concat(lr[0], ")")))), rr[1], lifted)
+    ret _RL("a_closure_call(" + _tmp(node["right"], rr[0], ctx) + ", 1, " + _tmp(node["left"], lr[0], ctx) + ")", rr[1], lifted)
   }
 
   ; --- Lambda: lift to top-level function, emit closure creation ---
   if tag == "Lambda" {
-    let lambda_name = str.concat("__lambda_", to_str(li))
+    let lambda_name = _lambda_name(ctx, li)
     let params = node["params"]
     let body = node["body"]
 
@@ -770,7 +824,7 @@ fn emit_expr(node, bm, ctx, li) {
     }
 
     ; Build lifted function body
-    let mut fn_code = str.concat("AValue ", str.concat(lambda_name, "(AValue __env, int __argc, AValue* __argv) \{"))
+    let mut fn_code = str.concat("static AValue ", str.concat(lambda_name, "(AValue __env, int __argc, AValue* __argv) \{"))
 
     ; Load captures from env
     let mut ci = 0
@@ -789,6 +843,13 @@ fn emit_expr(node, bm, ctx, li) {
       fn_code = fn_code + "\n    AValue " + _mangle(p["name"]) + " = __argc > " + to_str(pi) + " ? a_retain(__argv[" + to_str(pi) + "]) : a_void();"
       pi = pi + 1
     }
+
+    let mut frame_name = "<lambda>"
+    if map.has(ctx, "fn_name") { frame_name = "<lambda in " + ctx["fn_name"] + ">" }
+    fn_code = fn_code + "\n    A_FRAME(" + _c_str(frame_name) + ", " + _c_str(_ctx_file(ctx)) + ");"
+    fn_code = fn_code + "\n    int __tm0 = a_tmp_sp;"
+    ; an expression body has no statements to record a line; use the lambda's own
+    fn_code = fn_code + _line_stmt(node, 1)
 
     let next_li = li + 1
     let mut body_lifted = []
@@ -837,8 +898,9 @@ fn emit_expr(node, bm, ctx, li) {
         let s = stmts[si]
         let is_last = si == len(stmts) - 1
         if is_last && s["tag"] == "ExprStmt" {
+          fn_code = fn_code + _line_stmt(s, 1)
           let er = emit_expr(s["expr"], bm, lambda_ctx, next_li)
-          let cleanup = _emit_cleanup(lambda_cleanup, 1)
+          let cleanup = _emit_exit_cleanup(lambda_cleanup, 1)
           ; The returned value must be owned by the caller; a bare variable is
           ; about to be released by the cleanup, so hand out a fresh reference.
           let mut ret_expr = er[0]
@@ -857,7 +919,7 @@ fn emit_expr(node, bm, ctx, li) {
         si = si + 1
       }
       if !has_return {
-        let cleanup = _emit_cleanup(lambda_cleanup, 1)
+        let cleanup = _emit_exit_cleanup(lambda_cleanup, 1)
         fn_code = str.concat(fn_code, str.concat(cleanup, "\n    return a_void();"))
       }
     } else {
@@ -869,7 +931,7 @@ fn emit_expr(node, bm, ctx, li) {
       lambda_ctx = map.set(lambda_ctx, "cleanup_vars", lambda_cleanup)
       lambda_ctx = map.set(lambda_ctx, "goto_cleanup", false)
       let er = emit_expr(body, bm, lambda_ctx, next_li)
-      let cleanup = _emit_cleanup(lambda_cleanup, 1)
+      let cleanup = _emit_exit_cleanup(lambda_cleanup, 1)
       let mut ret_expr = er[0]
       if _is_ident(body) { ret_expr = "a_retain(" + ret_expr + ")" }
       fn_code = str.concat(fn_code, str.concat("\n    \{ AValue __ret = ", str.concat(ret_expr, str.concat(";", str.concat(cleanup, "\n    return __ret; \}")))))
@@ -879,11 +941,13 @@ fn emit_expr(node, bm, ctx, li) {
     fn_code = str.concat(fn_code, "\n\}\n")
 
     ; Emit closure creation at the expression site
+    ; a_array_new retains the captured values and a_closure retains the env
+    ; array, so the array itself is a temporary of this statement.
     let mut env_code = "a_void()"
     if len(captures) > 0 {
       let mut cap_parts = []
-      for cap in captures { cap_parts = push(cap_parts, str.concat("a_retain(", str.concat(_mangle(cap), ")"))) }
-      env_code = str.concat("a_array_new(", str.concat(to_str(len(captures)), str.concat(", ", str.concat(str.join(cap_parts, ", "), ")"))))
+      for cap in captures { cap_parts = push(cap_parts, _mangle(cap)) }
+      env_code = "A_T(a_array_new(" + to_str(len(captures)) + ", " + str.join(cap_parts, ", ") + "))"
     }
     let closure_code = str.concat("a_closure(", str.concat(lambda_name, str.concat(", ", str.concat(env_code, ")"))))
 
@@ -902,9 +966,13 @@ fn emit_expr(node, bm, ctx, li) {
     if use_goto {
       on_err = "__ret = __t; goto __fn_cleanup;"
     } else if type_of(cleanup_vars) == "array" && len(cleanup_vars) > 0 {
-      on_err = "\{" + _emit_cleanup(cleanup_vars, 0) + " return __t; \}"
+      on_err = "\{" + _emit_exit_cleanup(cleanup_vars, 0) + " return __t; \}"
     }
-    let code = "(\{ AValue __t = " + er[0] + "; if (a_is_err_raw(__t)) \{ if (a_try_depth > 0) a_try_unwrap(__t); " + on_err + " \} AValue __v = a_unwrap(__t); a_release(__t); __v; \})"
+    ; __t is released below (or handed out as the function's Err), so it must be
+    ; an owned reference: `r?` on a variable takes a fresh one.
+    let mut src = er[0]
+    if _is_ident(node["expr"]) { src = "a_retain(" + src + ")" }
+    let code = "(\{ AValue __t = " + src + "; if (a_is_err_raw(__t)) \{ if (a_try_depth > 0) a_try_raise(__t); " + on_err + " \} AValue __v = a_unwrap(__t); a_release(__t); __v; \})"
     ret _RL(code, er[1], er[2])
   }
 
@@ -925,8 +993,12 @@ fn emit_expr(node, bm, ctx, li) {
     ; Pre-declare variables used inside the try block
     let try_vars = _collect_vars_in_stmts(stmts)
     if len(try_vars) > 0 {
-      code = str.concat(code, str.concat("        AValue ", str.concat(str.join(try_vars, ", "), str.concat(";", nl))))
+      let mut tv_parts = []
+      for v in try_vars { tv_parts = push(tv_parts, v + " = \{0\}") }
+      code = code + "        AValue " + str.join(tv_parts, ", ") + ";" + nl
     }
+    code = str.concat(code, str.concat("        int __try_frames = a_frame_depth;", nl))
+    code = code + "        int __try_tm = a_tmp_sp;" + nl
     code = str.concat(code, str.concat("        a_try_depth++;", nl))
     code = str.concat(code, str.concat("        if (setjmp(a_try_stack[a_try_depth - 1]) == 0) \{", nl))
 
@@ -942,7 +1014,8 @@ fn emit_expr(node, bm, ctx, li) {
       let is_last = si == nstmts - 1
       if is_last && has_tail {
         let er = emit_expr(s["expr"], bm, ctx, li)
-        code = str.concat(code, str.concat("            __try_tail = ", str.concat(er[0], str.concat(";", nl))))
+        ; a_ok retains the tail, so an owned tail is a temporary of this statement
+        code = code + "            __try_tail = " + _tmp(s["expr"], er[0], ctx) + ";" + nl
         li = er[1]
         lifted = concat_arr(lifted, er[2])
       } else {
@@ -962,8 +1035,14 @@ fn emit_expr(node, bm, ctx, li) {
     }
     code = str.concat(code, str.concat("        \} else \{", nl))
     code = str.concat(code, str.concat("            a_try_depth--;", nl))
+    code = str.concat(code, str.concat("            A_UNWIND(__try_frames);", nl))
+    ; the payload is owned by a_try_err; temporaries registered by the
+    ; statements longjmp skipped are released once the Err holds it
     code = str.concat(code, str.concat("            __try_result = a_err(a_try_err);", nl))
+    code = code + "            a_release(a_try_err); a_try_err = a_void();" + nl
+    code = code + "            a_tmp_release(__try_tm);" + nl
     code = str.concat(code, str.concat("        \}", nl))
+    for v in try_vars { code = code + "        a_release(" + v + ");" + nl }
     code = str.concat(code, str.concat("        __try_result;", nl))
     code = str.concat(code, "    \})")
 
@@ -1031,7 +1110,7 @@ fn _emit_pat_cond(pat, target, bm, ctx, li) {
   if tag == "PatLiteral" {
     let val = pat["value"]
     let vr = emit_expr(val, bm, ctx, li)
-    ret _RL(str.concat("a_truthy(a_eq(", str.concat(target, str.concat(", ", str.concat(vr[0], "))")))), vr[1], vr[2])
+    ret _RL("a_truthy(a_eq(" + target + ", " + _tmp(val, vr[0], ctx) + "))", vr[1], vr[2])
   }
 
   if tag == "PatConstructor" {
@@ -1224,7 +1303,7 @@ fn _emit_arm_body(body, depth, bm, ctx, li) {
     let er = emit_expr(body, bm, ctx, li)
     li = er[1]
     lifted = concat_arr(lifted, er[2])
-    code = str.concat(_indent(depth), str.concat(er[0], ";"))
+    code = _indent(depth) + _tmp(body, er[0], ctx) + ";"
   }
   ret _RL(code, li, lifted)
 }
@@ -1239,7 +1318,7 @@ fn _emit_match(node, depth, bm, ctx, li) {
   let arms = node["arms"]
 
   let mut out = str.concat(ind, "\{")
-  out = str.concat(out, str.concat("\n", str.concat(d1, str.concat("AValue __match = ", str.concat(er[0], ";")))))
+  out = out + "\n" + d1 + "AValue __match = " + _tmp(node["expr"], er[0], ctx) + ";"
   out = str.concat(out, str.concat("\n", str.concat(d1, "int __matched = 0;")))
 
   for arm in arms {
@@ -1268,7 +1347,7 @@ fn _emit_match(node, depth, bm, ctx, li) {
       let gr = emit_expr(guard, bm, ctx, li)
       li = gr[1]
       lifted = concat_arr(lifted, gr[2])
-      out = str.concat(out, str.concat("\n", str.concat(d2, str.concat("if (a_truthy(", str.concat(gr[0], ")) \{")))))
+      out = out + "\n" + d2 + "if (a_truthy(" + _tmp(guard, gr[0], ctx) + ")) \{"
 
       let br2 = _emit_arm_body(body, depth + 3, bm, ctx, li)
       li = br2[1]
@@ -1288,6 +1367,7 @@ fn _emit_match(node, depth, bm, ctx, li) {
     out = str.concat(out, str.concat("\n", str.concat(d1, "\}")))
   }
 
+  out = out + "\n" + d1 + "if (!__matched) a_fatal(\"runtime error: \", a_string(\"non-exhaustive match\"));"
   out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
   ret _RL(out, li, lifted)
 }
@@ -1358,6 +1438,7 @@ fn _emit_match_expr(node, bm, ctx, li) {
     code = str.concat(code, str.concat("        \}", nl))
   }
 
+  code = str.concat(code, str.concat("        if (!__matched) a_fatal(\"runtime error: \", a_string(\"non-exhaustive match\"));", nl))
   code = str.concat(code, str.concat("        __match_result;", nl))
   code = str.concat(code, "    \})")
 
@@ -1414,9 +1495,50 @@ fn _emit_match_expr_body(body, bm, ctx, li) {
 fn emit_stmt(node, depth: int, bm, ctx, li) {
   let mut r = _emit_stmt(node, depth, bm, ctx, li)
   if type_of(node) == "map" && map.has(node, "line") && node["line"] > 0 && map.has(ctx, "file") && len(ctx["file"]) > 0 {
-    r[0] = "#line " + to_str(node["line"]) + " \"" + ctx["file"] + "\"\n" + r[0]
+    ; #line maps C compiler messages back to the a source; A_LINE keeps the
+    ; shadow frame's line current for runtime stack traces (fn bodies only)
+    let mut line_stmt = ""
+    if map.has(ctx, "cleanup_vars") {
+      line_stmt = "A_LINE(" + to_str(node["line"]) + ");"
+      if _stmt_has_temps(node) { r[0] = _tmp_scope(_indent(depth), r[0]) }
+    }
+    r[0] = "#line " + to_str(node["line"]) + " \"" + ctx["file"] + "\"\n" + line_stmt + r[0]
   }
   ret r
+}
+
+; Statements whose C code cannot register a temporary skip the scope block.
+fn _stmt_has_temps(node) -> bool {
+  let tag = node["tag"]
+  if tag == "Break" || tag == "Continue" { ret false }
+  if tag == "Let" || tag == "Assign" || tag == "Return" || tag == "ExprStmt" {
+    if tag == "Assign" && node["target"]["tag"] != "Ident" { ret true }
+    let v = node["expr"]
+    if tag == "Let" || tag == "Assign" { v = node["value"] }
+    if type_of(v) != "map" { ret false }
+    let t = v["tag"]
+    if t == "Ident" || t == "Int" || t == "Float" || t == "Bool" || t == "Void" { ret false }
+    if t == "String" && tag != "ExprStmt" { ret false }
+  }
+  ret true
+}
+
+; "\n    A_LINE(n);" for a node with a known source line, "" otherwise.
+fn _line_stmt(node, depth: int) -> str {
+  if type_of(node) == "map" && map.has(node, "line") && node["line"] > 0 {
+    ret "\n" + _indent(depth) + "A_LINE(" + to_str(node["line"]) + ");"
+  }
+  ret ""
+}
+
+fn _ctx_file(ctx) -> str {
+  if type_of(ctx) == "map" && map.has(ctx, "file") { ret ctx["file"] }
+  ret ""
+}
+
+; A C string literal for a plain name/path (no escapes needed beyond quotes and backslashes).
+fn _c_str(v: str) -> str {
+  ret "\"" + str.replace(str.replace(v, "\\", "\\\\"), "\"", "\\\"") + "\""
 }
 
 fn _emit_stmt(node, depth: int, bm, ctx, li) {
@@ -1447,13 +1569,15 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     let mut i = 0
     for b in bindings {
       if b != "" && b != "_" {
-        code = str.concat(code, str.concat("\n", str.concat(ind, str.concat(_mangle(b), str.concat(" = a_array_get(__dest, a_int(", str.concat(to_str(i), "));"))))))
+        let mb = _mangle(b)
+        code = code + "\n" + ind + "\{ AValue __old = " + mb + "; " + mb + " = a_array_get(__dest, a_int(" + to_str(i) + ")); a_release(__old); \}"
       }
       i = i + 1
     }
     let rest_name = node["rest"]
     if rest_name != "" {
-      code = str.concat(code, str.concat("\n", str.concat(ind, str.concat(_mangle(rest_name), str.concat(" = a_drop(__dest, a_int(", str.concat(to_str(len(bindings)), "));"))))))
+      let mr = _mangle(rest_name)
+      code = code + "\n" + ind + "\{ AValue __old = " + mr + "; " + mr + " = a_drop(__dest, a_int(" + to_str(len(bindings)) + ")); a_release(__old); \}"
     }
     ret _RL(code, vr[1], vr[2])
   }
@@ -1462,13 +1586,24 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     let target = node["target"]
     if target["tag"] == "Ident" {
       let tname = _mangle(target["name"])
-      ; `xs = push(xs, v)`: the variable's own reference is consumed by the
-      ; call, so the runtime may append in place when nobody else holds the
-      ; array. Turns the ubiquitous accumulate loop from O(n^2) into O(n).
-      if _is_self_push(node, target["name"]) {
-        let ar = emit_expr(node["value"]["args"][1], bm, ctx, li)
-        let code = ind + tname + " = a_array_push_move(" + tname + ", " + ar[0] + ");"
+      ; `xs = push(xs, v)` / `m = map.set(m, k, v)`: the variable's own
+      ; reference is consumed by the call, so the runtime may update in place
+      ; when nobody else holds the value. Turns the ubiquitous accumulate
+      ; loop from O(n^2) into O(n).
+      let upd = _self_update_builtin(node, target["name"])
+      if upd == "push" {
+        let an = node["value"]["args"][1]
+        let ar = emit_expr(an, bm, ctx, li)
+        let code = ind + tname + " = a_array_push_move(" + tname + ", " + _tmp(an, ar[0], ctx) + ");"
         ret _RL(code, ar[1], ar[2])
+      }
+      if upd == "map.set" {
+        let kn = node["value"]["args"][1]
+        let vn = node["value"]["args"][2]
+        let kr = emit_expr(kn, bm, ctx, li)
+        let vr2 = emit_expr(vn, bm, ctx, kr[1])
+        let code = ind + tname + " = a_map_set_move(" + tname + ", " + _tmp(kn, kr[0], ctx) + ", " + _tmp(vn, vr2[0], ctx) + ");"
+        ret _RL(code, vr2[1], concat_arr(kr[2], vr2[2]))
       }
       let vr = emit_expr(node["value"], bm, ctx, li)
       let assign_expr = vr[0]
@@ -1481,14 +1616,18 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
       ret _RL(code, vr[1], vr[2])
     }
     if target["tag"] == "Index" {
+      if target["expr"]["tag"] != "Ident" {
+        _compile_error(node, ctx, "cannot assign through a nested index; bind the inner collection to a variable, update it, then store it back")
+      }
       let vr = emit_expr(node["value"], bm, ctx, li)
       let tr = emit_expr(target["expr"], bm, ctx, vr[1])
       let ir = emit_expr(target["index"], bm, ctx, tr[1])
-      ret _RL(str.concat(ind, str.concat(tr[0], str.concat(" = a_index_set(", str.concat(tr[0], str.concat(", ", str.concat(ir[0], str.concat(", ", str.concat(vr[0], ");")))))))), ir[1], concat_arr(vr[2], concat_arr(tr[2], ir[2])))
+      ; the variable's own reference is consumed; the runtime updates in place
+      ; when it is the only one, otherwise copies and drops the old array
+      let code = ind + tr[0] + " = a_index_set_move(" + tr[0] + ", " + _tmp(target["index"], ir[0], ctx) + ", " + _tmp(node["value"], vr[0], ctx) + ");"
+      ret _RL(code, ir[1], concat_arr(vr[2], concat_arr(tr[2], ir[2])))
     }
-    let vr = emit_expr(node["value"], bm, ctx, li)
-    let tr = emit_expr(target, bm, ctx, vr[1])
-    ret _RL(str.concat(ind, str.concat(tr[0], str.concat(" = ", str.concat(vr[0], ";")))), tr[1], concat_arr(vr[2], tr[2]))
+    _compile_error(node, ctx, "invalid assignment target")
   }
 
   if tag == "Return" {
@@ -1500,7 +1639,7 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
         ret _R(str.concat(ind, "goto __fn_cleanup;"), li)
       }
       if has_cleanup {
-        let cleanup = _emit_cleanup(cleanup_vars, depth)
+        let cleanup = _emit_exit_cleanup(cleanup_vars, depth)
         ret _R(str.concat(ind, str.concat("\{", str.concat(cleanup, str.concat("\n", str.concat(ind, "return a_void(); \}"))))), li)
       }
       ret _R(str.concat(ind, "return a_void();"), li)
@@ -1519,7 +1658,7 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
       if _is_ident(node["expr"]) {
         ret_expr = str.concat("a_retain(", str.concat(val_expr, ")"))
       }
-      let cleanup = _emit_cleanup(cleanup_vars, depth)
+      let cleanup = _emit_exit_cleanup(cleanup_vars, depth)
       let code = str.concat(ind, str.concat("\{ AValue __ret = ", str.concat(ret_expr, str.concat(";", str.concat(cleanup, str.concat("\n", str.concat(ind, "return __ret; \}")))))))
       ret _RL(code, vr[1], vr[2])
     }
@@ -1528,14 +1667,15 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
 
   if tag == "ExprStmt" {
     let er = emit_expr(node["expr"], bm, ctx, li)
-    ret _RL(str.concat(ind, str.concat(er[0], ";")), er[1], er[2])
+    ; the result is discarded: park it so the statement's flush releases it
+    ret _RL(ind + _tmp(node["expr"], er[0], ctx) + ";", er[1], er[2])
   }
 
   if tag == "If" {
     let cr = emit_expr(node["cond"], bm, ctx, li)
     li = cr[1]
     let mut lifted = cr[2]
-    let mut out = str.concat(ind, str.concat("if (a_truthy(", str.concat(cr[0], ")) \{")))
+    let mut out = ind + "if (a_truthy(" + _tmp(node["cond"], cr[0], ctx) + ")) \{"
     let then_stmts = node["then"]["stmts"]
     for s in then_stmts {
       let sr = emit_stmt(s, depth + 1, bm, ctx, li)
@@ -1571,15 +1711,19 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     let cr = emit_expr(node["cond"], bm, ctx, li)
     li = cr[1]
     let mut lifted = cr[2]
-    let mut out = str.concat(ind, str.concat("while (a_truthy(", str.concat(cr[0], ")) \{")))
+    ; temporaries of the condition and of statements left via `continue`/`break`
+    ; are flushed at the top of every iteration rather than after the loop
+    let mut out = ind + "\{ int __tm_it = a_tmp_sp;\n" + ind + "while (1) \{ a_tmp_release(__tm_it);\n"
+    out = out + _indent(depth + 1) + "if (!a_truthy(" + _tmp(node["cond"], cr[0], ctx) + ")) break;"
+    let body_ctx = map.set(ctx, "loop_cleanup", [])
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
-      let sr = emit_stmt(s, depth + 1, bm, ctx, li)
+      let sr = emit_stmt(s, depth + 1, bm, body_ctx, li)
       out = str.concat(out, str.concat("\n", sr[0]))
       li = sr[1]
       lifted = concat_arr(lifted, sr[2])
     }
-    out = str.concat(out, str.concat("\n", str.concat(ind, "\}")))
+    out = out + "\n" + ind + "\} \}"
     ret _RL(out, li, lifted)
   }
 
@@ -1589,8 +1733,9 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     li = ir[1]
     let mut lifted = ir[2]
     let mut out = str.concat(ind, "\{")
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = a_iterable(", str.concat(ir[0], ");")))))
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
+    out = out + "\n" + _indent(depth + 1) + "AValue __iter_arr = a_iterable(" + _tmp(node["iter"], ir[0], ctx) + ");"
+    out = out + "\n" + _indent(depth + 1) + "int __tm_it = a_tmp_sp;"
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{ a_tmp_release(__tm_it);")))
     let mut body_vars = _collect_vars_in_stmts(node["body"]["stmts"])
     let mut for_decls = [var_name]
     for v in body_vars {
@@ -1600,8 +1745,10 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     for v in for_decls { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(init_parts, ", "), ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(var_name, " = a_array_get(__iter_arr, a_int(__fi));"))))
-    ; the loop variable is capturable by lambdas in the body
-    let body_ctx = _with_enclosing(ctx, [node["var"]])
+    ; the loop variable is capturable by lambdas in the body; `break`/`continue`
+    ; must release the per-iteration variables they skip past
+    let mut body_ctx = _with_enclosing(ctx, [node["var"]])
+    body_ctx = map.set(body_ctx, "loop_cleanup", for_decls)
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
       let sr = emit_stmt(s, depth + 2, bm, body_ctx, li)
@@ -1623,8 +1770,9 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     li = ir[1]
     let mut lifted = ir[2]
     let mut out = str.concat(ind, "\{")
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), str.concat("AValue __iter_arr = a_iterable(", str.concat(ir[0], ");")))))
-    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{")))
+    out = out + "\n" + _indent(depth + 1) + "AValue __iter_arr = a_iterable(" + _tmp(node["iter"], ir[0], ctx) + ");"
+    out = out + "\n" + _indent(depth + 1) + "int __tm_it = a_tmp_sp;"
+    out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 1), "for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) \{ a_tmp_release(__tm_it);")))
     ; Collect all variables to declare
     let mut decls = ["__elem"]
     for b in bindings { decls = push(decls, _mangle(b)) }
@@ -1639,7 +1787,8 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
       out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(_mangle(b), str.concat(" = a_array_get(__elem, a_int(", str.concat(to_str(bi), "));"))))))
       bi = bi + 1
     }
-    let body_ctx = _with_enclosing(ctx, bindings)
+    let mut body_ctx = _with_enclosing(ctx, bindings)
+    body_ctx = map.set(body_ctx, "loop_cleanup", decls)
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
       let sr = emit_stmt(s, depth + 2, bm, body_ctx, li)
@@ -1657,8 +1806,16 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
 
   if tag == "Match" { ret _emit_match(node, depth, bm, ctx, li) }
 
-  if tag == "Break" { ret _R(str.concat(ind, "break;"), li) }
-  if tag == "Continue" { ret _R(str.concat(ind, "continue;"), li) }
+  if tag == "Break" || tag == "Continue" {
+    let mut jump = "break;"
+    if tag == "Continue" { jump = "continue;" }
+    ; leaving a `for` body early skips its per-iteration releases
+    let lc = ctx["loop_cleanup"]
+    if type_of(lc) == "array" && len(lc) > 0 {
+      ret _R(ind + "\{" + _emit_cleanup(lc, depth + 1) + "\n" + ind + jump + " \}", li)
+    }
+    ret _R(ind + jump, li)
+  }
 
   ret _R(str.concat(ind, str.concat("/* unhandled stmt: ", str.concat(tag, " */"))), li)
 }
@@ -1789,6 +1946,8 @@ fn emit_fn(node, bm, ctx, li) {
     out = str.concat(out, str.concat("\n    AValue ", str.concat(str.join(init_parts, ", "), ";")))
   }
   out = str.concat(out, "\n    AValue __ret = a_void();")
+  out = out + "\n    A_FRAME(" + _c_str(name) + ", " + _c_str(_ctx_file(ctx)) + ");"
+  out = out + "\n    int __tm0 = a_tmp_sp;"
 
   ; Retain function parameters so the function owns its copies
   for p in params {
@@ -1805,11 +1964,25 @@ fn emit_fn(node, bm, ctx, li) {
   let fn_ctx = map.set(ctx, "enclosing_vars", enc_vars)
   fn_ctx = map.set(fn_ctx, "cleanup_vars", all_cleanup_vars)
   fn_ctx = map.set(fn_ctx, "goto_cleanup", true)
+  fn_ctx = map.set(fn_ctx, "fn_name", name)
 
   ; Escape analysis result stored in context for Phase 4 arena allocation
   fn_ctx = map.set(fn_ctx, "escaping_vars", [])
 
   let mut lifted = []
+  let precond = node["pre"]
+  if type_of(precond) == "map" && precond["tag"] != "Void" {
+    let pr = emit_expr(precond, bm, fn_ctx, li)
+    li = pr[1]
+    lifted = concat_arr(lifted, pr[2])
+    out = out + "\n#ifndef A_RELEASE"
+    out = out + "\n    \{ int __tm = a_tmp_sp;"
+    out = out + "\n        AValue __pre = " + _tmp(precond, pr[0], fn_ctx) + ";"
+    out = out + "\n        if (!a_truthy(__pre)) a_fatal(\"precondition failed: \", a_string(" + _c_str(name) + "));"
+    out = out + "\n        a_tmp_release(__tm); \}"
+    out = out + "\n#endif"
+  }
+
   let stmts = body["stmts"]
   for s in stmts {
     let sr = emit_stmt(s, 1, bm, fn_ctx, li)
@@ -1818,8 +1991,25 @@ fn emit_fn(node, bm, ctx, li) {
     lifted = concat_arr(lifted, sr[2])
   }
 
+  let mut post_code = ""
+  let postcond = node["post"]
+  if type_of(postcond) == "map" && postcond["tag"] != "Void" {
+    let por = emit_expr(postcond, bm, fn_ctx, li)
+    li = por[1]
+    lifted = concat_arr(lifted, por[2])
+    post_code = "\n#ifndef A_RELEASE"
+    post_code = post_code + "\n    \{ int __tm = a_tmp_sp;"
+    post_code = post_code + "\n        AValue ret = a_retain(__ret);"
+    post_code = post_code + "\n        AValue __post = " + _tmp(postcond, por[0], fn_ctx) + ";"
+    post_code = post_code + "\n        if (!a_truthy(__post)) a_fatal(\"postcondition failed: \", a_string(" + _c_str(name) + "));"
+    post_code = post_code + "\n        a_release(ret);"
+    post_code = post_code + "\n        a_tmp_release(__tm); \}"
+    post_code = post_code + "\n#endif"
+  }
+
   out = str.concat(out, "\n__fn_cleanup:")
-  let cleanup = _emit_cleanup(all_cleanup_vars, 1)
+  out = out + post_code
+  let cleanup = _emit_exit_cleanup(all_cleanup_vars, 1)
   out = str.concat(out, str.concat(cleanup, "\n    return __ret;"))
 
   out = str.concat(out, "\n\}\n")
@@ -1838,11 +2028,48 @@ fn _emit_fwd_decl(name, params) -> str {
 
 ; --- Module loading ---
 
+fn _dirname(p: str) -> str {
+  let mut i = len(p) - 1
+  while i >= 0 {
+    if str.slice(p, i, i + 1) == "/" {
+      if i == 0 { ret "/" }
+      ret str.slice(p, 0, i)
+    }
+    i = i - 1
+  }
+  ret "."
+}
+
+; Where the `a` installation lives: the directory holding `std/` and
+; `c_runtime/`. `$A_ROOT` if set; otherwise the directory of the running
+; binary or its parent. "" when neither has a `std/`. This is what lets a
+; program in any directory `use std.x` and be built there.
+fn install_root() -> str {
+  let e = env.get("A_ROOT")
+  if type_of(e) == "str" && len(e) > 0 { ret e }
+  let mut exe = "/proc/self/exe"
+  if !fs.exists(exe) { exe = argv0() }
+  let real = fs.abs(exe)
+  if type_of(real) != "str" { ret "" }
+  let d = _dirname(real)
+  if fs.exists(str.concat(d, "/std")) { ret d }
+  let parent = _dirname(d)
+  if fs.exists(str.concat(parent, "/std")) { ret parent }
+  ret ""
+}
+
+; A module is looked up next to the program first (a project's own modules
+; and `a_modules/` from `a pkg`), then in the installation's `std/`.
 fn _use_path_to_file(path_arr) -> str {
   let rel = str.concat(str.join(path_arr, "/"), ".a")
   if fs.exists(rel) { ret rel }
   let mod_path = str.concat("a_modules/", rel)
   if fs.exists(mod_path) { ret mod_path }
+  let root = install_root()
+  if len(root) > 0 {
+    let installed = str.concat(root, str.concat("/", rel))
+    if fs.exists(installed) { ret installed }
+  }
   ret rel
 }
 
@@ -1881,47 +2108,73 @@ fn _variant_arity(ctx, name) -> int {
   ret vs[name]
 }
 
-fn _load_module(path_arr, bm, loaded, li) -> map {
-  let use_key = str.join(path_arr, ".")
-  if contains(loaded, use_key) {
-    ret #{"fwd": [], "fns": [], "loaded": loaded, "li": li}
-  }
-  loaded = push(loaded, use_key)
+; Parse cache shared by the checker, effect analysis, and codegen so a
+; module is read and parsed once per process, not once per consumer.
+fn empty_parse_cache() -> map { ret #{} }
 
+fn load_module_source(path_arr, cache) -> map {
   let file_path = _use_path_to_file(path_arr)
+  if map.has(cache, file_path) {
+    ret #{"cache": cache, "got": cache[file_path]}
+  }
   let rel = str.concat(str.join(path_arr, "/"), ".a")
   let mut source = embedded_file(rel)
   if type_of(source) == "void" || len(source) == 0 {
     source = io.read_file(file_path)
   }
-  if type_of(source) == "void" || len(source) == 0 {
-    fail("cannot load module " + use_key + ": file not found: " + file_path)
-  }
-  let mod_ast = parser.parse(source)
-  ; A module that fails to parse must stop the build here. Silently emitting
-  ; nothing for it produces baffling "implicit declaration" errors from gcc.
-  if type_of(mod_ast) == "map" && map.has(mod_ast, "tag") {
-    if mod_ast["tag"] == "ParseError" {
-      let mut loc = file_path
-      if map.has(mod_ast, "line") && mod_ast["line"] > 0 {
-        loc = file_path + ":" + to_str(mod_ast["line"]) + ":" + to_str(mod_ast["col"])
-      }
-      fail(loc + ": error: " + mod_ast["msg"] + " (while loading module " + use_key + ")")
+  let mut got = #{"status": "missing", "file": file_path, "rel": rel}
+  if type_of(source) == "str" && len(source) > 0 {
+    let ast = parser.parse(source)
+    if type_of(ast) == "map" && map.has(ast, "tag") && ast["tag"] == "ParseError" {
+      let mut line = 0
+      let mut col = 0
+      if map.has(ast, "line") { line = ast["line"] }
+      if map.has(ast, "col") { col = ast["col"] }
+      got = #{"status": "parse", "file": file_path, "rel": rel, "ast": ast, "msg": ast["msg"], "line": line, "col": col}
+    } else {
+      got = #{"status": "ok", "file": file_path, "rel": rel, "ast": ast}
     }
   }
+  ret #{"cache": map.set(cache, file_path, got), "got": got}
+}
+
+fn _load_module(path_arr, bm, loaded, li, cache) -> map {
+  let use_key = str.join(path_arr, ".")
+  ; A module reached twice (a diamond) is emitted once, but every importer
+  ; still needs its prototypes: `loaded` maps each module to them.
+  if map.has(loaded, use_key) {
+    ret #{"fwd": loaded[use_key], "fns": [], "units": [], "loaded": loaded, "li": li, "cache": cache}
+  }
+  loaded = map.set(loaded, use_key, [])
+
+  let pr = load_module_source(path_arr, cache)
+  cache = pr["cache"]
+  let got = pr["got"]
+  let file_path = got["file"]
+  if got["status"] == "missing" {
+    fail("cannot load module " + use_key + ": file not found: " + file_path)
+  }
+  if got["status"] == "parse" {
+    let mut loc = file_path
+    if got["line"] > 0 { loc = file_path + ":" + to_str(got["line"]) + ":" + to_str(got["col"]) }
+    fail(loc + ": error: " + got["msg"] + " (while loading module " + use_key + ")")
+  }
+  let mod_ast = got["ast"]
   let items = mod_ast["items"]
   let short = _use_path_short_name(path_arr)
 
-  let mut all_fwd = []
-  let mut all_fns = []
+  let mut sub_fwd = []
+  let mut sub_fns = []
+  let mut units = []
 
   for item in items {
     if item["tag"] == "UseDecl" {
-      let sub = _load_module(item["path"], bm, loaded, li)
+      let sub = _load_module(item["path"], bm, loaded, li, cache)
       loaded = sub["loaded"]
-      li = sub["li"]
-      all_fwd = concat_arr(all_fwd, sub["fwd"])
-      all_fns = concat_arr(all_fns, sub["fns"])
+      cache = sub["cache"]
+      sub_fwd = concat_arr(sub_fwd, sub["fwd"])
+      sub_fns = concat_arr(sub_fns, sub["fns"])
+      units = concat_arr(units, sub["units"])
     }
   }
 
@@ -1929,20 +2182,86 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   let variants = _collect_variants(items)
   let ctx = #{"prefix": short, "fns": fn_names, "file": file_path, "variants": variants}
   let mut aliases = #{}
+  let mut own_fwd = []
+  let mut own_fns = []
 
+  ; Lambda numbering restarts in every unit (names carry the module prefix),
+  ; so a module's C text depends on nothing but the module itself. That is
+  ; what makes the text a valid cache key for its object file.
+  let mut mli = 0
   for item in items {
     if item["tag"] == "FnDecl" {
       let full_name = _prefixed_name(item["name"], ctx)
-      all_fwd = push(all_fwd, _emit_fwd_decl(full_name, item["params"]))
-      let fr = emit_fn(item, bm, ctx, li)
-      li = fr[1]
-      for lf in fr[2] { all_fns = push(all_fns, lf) }
-      all_fns = push(all_fns, fr[0])
+      own_fwd = push(own_fwd, _emit_fwd_decl(full_name, item["params"]))
+      let fr = emit_fn(item, bm, ctx, mli)
+      mli = fr[1]
+      for lf in fr[2] { own_fns = push(own_fns, lf) }
+      own_fns = push(own_fns, fr[0])
       aliases = map.set(aliases, item["name"], full_name)
     }
   }
 
-  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li, "aliases": aliases, "variants": variants}
+  let unit_c = _unit_text([], concat_arr(sub_fwd, own_fwd), own_fns, "")
+  units = push(units, #{"name": use_key, "file": file_path, "c": unit_c})
+  loaded = map.set(loaded, use_key, concat_arr(sub_fwd, own_fwd))
+
+  ret #{"fwd": concat_arr(sub_fwd, own_fwd), "fns": concat_arr(sub_fns, own_fns), "units": units, "loaded": loaded, "li": li, "aliases": aliases, "variants": variants, "cache": cache}
+}
+
+; Lifted lambdas are named after the unit they live in, so numbering can
+; restart per unit without two units ever producing the same name.
+fn _lambda_name(ctx, li) -> str {
+  let mut p = ""
+  if map.has(ctx, "prefix") { p = ctx["prefix"] }
+  if len(p) == 0 { p = "main" }
+  ret str.concat("__lambda_", str.concat(_mangle(p), str.concat("_", to_str(li))))
+}
+
+; Prototypes for the lifted lambdas in a list of emitted functions. Lambdas
+; are static, so each unit declares only its own.
+fn _lambda_fwds(fns) -> [str] {
+  let mut out = []
+  for code in fns {
+    if str.starts_with(code, "static AValue __lambda_") {
+      let close = str.find(code, ") \{")
+      if close > 0 { out = push(out, str.concat(str.slice(code, 0, close + 1), ";")) }
+    }
+  }
+  ret out
+}
+
+; One C translation unit: prototypes for everything it may call, then its
+; own functions. `tail` is the C `main` (only the program unit has one).
+fn _unit_text(protos, fwd, fns, tail) -> str {
+  let mut parts = ["#include \"runtime.h\"\n#include <stdlib.h>\n"]
+  if len(protos) > 0 {
+    parts = push(parts, "/* FFI extern prototypes */")
+    parts = concat_arr(parts, protos)
+    parts = push(parts, "")
+  }
+  let lfwd = _lambda_fwds(fns)
+  if len(lfwd) > 0 {
+    parts = push(parts, "/* Lambda forward declarations */")
+    parts = concat_arr(parts, lfwd)
+    parts = push(parts, "")
+  }
+  parts = push(parts, "/* Forward declarations */")
+  parts = concat_arr(parts, fwd)
+  parts = push(parts, "")
+  parts = concat_arr(parts, fns)
+  if len(tail) > 0 { parts = push(parts, tail) }
+  ret str.concat(str.join(parts, "\n"), "\n")
+}
+
+; In a single translation unit every function can be static, which lets the
+; C compiler drop whatever `main` does not reach before optimising it.
+fn _staticize(decls) -> [str] {
+  let mut out = []
+  for d in decls {
+    if str.starts_with(d, "AValue fn_") { out = push(out, str.concat("static ", d)) }
+    else { out = push(out, d) }
+  }
+  ret out
 }
 
 ; --- FFI type mapping ---
@@ -2032,7 +2351,7 @@ fn _emit_extern_fn(node) -> [str] {
   let shim_param_str = str.join(shim_params, ", ")
   if len(params) == 0 { shim_param_str = "void" }
 
-  let mut shim = str.concat("AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ") \{\n"))))
+  let mut shim = str.concat("static AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ") \{\n"))))
 
   ; Extract arguments
   let mut call_args = []
@@ -2056,7 +2375,7 @@ fn _emit_extern_fn(node) -> [str] {
   shim = str.concat(shim, "\}\n")
 
   ; Forward declaration for the shim
-  let fwd = str.concat("AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ");"))))
+  let fwd = str.concat("static AValue fn_", str.concat(_mangle(name), str.concat("(", str.concat(shim_param_str, ");"))))
 
   ret [raw_proto, fwd, shim]
 }
@@ -2068,23 +2387,32 @@ fn main_file_of(prog_ast) -> str {
   ret ""
 }
 
-fn emit_program(prog_ast, bm) -> str {
+; Emits the program as compilation units: one per `use`d module plus the
+; program itself. Each unit's C text depends only on that module's source
+; (and the prototypes of what it imports), so callers can cache object files
+; by hashing the text. Returns #{"main": str, "units": [#{"name", "file", "c"}]}.
+fn emit_units(prog_ast, bm) -> map {
+  ret emit_units_cached(prog_ast, bm, #{})
+}
+
+fn emit_units_cached(prog_ast, bm, cache) -> map {
   let items = prog_ast["items"]
 
-  let mut all_fwd = []
-  let mut all_fns = []
-  let mut loaded = []
-  let mut li = 0
+  let mut mod_fwd = []
+  let mut mod_fns = []
+  let mut units = []
+  let mut loaded = #{}
   let mut import_aliases = #{}
   let mut all_variants = _collect_variants(items)
 
   for item in items {
     if item["tag"] == "UseDecl" {
-      let result = _load_module(item["path"], bm, loaded, li)
+      let result = _load_module(item["path"], bm, loaded, 0, cache)
       loaded = result["loaded"]
-      li = result["li"]
-      all_fwd = concat_arr(all_fwd, result["fwd"])
-      all_fns = concat_arr(all_fns, result["fns"])
+      cache = result["cache"]
+      mod_fwd = concat_arr(mod_fwd, result["fwd"])
+      mod_fns = concat_arr(mod_fns, result["fns"])
+      units = concat_arr(units, result["units"])
       let al = result["aliases"]
       if type_of(al) == "map" {
         for [k, v] in al { import_aliases = map.set(import_aliases, k, v) }
@@ -2095,6 +2423,10 @@ fn emit_program(prog_ast, bm) -> str {
       }
     }
   }
+
+  let mut own_fwd = []
+  let mut own_fns = []
+  let mut li = 0
 
   ; Inline `mod m { ... }` blocks: their functions are emitted as m_f (like a
   ; `use`d module) and reachable both as `m.f(...)` and unqualified `f(...)`.
@@ -2107,11 +2439,11 @@ fn emit_program(prog_ast, bm) -> str {
       for mi in mitems {
         if mi["tag"] == "FnDecl" {
           let full_name = _prefixed_name(mi["name"], mctx)
-          all_fwd = push(all_fwd, _emit_fwd_decl(full_name, mi["params"]))
+          own_fwd = push(own_fwd, _emit_fwd_decl(full_name, mi["params"]))
           let fr = emit_fn(mi, bm, mctx, li)
           li = fr[1]
-          for lf in fr[2] { all_fns = push(all_fns, lf) }
-          all_fns = push(all_fns, fr[0])
+          for lf in fr[2] { own_fns = push(own_fns, lf) }
+          own_fns = push(own_fns, fr[0])
           import_aliases = map.set(import_aliases, mi["name"], full_name)
         }
       }
@@ -2129,7 +2461,7 @@ fn emit_program(prog_ast, bm) -> str {
       main_fn_names = push(main_fn_names, item["name"])
       let parts = _emit_extern_fn(item)
       extern_protos = push(extern_protos, parts[0])
-      all_fwd = push(all_fwd, parts[1])
+      own_fwd = push(own_fwd, parts[1])
       extern_shims = push(extern_shims, parts[2])
     }
   }
@@ -2139,64 +2471,85 @@ fn emit_program(prog_ast, bm) -> str {
 
   for item in items {
     if item["tag"] == "FnDecl" {
-      all_fwd = push(all_fwd, _emit_fwd_decl(item["name"], item["params"]))
+      own_fwd = push(own_fwd, _emit_fwd_decl(item["name"], item["params"]))
       let fr = emit_fn(item, bm, main_ctx, li)
       li = fr[1]
-      for lf in fr[2] { all_fns = push(all_fns, lf) }
-      all_fns = push(all_fns, fr[0])
+      for lf in fr[2] { own_fns = push(own_fns, lf) }
+      own_fns = push(own_fns, fr[0])
     }
   }
 
-  let mut out = "#include \"runtime.h\"\n#include <stdlib.h>\n\n"
-
-  ; Emit extern C prototypes
-  if len(extern_protos) > 0 {
-    out = str.concat(out, "/* FFI extern prototypes */\n")
-    for p in extern_protos { out = str.concat(out, str.concat(p, "\n")) }
-    out = str.concat(out, "\n")
-  }
-
-  ; Forward declarations for lifted lambdas
-  let mut lambda_fwd = []
-  let mut i = 0
-  while i < li {
-    lambda_fwd = push(lambda_fwd, str.concat("AValue __lambda_", str.concat(to_str(i), "(AValue __env, int __argc, AValue* __argv);")))
-    i = i + 1
-  }
-  if len(lambda_fwd) > 0 {
-    out = str.concat(out, "/* Lambda forward declarations */\n")
-    for f in lambda_fwd { out = str.concat(out, str.concat(f, "\n")) }
-    out = str.concat(out, "\n")
-  }
-
-  out = str.concat(out, "/* Forward declarations */\n")
-  for f in all_fwd { out = str.concat(out, str.concat(f, "\n")) }
-  out = str.concat(out, "\n")
-
-  ; Emit FFI shim wrappers
-  for s in extern_shims { out = str.concat(out, str.concat(s, "\n")) }
-
-  for f in all_fns { out = str.concat(out, str.concat(f, "\n")) }
-
   let mut entry = ""
-  if contains(_collect_fn_names(items), "main") { entry = "fn_main" }
+  let mut exit_fn = "a_main_exit_code"
+  if contains(_collect_fn_names(items), "main") {
+    entry = "fn_main"
+    ; `fn main() -> int`: the returned integer is the process exit status
+    for item in items {
+      if item["tag"] == "FnDecl" && item["name"] == "main" && _is_int_type(item["ret_type"]) { exit_fn = "a_main_exit_code_int" }
+    }
+  }
   else if map.has(import_aliases, "main") { entry = str.concat("fn_", _mangle(import_aliases["main"])) }
   if entry == "" {
-    let mut where_ = main_file
-    if len(where_) == 0 { where_ = "<program>" }
-    fail(str.concat(where_, ": error: no `fn main` found -- a program needs a main function (use `a build` only on programs, not library modules)"))
+    let tests = _nullary_test_names(items)
+    if len(tests) > 0 {
+      own_fwd = push(own_fwd, "AValue fn_main(void);")
+      own_fns = push(own_fns, _emit_test_harness(tests, main_file))
+      entry = "fn_main"
+    } else {
+      let mut where_ = main_file
+      if len(where_) == 0 { where_ = "<program>" }
+      fail(str.concat(where_, ": error: no `fn main` found -- a program needs a main function (use `a build` only on programs, not library modules)"))
+    }
   }
-  out = str.concat(out, "int main(int argc, char** argv) \{\n")
-  out = str.concat(out, "    g_argc = argc; g_argv = argv;\n")
-  out = str.concat(out, str.concat("    return a_main_exit_code(", str.concat(entry, "());\n")))
-  out = str.concat(out, "\}\n")
+  let mut tail = "int main(int argc, char** argv) \{\n"
+  tail = str.concat(tail, "    g_argc = argc; g_argv = argv;\n")
+  tail = str.concat(tail, str.concat("    return ", str.concat(exit_fn, str.concat("(", str.concat(entry, "());\n")))))
+  tail = str.concat(tail, "\}\n")
 
+  let main_fns = concat_arr(extern_shims, own_fns)
+  let main_c = _unit_text(extern_protos, concat_arr(mod_fwd, own_fwd), main_fns, tail)
+  let single = _unit_text(extern_protos, _staticize(concat_arr(mod_fwd, own_fwd)), _staticize(concat_arr(mod_fns, main_fns)), tail)
+
+  ret #{"main": main_c, "units": units, "single": single}
+}
+
+fn _nullary_test_names(items) -> [str] {
+  let mut names = []
+  for item in items {
+    if type_of(item) == "map" && item["tag"] == "FnDecl" {
+      if str.starts_with(item["name"], "test_") && len(item["params"]) == 0 {
+        names = push(names, item["name"])
+      }
+    }
+  }
+  ret names
+}
+
+fn _emit_test_harness(tests: [str], file: str) -> str {
+  let mut out = "AValue fn_main(void) \{\n"
+  out = out + "    A_FRAME(\"main\", " + _c_str(file) + ");\n"
+  out = out + "    AValue __ret = a_void();\n"
+  for t in tests {
+    out = out + "    fn_" + _mangle(t) + "();\n"
+  }
+  out = out + "    return __ret;\n\}\n"
   ret out
+}
+
+fn _is_int_type(t) -> bool {
+  if type_of(t) != "map" || !map.has(t, "tag") { ret false }
+  if t["tag"] != "TyPrim" && t["tag"] != "TyNamed" { ret false }
+  ret contains(["int", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64"], t["name"])
+}
+
+; The whole program as one translation unit (what `a cc` prints).
+fn emit_program(prog_ast, bm) -> str {
+  ret emit_units(prog_ast, bm)["single"]
 }
 
 ; --- Entry point ---
 
-fn main() -> void effects [io] {
+fn main() -> void effects [io, fs_read, env] {
   let file_args = args()
   if len(file_args) == 0 {
     eprintln("usage: a run std/compiler/cgen.a -- <input.a>")

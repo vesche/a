@@ -178,8 +178,6 @@ fn extract_fn(source, start_line, end_line, fn_name) -> str {
   }
   let extracted_text = str.join(extracted, "\n")
 
-  ; Parse the extracted block to find free variables (identifiers used but not bound)
-  let prog_ast = meta.parse(source)
   let mut all_let_names = #{}
   ; Scan extracted text for identifiers by parsing it as a function body
   let lb = from_code(123)

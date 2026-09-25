@@ -14,13 +14,14 @@
 ; *known* types is an error, so unannotated code never fails to check. Builtin
 ; signatures come from std/compiler/builtin_sigs.a.
 ;
-; Diagnostics: #{"severity": "error"|"warning", "line": int, "col": int, "msg": str}
+; Diagnostics: #{"severity": "error"|"warning", "code": str, "line": int, "col": int, "msg": str}
 
 use std.compiler.cgen
 use std.compiler.parser
 use std.compiler.builtin_arity
 use std.compiler.builtin_sigs
 use std.compiler.types
+use std.compiler.effect_check
 
 ; Names that are keywords-as-values rather than variables.
 fn _literal_names() -> map {
@@ -54,7 +55,8 @@ fn _new_state(builtins: map, arity: map) -> map {
         "namespaces": namespaces, "modules": #{}, "line": 0, "col": 0,
         "variants": #{}, "sums": #{},
         "fn_ret": "any", "fn_ret_ty": types.t_any(), "in_try": 0,
-        "ty": types.t_any(), "sigs": _parse_sigs(), "typedefs": #{}}
+        "ty": types.t_any(), "sigs": _parse_sigs(), "typedefs": #{}, "shadow_fns": #{},
+        "parse_cache": #{}}
 }
 
 ; An annotation as a checker type, with records and aliases resolved.
@@ -527,6 +529,12 @@ fn _walk_call(st: map, node) -> map {
     if _is_builtin(s, name) {
       ; same rule as cgen: a bare call to a builtin name is the builtin,
       ; whatever else is in scope
+      if map.has(s["shadow_fns"], name) {
+        let sh = s["shadow_fns"][name]
+        if sh["arity"] == nargs {
+          s = _diag(s, "warning", "W0003", "call to " + name + " resolves to the builtin, not to the function " + name + " declared on line " + to_str(sh["line"]) + " (a bare call to a builtin name is always the builtin; qualify it as module.name)")
+        }
+      }
       if map.has(s["arity"], name) { s = _check_arity(s, name, s["arity"][name], nargs) }
       if map.has(s["sigs"], name) { sig = s["sigs"][name] }
     } else if idx >= 0 {
@@ -909,8 +917,10 @@ fn _declare_top_level(st: map, item) -> map {
   if tag == "FnDecl" || tag == "ExternFn" {
     if _is_builtin(s, item["name"]) {
       ; cgen resolves bare calls to the builtin first, so this function can
-      ; only be reached as `module.name(...)` from another module.
-      s = _diag(s, "warning", "W0003", "function " + item["name"] + " shadows a builtin; unqualified calls resolve to the builtin")
+      ; only be reached as `module.name(...)` from another module. That is
+      ; fine for a library API (`git.push`); the warning is reserved for the
+      ; call in this file that looks like it means the local function.
+      s = map.set(s, "shadow_fns", map.set(s["shadow_fns"], item["name"], #{"line": s["line"], "arity": len(item["params"])}))
     }
     ret _declare_typed(s, item["name"], "fn", len(item["params"]), _fn_sig(s, item), true)
   }
@@ -920,27 +930,32 @@ fn _declare_top_level(st: map, item) -> map {
     ; `use m` also makes every function of m callable unqualified (cgen's
     ; import aliases), so declare them too, and remember m's function table
     ; so `m.f(...)` can be checked for existence and arity.
-    let file = cgen._use_path_to_file(item["path"])
-    let src = io.read_file(file)
-    if type_of(src) == "str" && len(src) > 0 {
-      let mod_ast = parser.parse(src)
-      if type_of(mod_ast) == "map" && mod_ast["tag"] == "Program" {
-        let mut fns = #{}
-        for mi in mod_ast["items"] {
-          if type_of(mi) == "map" && mi["tag"] == "FnDecl" {
-            s = _declare_typed(s, mi["name"], "imported", len(mi["params"]), _fn_sig(s, mi), true)
-            fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
-          }
-          if type_of(mi) == "map" && mi["tag"] == "ExternFn" {
-            fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
-          }
-          if type_of(mi) == "map" && mi["tag"] == "TypeDecl" {
-            s = _declare_typedef(s, mi)
-            s = _declare_sum_type(s, mi)
-          }
+    let loaded = cgen.load_module_source(item["path"], s["parse_cache"])
+    s = map.set(s, "parse_cache", loaded["cache"])
+    let got = loaded["got"]
+    if got["status"] == "missing" {
+      ret _diag(s, "error", "E0013", "cannot load module " + short + ": file not found: " + got["file"])
+    }
+    if got["status"] == "parse" {
+      ret _diag(s, "error", "E0014", "parse error in module " + short + ": " + got["msg"])
+    }
+    let mod_ast = got["ast"]
+    if type_of(mod_ast) == "map" && mod_ast["tag"] == "Program" {
+      let mut fns = #{}
+      for mi in mod_ast["items"] {
+        if type_of(mi) == "map" && mi["tag"] == "FnDecl" {
+          s = _declare_typed(s, mi["name"], "imported", len(mi["params"]), _fn_sig(s, mi), true)
+          fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
         }
-        s = map.set(s, "modules", map.set(s["modules"], short, fns))
+        if type_of(mi) == "map" && mi["tag"] == "ExternFn" {
+          fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
+        }
+        if type_of(mi) == "map" && mi["tag"] == "TypeDecl" {
+          s = _declare_typedef(s, mi)
+          s = _declare_sum_type(s, mi)
+        }
       }
+      s = map.set(s, "modules", map.set(s["modules"], short, fns))
     }
     ret s
   }
@@ -1039,13 +1054,22 @@ fn _check_items(st: map, items) -> map {
 
 ; Entry point. Returns a list of diagnostics.
 fn check(ast) -> [map] {
-  if type_of(ast) != "map" { ret [] }
+  ret check_cached(ast, #{})["diags"]
+}
+
+; Same as check, but reuses a parse cache of `use`d modules (path -> AST).
+; `a check` over many files and `_try_generate` pass the same cache to
+; codegen so each module is parsed once per process.
+fn check_cached(ast, cache) -> map {
+  if type_of(ast) != "map" { ret #{"diags": [], "cache": cache} }
   let items = ast["items"]
   let mut st = _new_state(cgen._builtin_map(), builtin_arity.table())
+  st = map.set(st, "parse_cache", cache)
   st = _push_scope(st)
   for item in items { st = _declare_top_level(st, item) }
   st = _check_items(st, items)
-  ret st["diags"]
+  let er = effect_check.check_cached(ast, st["parse_cache"])
+  ret #{"diags": concat_arr(st["diags"], er["diags"]), "cache": er["cache"]}
 }
 
 ; Convenience: format one diagnostic gcc-style.
@@ -1057,4 +1081,12 @@ fn format_diag(file: str, d: map) -> str {
   let mut sev = d["severity"]
   if map.has(d, "code") { sev = sev + "[" + d["code"] + "]" }
   ret loc + ": " + sev + ": " + d["msg"]
+}
+
+; One diagnostic as a JSON object. Agents should prefer this over scraping
+; the gcc-style line: `a check --json`.
+fn format_diag_json(file: str, d: map) -> str {
+  let mut code = ""
+  if map.has(d, "code") { code = d["code"] }
+  ret json.stringify(#{"file": file, "line": d["line"], "col": d["col"], "code": code, "severity": d["severity"], "message": d["msg"]})
 }
