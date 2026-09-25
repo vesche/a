@@ -286,6 +286,7 @@ fn lex_pos(src: str) -> [any] {
       pos = pos + 1
       let mut content = ""
       let mut done = false
+      let mut started_interp = false
       while pos < n {
         let sc = chars[pos]
         if sc == "\"" {
@@ -301,6 +302,7 @@ fn lex_pos(src: str) -> [any] {
           interp_depth = interp_depth + 1
           pos = pos + 1
           done = true
+          started_interp = true
           break
         }
         if sc == "\\" {
@@ -315,15 +317,9 @@ fn lex_pos(src: str) -> [any] {
         pos = pos + 1
       }
       if done {
-        if interp_depth == 0 {
-          ; check if we ended normally (with ") vs started interp
-          ; if last push was InterpStart, we already handled it
-          let tlen = len(toks)
-          if tlen > 0 {
-            if toks[tlen - 2] == "InterpStart" {
-              continue
-            }
-          }
+        ; A complete string -- including one nested inside an interpolation,
+        ; e.g. "{m["key"]}" -- is a Str token; a `{` already emitted InterpStart.
+        if !started_interp {
           toks = push(toks, "Str")
           toks = push(toks, content)
         }

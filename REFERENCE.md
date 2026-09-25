@@ -29,7 +29,8 @@ a run hello.a
 | `a wat file.a [-o out]` | Emit WebAssembly Text Format |
 | `a targets` | List cross-compile targets and detected toolchains |
 | `a test dir/ [--timeout S] [--filter SUBSTR] [--skip a,b] [-v]` | Find `test_*.a` files, compile, run, report. Each test runs in its own process group with a deadline (default 60s); on timeout or exit the whole group is killed, so tests cannot leak servers or forked tasks. Sets a private `A_HOME` unless one is already set. |
-| `a check file.a` | Static analysis: undefined names, unknown builtins, arity, unused variables, unreachable code, builtin shadowing. Exit 1 on errors. |
+| `a check PATH...` | Static analysis over files and directories (recursive): undefined names, unknown builtins, arity, type mismatches (gradual, see §3), record fields, non-exhaustive matches, misuse of `?`, unused variables, unreachable code, builtin shadowing. Exit 1 on errors. |
+| `a explain [CODE]` | Explain a diagnostic code (`a explain E0007`), or list all codes |
 | `a fmt file.a` | Format to canonical style |
 | `a fmt dir/` | Format all `.a` files in directory |
 | `a ast file.a` | Dump parsed AST as JSON |
@@ -54,7 +55,34 @@ a run hello.a
 
 Every message about a program has the form `file:line:col: severity: message`
 (gcc style, so editors and agents can parse it). Parse errors, checker
-diagnostics, and compile errors all use it. If the generated C ever fails to
+diagnostics, and compile errors all use it. Checker diagnostics also carry a
+stable code -- `file.a:3:7: error[E0007]: argument 1 of greet: expected str, got int`
+-- so a tool can branch on the code instead of the English. `a explain E0007`
+prints what the code means, why it fires and an example; `a explain` lists
+them all. The catalog is `std/compiler/diag_codes.a`:
+
+| Code | Meaning |
+|------|---------|
+| `E0001` | undefined variable |
+| `E0002` | undefined function (this file or a `use`d module) |
+| `E0003` | unknown builtin in a builtin namespace (`str.length`) |
+| `E0004` | wrong number of arguments |
+| `E0005` | non-exhaustive `match` on a sum type |
+| `E0006` | `?` in a function that does not return `Result` |
+| `E0007` | type mismatch between two known types (let, argument, return, assignment, map key, record shape) |
+| `E0008` | `ret value` in a `-> void` function |
+| `E0009` | unknown field on a named record |
+| `E0010` | operator on incompatible types (`"a" + 1`, `xs < 3`, `5[0]`, `-"x"`) |
+| `W0001` | unused variable (prefix with `_` to silence) |
+| `W0002` | unreachable code after `ret` |
+| `W0003` | function shadows a builtin |
+
+The language server (`a-lsp`) publishes the same diagnostics, with the code in
+the LSP `code` field. `a build`, `a run`, and `a test`
+run the static checker before generating C, so an undefined name, a wrong
+arity, or a non-exhaustive match stops the build with a diagnostic at the `a`
+source line (warnings are only shown by `a check`). `A_NO_CHECK=1` bypasses
+the checker if it ever rejects a valid program. If the generated C ever fails to
 compile, that is a compiler bug: `a` reports
 `file.a:L:C: internal compiler error: generated C did not compile`, shows the
 first C compiler line, and keeps the `.c` file for the report. A missing
@@ -112,6 +140,40 @@ Programs must define `fn main()` as the entry point. Test files define `fn test_
 | `str` | String |
 | `bytes` | Byte array |
 | `void` | No value |
+| `int`, `float` | Canonical names; every sized integer is `int` and every float is `float` to the checker |
+| `num` | `int` or `float` (used in builtin signatures such as `math.max`) |
+| `any` | Anything; opts a value out of static checking |
+
+### Gradual typing
+
+Annotations are optional and checked statically by `a check` (and before every
+build). The rules, which are what `std/compiler/types.a` implements:
+
+- An unannotated value has whatever type the checker can infer from its
+  initialiser (`let n = 1` is `int`, `let xs = [1, 2]` is `[int]`, a literal
+  `#{"x": 1}` is the record shape `{x: int}`). A mutable binding that is
+  reassigned a different type simply widens to the common type (`any` when
+  there is none). Inference never produces an error on its own.
+- An error is reported only when two *known* types are incompatible: an
+  initialiser against `let x: T`, an argument against a parameter, a `ret`
+  value against the declared return type, an assignment against an annotated
+  `let mut`, or a map key against the key type.
+- `any` is compatible with everything in both directions, `int` widens to
+  `float`, `num` accepts either, all sized integers are `int` (`i64`, `u8`,
+  ...), `map` means `#{any: any}` and `array` means `[any]`. A `Result` is
+  compatible with everything because unwrapping is dynamic.
+- Builtins are typed by the signature table in `std/compiler/builtin_sigs.a`
+  (`push: fn([T], T) -> [T]`, `reduce: fn([T], U, fn(U, T) -> U) -> U`, ...).
+  Type variables are single uppercase letters bound per call, so
+  `push([1, 2], "x")` is `E0007: argument 2 of push: expected int, got str`,
+  and `reduce(xs, f, 0)` (arguments swapped) is caught before it silently
+  prints `void`.
+- Records (`ty P = {x: int}`) are maps with known fields; see Type Declarations.
+- Lambdas are typed from their parameter annotations and an expression body;
+  a block-bodied lambda returns `any`.
+
+Passing `A_NO_CHECK=1` skips the checker for one build if it ever rejects a
+valid program -- and that is a bug worth reporting.
 
 ### Arrays
 
@@ -149,14 +211,51 @@ fn apply(f: fn(i64) -> i64, x: i64) -> i64 {
 **Records** (named structs):
 
 ```a
-ty Point = {x: f64, y: f64}
+ty Point = {x: int, y: float}
+
+fn shift(p: Point, dx: int) -> Point { ret map.set(p, "x", p.x + dx) }
+
+let p: Point = #{"x": 1, "y": 2.5}
+println(shift(p, 4).x)     ; 5
 ```
+
+A record is a map with known fields. It is constructed as a map literal and is
+a plain map at runtime (`map.keys`, `map.set`, structural `==` all work), but
+wherever a record type is expected -- `let p: Point = ...`, an argument, a
+`ret` -- the checker verifies the literal's shape: every declared field present
+with a compatible type, no undeclared field
+(`E0007: let p: Point: expected Point, got {x: int} (missing field y)`).
+Field access `p.x` / `p["x"]` on a named record has the declared field type and
+an unknown field is `E0009`. Two different named records are never
+interchangeable (`Size` is not `Point`), while a bare `map` converts to and from
+any record. Field types may be other records; access chains (`l.to.x`) are typed
+all the way down.
 
 **Sum types** (tagged unions):
 
 ```a
 ty Shape = Circle(f64) | Rect(f64, f64) | Empty
+
+fn area(s: Shape) -> f64 {
+  match s {
+    Circle(r) => { ret 3.14159 * r * r }
+    Rect(w, h) => { ret w * h }
+    Empty => { ret 0.0 }
+  }
+}
 ```
+
+Variants are constructed by name (`Circle(2.0)`, `Empty`) and taken apart with
+`match`. A constructor call with the wrong number of arguments is a compile
+error. A `match` on a sum type must be exhaustive: every variant needs an arm
+or there must be a catch-all (`_` or a plain identifier). Guarded arms
+(`Circle(r) if r > 1.0 => ...`) do not count towards coverage. The diagnostic is
+`non-exhaustive match on Shape: missing Empty`.
+
+Variants print as `Circle(2)` / `Empty`, compare structurally
+(`Circle(1.0) == Circle(1.0)`), and can be nested recursively
+(`ty Tree = Leaf(i64) | Node(Tree, Tree)`). `type_of` reports `map` for a
+variant in this release; the representation is `#{"$tag": ..., "$args": [...]}`.
 
 **Aliases with constraints**:
 
@@ -252,11 +351,16 @@ Pre/postconditions on functions:
 ```a
 fn divide(a: f64, b: f64) -> f64
   pre { b != 0.0 }
-  post { true }
+  post { ret >= 0.0 || ret < 0.0 }
 {
   ret a / b
 }
 ```
+
+Inside `post`, `ret` names the returned value. Contracts are parsed and
+checked for well-formedness by `a check`, but **not yet enforced at runtime**:
+the native compiler currently ignores them. Runtime enforcement (behind a
+build flag) is a roadmap item.
 
 ---
 
@@ -395,7 +499,18 @@ let data = try io.read_file("config.txt")
 let data = io.read_file("config.txt")?
 ```
 
-`try { block }` catches errors in the block.
+`expr?` unwraps an `Ok` and, on `Err`, returns that `Err` from the enclosing
+function. It is only allowed in a function that returns `Result` (or has no
+declared return type); `?` in a function declared `-> i64` is a compile error.
+Inside `try { ... }` the `Err` is caught by the block instead. An `Err` that
+propagates out of `main` prints `error: <payload>` and exits with status 1.
+
+### Equality
+
+`==` and `!=` are structural for every value: numbers compare by value
+(`1 == 1.0`), strings by contents, arrays element-wise, maps key-wise ignoring
+insertion order, Results by tag and payload, and sum type variants by tag and
+arguments. Closures and pointers compare by identity.
 
 ### Field Access, Indexing, Calls
 
@@ -433,7 +548,10 @@ let name = "alice"
 let age = 30
 println("name: {name}, age: {to_str(age)}")
 println("sum: {to_str(1 + 2)}")
+println("model: {resp["model"]}")   ; string literals may appear inside {}
 ```
+
+A literal `{` or `}` in a string is written `\{` / `\}`.
 
 ### Raw Strings
 
@@ -499,7 +617,14 @@ mod math_utils {
     ret x * x
   }
 }
+
+fn main() { println(math_utils.square(4) + square(5)) }
 ```
+
+An inline `mod` behaves like a `use`d module in the same file: its functions
+are reachable qualified (`math_utils.square`) and unqualified (`square`), and
+a program's `main` may live inside a `mod`. A program with no `main` anywhere
+is rejected with `file.a: error: no fn main found`.
 
 ### Importing
 
@@ -548,15 +673,30 @@ let val = expect(result, "should not fail")
 ### Try
 
 ```a
-; propagate errors
-let data = io.read_file("config.txt")?
+; propagate errors: on Err, the enclosing function returns that Err
+fn load() -> Result<str, str> {
+  let data = io.read_file("config.txt")?
+  ret Ok(str.trim(data))
+}
 
 ; catch errors
 let result = try io.read_file("missing.txt")
 if is_err(result) {
   println("file not found")
 }
+
+; catch a whole block: the first ? that hits an Err ends the block with it
+let parsed = try {
+  let a = parse_num(x)?
+  let b = parse_num(y)?
+  a + b
+}
 ```
+
+`?` is a compile error in a function declared with a non-Result return type
+(`-> i64`, `-> str`, ...). A function with no declared return type may use it
+and then returns either its normal value or an `Err`. An `Err` escaping `main`
+is printed as `error: <payload>` with exit status 1.
 
 ---
 
@@ -918,7 +1058,7 @@ Native image processing via bundled stb_image (native CLI only).
 | `image.width(img)` | handle -> i64 | Image width in pixels |
 | `image.height(img)` | handle -> i64 | Image height in pixels |
 | `image.resize(img, w, h)` | handle, i64, i64 -> handle | Bilinear resize |
-| `image.pixels(img)` | handle -> [[i64]] | RGBA pixel data |
+| `image.pixels(img)` | handle -> [i64] | Pixels as packed RGBA ints (`r << 24 | g << 16 | b << 8 | a`), row-major |
 
 ### Reflection
 

@@ -1,25 +1,35 @@
+; A minimal read-eval-print loop built from the compiler itself.
+;
+; There is no `eval` builtin: `a` compiles to native code. Each line is
+; wrapped in a `main`, compiled, and run -- the same approach `a repl` uses,
+; in a dozen lines. Definitions (`fn ...`) accumulate; expressions print.
+;
+;   ./a run examples/repl.a
+
 fn main() -> void
   effects [io]
 {
-  println("a REPL v0.32 -- type 'exit' to quit")
-  println("")
+  println("a REPL -- type 'exit' to quit")
+  let mut defs = ""
   while true {
-    io.write(">> ")
+    print(">> ")
+    io.flush()
     let line = io.read_line()
+    if type_of(line) != "str" { break }
     let trimmed = str.trim(line)
     if trimmed == "exit" || trimmed == "quit" { break }
     if len(trimmed) == 0 { continue }
-    let result = eval(trimmed)
-    if type_of(result) == "str" {
-      if str.starts_with(result, "eval error:") {
-        eprintln(result)
-      } else {
-        println(result)
-      }
-    } else {
-      if type_of(result) != "void" {
-        println(to_str(result))
-      }
+    if str.starts_with(trimmed, "fn ") || str.starts_with(trimmed, "ty ") || str.starts_with(trimmed, "use ") {
+      defs = defs + trimmed + "\n"
+      continue
     }
+    let body = trimmed
+    if !str.starts_with(trimmed, "let ") && !str.starts_with(trimmed, "println") {
+      body = "println(to_str(" + trimmed + "))"
+    }
+    io.write_file("/tmp/a_repl_line.a", defs + "fn main() \{\n  " + body + "\n\}\n")
+    let r = exec_timeout("./a run /tmp/a_repl_line.a", 10000)
+    print(r["stdout"])
+    if r["exit_code"] != 0 { eprintln(str.trim(r["stderr"])) }
   }
 }

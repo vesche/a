@@ -14,7 +14,7 @@ fn main() {
   print("---")
   llm.stream("anthropic", "claude-sonnet-4-20250514", msgs, fn(chunk) {
     if !chunk["done"] {
-      io.write(chunk["content"])
+      print(chunk["content"])
       io.flush()
     } else {
       print("")

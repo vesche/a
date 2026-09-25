@@ -1,0 +1,44 @@
+; Inline `mod m { ... }` blocks compile like a `use`d module: functions are
+; reachable as m.f and unqualified f. Also: lambdas capture for-loop variables.
+
+use std.testing
+
+mod geometry {
+  ty Shape = Square(int) | Rect(int, int)
+
+  fn area(s: Shape) -> int {
+    match s {
+      Square(n) => { ret n * n }
+      Rect(w, h) => { ret w * h }
+    }
+  }
+
+  fn total(shapes: [Shape]) -> int {
+    let mut t = 0
+    for s in shapes { t = t + area(s) }
+    ret t
+  }
+}
+
+fn main() {
+  testing.assert_int_eq(geometry.area(Square(3)), 9)
+  testing.assert_int_eq(area(Rect(2, 5)), 10)
+  testing.assert_int_eq(geometry.total([Square(1), Rect(2, 3)]), 7)
+  println("PASS: inline mod functions, qualified and unqualified")
+
+  let names = ["a", "b", "c"]
+  let mut thunks = []
+  for n in names {
+    thunks = push(thunks, fn() => n + "!")
+  }
+  let outs = map(thunks, fn(t) => t())
+  testing.assert_eq(str.join(outs, ","), "a!,b!,c!")
+
+  let pairs = [[1, "x"], [2, "y"]]
+  let mut fs = []
+  for [i, s] in pairs {
+    fs = push(fs, fn() => to_str(i) + s)
+  }
+  testing.assert_eq(str.join(map(fs, fn(f) => f()), ","), "1x,2y")
+  println("PASS: lambdas capture for-loop variables")
+}

@@ -79,7 +79,10 @@ fn main() -> void
 
       if do_exec {
         eprintln("--- executing ---")
-        __bridge_exec__(prog)
+        ; the bytecode VM is gone; run the source natively instead
+        let r = exec_timeout("./a run " + src_path, 0)
+        print(r["stdout"])
+        print(r["stderr"])
       }
     }
   }

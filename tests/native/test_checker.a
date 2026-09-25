@@ -5,6 +5,7 @@
 use std.testing
 use std.compiler.parser
 use std.compiler.checker
+use std.compiler.diag_codes
 
 fn diags_for(src: str) -> [map] {
   let ast = parser.parse(src)
@@ -14,6 +15,13 @@ fn diags_for(src: str) -> [map] {
 
 fn errors_of(ds: [map]) -> [map] {
   ret filter(ds, fn(d) => d["severity"] == "error")
+}
+
+fn has_code(ds: [map], code: str) -> bool {
+  for d in ds {
+    if d["code"] == code { ret true }
+  }
+  ret false
 }
 
 fn has_msg(ds: [map], needle: str) -> bool {
@@ -127,10 +135,10 @@ fn main() {
   println("PASS: unqualified imports")
 
   ; --- builtin arity is generated from the runtime, not hand-typed ---
-  let asrc = "fn main() \{\n  println(http.post(\"u\", \"b\", #\{\}))\n  println(http.post(\"u\"))\n\}\n"
+  let asrc = "fn main() \{\n  println(http.post(\"u\", \"b\", #\{\}))\n  println(fs.stat(\"p\", 1))\n\}\n"
   let ads = errors_of(diags_for(asrc))
   testing.assert_eq(len(ads), 1)
-  testing.assert_eq(diag_line(ads, "http.post expects 3 argument(s), got 1"), 3)
+  testing.assert_eq(diag_line(ads, "fs.stat expects 1 argument(s), got 2"), 3)
   println("PASS: generated builtin arity")
 
   ; --- shadowing a builtin is a warning, and the bare call is the builtin ---
@@ -150,8 +158,160 @@ fn main() {
   }
   println("PASS: compiler sources check clean")
 
+  ; --- exhaustiveness: every variant, or a catch-all; guarded arms do not count ---
+  let shape = "ty Shape = Circle(float) | Rect(float, float) | Empty\n"
+  let full = shape + "fn f(s: Shape) -> int \{\n  match s \{\n    Circle(r) => \{ ret 1 \}\n    Rect(w, h) => \{ ret 2 \}\n    Empty => \{ ret 3 \}\n  \}\n\}\nfn main() \{ println(f(Empty)) \}\n"
+  testing.assert_eq(len(errors_of(diags_for(full))), 0)
+  let partial = shape + "fn f(s: Shape) -> int \{\n  match s \{\n    Circle(r) => \{ ret 1 \}\n    Rect(w, h) => \{ ret 2 \}\n  \}\n\}\nfn main() \{ println(f(Empty)) \}\n"
+  let pds = errors_of(diags_for(partial))
+  testing.assert_eq(len(pds), 1)
+  testing.assert_eq(diag_line(pds, "non-exhaustive match on Shape: missing Empty"), 3)
+  let guarded = shape + "fn f(s: Shape) -> int \{\n  match s \{\n    Circle(r) if r > 1.0 => \{ ret 1 \}\n    Rect(w, h) => \{ ret 2 \}\n    Empty => \{ ret 3 \}\n  \}\n\}\nfn main() \{ println(f(Empty)) \}\n"
+  testing.assert_true(has_msg(errors_of(diags_for(guarded)), "missing Circle"))
+  let wild = shape + "fn f(s: Shape) -> int \{\n  match s \{\n    Circle(r) => \{ ret 1 \}\n    _ => \{ ret 0 \}\n  \}\n\}\nfn main() \{ println(f(Empty)) \}\n"
+  testing.assert_eq(len(errors_of(diags_for(wild))), 0)
+  println("PASS: match exhaustiveness")
+
+  ; --- `?` only propagates from a Result-returning (or untyped) function ---
+  let rsrc = "fn p(s: str) -> Result<int, str> \{ ret Ok(int(s)) \}\n"
+  let okq = rsrc + "fn a(s: str) -> Result<int, str> \{ ret Ok(p(s)? * 2) \}\nfn b(s: str) \{ ret p(s)? * 2 \}\nfn c(s: str) -> int \{ let r = try \{ p(s)? \}\n ret 0 \}\nfn main() \{ println(a(\"1\")) \}\n"
+  testing.assert_eq(len(errors_of(diags_for(okq))), 0)
+  let badq = rsrc + "fn d(s: str) -> int \{ ret p(s)? * 2 \}\nfn main() \{ println(d(\"1\")) \}\n"
+  let bds = errors_of(diags_for(badq))
+  testing.assert_eq(len(bds), 1)
+  testing.assert_eq(diag_line(bds, "`?` in a function declared -> int"), 2)
+  println("PASS: ? requires a Result return type")
+
+  ; --- optional trailing arguments and the pipe operator's implicit first argument ---
+  let osrc = "fn main() \{\n  println(http.get(\"u\"))\n  println(slice([1, 2, 3], 1))\n  println(http.get())\n  let n = [1, 2, 3] |> filter(fn(x) => x > 1) |> reduce(0, fn(a, x) => a + x)\n  println(n)\n\}\n"
+  let ods = errors_of(diags_for(osrc))
+  testing.assert_eq(len(ods), 1)
+  testing.assert_eq(diag_line(ods, "http.get expects 1 to 2 argument(s), got 0"), 4)
+  println("PASS: optional arguments and pipe arity")
+
+  ; --- calls into a `use`d module are checked for existence and arity ---
+  let msrc = "use std.math\nfn main() \{\n  println(math.clamp(5, 1, 3))\n  println(math.nope(1))\n  println(math.clamp(1))\n\}\n"
+  let mds = errors_of(diags_for(msrc))
+  testing.assert_eq(len(mds), 2)
+  testing.assert_eq(diag_line(mds, "undefined function: math.nope"), 4)
+  testing.assert_eq(diag_line(mds, "math.clamp expects 3 argument(s), got 1"), 5)
+  println("PASS: module function existence")
+
+  ; --- a string literal nested inside an interpolation lexes ---
+  let nsrc = "fn main() \{\n  let r = #\{\"model\": \"m\"\}\n  println(\"model: \{r[\"model\"]\} done\")\n\}\n"
+  testing.assert_eq(len(diags_for(nsrc)), 0)
+  println("PASS: nested string in interpolation")
+
+  ; --- gradual typing: mismatches between two *known* types are errors ---
+  let tsrc = str.join([
+    "ty Point = \{x: int, y: float\}",
+    "ty Shape = Circle(float) | Empty",
+    "fn greet(name: str, times: int) -> str \{ ret name \}",
+    "fn area(s: Shape) -> float \{ ret 1.0 \}",
+    "fn wrong_ret() -> int \{ ret \"one\" \}",
+    "fn void_ret() -> void \{ ret 1 \}",
+    "fn main() \{",
+    "  let n: int = \"five\"",
+    "  let s = \"a\" + 1",
+    "  println(greet(3, \"x\"))",
+    "  println(area(Circle(1)))",
+    "  println(area(\"circle\"))",
+    "  let p: Point = #\{\"x\": 1, \"y\": 2.0\}",
+    "  println(p.z)",
+    "  println(p.x + p.y)",
+    "  let xs = [1, 2, 3]",
+    "  println(push(xs, \"four\"))",
+    "  if xs < 3 \{ println(n + s) \}",
+    "  let k = 5",
+    "  println(k[0])",
+    "\}"
+  ], "\n") + "\n"
+  let tds = errors_of(diags_for(tsrc))
+  testing.assert_eq(diag_line(tds, "ret in a function declared -> int: expected int, got str"), 5)
+  testing.assert_eq(diag_line(tds, "ret with a value in a function declared -> void"), 6)
+  testing.assert_eq(diag_line(tds, "let n: int: expected int, got str"), 8)
+  testing.assert_eq(diag_line(tds, "cannot apply + to str and int"), 9)
+  testing.assert_eq(diag_line(tds, "argument 1 of greet: expected str, got int"), 10)
+  testing.assert_eq(diag_line(tds, "argument 2 of greet: expected int, got str"), 10)
+  testing.assert_eq(diag_line(tds, "argument 1 of area: expected Shape, got str"), 12)
+  testing.assert_eq(diag_line(tds, "unknown field z on Point (fields: x, y)"), 14)
+  testing.assert_eq(diag_line(tds, "argument 2 of push: expected int, got str"), 17)
+  testing.assert_eq(diag_line(tds, "cannot compare [int] < int"), 18)
+  testing.assert_eq(diag_line(tds, "cannot index a value of type int"), 20)
+  ; int widens to float (Circle(1)), p.x + p.y is num, everything else is fine
+  testing.assert_eq(len(tds), 11)
+  println("PASS: typed checks")
+
+  ; --- records: a literal's shape is checked where a record type is expected ---
+  let rsrc = str.join([
+    "ty Point = \{x: int, y: float\}",
+    "ty Size = \{w: int, h: int\}",
+    "fn draw(p: Point) -> str \{ ret to_str(p.x) \}",
+    "fn origin() -> Point \{ ret #\{\"x\": 0\} \}",
+    "fn main() \{",
+    "  let p: Point = #\{\"x\": 1, \"y\": 2\}",
+    "  let r: Point = #\{\"x\": \"one\", \"y\": 2.0\}",
+    "  let sz: Size = #\{\"w\": 1, \"h\": 2\}",
+    "  println(draw(p) + draw(sz) + draw(#\{\"y\": 4\}) + draw(r))",
+    "  let lit = #\{\"a\": 1, \"b\": \"two\"\}",
+    "  let t: str = lit[\"a\"]",
+    "  println(lit[\"nope\"] + t)",
+    "  let mut grow = #\{\"n\": 0\}",
+    "  grow = map.set(grow, \"extra\", \"x\")",
+    "  println(grow[\"extra\"])",
+    "  let m: map = p",
+    "  println(m)",
+    "\}"
+  ], "\n") + "\n"
+  let rds = errors_of(diags_for(rsrc))
+  testing.assert_eq(diag_line(rds, "ret in a function declared -> Point: expected Point, got \{x: int\} (missing field y)"), 4)
+  testing.assert_eq(diag_line(rds, "let r: Point: expected Point, got \{x: str, y: float\} (field x: expected int, got str)"), 7)
+  testing.assert_eq(diag_line(rds, "argument 1 of draw: expected Point, got Size"), 9)
+  testing.assert_eq(diag_line(rds, "argument 1 of draw: expected Point, got \{y: int\} (missing field x)"), 9)
+  testing.assert_eq(diag_line(rds, "let t: str: expected str, got int"), 11)
+  ; y: 2 widens to float; lit["nope"] on a literal shape is dynamic; a record is a map
+  testing.assert_eq(len(rds), 5)
+  println("PASS: record shapes")
+
+  ; --- gradual typing: `any`, untyped bindings and heterogeneous maps are never errors ---
+  let gsrc = str.join([
+    "use std.testing",
+    "fn f(v) \{ ret v \}",
+    "fn g(v: any) -> int \{ ret v \}",
+    "fn main() \{",
+    "  let mut x = 1",
+    "  x = \"now a string\"",
+    "  let m = #\{\"count\": 0\}",
+    "  let m2 = map.set(map.set(m, \"name\", \"x\"), \"tags\", [])",
+    "  println(f(m2) + g(x))",
+    "  testing.assert_eq(m2[\"count\"], 0)",
+    "  let xs = [1, 2] |> map(fn(v) => v * 2) |> filter(fn(v) => v > 2)",
+    "  println(str.join(map(xs, fn(v) => to_str(v)), \",\"))",
+    "  let e = str.split(\"a b\", \" \")[0] + \"!\"",
+    "  println(e)",
+    "\}"
+  ], "\n") + "\n"
+  testing.assert_eq(len(errors_of(diags_for(gsrc))), 0)
+  println("PASS: gradual typing has no false positives")
+
   ; --- format_diag ---
   let line = checker.format_diag("x.a", #{"severity": "error", "line": 7, "col": 3, "msg": "boom"})
   testing.assert_eq(line, "x.a:7:3: error: boom")
+  let coded = checker.format_diag("x.a", #{"severity": "error", "code": "E0001", "line": 7, "col": 3, "msg": "boom"})
+  testing.assert_eq(coded, "x.a:7:3: error[E0001]: boom")
+  ; every emitted diagnostic has a code, and every code is documented
+  let all = diags_for(tsrc)
+  for d in all {
+    testing.assert_eq(map.has(d, "code"), true)
+    testing.assert_eq(diag_codes.explain(d["code"]) != "", true)
+  }
+  testing.assert_eq(has_code(tds, "E0007"), true)
+  testing.assert_eq(has_code(tds, "E0009"), true)
+  testing.assert_eq(has_code(tds, "E0010"), true)
+  testing.assert_eq(has_code(errors_of(diags_for(badq)), "E0006"), true)
+  testing.assert_eq(has_code(ods, "E0004"), true)
+  testing.assert_eq(has_code(mds, "E0002"), true)
+  testing.assert_eq(str.contains(diag_codes.explain("e0007"), "type mismatch"), true)
+  testing.assert_eq(diag_codes.explain("E9999"), "")
   println("PASS: format_diag")
 }

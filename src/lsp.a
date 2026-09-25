@@ -1,5 +1,6 @@
 use std.compiler.parser
 use std.compiler.lexer
+use std.compiler.checker
 
 ; --- JSON-RPC wire protocol ---
 
@@ -486,14 +487,22 @@ fn _collect_errors(node, errors) {
 }
 
 fn _make_diag(msg, lc) {
+  ret _make_diag_coded(msg, lc, 1, "")
+}
+
+; LSP severity: 1 = error, 2 = warning. `code` shows up in editors and is
+; what `a explain CODE` documents.
+fn _make_diag_coded(msg, lc, severity: int, code: str) {
   let pos = #{"line": lc["line"], "character": lc["character"]}
   let end_pos = #{"line": lc["line"], "character": lc["character"] + 1}
-  ret #{
+  let mut d = #{
     "range": #{"start": pos, "end": end_pos},
-    "severity": 1,
+    "severity": severity,
     "source": "a-lsp",
     "message": msg
   }
+  if code != "" { d = map.set(d, "code", code) }
+  ret d
 }
 
 fn _publish_diagnostics(uri, content, docs) {
@@ -512,6 +521,16 @@ fn _publish_diagnostics(uri, content, docs) {
     }
     diags = push(diags, _make_diag(err["msg"], lc))
     i = i + 1
+  }
+  ; a file that parses is also checked (undefined names, arity, types, ...)
+  if len(errors) == 0 && type_of(ast) == "map" && ast["tag"] == "Program" {
+    for d in checker.check(ast) {
+      let mut sev = 2
+      if d["severity"] == "error" { sev = 1 }
+      let mut lc = #{"line": 0, "character": 0}
+      if d["line"] > 0 { lc = #{"line": d["line"] - 1, "character": d["col"] - 1} }
+      diags = push(diags, _make_diag_coded(d["msg"], lc, sev, map.get(d, "code")))
+    }
   }
   _notify("textDocument/publishDiagnostics", #{"uri": uri, "diagnostics": diags})
   ret ast

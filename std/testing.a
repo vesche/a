@@ -2,7 +2,8 @@
 ; Assertions call fail() on mismatch, which throws a catchable RuntimeError.
 ; Use with `a test <file>` to auto-discover and run test_* functions.
 
-fn assert_eq(actual: str, expected: str) -> void effects [io] {
+; Compares any two values structurally (ints, strings, arrays, maps, variants).
+fn assert_eq(actual: any, expected: any) -> void effects [io] {
   if actual != expected {
     fail("expected \"{expected}\" got \"{actual}\"")
   }
@@ -32,7 +33,7 @@ fn assert_contains(haystack: str, needle: str) -> void effects [io] {
   }
 }
 
-fn assert_not_eq(actual: str, expected: str) -> void effects [io] {
+fn assert_not_eq(actual: any, expected: any) -> void effects [io] {
   if actual == expected {
     fail("expected values to differ, both are \"{actual}\"")
   }

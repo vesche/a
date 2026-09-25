@@ -81,10 +81,8 @@ fn main() -> void
 
   if do_exec {
     println("")
-    println("=== Executing A ===")
-    __bridge_exec__(prog_a)
-    println("")
-    println("=== Executing B ===")
-    __bridge_exec__(prog_b)
+    ; The bytecode VM that ran serialized programs was retired with the
+    ; native compiler; the .abc files can still be compared, not executed.
+    println("--exec: the bytecode VM is gone; compile the .a sources with `a run` instead")
   }
 }

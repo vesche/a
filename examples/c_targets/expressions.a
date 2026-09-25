@@ -51,7 +51,7 @@ fn test_nested_exprs() {
   println(doubled)
 
   ; Filter + reduce
-  let sum = [1, 2, 3, 4, 5] |> filter(fn(x) { x > 2 }) |> reduce(fn(acc, x) { acc + x }, 0)
+  let sum = [1, 2, 3, 4, 5] |> filter(fn(x) { x > 2 }) |> reduce(0, fn(acc, x) { acc + x })
   println(sum)
 
   ; Try with ?
@@ -98,7 +98,7 @@ fn test_closures_in_expr() {
   let result = [1, 2, 3, 4, 5]
     |> map(fn(x) { x * x })
     |> filter(fn(x) { x > 5 })
-    |> reduce(fn(acc, x) { acc + x }, 0)
+    |> reduce(0, fn(acc, x) { acc + x })
   println(result)
 }
 

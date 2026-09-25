@@ -2,6 +2,8 @@
 #include <stdlib.h>
 
 /* Forward declarations */
+AValue fn_builtin_sigs_sigs(void);
+AValue fn_builtin_sigs_min_arity(void);
 AValue fn_lexer_is_ws(AValue c);
 AValue fn_lexer_is_id_start(AValue c);
 AValue fn_lexer_is_id_char(AValue c);
@@ -141,6 +143,9 @@ AValue fn_parser_parse_postfix_expr(AValue toks, AValue pos);
 AValue fn_parser_parse_primary_expr(AValue toks, AValue pos);
 AValue fn_parser_parse_array_element(AValue toks, AValue pos);
 AValue fn_parser_parse_interp_string(AValue toks, AValue pos);
+AValue fn_cgen__builtin_min_arity(void);
+AValue fn_cgen__sig_param_count(AValue sig);
+AValue fn_cgen__builtin_full_arity(AValue name);
 AValue fn_cgen__builtin_map(void);
 AValue fn_cgen__void_builtins(void);
 AValue fn_cgen__c_keywords(void);
@@ -164,6 +169,7 @@ AValue fn_cgen__escape_analysis(AValue stmts, AValue captures);
 AValue fn_cgen__collect_idents_in_expr(AValue node);
 AValue fn_cgen__collect_idents_in_block(AValue block);
 AValue fn_cgen__collect_idents_in_stmt(AValue s);
+AValue fn_cgen__with_enclosing(AValue ctx, AValue names);
 AValue fn_cgen__compute_captures(AValue lambda_node, AValue enclosing_vars, AValue bm);
 AValue fn_cgen__collect_lets_in_block(AValue block);
 AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li);
@@ -186,11 +192,14 @@ AValue fn_cgen__emit_fwd_decl(AValue name, AValue params);
 AValue fn_cgen__use_path_to_file(AValue path_arr);
 AValue fn_cgen__use_path_short_name(AValue path_arr);
 AValue fn_cgen__collect_fn_names(AValue items);
+AValue fn_cgen__collect_variants(AValue items);
+AValue fn_cgen__variant_arity(AValue ctx, AValue name);
 AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li);
 AValue fn_cgen__ffi_c_type(AValue ty_node);
 AValue fn_cgen__ffi_extract(AValue ty_node, AValue var_name);
 AValue fn_cgen__ffi_wrap(AValue ty_node, AValue expr);
 AValue fn_cgen__emit_extern_fn(AValue node);
+AValue fn_cgen_main_file_of(AValue prog_ast);
 AValue fn_cgen_emit_program(AValue prog_ast, AValue bm);
 AValue fn_cgen_main(void);
 AValue fn_wasmgen__indent(AValue n);
@@ -239,21 +248,55 @@ AValue fn_emitter_emit_pattern(AValue node);
 AValue fn_emitter_emit_pat_literal(AValue lit);
 AValue fn_emitter_escape_str(AValue s);
 AValue fn_builtin_arity_table(void);
+AValue fn_types_t_any(void);
+AValue fn_types_t_prim(AValue name);
+AValue fn_types_t_array(AValue elem);
+AValue fn_types_t_map(AValue key, AValue val);
+AValue fn_types_t_fn(AValue params, AValue ret_ty);
+AValue fn_types_t_result(AValue ok, AValue err);
+AValue fn_types_t_named(AValue name);
+AValue fn_types_t_record(AValue name, AValue fields);
+AValue fn_types_t_var(AValue name);
+AValue fn_types_is_any(AValue t);
+AValue fn_types_is_numeric(AValue t);
+AValue fn_types__is_tvar_name(AValue name);
+AValue fn_types_from_ast(AValue t);
+AValue fn_types_parse_sig(AValue sig);
+AValue fn_types_show(AValue t);
+AValue fn_types_resolve(AValue t, AValue typedefs);
+AValue fn_types_assignable(AValue from, AValue to);
+AValue fn_types_record_diff(AValue from, AValue to);
+AValue fn_types__is_maplike(AValue t);
+AValue fn_types_join(AValue a, AValue b);
+AValue fn_types_unify(AValue pattern, AValue actual, AValue bindings);
+AValue fn_types__bind_unbound_any(AValue t, AValue bindings);
+AValue fn_types_subst(AValue t, AValue bindings);
+AValue fn_types_has_vars(AValue t);
 AValue fn_checker__literal_names(void);
 AValue fn_checker__new_state(AValue builtins, AValue arity);
+AValue fn_checker__ann(AValue st, AValue t);
+AValue fn_checker__declare_typedef(AValue st, AValue item);
+AValue fn_checker__parse_sigs(void);
+AValue fn_checker__set_ty(AValue st, AValue t);
+AValue fn_checker__ty(AValue st);
+AValue fn_checker__type_mismatch(AValue st, AValue what, AValue expected, AValue got);
 AValue fn_checker__pos(AValue st, AValue node);
-AValue fn_checker__diag(AValue st, AValue severity, AValue msg);
-AValue fn_checker__diag_at(AValue st, AValue severity, AValue line, AValue col, AValue msg);
+AValue fn_checker__diag(AValue st, AValue severity, AValue code, AValue msg);
+AValue fn_checker__diag_at(AValue st, AValue severity, AValue code, AValue line, AValue col, AValue msg);
 AValue fn_checker__push_scope(AValue st);
 AValue fn_checker__pop_scope(AValue st);
 AValue fn_checker__declare(AValue st, AValue name, AValue kind, AValue arity);
+AValue fn_checker__declare_typed(AValue st, AValue name, AValue kind, AValue arity, AValue t, AValue annotated);
 AValue fn_checker__resolve(AValue st, AValue name);
 AValue fn_checker__lookup(AValue st, AValue name);
+AValue fn_checker__set_entry_ty(AValue st, AValue idx, AValue name, AValue t);
 AValue fn_checker__mark_used(AValue st, AValue idx, AValue name);
 AValue fn_checker__special_forms(void);
 AValue fn_checker__is_builtin(AValue st, AValue name);
 AValue fn_checker__is_builtin_namespace(AValue st, AValue ns);
 AValue fn_checker__use_name(AValue st, AValue name);
+AValue fn_checker__fn_sig(AValue st, AValue item);
+AValue fn_checker__check_call_types(AValue st, AValue display, AValue sig, AValue arg_tys);
 AValue fn_checker__check_arity(AValue st, AValue display, AValue expected, AValue got);
 AValue fn_checker__declare_pattern(AValue st, AValue pat, AValue kind);
 AValue fn_checker__is_terminator(AValue s);
@@ -261,18 +304,29 @@ AValue fn_checker__walk_stmts(AValue st, AValue stmts);
 AValue fn_checker__walk_block(AValue st, AValue block);
 AValue fn_checker__walk_body(AValue st, AValue body);
 AValue fn_checker__walk_else(AValue st, AValue node);
+AValue fn_checker__check_exhaustive(AValue st, AValue arms);
 AValue fn_checker__walk_arms(AValue st, AValue arms);
 AValue fn_checker__walk_stmt(AValue st, AValue node);
 AValue fn_checker__walk_call(AValue st, AValue node);
 AValue fn_checker__walk_field_access(AValue st, AValue node);
+AValue fn_checker__record_field(AValue st, AValue bt, AValue field);
 AValue fn_checker__walk_children(AValue st, AValue node);
 AValue fn_checker__walk_expr(AValue st, AValue node);
+AValue fn_checker__binop_type(AValue st, AValue op, AValue lt, AValue rt);
 AValue fn_checker__module_short_name(AValue path);
+AValue fn_checker__variant_field_ty(AValue st, AValue f);
+AValue fn_checker__declare_sum_type(AValue st, AValue item);
+AValue fn_checker__is_nullary_variant(AValue st, AValue name);
 AValue fn_checker__declare_top_level(AValue st, AValue item);
+AValue fn_checker__ret_kind(AValue rt);
+AValue fn_checker__ty_str(AValue rt);
 AValue fn_checker__check_fn(AValue st, AValue fn_node);
 AValue fn_checker__check_items(AValue st, AValue items);
 AValue fn_checker_check(AValue ast);
 AValue fn_checker_format_diag(AValue file, AValue d);
+AValue fn_diag_codes_catalog(void);
+AValue fn_diag_codes_explain(AValue code);
+AValue fn_diag_codes_all_codes(void);
 AValue fn_profiler__nl(void);
 AValue fn_profiler__lbrace(void);
 AValue fn_profiler__collect_fn_names(AValue prog_ast);
@@ -447,7 +501,8 @@ AValue fn__is_dir(AValue p);
 AValue fn__fmt_dir(AValue target);
 AValue fn_cmd_fmt(AValue target);
 AValue fn_cmd_ast(AValue source_path);
-AValue fn_cmd_check(AValue source_path);
+AValue fn__collect_a_files(AValue target, AValue acc);
+AValue fn_cmd_check(AValue targets);
 AValue fn__repl_build_source(AValue fns, AValue bindings, AValue expr);
 AValue fn_cmd_repl(void);
 AValue fn_cmd_pkg_init(void);
@@ -463,6 +518,22 @@ AValue fn_cmd_agent(AValue source, AValue agent_name, AValue health_port, AValue
 AValue fn_cmd_plugin(AValue argv);
 AValue fn__usage(void);
 AValue fn_main(void);
+
+AValue fn_builtin_sigs_sigs(void) {
+    AValue __ret = a_void();
+#line 16 "std/compiler/builtin_sigs.a"
+    __ret = a_map_new(177, "Ok", a_string("fn(T) -> Result<T, any>"), "Err", a_string("fn(E) -> Result<any, E>"), "is_ok", a_string("fn(any) -> bool"), "is_err", a_string("fn(any) -> bool"), "unwrap", a_string("fn(Result<T, any>) -> T"), "unwrap_or", a_string("fn(Result<T, any>, T) -> T"), "expect", a_string("fn(Result<T, any>, str) -> T"), "len", a_string("fn(any) -> int"), "to_str", a_string("fn(any) -> str"), "type_of", a_string("fn(any) -> str"), "int", a_string("fn(any) -> int"), "float", a_string("fn(any) -> float"), "print", a_string("fn(any) -> void"), "println", a_string("fn(any) -> void"), "eprintln", a_string("fn(any) -> void"), "fail", a_string("fn(any) -> void"), "args", a_string("fn() -> [str]"), "argv0", a_string("fn() -> str"), "embedded_file", a_string("fn(str) -> str"), "char_code", a_string("fn(str) -> int"), "from_code", a_string("fn(int) -> str"), "exit", a_string("fn(int) -> void"), "is_alnum", a_string("fn(str) -> bool"), "is_alpha", a_string("fn(str) -> bool"), "is_digit", a_string("fn(str) -> bool"), "push", a_string("fn([T], T) -> [T]"), "concat_arr", a_string("fn([T], [T]) -> [T]"), "contains", a_string("fn([T], T) -> bool"), "slice", a_string("fn([T], int, int) -> [T]"), "take", a_string("fn([T], int) -> [T]"), "drop", a_string("fn([T], int) -> [T]"), "chunk", a_string("fn([T], int) -> [[T]]"), "reverse_arr", a_string("fn([T]) -> [T]"), "sort", a_string("fn([T]) -> [T]"), "sort_by", a_string("fn([T], fn(T, T) -> int) -> [T]"), "unique", a_string("fn([T]) -> [T]"), "zip", a_string("fn([T], [U]) -> [[any]]"), "enumerate", a_string("fn([T]) -> [[any]]"), "map", a_string("fn([T], fn(T) -> U) -> [U]"), "filter", a_string("fn([T], fn(T) -> bool) -> [T]"), "reduce", a_string("fn([T], U, fn(U, T) -> U) -> U"), "each", a_string("fn([T], fn(T) -> any) -> void"), "all", a_string("fn([T], fn(T) -> bool) -> bool"), "any", a_string("fn([T], fn(T) -> bool) -> bool"), "find", a_string("fn([T], fn(T) -> bool) -> Result<T, str>"), "flat_map", a_string("fn([T], fn(T) -> [U]) -> [U]"), "min_by", a_string("fn([T], fn(T) -> any) -> Result<T, str>"), "max_by", a_string("fn([T], fn(T) -> any) -> Result<T, str>"), "parallel_map", a_string("fn([T], fn(T) -> U) -> [U]"), "parallel_each", a_string("fn([T], fn(T) -> any) -> void"), "str.concat", a_string("fn(str, str) -> str"), "str.contains", a_string("fn(str, str) -> bool"), "str.count", a_string("fn(str, str) -> int"), "str.ends_with", a_string("fn(str, str) -> bool"), "str.starts_with", a_string("fn(str, str) -> bool"), "str.find", a_string("fn(str, str) -> int"), "str.join", a_string("fn([str], str) -> str"), "str.split", a_string("fn(str, str) -> [str]"), "str.lines", a_string("fn(str) -> [str]"), "str.chars", a_string("fn(str) -> [str]"), "str.lower", a_string("fn(str) -> str"), "str.upper", a_string("fn(str) -> str"), "str.trim", a_string("fn(str) -> str"), "str.replace", a_string("fn(str, str, str) -> str"), "str.slice", a_string("fn(str, int, int) -> str"), "map.get", a_string("fn(#{K: V}, K) -> V"), "map.has", a_string("fn(#{K: V}, K) -> bool"), "map.set", a_string("fn(#{K: V}, K, V) -> #{K: V}"), "map.delete", a_string("fn(#{K: V}, K) -> #{K: V}"), "map.keys", a_string("fn(#{K: V}) -> [K]"), "map.values", a_string("fn(#{K: V}) -> [V]"), "map.entries", a_string("fn(#{K: V}) -> [[any]]"), "map.from_entries", a_string("fn([[any]]) -> map"), "map.merge", a_string("fn(map, map) -> map"), "math.abs", a_string("fn(num) -> num"), "math.sqrt", a_string("fn(num) -> float"), "math.pow", a_string("fn(num, num) -> num"), "math.min", a_string("fn(num, num) -> num"), "math.max", a_string("fn(num, num) -> num"), "math.floor", a_string("fn(num) -> int"), "math.ceil", a_string("fn(num) -> int"), "math.round", a_string("fn(num) -> int"), "json.parse", a_string("fn(str) -> any"), "json.stringify", a_string("fn(any) -> str"), "json.pretty", a_string("fn(any) -> str"), "hash.md5", a_string("fn(str) -> str"), "hash.sha256", a_string("fn(str) -> str"), "uuid.v4", a_string("fn() -> str"), "compress.gzip", a_string("fn(str) -> str"), "compress.gunzip", a_string("fn(str) -> str"), "compress.deflate", a_string("fn(str) -> str"), "compress.inflate", a_string("fn(str) -> str"), "io.read_file", a_string("fn(str) -> str"), "io.write_file", a_string("fn(str, str) -> void"), "io.read_line", a_string("fn() -> str"), "io.read_stdin", a_string("fn() -> str"), "io.read_bytes", a_string("fn(int) -> str"), "io.flush", a_string("fn() -> void"), "fs.exists", a_string("fn(str) -> bool"), "fs.is_dir", a_string("fn(str) -> bool"), "fs.is_file", a_string("fn(str) -> bool"), "fs.ls", a_string("fn(str) -> [map]"), "fs.mkdir", a_string("fn(str) -> void"), "fs.rm", a_string("fn(str) -> void"), "fs.cp", a_string("fn(str, str) -> void"), "fs.mv", a_string("fn(str, str) -> void"), "fs.abs", a_string("fn(str) -> str"), "fs.cwd", a_string("fn() -> str"), "fs.stat", a_string("fn(str) -> map"), "fs.watch", a_string("fn(str, fn(map) -> any) -> void"), "env.get", a_string("fn(str) -> any"), "env.set", a_string("fn(str, str) -> void"), "env.all", a_string("fn() -> map"), "time.now", a_string("fn() -> int"), "time.sleep", a_string("fn(int) -> void"), "exec", a_string("fn(str) -> map"), "exec_timeout", a_string("fn(str, int) -> map"), "proc.spawn", a_string("fn(str) -> any"), "proc.write", a_string("fn(any, str) -> void"), "proc.read_line", a_string("fn(any) -> str"), "proc.wait", a_string("fn(any) -> int"), "proc.kill", a_string("fn(any) -> void"), "proc.is_running", a_string("fn(any) -> bool"), "signal.on", a_string("fn(str, fn() -> any) -> void"), "spawn", a_string("fn(fn() -> T) -> any"), "await", a_string("fn(any) -> Result<any, any>"), "await_all", a_string("fn([any]) -> [Result<any, any>]"), "timeout", a_string("fn(int, fn() -> T) -> Result<T, str>"), "async.http_get", a_string("fn(str, map) -> any"), "async.http_post", a_string("fn(str, any, map) -> any"), "async.http_put", a_string("fn(str, any, map) -> any"), "async.http_patch", a_string("fn(str, any, map) -> any"), "async.http_delete", a_string("fn(str, map) -> any"), "async.await", a_string("fn(any) -> map"), "async.gather", a_string("fn([any]) -> [Result<any, any>]"), "http.get", a_string("fn(str, map) -> map"), "http.post", a_string("fn(str, any, map) -> map"), "http.put", a_string("fn(str, any, map) -> map"), "http.patch", a_string("fn(str, any, map) -> map"), "http.delete", a_string("fn(str, map) -> map"), "http.serve", a_string("fn(int, fn(map) -> any) -> void"), "http.serve_static", a_string("fn(int, str) -> void"), "http.stream", a_string("fn(str, str, map) -> any"), "http.stream_read", a_string("fn(any) -> any"), "http.stream_close", a_string("fn(any) -> void"), "ws.connect", a_string("fn(str) -> any"), "ws.send", a_string("fn(any, str) -> void"), "ws.recv", a_string("fn(any) -> str"), "ws.close", a_string("fn(any) -> void"), "db.open", a_string("fn(str) -> any"), "db.exec", a_string("fn(any, str) -> void"), "db.query", a_string("fn(any, str, [any]) -> [map]"), "db.close", a_string("fn(any) -> void"), "image.load", a_string("fn(str) -> any"), "image.decode", a_string("fn(str) -> any"), "image.encode", a_string("fn(any, str) -> str"), "image.save", a_string("fn(any, str) -> void"), "image.width", a_string("fn(any) -> int"), "image.height", a_string("fn(any) -> int"), "image.pixels", a_string("fn(any) -> [int]"), "image.resize", a_string("fn(any, int, int) -> any"), "local_llm.load", a_string("fn(str) -> any"), "local_llm.unload", a_string("fn(any) -> void"), "local_llm.info", a_string("fn(any) -> map"), "local_llm.generate", a_string("fn(any, str, map) -> str"), "local_llm.embed", a_string("fn(any, str) -> [float]"), "local_llm.tokenize", a_string("fn(any, str) -> [int]"), "local_llm.detokenize", a_string("fn(any, [int]) -> str"), "local_llm.vocab_size", a_string("fn(any) -> int"), "reflect.uptime_ms", a_string("fn() -> int"), "reflect.memory_usage", a_string("fn() -> int"), "reflect.pid", a_string("fn() -> int"), "profile.reset", a_string("fn() -> void"), "profile.dump", a_string("fn(str) -> void"), "profile.get_counters", a_string("fn() -> map"), "ptr.null", a_string("fn() -> ptr"), "ptr.is_null", a_string("fn(ptr) -> bool")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_builtin_sigs_min_arity(void) {
+    AValue __ret = a_void();
+#line 229 "std/compiler/builtin_sigs.a"
+    __ret = a_map_new(12, "slice", a_int(2), "db.query", a_int(2), "http.get", a_int(1), "http.delete", a_int(1), "http.post", a_int(1), "http.put", a_int(1), "http.patch", a_int(1), "async.http_get", a_int(1), "async.http_delete", a_int(1), "async.http_post", a_int(1), "async.http_put", a_int(1), "async.http_patch", a_int(1)); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
 
 AValue fn_lexer_is_ws(AValue c) {
     AValue __ret = a_void();
@@ -760,7 +831,7 @@ __fn_cleanup:
 }
 
 AValue fn_lexer_lex_pos(AValue src) {
-    AValue chars = {0}, n = {0}, pos = {0}, toks = {0}, interp_depth = {0}, lines = {0}, cols = {0}, line = {0}, line_start = {0}, scan = {0}, iter_line = {0}, iter_col = {0}, c = {0}, content = {0}, hash_start = {0}, hashes = {0}, hp = {0}, found = {0}, hi = {0}, ok = {0}, start = {0}, word = {0}, kind = {0}, is_float = {0}, text = {0}, done = {0}, sc = {0}, tlen = {0}, ended = {0};
+    AValue chars = {0}, n = {0}, pos = {0}, toks = {0}, interp_depth = {0}, lines = {0}, cols = {0}, line = {0}, line_start = {0}, scan = {0}, iter_line = {0}, iter_col = {0}, c = {0}, content = {0}, hash_start = {0}, hashes = {0}, hp = {0}, found = {0}, hi = {0}, ok = {0}, start = {0}, word = {0}, kind = {0}, is_float = {0}, text = {0}, done = {0}, started_interp = {0}, sc = {0}, ended = {0};
     AValue __ret = a_void();
     src = a_retain(src);
 #line 83 "std/compiler/lexer.a"
@@ -1117,571 +1188,565 @@ AValue fn_lexer_lex_pos(AValue src) {
 #line 288 "std/compiler/lexer.a"
             { AValue __old = done; done = a_bool(0); a_release(__old); }
 #line 289 "std/compiler/lexer.a"
-            while (a_truthy(a_lt(pos, n))) {
+            { AValue __old = started_interp; started_interp = a_bool(0); a_release(__old); }
 #line 290 "std/compiler/lexer.a"
-                { AValue __old = sc; sc = a_array_get(chars, pos); a_release(__old); }
+            while (a_truthy(a_lt(pos, n))) {
 #line 291 "std/compiler/lexer.a"
-                if (a_truthy(a_eq(sc, a_string("\"")))) {
+                { AValue __old = sc; sc = a_array_get(chars, pos); a_release(__old); }
 #line 292 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+                if (a_truthy(a_eq(sc, a_string("\"")))) {
 #line 293 "std/compiler/lexer.a"
-                    { AValue __old = done; done = a_bool(1); a_release(__old); }
+                    { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 294 "std/compiler/lexer.a"
-                    break;
-                }
-#line 296 "std/compiler/lexer.a"
-                if (a_truthy(a_eq(sc, a_string("{")))) {
-#line 298 "std/compiler/lexer.a"
-                    toks = a_array_push_move(toks, a_string("InterpStart"));
-#line 299 "std/compiler/lexer.a"
-                    toks = a_array_push_move(toks, content);
-#line 300 "std/compiler/lexer.a"
-                    { AValue __old = content; content = a_string(""); a_release(__old); }
-#line 301 "std/compiler/lexer.a"
-                    { AValue __old = interp_depth; interp_depth = a_add(interp_depth, a_int(1)); a_release(__old); }
-#line 302 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 303 "std/compiler/lexer.a"
                     { AValue __old = done; done = a_bool(1); a_release(__old); }
-#line 304 "std/compiler/lexer.a"
+#line 295 "std/compiler/lexer.a"
                     break;
                 }
-#line 306 "std/compiler/lexer.a"
-                if (a_truthy(a_eq(sc, a_string("\\")))) {
-#line 307 "std/compiler/lexer.a"
+#line 297 "std/compiler/lexer.a"
+                if (a_truthy(a_eq(sc, a_string("{")))) {
+#line 299 "std/compiler/lexer.a"
+                    toks = a_array_push_move(toks, a_string("InterpStart"));
+#line 300 "std/compiler/lexer.a"
+                    toks = a_array_push_move(toks, content);
+#line 301 "std/compiler/lexer.a"
+                    { AValue __old = content; content = a_string(""); a_release(__old); }
+#line 302 "std/compiler/lexer.a"
+                    { AValue __old = interp_depth; interp_depth = a_add(interp_depth, a_int(1)); a_release(__old); }
+#line 303 "std/compiler/lexer.a"
                     { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 304 "std/compiler/lexer.a"
+                    { AValue __old = done; done = a_bool(1); a_release(__old); }
+#line 305 "std/compiler/lexer.a"
+                    { AValue __old = started_interp; started_interp = a_bool(1); a_release(__old); }
+#line 306 "std/compiler/lexer.a"
+                    break;
+                }
 #line 308 "std/compiler/lexer.a"
-                    if (a_truthy(a_lt(pos, n))) {
+                if (a_truthy(a_eq(sc, a_string("\\")))) {
 #line 309 "std/compiler/lexer.a"
-                        { AValue __old = content; content = a_add(content, fn_lexer_process_escape(a_array_get(chars, pos))); a_release(__old); }
+                    { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 310 "std/compiler/lexer.a"
+                    if (a_truthy(a_lt(pos, n))) {
+#line 311 "std/compiler/lexer.a"
+                        { AValue __old = content; content = a_add(content, fn_lexer_process_escape(a_array_get(chars, pos))); a_release(__old); }
+#line 312 "std/compiler/lexer.a"
                         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                     }
-#line 312 "std/compiler/lexer.a"
+#line 314 "std/compiler/lexer.a"
                     continue;
                 }
-#line 314 "std/compiler/lexer.a"
+#line 316 "std/compiler/lexer.a"
                 { AValue __old = content; content = a_add(content, sc); a_release(__old); }
-#line 315 "std/compiler/lexer.a"
+#line 317 "std/compiler/lexer.a"
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
             }
-#line 317 "std/compiler/lexer.a"
+#line 319 "std/compiler/lexer.a"
             if (a_truthy(done)) {
-#line 318 "std/compiler/lexer.a"
-                if (a_truthy(a_eq(interp_depth, a_int(0)))) {
-#line 321 "std/compiler/lexer.a"
-                    { AValue __old = tlen; tlen = a_len(toks); a_release(__old); }
 #line 322 "std/compiler/lexer.a"
-                    if (a_truthy(a_gt(tlen, a_int(0)))) {
+                if (a_truthy(a_not(started_interp))) {
 #line 323 "std/compiler/lexer.a"
-                        if (a_truthy(a_eq(a_array_get(toks, a_sub(tlen, a_int(2))), a_string("InterpStart")))) {
-#line 324 "std/compiler/lexer.a"
-                            continue;
-                        }
-                    }
-#line 327 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("Str"));
-#line 328 "std/compiler/lexer.a"
+#line 324 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, content);
                 }
             } else {
-#line 331 "std/compiler/lexer.a"
+#line 327 "std/compiler/lexer.a"
                 toks = a_array_push_move(toks, a_string("Str"));
-#line 332 "std/compiler/lexer.a"
+#line 328 "std/compiler/lexer.a"
                 toks = a_array_push_move(toks, content);
             }
-#line 334 "std/compiler/lexer.a"
+#line 330 "std/compiler/lexer.a"
             continue;
         }
-#line 338 "std/compiler/lexer.a"
+#line 334 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("}")))) {
-#line 339 "std/compiler/lexer.a"
+#line 335 "std/compiler/lexer.a"
             if (a_truthy(a_gt(interp_depth, a_int(0)))) {
-#line 340 "std/compiler/lexer.a"
+#line 336 "std/compiler/lexer.a"
                 { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 341 "std/compiler/lexer.a"
+#line 337 "std/compiler/lexer.a"
                 { AValue __old = content; content = a_string(""); a_release(__old); }
-#line 342 "std/compiler/lexer.a"
+#line 338 "std/compiler/lexer.a"
                 { AValue __old = ended; ended = a_bool(0); a_release(__old); }
-#line 343 "std/compiler/lexer.a"
+#line 339 "std/compiler/lexer.a"
                 while (a_truthy(a_lt(pos, n))) {
-#line 344 "std/compiler/lexer.a"
+#line 340 "std/compiler/lexer.a"
                     { AValue __old = sc; sc = a_array_get(chars, pos); a_release(__old); }
-#line 345 "std/compiler/lexer.a"
+#line 341 "std/compiler/lexer.a"
                     if (a_truthy(a_eq(sc, a_string("\"")))) {
-#line 346 "std/compiler/lexer.a"
+#line 342 "std/compiler/lexer.a"
                         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 347 "std/compiler/lexer.a"
+#line 343 "std/compiler/lexer.a"
                         { AValue __old = interp_depth; interp_depth = a_sub(interp_depth, a_int(1)); a_release(__old); }
-#line 348 "std/compiler/lexer.a"
+#line 344 "std/compiler/lexer.a"
                         toks = a_array_push_move(toks, a_string("InterpEnd"));
+#line 345 "std/compiler/lexer.a"
+                        toks = a_array_push_move(toks, content);
+#line 346 "std/compiler/lexer.a"
+                        { AValue __old = ended; ended = a_bool(1); a_release(__old); }
+#line 347 "std/compiler/lexer.a"
+                        break;
+                    }
 #line 349 "std/compiler/lexer.a"
-                        toks = a_array_push_move(toks, content);
-#line 350 "std/compiler/lexer.a"
-                        { AValue __old = ended; ended = a_bool(1); a_release(__old); }
-#line 351 "std/compiler/lexer.a"
-                        break;
-                    }
-#line 353 "std/compiler/lexer.a"
                     if (a_truthy(a_eq(sc, a_string("{")))) {
-#line 354 "std/compiler/lexer.a"
+#line 350 "std/compiler/lexer.a"
                         toks = a_array_push_move(toks, a_string("InterpMid"));
-#line 355 "std/compiler/lexer.a"
+#line 351 "std/compiler/lexer.a"
                         toks = a_array_push_move(toks, content);
-#line 356 "std/compiler/lexer.a"
+#line 352 "std/compiler/lexer.a"
                         { AValue __old = content; content = a_string(""); a_release(__old); }
-#line 357 "std/compiler/lexer.a"
+#line 353 "std/compiler/lexer.a"
                         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 358 "std/compiler/lexer.a"
+#line 354 "std/compiler/lexer.a"
                         { AValue __old = ended; ended = a_bool(1); a_release(__old); }
-#line 359 "std/compiler/lexer.a"
+#line 355 "std/compiler/lexer.a"
                         break;
                     }
-#line 361 "std/compiler/lexer.a"
+#line 357 "std/compiler/lexer.a"
                     if (a_truthy(a_eq(sc, a_string("\\")))) {
-#line 362 "std/compiler/lexer.a"
+#line 358 "std/compiler/lexer.a"
                         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 363 "std/compiler/lexer.a"
+#line 359 "std/compiler/lexer.a"
                         if (a_truthy(a_lt(pos, n))) {
-#line 364 "std/compiler/lexer.a"
+#line 360 "std/compiler/lexer.a"
                             { AValue __old = content; content = a_add(content, fn_lexer_process_escape(a_array_get(chars, pos))); a_release(__old); }
-#line 365 "std/compiler/lexer.a"
+#line 361 "std/compiler/lexer.a"
                             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                         }
-#line 367 "std/compiler/lexer.a"
+#line 363 "std/compiler/lexer.a"
                         continue;
                     }
-#line 369 "std/compiler/lexer.a"
+#line 365 "std/compiler/lexer.a"
                     { AValue __old = content; content = a_add(content, sc); a_release(__old); }
-#line 370 "std/compiler/lexer.a"
+#line 366 "std/compiler/lexer.a"
                     { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
                 }
-#line 372 "std/compiler/lexer.a"
+#line 368 "std/compiler/lexer.a"
                 if (a_truthy(ended)) {
-#line 372 "std/compiler/lexer.a"
+#line 368 "std/compiler/lexer.a"
                     continue;
                 }
-#line 373 "std/compiler/lexer.a"
+#line 369 "std/compiler/lexer.a"
                 { AValue __old = interp_depth; interp_depth = a_sub(interp_depth, a_int(1)); a_release(__old); }
-#line 374 "std/compiler/lexer.a"
+#line 370 "std/compiler/lexer.a"
                 toks = a_array_push_move(toks, a_string("InterpEnd"));
-#line 375 "std/compiler/lexer.a"
+#line 371 "std/compiler/lexer.a"
                 toks = a_array_push_move(toks, content);
-#line 376 "std/compiler/lexer.a"
+#line 372 "std/compiler/lexer.a"
                 continue;
             }
-#line 378 "std/compiler/lexer.a"
+#line 374 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("RBrace"));
-#line 379 "std/compiler/lexer.a"
+#line 375 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("}"));
-#line 380 "std/compiler/lexer.a"
+#line 376 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 377 "std/compiler/lexer.a"
+            continue;
+        }
 #line 381 "std/compiler/lexer.a"
+        if (a_truthy(a_eq(c, a_string("(")))) {
+#line 381 "std/compiler/lexer.a"
+            toks = a_array_push_move(toks, a_string("LParen"));
+#line 382 "std/compiler/lexer.a"
+            toks = a_array_push_move(toks, a_string("("));
+#line 383 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 384 "std/compiler/lexer.a"
             continue;
         }
 #line 385 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("(")))) {
+        if (a_truthy(a_eq(c, a_string(")")))) {
 #line 385 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("LParen"));
+            toks = a_array_push_move(toks, a_string("RParen"));
 #line 386 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("("));
+            toks = a_array_push_move(toks, a_string(")"));
 #line 387 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 388 "std/compiler/lexer.a"
             continue;
         }
 #line 389 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string(")")))) {
+        if (a_truthy(a_eq(c, a_string("{")))) {
 #line 389 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("RParen"));
+            toks = a_array_push_move(toks, a_string("LBrace"));
 #line 390 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string(")"));
+            toks = a_array_push_move(toks, a_string("{"));
 #line 391 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 392 "std/compiler/lexer.a"
             continue;
         }
 #line 393 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("{")))) {
+        if (a_truthy(a_eq(c, a_string("[")))) {
 #line 393 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("LBrace"));
+            toks = a_array_push_move(toks, a_string("LBracket"));
 #line 394 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("{"));
+            toks = a_array_push_move(toks, a_string("["));
 #line 395 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 396 "std/compiler/lexer.a"
             continue;
         }
 #line 397 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("[")))) {
+        if (a_truthy(a_eq(c, a_string("]")))) {
 #line 397 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("LBracket"));
+            toks = a_array_push_move(toks, a_string("RBracket"));
 #line 398 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("["));
+            toks = a_array_push_move(toks, a_string("]"));
 #line 399 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 400 "std/compiler/lexer.a"
             continue;
         }
 #line 401 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("]")))) {
+        if (a_truthy(a_eq(c, a_string(",")))) {
 #line 401 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("RBracket"));
+            toks = a_array_push_move(toks, a_string("Comma"));
 #line 402 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("]"));
+            toks = a_array_push_move(toks, a_string(","));
 #line 403 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 404 "std/compiler/lexer.a"
             continue;
         }
 #line 405 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string(",")))) {
+        if (a_truthy(a_eq(c, a_string(":")))) {
 #line 405 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Comma"));
+            toks = a_array_push_move(toks, a_string("Colon"));
 #line 406 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string(","));
+            toks = a_array_push_move(toks, a_string(":"));
 #line 407 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 408 "std/compiler/lexer.a"
             continue;
         }
 #line 409 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string(":")))) {
+        if (a_truthy(a_eq(c, a_string("?")))) {
 #line 409 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Colon"));
+            toks = a_array_push_move(toks, a_string("Question"));
 #line 410 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string(":"));
+            toks = a_array_push_move(toks, a_string("?"));
 #line 411 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 412 "std/compiler/lexer.a"
             continue;
         }
 #line 413 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("?")))) {
+        if (a_truthy(a_eq(c, a_string("#")))) {
 #line 413 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Question"));
+            toks = a_array_push_move(toks, a_string("Hash"));
 #line 414 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("?"));
+            toks = a_array_push_move(toks, a_string("#"));
 #line 415 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 416 "std/compiler/lexer.a"
             continue;
         }
 #line 417 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("#")))) {
+        if (a_truthy(a_eq(c, a_string("+")))) {
 #line 417 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Hash"));
+            toks = a_array_push_move(toks, a_string("Plus"));
 #line 418 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("#"));
+            toks = a_array_push_move(toks, a_string("+"));
 #line 419 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 420 "std/compiler/lexer.a"
             continue;
         }
 #line 421 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("+")))) {
+        if (a_truthy(a_eq(c, a_string("*")))) {
 #line 421 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Plus"));
+            toks = a_array_push_move(toks, a_string("Star"));
 #line 422 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("+"));
+            toks = a_array_push_move(toks, a_string("*"));
 #line 423 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 424 "std/compiler/lexer.a"
             continue;
         }
 #line 425 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("*")))) {
+        if (a_truthy(a_eq(c, a_string("%")))) {
 #line 425 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Star"));
+            toks = a_array_push_move(toks, a_string("Percent"));
 #line 426 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("*"));
+            toks = a_array_push_move(toks, a_string("%"));
 #line 427 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 428 "std/compiler/lexer.a"
             continue;
         }
 #line 429 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("%")))) {
+        if (a_truthy(a_eq(c, a_string("/")))) {
 #line 429 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Percent"));
+            toks = a_array_push_move(toks, a_string("Slash"));
 #line 430 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("%"));
+            toks = a_array_push_move(toks, a_string("/"));
 #line 431 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
 #line 432 "std/compiler/lexer.a"
             continue;
         }
-#line 433 "std/compiler/lexer.a"
-        if (a_truthy(a_eq(c, a_string("/")))) {
-#line 433 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("Slash"));
-#line 434 "std/compiler/lexer.a"
-            toks = a_array_push_move(toks, a_string("/"));
 #line 435 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 436 "std/compiler/lexer.a"
-            continue;
-        }
-#line 439 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string(".")))) {
-#line 440 "std/compiler/lexer.a"
+#line 436 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(2)), n))) {
-#line 441 "std/compiler/lexer.a"
+#line 437 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string(".")))) {
-#line 442 "std/compiler/lexer.a"
+#line 438 "std/compiler/lexer.a"
                     if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(2))), a_string(".")))) {
-#line 443 "std/compiler/lexer.a"
+#line 439 "std/compiler/lexer.a"
                         toks = a_array_push_move(toks, a_string("DotDotDot"));
-#line 444 "std/compiler/lexer.a"
+#line 440 "std/compiler/lexer.a"
                         toks = a_array_push_move(toks, a_string("..."));
-#line 445 "std/compiler/lexer.a"
+#line 441 "std/compiler/lexer.a"
                         { AValue __old = pos; pos = a_add(pos, a_int(3)); a_release(__old); }
-#line 446 "std/compiler/lexer.a"
+#line 442 "std/compiler/lexer.a"
                         continue;
                     }
                 }
             }
-#line 450 "std/compiler/lexer.a"
+#line 446 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Dot"));
-#line 451 "std/compiler/lexer.a"
+#line 447 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("."));
-#line 452 "std/compiler/lexer.a"
+#line 448 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 449 "std/compiler/lexer.a"
+            continue;
+        }
 #line 453 "std/compiler/lexer.a"
-            continue;
-        }
-#line 457 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("-")))) {
-#line 458 "std/compiler/lexer.a"
+#line 454 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 459 "std/compiler/lexer.a"
+#line 455 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string(">")))) {
-#line 460 "std/compiler/lexer.a"
+#line 456 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("Arrow"));
-#line 461 "std/compiler/lexer.a"
+#line 457 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("->"));
+#line 458 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 459 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 462 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 463 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 466 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Minus"));
-#line 467 "std/compiler/lexer.a"
+#line 463 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("-"));
+#line 464 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 465 "std/compiler/lexer.a"
+            continue;
+        }
 #line 468 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 469 "std/compiler/lexer.a"
-            continue;
-        }
-#line 472 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("=")))) {
-#line 473 "std/compiler/lexer.a"
+#line 469 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 474 "std/compiler/lexer.a"
+#line 470 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("=")))) {
-#line 475 "std/compiler/lexer.a"
+#line 471 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("EqEq"));
-#line 476 "std/compiler/lexer.a"
+#line 472 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("=="));
+#line 473 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 474 "std/compiler/lexer.a"
+                    continue;
+                }
+#line 476 "std/compiler/lexer.a"
+                if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string(">")))) {
 #line 477 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 478 "std/compiler/lexer.a"
-                    continue;
-                }
-#line 480 "std/compiler/lexer.a"
-                if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string(">")))) {
-#line 481 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("FatArrow"));
-#line 482 "std/compiler/lexer.a"
+#line 478 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("=>"));
+#line 479 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 480 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 483 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 484 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 487 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Eq"));
-#line 488 "std/compiler/lexer.a"
+#line 484 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("="));
+#line 485 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 486 "std/compiler/lexer.a"
+            continue;
+        }
 #line 489 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 490 "std/compiler/lexer.a"
-            continue;
-        }
-#line 493 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("!")))) {
-#line 494 "std/compiler/lexer.a"
+#line 490 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 495 "std/compiler/lexer.a"
+#line 491 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("=")))) {
-#line 496 "std/compiler/lexer.a"
+#line 492 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("NotEq"));
-#line 497 "std/compiler/lexer.a"
+#line 493 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("!="));
+#line 494 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 495 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 498 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 499 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 502 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Bang"));
-#line 503 "std/compiler/lexer.a"
+#line 499 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("!"));
+#line 500 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 501 "std/compiler/lexer.a"
+            continue;
+        }
 #line 504 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 505 "std/compiler/lexer.a"
-            continue;
-        }
-#line 508 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("<")))) {
-#line 509 "std/compiler/lexer.a"
+#line 505 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 510 "std/compiler/lexer.a"
+#line 506 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("=")))) {
-#line 511 "std/compiler/lexer.a"
+#line 507 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("LtEq"));
-#line 512 "std/compiler/lexer.a"
+#line 508 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("<="));
+#line 509 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 510 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 513 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 514 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 517 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Lt"));
-#line 518 "std/compiler/lexer.a"
+#line 514 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("<"));
+#line 515 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 516 "std/compiler/lexer.a"
+            continue;
+        }
 #line 519 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 520 "std/compiler/lexer.a"
-            continue;
-        }
-#line 523 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string(">")))) {
-#line 524 "std/compiler/lexer.a"
+#line 520 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 525 "std/compiler/lexer.a"
+#line 521 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("=")))) {
-#line 526 "std/compiler/lexer.a"
+#line 522 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("GtEq"));
-#line 527 "std/compiler/lexer.a"
+#line 523 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string(">="));
+#line 524 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 525 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 528 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 529 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 532 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Gt"));
-#line 533 "std/compiler/lexer.a"
+#line 529 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string(">"));
+#line 530 "std/compiler/lexer.a"
+            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
+#line 531 "std/compiler/lexer.a"
+            continue;
+        }
 #line 534 "std/compiler/lexer.a"
-            { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 535 "std/compiler/lexer.a"
-            continue;
-        }
-#line 538 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("&")))) {
-#line 539 "std/compiler/lexer.a"
+#line 535 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 540 "std/compiler/lexer.a"
+#line 536 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("&")))) {
-#line 541 "std/compiler/lexer.a"
+#line 537 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("AmpAmp"));
-#line 542 "std/compiler/lexer.a"
+#line 538 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("&&"));
+#line 539 "std/compiler/lexer.a"
+                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
+#line 540 "std/compiler/lexer.a"
+                    continue;
+                }
+            }
 #line 543 "std/compiler/lexer.a"
-                    { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 544 "std/compiler/lexer.a"
-                    continue;
-                }
-            }
-#line 547 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Amp"));
-#line 548 "std/compiler/lexer.a"
+#line 544 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("&"));
-#line 549 "std/compiler/lexer.a"
+#line 545 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 550 "std/compiler/lexer.a"
+#line 546 "std/compiler/lexer.a"
             continue;
         }
-#line 553 "std/compiler/lexer.a"
+#line 549 "std/compiler/lexer.a"
         if (a_truthy(a_eq(c, a_string("|")))) {
-#line 554 "std/compiler/lexer.a"
+#line 550 "std/compiler/lexer.a"
             if (a_truthy(a_lt(a_add(pos, a_int(1)), n))) {
-#line 555 "std/compiler/lexer.a"
+#line 551 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string("|")))) {
-#line 556 "std/compiler/lexer.a"
+#line 552 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("PipePipe"));
-#line 557 "std/compiler/lexer.a"
+#line 553 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("||"));
-#line 558 "std/compiler/lexer.a"
+#line 554 "std/compiler/lexer.a"
                     { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 559 "std/compiler/lexer.a"
+#line 555 "std/compiler/lexer.a"
                     continue;
                 }
-#line 561 "std/compiler/lexer.a"
+#line 557 "std/compiler/lexer.a"
                 if (a_truthy(a_eq(a_array_get(chars, a_add(pos, a_int(1))), a_string(">")))) {
-#line 562 "std/compiler/lexer.a"
+#line 558 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("PipeArrow"));
-#line 563 "std/compiler/lexer.a"
+#line 559 "std/compiler/lexer.a"
                     toks = a_array_push_move(toks, a_string("|>"));
-#line 564 "std/compiler/lexer.a"
+#line 560 "std/compiler/lexer.a"
                     { AValue __old = pos; pos = a_add(pos, a_int(2)); a_release(__old); }
-#line 565 "std/compiler/lexer.a"
+#line 561 "std/compiler/lexer.a"
                     continue;
                 }
             }
-#line 568 "std/compiler/lexer.a"
+#line 564 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("Pipe"));
-#line 569 "std/compiler/lexer.a"
+#line 565 "std/compiler/lexer.a"
             toks = a_array_push_move(toks, a_string("|"));
-#line 570 "std/compiler/lexer.a"
+#line 566 "std/compiler/lexer.a"
             { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
-#line 571 "std/compiler/lexer.a"
+#line 567 "std/compiler/lexer.a"
             continue;
         }
-#line 574 "std/compiler/lexer.a"
+#line 570 "std/compiler/lexer.a"
         toks = a_array_push_move(toks, a_string("Unknown"));
-#line 575 "std/compiler/lexer.a"
+#line 571 "std/compiler/lexer.a"
         toks = a_array_push_move(toks, c);
-#line 576 "std/compiler/lexer.a"
+#line 572 "std/compiler/lexer.a"
         { AValue __old = pos; pos = a_add(pos, a_int(1)); a_release(__old); }
     }
-#line 579 "std/compiler/lexer.a"
+#line 575 "std/compiler/lexer.a"
     while (a_truthy(a_lt(a_len(lines), a_div(a_len(toks), a_int(2))))) {
-#line 580 "std/compiler/lexer.a"
+#line 576 "std/compiler/lexer.a"
         lines = a_array_push_move(lines, iter_line);
-#line 581 "std/compiler/lexer.a"
+#line 577 "std/compiler/lexer.a"
         cols = a_array_push_move(cols, iter_col);
     }
-#line 583 "std/compiler/lexer.a"
+#line 579 "std/compiler/lexer.a"
     toks = a_array_push_move(toks, a_string("Eof"));
-#line 584 "std/compiler/lexer.a"
+#line 580 "std/compiler/lexer.a"
     toks = a_array_push_move(toks, a_string(""));
-#line 585 "std/compiler/lexer.a"
+#line 581 "std/compiler/lexer.a"
     while (a_truthy(a_lt(scan, n))) {
-#line 586 "std/compiler/lexer.a"
+#line 582 "std/compiler/lexer.a"
         if (a_truthy(a_eq(a_array_get(chars, scan), a_string("\n")))) {
-#line 587 "std/compiler/lexer.a"
+#line 583 "std/compiler/lexer.a"
             { AValue __old = line; line = a_add(line, a_int(1)); a_release(__old); }
-#line 588 "std/compiler/lexer.a"
+#line 584 "std/compiler/lexer.a"
             { AValue __old = line_start; line_start = a_add(scan, a_int(1)); a_release(__old); }
         }
-#line 590 "std/compiler/lexer.a"
+#line 586 "std/compiler/lexer.a"
         { AValue __old = scan; scan = a_add(scan, a_int(1)); a_release(__old); }
     }
-#line 592 "std/compiler/lexer.a"
+#line 588 "std/compiler/lexer.a"
     lines = a_array_push_move(lines, line);
-#line 593 "std/compiler/lexer.a"
+#line 589 "std/compiler/lexer.a"
     cols = a_array_push_move(cols, a_add(a_sub(n, line_start), a_int(1)));
-#line 594 "std/compiler/lexer.a"
+#line 590 "std/compiler/lexer.a"
     __ret = a_array_new(3, toks, lines, cols); goto __fn_cleanup;
 __fn_cleanup:
     a_release(chars);
@@ -1710,8 +1775,8 @@ __fn_cleanup:
     a_release(is_float);
     a_release(text);
     a_release(done);
+    a_release(started_interp);
     a_release(sc);
-    a_release(tlen);
     a_release(ended);
     a_release(src);
     return __ret;
@@ -1721,7 +1786,7 @@ AValue fn_lexer_tk(AValue toks, AValue i) {
     AValue __ret = a_void();
     toks = a_retain(toks);
     i = a_retain(i);
-#line 599 "std/compiler/lexer.a"
+#line 595 "std/compiler/lexer.a"
     __ret = a_array_get(toks, a_mul(i, a_int(2))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(toks);
@@ -1733,7 +1798,7 @@ AValue fn_lexer_tv(AValue toks, AValue i) {
     AValue __ret = a_void();
     toks = a_retain(toks);
     i = a_retain(i);
-#line 603 "std/compiler/lexer.a"
+#line 599 "std/compiler/lexer.a"
     __ret = a_array_get(toks, a_add(a_mul(i, a_int(2)), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(toks);
@@ -1744,7 +1809,7 @@ __fn_cleanup:
 AValue fn_lexer_tcount(AValue toks) {
     AValue __ret = a_void();
     toks = a_retain(toks);
-#line 607 "std/compiler/lexer.a"
+#line 603 "std/compiler/lexer.a"
     __ret = a_div(a_len(toks), a_int(2)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(toks);
@@ -1756,14 +1821,14 @@ AValue fn_lexer_skip_nl(AValue toks, AValue p) {
     AValue __ret = a_void();
     toks = a_retain(toks);
     p = a_retain(p);
-#line 611 "std/compiler/lexer.a"
+#line 607 "std/compiler/lexer.a"
     { AValue __old = i; i = a_retain(p); a_release(__old); }
-#line 612 "std/compiler/lexer.a"
+#line 608 "std/compiler/lexer.a"
     while (a_truthy(a_eq(fn_lexer_tk(toks, i), a_string("Newline")))) {
-#line 613 "std/compiler/lexer.a"
+#line 609 "std/compiler/lexer.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 615 "std/compiler/lexer.a"
+#line 611 "std/compiler/lexer.a"
     __ret = a_retain(i); goto __fn_cleanup;
 __fn_cleanup:
     a_release(i);
@@ -6673,18 +6738,105 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_cgen__builtin_min_arity(void) {
+    AValue __ret = a_void();
+#line 12 "std/compiler/cgen.a"
+    __ret = fn_builtin_sigs_min_arity(); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_cgen__sig_param_count(AValue sig) {
+    AValue inner = {0}, depth = {0}, count = {0}, seen = {0};
+    AValue __ret = a_void();
+    sig = a_retain(sig);
+#line 16 "std/compiler/cgen.a"
+    { AValue __old = inner; inner = a_str_slice(sig, a_add(a_str_find(sig, a_string("(")), a_int(1)), a_len(sig)); a_release(__old); }
+#line 17 "std/compiler/cgen.a"
+    { AValue __old = depth; depth = a_int(0); a_release(__old); }
+#line 18 "std/compiler/cgen.a"
+    { AValue __old = count; count = a_int(0); a_release(__old); }
+#line 19 "std/compiler/cgen.a"
+    { AValue __old = seen; seen = a_bool(0); a_release(__old); }
+#line 20 "std/compiler/cgen.a"
+    {
+        AValue __iter_arr = a_iterable(a_str_chars(inner));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue c = {0};
+            c = a_array_get(__iter_arr, a_int(__fi));
+#line 21 "std/compiler/cgen.a"
+            if (a_truthy(a_or(a_or(a_or(a_eq(c, a_string("(")), a_eq(c, a_string("["))), a_eq(c, a_string("<"))), a_eq(c, a_string("{"))))) {
+#line 21 "std/compiler/cgen.a"
+                { AValue __old = depth; depth = a_add(depth, a_int(1)); a_release(__old); }
+            } else
+            if (a_truthy(a_or(a_or(a_or(a_eq(c, a_string(")")), a_eq(c, a_string("]"))), a_eq(c, a_string(">"))), a_eq(c, a_string("}"))))) {
+#line 23 "std/compiler/cgen.a"
+                if (a_truthy(a_eq(depth, a_int(0)))) {
+#line 23 "std/compiler/cgen.a"
+                    break;
+                }
+#line 24 "std/compiler/cgen.a"
+                { AValue __old = depth; depth = a_sub(depth, a_int(1)); a_release(__old); }
+            } else
+            if (a_truthy(a_and(a_eq(c, a_string(",")), a_eq(depth, a_int(0))))) {
+#line 26 "std/compiler/cgen.a"
+                { AValue __old = count; count = a_add(count, a_int(1)); a_release(__old); }
+            } else
+            if (a_truthy(a_neq(c, a_string(" ")))) {
+#line 27 "std/compiler/cgen.a"
+                { AValue __old = seen; seen = a_bool(1); a_release(__old); }
+            }
+            a_release(c);
+        }
+        a_release(__iter_arr);
+    }
+#line 29 "std/compiler/cgen.a"
+    if (a_truthy(a_not(seen))) {
+#line 29 "std/compiler/cgen.a"
+        __ret = a_int(0); goto __fn_cleanup;
+    }
+#line 30 "std/compiler/cgen.a"
+    __ret = a_add(count, a_int(1)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(inner);
+    a_release(depth);
+    a_release(count);
+    a_release(seen);
+    a_release(sig);
+    return __ret;
+}
+
+AValue fn_cgen__builtin_full_arity(AValue name) {
+    AValue sigs = {0};
+    AValue __ret = a_void();
+    name = a_retain(name);
+#line 34 "std/compiler/cgen.a"
+    { AValue __old = sigs; sigs = fn_builtin_sigs_sigs(); a_release(__old); }
+#line 35 "std/compiler/cgen.a"
+    if (a_truthy(a_map_has(sigs, name))) {
+#line 35 "std/compiler/cgen.a"
+        __ret = fn_cgen__sig_param_count(a_array_get(sigs, name)); goto __fn_cleanup;
+    }
+#line 36 "std/compiler/cgen.a"
+    __ret = a_neg(a_int(1)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(sigs);
+    a_release(name);
+    return __ret;
+}
+
 AValue fn_cgen__builtin_map(void) {
     AValue m = {0}, m2 = {0}, m3 = {0}, m4 = {0};
     AValue __ret = a_void();
-#line 11 "std/compiler/cgen.a"
+#line 40 "std/compiler/cgen.a"
     { AValue __old = m; m = a_map_new(28, "println", a_string("a_println"), "print", a_string("a_print"), "eprintln", a_string("a_eprintln"), "len", a_string("a_len"), "push", a_string("a_array_push"), "to_str", a_string("a_to_str"), "fail", a_string("a_fail"), "type_of", a_string("a_type_of"), "int", a_string("a_to_int"), "float", a_string("a_to_float"), "sort", a_string("a_sort"), "contains", a_string("a_contains"), "reverse_arr", a_string("a_reverse_arr"), "concat_arr", a_string("a_concat_arr"), "args", a_string("a_args"), "slice", a_string("a_array_slice"), "char_code", a_string("a_char_code"), "from_code", a_string("a_from_code"), "is_alpha", a_string("a_is_alpha"), "is_digit", a_string("a_is_digit"), "is_alnum", a_string("a_is_alnum"), "Ok", a_string("a_ok"), "Err", a_string("a_err"), "unwrap", a_string("a_unwrap"), "expect", a_string("a_expect"), "is_ok", a_string("a_is_ok"), "is_err", a_string("a_is_err"), "unwrap_or", a_string("a_unwrap_or")); a_release(__old); }
-#line 22 "std/compiler/cgen.a"
-    { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
-#line 33 "std/compiler/cgen.a"
-    { AValue __old = m3; m3 = a_map_new(32, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "fs.stat", a_string("a_fs_stat"), "fs.watch", a_string("a_fs_watch"), "exec", a_string("a_exec"), "exec_timeout", a_string("a_exec_timeout"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
 #line 51 "std/compiler/cgen.a"
+    { AValue __old = m2; m2 = a_map_new(24, "str.concat", a_string("a_str_concat"), "str.split", a_string("a_str_split"), "str.contains", a_string("a_str_contains"), "str.replace", a_string("a_str_replace"), "str.trim", a_string("a_str_trim"), "str.upper", a_string("a_str_upper"), "str.lower", a_string("a_str_lower"), "str.join", a_string("a_str_join"), "str.chars", a_string("a_str_chars"), "str.slice", a_string("a_str_slice"), "str.starts_with", a_string("a_str_starts_with"), "str.ends_with", a_string("a_str_ends_with"), "str.find", a_string("a_str_find"), "str.count", a_string("a_str_count"), "str.lines", a_string("a_str_lines"), "map.get", a_string("a_map_get"), "map.set", a_string("a_map_set"), "map.has", a_string("a_map_has"), "map.keys", a_string("a_map_keys"), "map.values", a_string("a_map_values"), "map.merge", a_string("a_map_merge"), "map.delete", a_string("a_map_delete"), "map.entries", a_string("a_map_entries"), "map.from_entries", a_string("a_map_from_entries")); a_release(__old); }
+#line 62 "std/compiler/cgen.a"
+    { AValue __old = m3; m3 = a_map_new(32, "io.read_file", a_string("a_io_read_file"), "io.write_file", a_string("a_io_write_file"), "io.read_stdin", a_string("a_io_read_stdin"), "io.read_line", a_string("a_io_read_line"), "io.read_bytes", a_string("a_io_read_bytes"), "io.flush", a_string("a_io_flush"), "fs.ls", a_string("a_fs_ls"), "fs.mkdir", a_string("a_fs_mkdir"), "fs.cwd", a_string("a_fs_cwd"), "fs.exists", a_string("a_fs_exists"), "fs.is_dir", a_string("a_fs_is_dir"), "fs.rm", a_string("a_fs_rm"), "fs.mv", a_string("a_fs_mv"), "fs.cp", a_string("a_fs_cp"), "fs.abs", a_string("a_fs_abs"), "fs.is_file", a_string("a_fs_is_file"), "fs.stat", a_string("a_fs_stat"), "fs.watch", a_string("a_fs_watch"), "exec", a_string("a_exec"), "exec_timeout", a_string("a_exec_timeout"), "proc.spawn", a_string("a_proc_spawn"), "proc.write", a_string("a_proc_write"), "proc.read_line", a_string("a_proc_read_line"), "proc.kill", a_string("a_proc_kill"), "proc.wait", a_string("a_proc_wait"), "proc.is_running", a_string("a_proc_is_running"), "env.get", a_string("a_env_get"), "env.set", a_string("a_env_set"), "env.all", a_string("a_env_all"), "json.parse", a_string("a_json_parse"), "json.stringify", a_string("a_json_stringify"), "json.pretty", a_string("a_json_pretty")); a_release(__old); }
+#line 80 "std/compiler/cgen.a"
     { AValue __old = m4; m4 = a_map_new(92, "math.sqrt", a_string("a_math_sqrt"), "math.abs", a_string("a_math_abs"), "math.floor", a_string("a_math_floor"), "math.ceil", a_string("a_math_ceil"), "math.round", a_string("a_math_round"), "math.pow", a_string("a_math_pow"), "math.min", a_string("a_math_min"), "math.max", a_string("a_math_max"), "time.now", a_string("a_time_now"), "time.sleep", a_string("a_time_sleep"), "hash.sha256", a_string("a_hash_sha256"), "hash.md5", a_string("a_hash_md5"), "uuid.v4", a_string("a_uuid_v4"), "signal.on", a_string("a_signal_on"), "image.load", a_string("a_image_load"), "image.decode", a_string("a_image_decode"), "image.save", a_string("a_image_save"), "image.encode", a_string("a_image_encode"), "image.width", a_string("a_image_width"), "image.height", a_string("a_image_height"), "image.resize", a_string("a_image_resize"), "image.pixels", a_string("a_image_pixels"), "http.get", a_string("a_http_get"), "http.post", a_string("a_http_post"), "http.put", a_string("a_http_put"), "http.patch", a_string("a_http_patch"), "http.delete", a_string("a_http_delete"), "http.stream", a_string("a_http_stream"), "http.stream_read", a_string("a_http_stream_read"), "http.stream_close", a_string("a_http_stream_close"), "ws.connect", a_string("a_ws_connect"), "ws.send", a_string("a_ws_send"), "ws.recv", a_string("a_ws_recv"), "ws.close", a_string("a_ws_close"), "http.serve", a_string("a_http_serve"), "http.serve_static", a_string("a_http_serve_static"), "db.open", a_string("a_db_open"), "db.close", a_string("a_db_close"), "db.exec", a_string("a_db_exec"), "db.query", a_string("a_db_query"), "map", a_string("a_hof_map"), "filter", a_string("a_hof_filter"), "reduce", a_string("a_hof_reduce"), "each", a_string("a_hof_each"), "sort_by", a_string("a_hof_sort_by"), "find", a_string("a_hof_find"), "any", a_string("a_hof_any"), "all", a_string("a_hof_all"), "flat_map", a_string("a_hof_flat_map"), "min_by", a_string("a_hof_min_by"), "max_by", a_string("a_hof_max_by"), "enumerate", a_string("a_enumerate"), "zip", a_string("a_zip"), "take", a_string("a_take"), "drop", a_string("a_drop"), "unique", a_string("a_unique"), "chunk", a_string("a_chunk"), "ptr.null", a_string("a_ptr_null"), "ptr.is_null", a_string("a_is_null"), "argv0", a_string("a_argv0"), "embedded_file", a_string("a_embedded_file"), "compress.deflate", a_string("a_compress_deflate"), "compress.inflate", a_string("a_compress_inflate"), "compress.gzip", a_string("a_compress_gzip"), "compress.gunzip", a_string("a_compress_gunzip"), "spawn", a_string("a_spawn"), "await", a_string("a_await"), "await_all", a_string("a_await_all"), "parallel_map", a_string("a_parallel_map"), "parallel_each", a_string("a_parallel_each"), "timeout", a_string("a_timeout"), "async.http_get", a_string("a_async_http_get"), "async.http_post", a_string("a_async_http_post"), "async.http_put", a_string("a_async_http_put"), "async.http_patch", a_string("a_async_http_patch"), "async.http_delete", a_string("a_async_http_delete"), "async.await", a_string("a_async_await"), "async.gather", a_string("a_async_gather"), "reflect.uptime_ms", a_string("a_reflect_uptime_ms"), "reflect.memory_usage", a_string("a_reflect_memory_usage"), "reflect.pid", a_string("a_reflect_pid"), "local_llm.load", a_string("a_llm_load"), "local_llm.generate", a_string("a_llm_generate"), "local_llm.embed", a_string("a_llm_embed"), "local_llm.unload", a_string("a_llm_unload"), "local_llm.info", a_string("a_llm_info"), "local_llm.tokenize", a_string("a_llm_tokenize"), "local_llm.detokenize", a_string("a_llm_detokenize"), "local_llm.vocab_size", a_string("a_llm_vocab_size"), "profile.dump", a_string("a_profile_dump_json"), "profile.get_counters", a_string("a_profile_get_counters"), "profile.reset", a_string("a_profile_reset")); a_release(__old); }
-#line 95 "std/compiler/cgen.a"
+#line 124 "std/compiler/cgen.a"
     __ret = a_map_merge(a_map_merge(a_map_merge(m, m2), m3), m4); goto __fn_cleanup;
 __fn_cleanup:
     a_release(m);
@@ -6696,7 +6848,7 @@ __fn_cleanup:
 
 AValue fn_cgen__void_builtins(void) {
     AValue __ret = a_void();
-#line 99 "std/compiler/cgen.a"
+#line 128 "std/compiler/cgen.a"
     __ret = a_array_new(13, a_string("println"), a_string("print"), a_string("eprintln"), a_string("fail"), a_string("each"), a_string("parallel_each"), a_string("env.set"), a_string("time.sleep"), a_string("io.flush"), a_string("http.serve"), a_string("http.serve_static"), a_string("db.close"), a_string("fs.watch")); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6704,7 +6856,7 @@ __fn_cleanup:
 
 AValue fn_cgen__c_keywords(void) {
     AValue __ret = a_void();
-#line 103 "std/compiler/cgen.a"
+#line 132 "std/compiler/cgen.a"
     __ret = a_array_new(27, a_string("short"), a_string("long"), a_string("int"), a_string("float"), a_string("double"), a_string("void"), a_string("char"), a_string("auto"), a_string("do"), a_string("default"), a_string("register"), a_string("signed"), a_string("unsigned"), a_string("const"), a_string("static"), a_string("extern"), a_string("case"), a_string("switch"), a_string("goto"), a_string("struct"), a_string("union"), a_string("enum"), a_string("typedef"), a_string("sizeof"), a_string("volatile"), a_string("inline"), a_string("restrict")); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6714,14 +6866,14 @@ AValue fn_cgen__mangle(AValue name) {
     AValue out = {0};
     AValue __ret = a_void();
     name = a_retain(name);
-#line 110 "std/compiler/cgen.a"
+#line 139 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(a_str_replace(name, a_string("."), a_string("_")), a_string("-"), a_string("_")); a_release(__old); }
-#line 111 "std/compiler/cgen.a"
+#line 140 "std/compiler/cgen.a"
     if (a_truthy(a_contains(fn_cgen__c_keywords(), out))) {
-#line 111 "std/compiler/cgen.a"
+#line 140 "std/compiler/cgen.a"
         __ret = a_str_concat(a_string("_"), out); goto __fn_cleanup;
     }
-#line 112 "std/compiler/cgen.a"
+#line 141 "std/compiler/cgen.a"
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(out);
@@ -6731,7 +6883,7 @@ __fn_cleanup:
 
 AValue fn_cgen__bslash(void) {
     AValue __ret = a_void();
-#line 115 "std/compiler/cgen.a"
+#line 144 "std/compiler/cgen.a"
     __ret = a_from_code(a_int(92)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6739,7 +6891,7 @@ __fn_cleanup:
 
 AValue fn_cgen__dquote(void) {
     AValue __ret = a_void();
-#line 116 "std/compiler/cgen.a"
+#line 145 "std/compiler/cgen.a"
     __ret = a_from_code(a_int(34)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6747,7 +6899,7 @@ __fn_cleanup:
 
 AValue fn_cgen__newline_char(void) {
     AValue __ret = a_void();
-#line 117 "std/compiler/cgen.a"
+#line 146 "std/compiler/cgen.a"
     __ret = a_from_code(a_int(10)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6755,7 +6907,7 @@ __fn_cleanup:
 
 AValue fn_cgen__tab_char(void) {
     AValue __ret = a_void();
-#line 118 "std/compiler/cgen.a"
+#line 147 "std/compiler/cgen.a"
     __ret = a_from_code(a_int(9)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6763,7 +6915,7 @@ __fn_cleanup:
 
 AValue fn_cgen__cr_char(void) {
     AValue __ret = a_void();
-#line 119 "std/compiler/cgen.a"
+#line 148 "std/compiler/cgen.a"
     __ret = a_from_code(a_int(13)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -6773,19 +6925,19 @@ AValue fn_cgen__escape_c_str(AValue s) {
     AValue bs = {0}, out = {0};
     AValue __ret = a_void();
     s = a_retain(s);
-#line 122 "std/compiler/cgen.a"
+#line 151 "std/compiler/cgen.a"
     { AValue __old = bs; bs = fn_cgen__bslash(); a_release(__old); }
-#line 123 "std/compiler/cgen.a"
+#line 152 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(s, bs, a_str_concat(bs, bs)); a_release(__old); }
-#line 124 "std/compiler/cgen.a"
+#line 153 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(out, fn_cgen__dquote(), a_str_concat(bs, fn_cgen__dquote())); a_release(__old); }
-#line 125 "std/compiler/cgen.a"
+#line 154 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(out, fn_cgen__newline_char(), a_str_concat(bs, a_string("n"))); a_release(__old); }
-#line 126 "std/compiler/cgen.a"
+#line 155 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(out, fn_cgen__cr_char(), a_str_concat(bs, a_string("r"))); a_release(__old); }
-#line 127 "std/compiler/cgen.a"
+#line 156 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_replace(out, fn_cgen__tab_char(), a_str_concat(bs, a_string("t"))); a_release(__old); }
-#line 128 "std/compiler/cgen.a"
+#line 157 "std/compiler/cgen.a"
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(bs);
@@ -6798,18 +6950,18 @@ AValue fn_cgen__indent(AValue depth) {
     AValue out = {0}, i = {0};
     AValue __ret = a_void();
     depth = a_retain(depth);
-#line 132 "std/compiler/cgen.a"
+#line 161 "std/compiler/cgen.a"
     { AValue __old = out; out = a_string(""); a_release(__old); }
-#line 133 "std/compiler/cgen.a"
+#line 162 "std/compiler/cgen.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 134 "std/compiler/cgen.a"
+#line 163 "std/compiler/cgen.a"
     while (a_truthy(a_lt(i, depth))) {
-#line 135 "std/compiler/cgen.a"
+#line 164 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_string("    ")); a_release(__old); }
-#line 136 "std/compiler/cgen.a"
+#line 165 "std/compiler/cgen.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 138 "std/compiler/cgen.a"
+#line 167 "std/compiler/cgen.a"
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(out);
@@ -6823,17 +6975,17 @@ AValue fn_cgen__prefixed_name(AValue name, AValue ctx) {
     AValue __ret = a_void();
     name = a_retain(name);
     ctx = a_retain(ctx);
-#line 145 "std/compiler/cgen.a"
+#line 174 "std/compiler/cgen.a"
     { AValue __old = prefix; prefix = a_array_get(ctx, a_string("prefix")); a_release(__old); }
-#line 146 "std/compiler/cgen.a"
+#line 175 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(prefix), a_string("str")))) {
-#line 147 "std/compiler/cgen.a"
+#line 176 "std/compiler/cgen.a"
         if (a_truthy(a_gt(a_len(prefix), a_int(0)))) {
-#line 148 "std/compiler/cgen.a"
+#line 177 "std/compiler/cgen.a"
             __ret = a_str_concat(prefix, a_str_concat(a_string("_"), name)); goto __fn_cleanup;
         }
     }
-#line 151 "std/compiler/cgen.a"
+#line 180 "std/compiler/cgen.a"
     __ret = a_retain(name); goto __fn_cleanup;
 __fn_cleanup:
     a_release(prefix);
@@ -6847,31 +6999,31 @@ AValue fn_cgen__is_intra_module_call(AValue fname, AValue ctx) {
     AValue __ret = a_void();
     fname = a_retain(fname);
     ctx = a_retain(ctx);
-#line 155 "std/compiler/cgen.a"
+#line 184 "std/compiler/cgen.a"
     { AValue __old = prefix; prefix = a_array_get(ctx, a_string("prefix")); a_release(__old); }
-#line 156 "std/compiler/cgen.a"
+#line 185 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(prefix), a_string("str")))) {
-#line 156 "std/compiler/cgen.a"
+#line 185 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 157 "std/compiler/cgen.a"
+#line 186 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(prefix), a_int(0)))) {
-#line 157 "std/compiler/cgen.a"
+#line 186 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 158 "std/compiler/cgen.a"
+#line 187 "std/compiler/cgen.a"
     if (a_truthy(a_str_contains(fname, a_string(".")))) {
-#line 158 "std/compiler/cgen.a"
+#line 187 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 159 "std/compiler/cgen.a"
+#line 188 "std/compiler/cgen.a"
     { AValue __old = fns; fns = a_array_get(ctx, a_string("fns")); a_release(__old); }
-#line 160 "std/compiler/cgen.a"
+#line 189 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(fns), a_string("array")))) {
-#line 161 "std/compiler/cgen.a"
+#line 190 "std/compiler/cgen.a"
         __ret = a_contains(fns, fname); goto __fn_cleanup;
     }
-#line 163 "std/compiler/cgen.a"
+#line 192 "std/compiler/cgen.a"
     __ret = a_bool(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(prefix);
@@ -6885,7 +7037,7 @@ AValue fn_cgen__R(AValue code, AValue li) {
     AValue __ret = a_void();
     code = a_retain(code);
     li = a_retain(li);
-#line 169 "std/compiler/cgen.a"
+#line 198 "std/compiler/cgen.a"
     __ret = a_array_new(3, code, li, a_array_new(0)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(code);
@@ -6898,7 +7050,7 @@ AValue fn_cgen__RL(AValue code, AValue li, AValue lifted) {
     code = a_retain(code);
     li = a_retain(li);
     lifted = a_retain(lifted);
-#line 170 "std/compiler/cgen.a"
+#line 199 "std/compiler/cgen.a"
     __ret = a_array_new(3, code, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
     a_release(code);
@@ -6912,30 +7064,30 @@ AValue fn_cgen__is_self_push(AValue assign, AValue name) {
     AValue __ret = a_void();
     assign = a_retain(assign);
     name = a_retain(name);
-#line 174 "std/compiler/cgen.a"
+#line 203 "std/compiler/cgen.a"
     { AValue __old = v; v = a_array_get(assign, a_string("value")); a_release(__old); }
-#line 175 "std/compiler/cgen.a"
+#line 204 "std/compiler/cgen.a"
     if (a_truthy(a_or(a_neq(a_type_of(v), a_string("map")), a_neq(a_array_get(v, a_string("tag")), a_string("Call"))))) {
-#line 175 "std/compiler/cgen.a"
+#line 204 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 176 "std/compiler/cgen.a"
+#line 205 "std/compiler/cgen.a"
     { AValue __old = f; f = a_array_get(v, a_string("func")); a_release(__old); }
-#line 177 "std/compiler/cgen.a"
+#line 206 "std/compiler/cgen.a"
     if (a_truthy(a_or(a_or(a_neq(a_type_of(f), a_string("map")), a_neq(a_array_get(f, a_string("tag")), a_string("Ident"))), a_neq(a_array_get(f, a_string("name")), a_string("push"))))) {
-#line 177 "std/compiler/cgen.a"
+#line 206 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 178 "std/compiler/cgen.a"
+#line 207 "std/compiler/cgen.a"
     { AValue __old = args; args = a_array_get(v, a_string("args")); a_release(__old); }
-#line 179 "std/compiler/cgen.a"
+#line 208 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_len(args), a_int(2)))) {
-#line 179 "std/compiler/cgen.a"
+#line 208 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 180 "std/compiler/cgen.a"
+#line 209 "std/compiler/cgen.a"
     { AValue __old = a0; a0 = a_array_get(args, a_int(0)); a_release(__old); }
-#line 181 "std/compiler/cgen.a"
+#line 210 "std/compiler/cgen.a"
     __ret = a_and(a_and(a_eq(a_type_of(a0), a_string("map")), a_eq(a_array_get(a0, a_string("tag")), a_string("Ident"))), a_eq(a_array_get(a0, a_string("name")), name)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(v);
@@ -6951,29 +7103,29 @@ AValue fn_cgen__is_ident(AValue node) {
     AValue n = {0};
     AValue __ret = a_void();
     node = a_retain(node);
-#line 185 "std/compiler/cgen.a"
+#line 214 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
-#line 185 "std/compiler/cgen.a"
+#line 214 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 186 "std/compiler/cgen.a"
+#line 215 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_array_get(node, a_string("tag")), a_string("Ident")))) {
-#line 186 "std/compiler/cgen.a"
+#line 215 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 187 "std/compiler/cgen.a"
+#line 216 "std/compiler/cgen.a"
     { AValue __old = n; n = a_array_get(node, a_string("name")); a_release(__old); }
-#line 188 "std/compiler/cgen.a"
+#line 217 "std/compiler/cgen.a"
     if (a_truthy(a_eq(n, a_string("true")))) {
-#line 188 "std/compiler/cgen.a"
+#line 217 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 189 "std/compiler/cgen.a"
+#line 218 "std/compiler/cgen.a"
     if (a_truthy(a_eq(n, a_string("false")))) {
-#line 189 "std/compiler/cgen.a"
+#line 218 "std/compiler/cgen.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 190 "std/compiler/cgen.a"
+#line 219 "std/compiler/cgen.a"
     __ret = a_bool(1); goto __fn_cleanup;
 __fn_cleanup:
     a_release(n);
@@ -6986,23 +7138,23 @@ AValue fn_cgen__emit_cleanup(AValue vars, AValue depth) {
     AValue __ret = a_void();
     vars = a_retain(vars);
     depth = a_retain(depth);
-#line 194 "std/compiler/cgen.a"
+#line 223 "std/compiler/cgen.a"
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
-#line 195 "std/compiler/cgen.a"
+#line 224 "std/compiler/cgen.a"
     { AValue __old = out; out = a_string(""); a_release(__old); }
-#line 196 "std/compiler/cgen.a"
+#line 225 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(vars);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue v = {0};
             v = a_array_get(__iter_arr, a_int(__fi));
-#line 197 "std/compiler/cgen.a"
+#line 226 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_str_concat(a_string("a_release("), a_str_concat(v, a_string(");")))))); a_release(__old); }
             a_release(v);
         }
         a_release(__iter_arr);
     }
-#line 199 "std/compiler/cgen.a"
+#line 228 "std/compiler/cgen.a"
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(ind);
@@ -7016,140 +7168,140 @@ AValue fn_cgen__ea_collect_idents(AValue expr) {
     AValue tag = {0}, n = {0}, ids = {0};
     AValue __ret = a_void();
     expr = a_retain(expr);
-#line 209 "std/compiler/cgen.a"
+#line 238 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(expr), a_string("map")))) {
-#line 209 "std/compiler/cgen.a"
+#line 238 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 210 "std/compiler/cgen.a"
+#line 239 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(expr, a_string("tag")); a_release(__old); }
-#line 211 "std/compiler/cgen.a"
+#line 240 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Ident")))) {
-#line 212 "std/compiler/cgen.a"
+#line 241 "std/compiler/cgen.a"
         { AValue __old = n; n = a_array_get(expr, a_string("name")); a_release(__old); }
-#line 213 "std/compiler/cgen.a"
+#line 242 "std/compiler/cgen.a"
         if (a_truthy(a_eq(n, a_string("true")))) {
-#line 213 "std/compiler/cgen.a"
+#line 242 "std/compiler/cgen.a"
             __ret = a_array_new(0); goto __fn_cleanup;
         }
-#line 214 "std/compiler/cgen.a"
+#line 243 "std/compiler/cgen.a"
         if (a_truthy(a_eq(n, a_string("false")))) {
-#line 214 "std/compiler/cgen.a"
+#line 243 "std/compiler/cgen.a"
             __ret = a_array_new(0); goto __fn_cleanup;
         }
-#line 215 "std/compiler/cgen.a"
+#line 244 "std/compiler/cgen.a"
         __ret = a_array_new(1, n); goto __fn_cleanup;
     }
-#line 217 "std/compiler/cgen.a"
+#line 246 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("BinOp")))) {
-#line 217 "std/compiler/cgen.a"
+#line 246 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__ea_collect_idents(a_array_get(expr, a_string("left"))), fn_cgen__ea_collect_idents(a_array_get(expr, a_string("right")))); goto __fn_cleanup;
     }
-#line 218 "std/compiler/cgen.a"
+#line 247 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("UnaryOp")))) {
-#line 218 "std/compiler/cgen.a"
+#line 247 "std/compiler/cgen.a"
         __ret = fn_cgen__ea_collect_idents(a_array_get(expr, a_string("expr"))); goto __fn_cleanup;
     }
-#line 219 "std/compiler/cgen.a"
+#line 248 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Call")))) {
-#line 220 "std/compiler/cgen.a"
+#line 249 "std/compiler/cgen.a"
         { AValue __old = ids; ids = fn_cgen__ea_collect_idents(a_array_get(expr, a_string("func"))); a_release(__old); }
-#line 221 "std/compiler/cgen.a"
+#line 250 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(expr, a_string("args")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue a = {0};
                 a = a_array_get(__iter_arr, a_int(__fi));
-#line 221 "std/compiler/cgen.a"
+#line 250 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__ea_collect_idents(a)); a_release(__old); }
                 a_release(a);
             }
             a_release(__iter_arr);
         }
-#line 222 "std/compiler/cgen.a"
+#line 251 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 224 "std/compiler/cgen.a"
+#line 253 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Index")))) {
-#line 224 "std/compiler/cgen.a"
+#line 253 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__ea_collect_idents(a_array_get(expr, a_string("expr"))), fn_cgen__ea_collect_idents(a_array_get(expr, a_string("index")))); goto __fn_cleanup;
     }
-#line 225 "std/compiler/cgen.a"
+#line 254 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("FieldAccess")))) {
-#line 225 "std/compiler/cgen.a"
+#line 254 "std/compiler/cgen.a"
         __ret = fn_cgen__ea_collect_idents(a_array_get(expr, a_string("expr"))); goto __fn_cleanup;
     }
-#line 226 "std/compiler/cgen.a"
+#line 255 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Array")))) {
-#line 227 "std/compiler/cgen.a"
+#line 256 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 228 "std/compiler/cgen.a"
+#line 257 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(expr, a_string("elems")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 228 "std/compiler/cgen.a"
+#line 257 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__ea_collect_idents(e)); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 229 "std/compiler/cgen.a"
+#line 258 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 231 "std/compiler/cgen.a"
+#line 260 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Map")))) {
-#line 232 "std/compiler/cgen.a"
+#line 261 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 233 "std/compiler/cgen.a"
+#line 262 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(expr, a_string("entries")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 233 "std/compiler/cgen.a"
+#line 262 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__ea_collect_idents(a_array_get(e, a_string("value")))); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 234 "std/compiler/cgen.a"
+#line 263 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 236 "std/compiler/cgen.a"
+#line 265 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Spread")))) {
-#line 236 "std/compiler/cgen.a"
+#line 265 "std/compiler/cgen.a"
         __ret = fn_cgen__ea_collect_idents(a_array_get(expr, a_string("expr"))); goto __fn_cleanup;
     }
-#line 237 "std/compiler/cgen.a"
+#line 266 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Pipe")))) {
-#line 237 "std/compiler/cgen.a"
+#line 266 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__ea_collect_idents(a_array_get(expr, a_string("left"))), fn_cgen__ea_collect_idents(a_array_get(expr, a_string("right")))); goto __fn_cleanup;
     }
-#line 238 "std/compiler/cgen.a"
+#line 267 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("InterpolatedString")))) {
-#line 239 "std/compiler/cgen.a"
+#line 268 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 240 "std/compiler/cgen.a"
+#line 269 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(expr, a_string("parts")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 241 "std/compiler/cgen.a"
+#line 270 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(p, a_string("tag")), a_string("Expr")))) {
-#line 241 "std/compiler/cgen.a"
+#line 270 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__ea_collect_idents(a_array_get(p, a_string("expr")))); a_release(__old); }
                 }
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 243 "std/compiler/cgen.a"
+#line 272 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 245 "std/compiler/cgen.a"
+#line 274 "std/compiler/cgen.a"
     __ret = a_array_new(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -7164,31 +7316,31 @@ AValue fn_cgen__escape_analysis(AValue stmts, AValue captures) {
     AValue __ret = a_void();
     stmts = a_retain(stmts);
     captures = a_retain(captures);
-#line 249 "std/compiler/cgen.a"
+#line 278 "std/compiler/cgen.a"
     { AValue __old = escaping; escaping = a_array_new(0); a_release(__old); }
-#line 251 "std/compiler/cgen.a"
+#line 280 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0}, tag = {0}, ids = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 252 "std/compiler/cgen.a"
+#line 281 "std/compiler/cgen.a"
             { AValue __old = tag; tag = a_array_get(s, a_string("tag")); a_release(__old); }
-#line 253 "std/compiler/cgen.a"
+#line 282 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("Return")))) {
-#line 254 "std/compiler/cgen.a"
+#line 283 "std/compiler/cgen.a"
                 if (a_truthy(a_neq(a_type_of(a_array_get(s, a_string("expr"))), a_string("void")))) {
-#line 255 "std/compiler/cgen.a"
+#line 284 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = fn_cgen__ea_collect_idents(a_array_get(s, a_string("expr"))); a_release(__old); }
-#line 256 "std/compiler/cgen.a"
+#line 285 "std/compiler/cgen.a"
                     {
                         AValue __iter_arr = a_iterable(ids);
                         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                             AValue id = {0};
                             id = a_array_get(__iter_arr, a_int(__fi));
-#line 257 "std/compiler/cgen.a"
+#line 286 "std/compiler/cgen.a"
                             if (a_truthy(a_not(a_contains(escaping, id)))) {
-#line 257 "std/compiler/cgen.a"
+#line 286 "std/compiler/cgen.a"
                                 escaping = a_array_push_move(escaping, id);
                             }
                             a_release(id);
@@ -7203,22 +7355,22 @@ AValue fn_cgen__escape_analysis(AValue stmts, AValue captures) {
         }
         a_release(__iter_arr);
     }
-#line 264 "std/compiler/cgen.a"
+#line 293 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(captures);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue cap = {0};
             cap = a_array_get(__iter_arr, a_int(__fi));
-#line 265 "std/compiler/cgen.a"
+#line 294 "std/compiler/cgen.a"
             if (a_truthy(a_not(a_contains(escaping, cap)))) {
-#line 265 "std/compiler/cgen.a"
+#line 294 "std/compiler/cgen.a"
                 escaping = a_array_push_move(escaping, cap);
             }
             a_release(cap);
         }
         a_release(__iter_arr);
     }
-#line 268 "std/compiler/cgen.a"
+#line 297 "std/compiler/cgen.a"
     __ret = a_retain(escaping); goto __fn_cleanup;
 __fn_cleanup:
     a_release(escaping);
@@ -7233,183 +7385,183 @@ AValue fn_cgen__collect_idents_in_expr(AValue node) {
     AValue tag = {0}, ids = {0}, func = {0}, body = {0}, bound = {0}, body_ids = {0}, free = {0};
     AValue __ret = a_void();
     node = a_retain(node);
-#line 274 "std/compiler/cgen.a"
+#line 303 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 275 "std/compiler/cgen.a"
+#line 304 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(tag), a_string("str")))) {
-#line 275 "std/compiler/cgen.a"
+#line 304 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 277 "std/compiler/cgen.a"
+#line 306 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Ident")))) {
-#line 277 "std/compiler/cgen.a"
+#line 306 "std/compiler/cgen.a"
         __ret = a_array_new(1, a_array_get(node, a_string("name"))); goto __fn_cleanup;
     }
-#line 278 "std/compiler/cgen.a"
+#line 307 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Int")))) {
-#line 278 "std/compiler/cgen.a"
+#line 307 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 279 "std/compiler/cgen.a"
+#line 308 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Float")))) {
-#line 279 "std/compiler/cgen.a"
+#line 308 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 280 "std/compiler/cgen.a"
+#line 309 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Bool")))) {
-#line 280 "std/compiler/cgen.a"
+#line 309 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 281 "std/compiler/cgen.a"
+#line 310 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Void")))) {
-#line 281 "std/compiler/cgen.a"
+#line 310 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 282 "std/compiler/cgen.a"
+#line 311 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("String")))) {
-#line 282 "std/compiler/cgen.a"
+#line 311 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 284 "std/compiler/cgen.a"
+#line 313 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("BinOp")))) {
-#line 285 "std/compiler/cgen.a"
+#line 314 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("left"))), fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("right")))); goto __fn_cleanup;
     }
-#line 287 "std/compiler/cgen.a"
+#line 316 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("UnaryOp")))) {
-#line 287 "std/compiler/cgen.a"
+#line 316 "std/compiler/cgen.a"
         __ret = fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("expr"))); goto __fn_cleanup;
     }
-#line 289 "std/compiler/cgen.a"
+#line 318 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Call")))) {
-#line 290 "std/compiler/cgen.a"
+#line 319 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 291 "std/compiler/cgen.a"
+#line 320 "std/compiler/cgen.a"
         { AValue __old = func; func = a_array_get(node, a_string("func")); a_release(__old); }
-#line 292 "std/compiler/cgen.a"
+#line 321 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(func, a_string("tag")), a_string("Ident")))) {
         } else {
-#line 295 "std/compiler/cgen.a"
+#line 324 "std/compiler/cgen.a"
             { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(func)); a_release(__old); }
         }
-#line 297 "std/compiler/cgen.a"
+#line 326 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("args")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue arg = {0};
                 arg = a_array_get(__iter_arr, a_int(__fi));
-#line 297 "std/compiler/cgen.a"
+#line 326 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(arg)); a_release(__old); }
                 a_release(arg);
             }
             a_release(__iter_arr);
         }
-#line 298 "std/compiler/cgen.a"
+#line 327 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 301 "std/compiler/cgen.a"
+#line 330 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("FieldAccess")))) {
-#line 301 "std/compiler/cgen.a"
+#line 330 "std/compiler/cgen.a"
         __ret = fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("expr"))); goto __fn_cleanup;
     }
-#line 302 "std/compiler/cgen.a"
+#line 331 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Index")))) {
-#line 303 "std/compiler/cgen.a"
+#line 332 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("expr"))), fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("index")))); goto __fn_cleanup;
     }
-#line 306 "std/compiler/cgen.a"
+#line 335 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Array")))) {
-#line 307 "std/compiler/cgen.a"
+#line 336 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 308 "std/compiler/cgen.a"
+#line 337 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("elems")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 308 "std/compiler/cgen.a"
+#line 337 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(e)); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 309 "std/compiler/cgen.a"
+#line 338 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 312 "std/compiler/cgen.a"
+#line 341 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("MapLiteral")))) {
-#line 313 "std/compiler/cgen.a"
+#line 342 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 314 "std/compiler/cgen.a"
+#line 343 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("entries")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 314 "std/compiler/cgen.a"
+#line 343 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(a_array_get(e, a_string("value")))); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 315 "std/compiler/cgen.a"
+#line 344 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 318 "std/compiler/cgen.a"
+#line 347 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Interpolation")))) {
-#line 319 "std/compiler/cgen.a"
+#line 348 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 320 "std/compiler/cgen.a"
+#line 349 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("parts")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 321 "std/compiler/cgen.a"
+#line 350 "std/compiler/cgen.a"
                 if (a_truthy(a_neq(a_array_get(p, a_string("tag")), a_string("InterpLit")))) {
-#line 321 "std/compiler/cgen.a"
+#line 350 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(a_array_get(p, a_string("expr")))); a_release(__old); }
                 }
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 323 "std/compiler/cgen.a"
+#line 352 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 326 "std/compiler/cgen.a"
+#line 355 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("IfExpr")))) {
-#line 327 "std/compiler/cgen.a"
+#line 356 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("cond"))), a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("then"))), fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("else"))))); goto __fn_cleanup;
     }
-#line 331 "std/compiler/cgen.a"
+#line 360 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Pipe")))) {
-#line 332 "std/compiler/cgen.a"
+#line 361 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("left"))), fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("right")))); goto __fn_cleanup;
     }
-#line 335 "std/compiler/cgen.a"
+#line 364 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("MatchExpr")))) {
-#line 336 "std/compiler/cgen.a"
+#line 365 "std/compiler/cgen.a"
         { AValue __old = ids; ids = fn_cgen__collect_idents_in_expr(a_array_get(node, a_string("expr"))); a_release(__old); }
-#line 337 "std/compiler/cgen.a"
+#line 366 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("arms")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue arm = {0}, body = {0};
                 arm = a_array_get(__iter_arr, a_int(__fi));
-#line 338 "std/compiler/cgen.a"
+#line 367 "std/compiler/cgen.a"
                 if (a_truthy(a_and(a_neq(a_type_of(a_array_get(arm, a_string("guard"))), a_string("void")), a_neq(a_array_get(a_array_get(arm, a_string("guard")), a_string("tag")), a_string("Void"))))) {
-#line 339 "std/compiler/cgen.a"
+#line 368 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(a_array_get(arm, a_string("guard")))); a_release(__old); }
                 }
-#line 341 "std/compiler/cgen.a"
+#line 370 "std/compiler/cgen.a"
                 { AValue __old = body; body = a_array_get(arm, a_string("body")); a_release(__old); }
-#line 342 "std/compiler/cgen.a"
+#line 371 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
-#line 343 "std/compiler/cgen.a"
+#line 372 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_block(body)); a_release(__old); }
                 } else {
-#line 345 "std/compiler/cgen.a"
+#line 374 "std/compiler/cgen.a"
                     { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_expr(body)); a_release(__old); }
                 }
                 a_release(arm);
@@ -7417,40 +7569,40 @@ AValue fn_cgen__collect_idents_in_expr(AValue node) {
             }
             a_release(__iter_arr);
         }
-#line 348 "std/compiler/cgen.a"
+#line 377 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 351 "std/compiler/cgen.a"
+#line 380 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Lambda")))) {
-#line 353 "std/compiler/cgen.a"
+#line 382 "std/compiler/cgen.a"
         { AValue __old = bound; bound = a_array_new(0); a_release(__old); }
-#line 354 "std/compiler/cgen.a"
+#line 383 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("params")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 354 "std/compiler/cgen.a"
+#line 383 "std/compiler/cgen.a"
                 bound = a_array_push_move(bound, a_array_get(p, a_string("name")));
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 355 "std/compiler/cgen.a"
+#line 384 "std/compiler/cgen.a"
         { AValue __old = body_ids; body_ids = fn_cgen__collect_idents_in_block(a_array_get(node, a_string("body"))); a_release(__old); }
-#line 356 "std/compiler/cgen.a"
+#line 385 "std/compiler/cgen.a"
         { AValue __old = free; free = a_array_new(0); a_release(__old); }
-#line 357 "std/compiler/cgen.a"
+#line 386 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_ids);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue id = {0};
                 id = a_array_get(__iter_arr, a_int(__fi));
-#line 358 "std/compiler/cgen.a"
+#line 387 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(bound, id)))) {
-#line 358 "std/compiler/cgen.a"
+#line 387 "std/compiler/cgen.a"
                     if (a_truthy(a_not(a_contains(free, id)))) {
-#line 358 "std/compiler/cgen.a"
+#line 387 "std/compiler/cgen.a"
                         free = a_array_push_move(free, id);
                     }
                 }
@@ -7458,10 +7610,10 @@ AValue fn_cgen__collect_idents_in_expr(AValue node) {
             }
             a_release(__iter_arr);
         }
-#line 360 "std/compiler/cgen.a"
+#line 389 "std/compiler/cgen.a"
         __ret = a_retain(free); goto __fn_cleanup;
     }
-#line 363 "std/compiler/cgen.a"
+#line 392 "std/compiler/cgen.a"
     __ret = a_array_new(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -7479,36 +7631,36 @@ AValue fn_cgen__collect_idents_in_block(AValue block) {
     AValue ids = {0}, stmts = {0};
     AValue __ret = a_void();
     block = a_retain(block);
-#line 367 "std/compiler/cgen.a"
+#line 396 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(a_array_get(block, a_string("tag"))), a_string("str")))) {
-#line 368 "std/compiler/cgen.a"
+#line 397 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(block, a_string("tag")), a_string("BlockExpr")))) {
-#line 369 "std/compiler/cgen.a"
+#line 398 "std/compiler/cgen.a"
             __ret = fn_cgen__collect_idents_in_block(a_array_get(block, a_string("block"))); goto __fn_cleanup;
         }
     }
-#line 372 "std/compiler/cgen.a"
+#line 401 "std/compiler/cgen.a"
     { AValue __old = ids; ids = a_array_new(0); a_release(__old); }
-#line 373 "std/compiler/cgen.a"
+#line 402 "std/compiler/cgen.a"
     { AValue __old = stmts; stmts = a_array_get(block, a_string("stmts")); a_release(__old); }
-#line 374 "std/compiler/cgen.a"
+#line 403 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(stmts), a_string("array")))) {
-#line 374 "std/compiler/cgen.a"
+#line 403 "std/compiler/cgen.a"
         __ret = fn_cgen__collect_idents_in_expr(block); goto __fn_cleanup;
     }
-#line 375 "std/compiler/cgen.a"
+#line 404 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 375 "std/compiler/cgen.a"
+#line 404 "std/compiler/cgen.a"
             { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_stmt(s)); a_release(__old); }
             a_release(s);
         }
         a_release(__iter_arr);
     }
-#line 376 "std/compiler/cgen.a"
+#line 405 "std/compiler/cgen.a"
     __ret = a_retain(ids); goto __fn_cleanup;
 __fn_cleanup:
     a_release(ids);
@@ -7521,68 +7673,68 @@ AValue fn_cgen__collect_idents_in_stmt(AValue s) {
     AValue tag = {0}, ids = {0}, eb = {0};
     AValue __ret = a_void();
     s = a_retain(s);
-#line 380 "std/compiler/cgen.a"
+#line 409 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(s, a_string("tag")); a_release(__old); }
-#line 381 "std/compiler/cgen.a"
+#line 410 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 381 "std/compiler/cgen.a"
+#line 410 "std/compiler/cgen.a"
         __ret = fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("value"))); goto __fn_cleanup;
     }
-#line 382 "std/compiler/cgen.a"
+#line 411 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Assign")))) {
-#line 383 "std/compiler/cgen.a"
+#line 412 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("target"))), fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("value")))); goto __fn_cleanup;
     }
-#line 385 "std/compiler/cgen.a"
+#line 414 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Return")))) {
-#line 386 "std/compiler/cgen.a"
+#line 415 "std/compiler/cgen.a"
         if (a_truthy(a_neq(a_type_of(a_array_get(s, a_string("expr"))), a_string("void")))) {
-#line 386 "std/compiler/cgen.a"
+#line 415 "std/compiler/cgen.a"
             __ret = fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("expr"))); goto __fn_cleanup;
         }
-#line 387 "std/compiler/cgen.a"
+#line 416 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 389 "std/compiler/cgen.a"
+#line 418 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("ExprStmt")))) {
-#line 389 "std/compiler/cgen.a"
+#line 418 "std/compiler/cgen.a"
         __ret = fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("expr"))); goto __fn_cleanup;
     }
-#line 390 "std/compiler/cgen.a"
+#line 419 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("If")))) {
-#line 391 "std/compiler/cgen.a"
+#line 420 "std/compiler/cgen.a"
         { AValue __old = ids; ids = fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("cond"))); a_release(__old); }
-#line 392 "std/compiler/cgen.a"
+#line 421 "std/compiler/cgen.a"
         { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_block(a_array_get(s, a_string("then")))); a_release(__old); }
-#line 393 "std/compiler/cgen.a"
+#line 422 "std/compiler/cgen.a"
         { AValue __old = eb; eb = a_array_get(s, a_string("else")); a_release(__old); }
-#line 394 "std/compiler/cgen.a"
+#line 423 "std/compiler/cgen.a"
         if (a_truthy(a_neq(a_type_of(eb), a_string("void")))) {
-#line 395 "std/compiler/cgen.a"
+#line 424 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(eb, a_string("tag")), a_string("ElseBlock")))) {
-#line 395 "std/compiler/cgen.a"
+#line 424 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_block(a_array_get(eb, a_string("block")))); a_release(__old); }
             }
-#line 396 "std/compiler/cgen.a"
+#line 425 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(eb, a_string("tag")), a_string("ElseIf")))) {
-#line 396 "std/compiler/cgen.a"
+#line 425 "std/compiler/cgen.a"
                 { AValue __old = ids; ids = a_concat_arr(ids, fn_cgen__collect_idents_in_stmt(a_array_get(eb, a_string("stmt")))); a_release(__old); }
             }
         }
-#line 398 "std/compiler/cgen.a"
+#line 427 "std/compiler/cgen.a"
         __ret = a_retain(ids); goto __fn_cleanup;
     }
-#line 400 "std/compiler/cgen.a"
+#line 429 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("While")))) {
-#line 401 "std/compiler/cgen.a"
+#line 430 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("cond"))), fn_cgen__collect_idents_in_block(a_array_get(s, a_string("body")))); goto __fn_cleanup;
     }
-#line 403 "std/compiler/cgen.a"
+#line 432 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("For")))) {
-#line 404 "std/compiler/cgen.a"
+#line 433 "std/compiler/cgen.a"
         __ret = a_concat_arr(fn_cgen__collect_idents_in_expr(a_array_get(s, a_string("iter"))), fn_cgen__collect_idents_in_block(a_array_get(s, a_string("body")))); goto __fn_cleanup;
     }
-#line 406 "std/compiler/cgen.a"
+#line 435 "std/compiler/cgen.a"
     __ret = a_array_new(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -7592,47 +7744,83 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_cgen__with_enclosing(AValue ctx, AValue names) {
+    AValue enc = {0};
+    AValue __ret = a_void();
+    ctx = a_retain(ctx);
+    names = a_retain(names);
+#line 440 "std/compiler/cgen.a"
+    { AValue __old = enc; enc = a_array_new(0); a_release(__old); }
+#line 441 "std/compiler/cgen.a"
+    if (a_truthy(a_eq(a_type_of(a_array_get(ctx, a_string("enclosing_vars"))), a_string("array")))) {
+#line 441 "std/compiler/cgen.a"
+        { AValue __old = enc; enc = a_array_get(ctx, a_string("enclosing_vars")); a_release(__old); }
+    }
+#line 442 "std/compiler/cgen.a"
+    {
+        AValue __iter_arr = a_iterable(names);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue n = {0};
+            n = a_array_get(__iter_arr, a_int(__fi));
+#line 443 "std/compiler/cgen.a"
+            if (a_truthy(a_and(a_and(a_neq(n, a_string("")), a_neq(n, a_string("_"))), a_not(a_contains(enc, n))))) {
+#line 443 "std/compiler/cgen.a"
+                enc = a_array_push_move(enc, n);
+            }
+            a_release(n);
+        }
+        a_release(__iter_arr);
+    }
+#line 445 "std/compiler/cgen.a"
+    __ret = a_map_set(ctx, a_string("enclosing_vars"), enc); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(enc);
+    a_release(ctx);
+    a_release(names);
+    return __ret;
+}
+
 AValue fn_cgen__compute_captures(AValue lambda_node, AValue enclosing_vars, AValue bm) {
     AValue bound = {0}, body = {0}, body_lets = {0}, body_ids = {0}, captures = {0};
     AValue __ret = a_void();
     lambda_node = a_retain(lambda_node);
     enclosing_vars = a_retain(enclosing_vars);
     bm = a_retain(bm);
-#line 410 "std/compiler/cgen.a"
+#line 449 "std/compiler/cgen.a"
     { AValue __old = bound; bound = a_array_new(0); a_release(__old); }
-#line 411 "std/compiler/cgen.a"
+#line 450 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(a_array_get(lambda_node, a_string("params")));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 411 "std/compiler/cgen.a"
+#line 450 "std/compiler/cgen.a"
             bound = a_array_push_move(bound, a_array_get(p, a_string("name")));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 412 "std/compiler/cgen.a"
+#line 451 "std/compiler/cgen.a"
     { AValue __old = body; body = a_array_get(lambda_node, a_string("body")); a_release(__old); }
-#line 413 "std/compiler/cgen.a"
+#line 452 "std/compiler/cgen.a"
     { AValue __old = body_lets; body_lets = fn_cgen__collect_lets_in_block(body); a_release(__old); }
-#line 414 "std/compiler/cgen.a"
+#line 453 "std/compiler/cgen.a"
     { AValue __old = bound; bound = a_concat_arr(bound, body_lets); a_release(__old); }
-#line 416 "std/compiler/cgen.a"
+#line 455 "std/compiler/cgen.a"
     { AValue __old = body_ids; body_ids = fn_cgen__collect_idents_in_block(body); a_release(__old); }
-#line 417 "std/compiler/cgen.a"
+#line 456 "std/compiler/cgen.a"
     { AValue __old = captures; captures = a_array_new(0); a_release(__old); }
-#line 418 "std/compiler/cgen.a"
+#line 457 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(body_ids);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue id = {0};
             id = a_array_get(__iter_arr, a_int(__fi));
-#line 419 "std/compiler/cgen.a"
+#line 458 "std/compiler/cgen.a"
             if (a_truthy(a_and(a_and(a_not(a_contains(bound, id)), a_not(a_map_has(bm, id))), a_contains(enclosing_vars, id)))) {
-#line 420 "std/compiler/cgen.a"
+#line 459 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(captures, id)))) {
-#line 420 "std/compiler/cgen.a"
+#line 459 "std/compiler/cgen.a"
                     captures = a_array_push_move(captures, id);
                 }
             }
@@ -7640,7 +7828,7 @@ AValue fn_cgen__compute_captures(AValue lambda_node, AValue enclosing_vars, AVal
         }
         a_release(__iter_arr);
     }
-#line 423 "std/compiler/cgen.a"
+#line 462 "std/compiler/cgen.a"
     __ret = a_retain(captures); goto __fn_cleanup;
 __fn_cleanup:
     a_release(bound);
@@ -7658,39 +7846,39 @@ AValue fn_cgen__collect_lets_in_block(AValue block) {
     AValue names = {0}, stmts = {0};
     AValue __ret = a_void();
     block = a_retain(block);
-#line 427 "std/compiler/cgen.a"
+#line 466 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(a_array_get(block, a_string("tag"))), a_string("str")))) {
-#line 428 "std/compiler/cgen.a"
+#line 467 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(block, a_string("tag")), a_string("BlockExpr")))) {
-#line 428 "std/compiler/cgen.a"
+#line 467 "std/compiler/cgen.a"
             __ret = fn_cgen__collect_lets_in_block(a_array_get(block, a_string("block"))); goto __fn_cleanup;
         }
     }
-#line 430 "std/compiler/cgen.a"
+#line 469 "std/compiler/cgen.a"
     { AValue __old = names; names = a_array_new(0); a_release(__old); }
-#line 431 "std/compiler/cgen.a"
+#line 470 "std/compiler/cgen.a"
     { AValue __old = stmts; stmts = a_array_get(block, a_string("stmts")); a_release(__old); }
-#line 432 "std/compiler/cgen.a"
+#line 471 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(stmts), a_string("array")))) {
-#line 432 "std/compiler/cgen.a"
+#line 471 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 433 "std/compiler/cgen.a"
+#line 472 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 434 "std/compiler/cgen.a"
+#line 473 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(s, a_string("tag")), a_string("Let")))) {
-#line 434 "std/compiler/cgen.a"
+#line 473 "std/compiler/cgen.a"
                 names = a_array_push_move(names, a_array_get(s, a_string("name")));
             }
             a_release(s);
         }
         a_release(__iter_arr);
     }
-#line 436 "std/compiler/cgen.a"
+#line 475 "std/compiler/cgen.a"
     __ret = a_retain(names); goto __fn_cleanup;
 __fn_cleanup:
     a_release(names);
@@ -7700,388 +7888,421 @@ __fn_cleanup:
 }
 
 AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
-    AValue tag = {0}, name = {0}, op = {0}, lr = {0}, rr = {0}, l = {0}, r = {0}, lifted = {0}, code = {0}, ir = {0}, func = {0}, a = {0}, fname = {0}, dotted = {0}, _short = {0}, fr = {0}, li2 = {0}, lifted2 = {0}, call_args = {0}, ar = {0}, arg_codes = {0}, cfn = {0}, all_fns = {0}, is_known_fn = {0}, mangled = {0}, aliases = {0}, er = {0}, field = {0}, elems = {0}, has_spread = {0}, parts = {0}, entries = {0}, key_node = {0}, key_str = {0}, vr = {0}, cparts = {0}, cr = {0}, tr = {0}, stmts = {0}, last = {0}, right = {0}, new_args = {0}, new_call = {0}, lambda_name = {0}, params = {0}, body = {0}, enclosing_vars = {0}, captures = {0}, fn_code = {0}, ci = {0}, pi = {0}, next_li = {0}, body_lifted = {0}, lambda_vars = {0}, body_tag = {0}, body_vars = {0}, bound = {0}, decl_vars = {0}, body_lets = {0}, lambda_ctx = {0}, init_parts = {0}, lambda_cleanup = {0}, has_return = {0}, si = {0}, s = {0}, is_last = {0}, cleanup = {0}, ret_expr = {0}, sr = {0}, env_code = {0}, cap_parts = {0}, closure_code = {0}, all_lifted = {0}, block = {0}, nl = {0}, try_vars = {0}, nstmts = {0}, has_tail = {0};
+    AValue tag = {0}, name = {0}, op = {0}, lr = {0}, rr = {0}, l = {0}, r = {0}, lifted = {0}, code = {0}, ir = {0}, func = {0}, a = {0}, fname = {0}, dotted = {0}, _short = {0}, fr = {0}, li2 = {0}, lifted2 = {0}, call_args = {0}, ar = {0}, arg_codes = {0}, cfn = {0}, mins = {0}, full = {0}, var_arity = {0}, vargs = {0}, all_fns = {0}, is_known_fn = {0}, mangled = {0}, aliases = {0}, er = {0}, field = {0}, elems = {0}, has_spread = {0}, parts = {0}, entries = {0}, key_node = {0}, key_str = {0}, vr = {0}, cparts = {0}, cr = {0}, tr = {0}, stmts = {0}, last = {0}, right = {0}, new_args = {0}, new_call = {0}, lambda_name = {0}, params = {0}, body = {0}, enclosing_vars = {0}, captures = {0}, fn_code = {0}, ci = {0}, pi = {0}, next_li = {0}, body_lifted = {0}, lambda_vars = {0}, body_tag = {0}, body_vars = {0}, bound = {0}, decl_vars = {0}, body_lets = {0}, lambda_ctx = {0}, init_parts = {0}, lambda_cleanup = {0}, has_return = {0}, si = {0}, s = {0}, is_last = {0}, cleanup = {0}, ret_expr = {0}, sr = {0}, env_code = {0}, cap_parts = {0}, closure_code = {0}, all_lifted = {0}, use_goto = {0}, cleanup_vars = {0}, on_err = {0}, block = {0}, nl = {0}, try_vars = {0}, nstmts = {0}, has_tail = {0};
     AValue __ret = a_void();
     node = a_retain(node);
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 443 "std/compiler/cgen.a"
+#line 482 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 445 "std/compiler/cgen.a"
+#line 484 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Int")))) {
-#line 445 "std/compiler/cgen.a"
+#line 484 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_str_concat(a_string("a_int("), a_str_concat(a_to_str(a_array_get(node, a_string("value"))), a_string(")"))), li); goto __fn_cleanup;
     }
-#line 446 "std/compiler/cgen.a"
+#line 485 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Float")))) {
-#line 446 "std/compiler/cgen.a"
+#line 485 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_str_concat(a_string("a_float("), a_str_concat(a_to_str(a_array_get(node, a_string("value"))), a_string(")"))), li); goto __fn_cleanup;
     }
-#line 447 "std/compiler/cgen.a"
+#line 486 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Bool")))) {
-#line 448 "std/compiler/cgen.a"
+#line 487 "std/compiler/cgen.a"
         if (a_truthy(a_array_get(node, a_string("value")))) {
-#line 448 "std/compiler/cgen.a"
+#line 487 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_bool(1)"), li); goto __fn_cleanup;
         }
-#line 449 "std/compiler/cgen.a"
+#line 488 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("a_bool(0)"), li); goto __fn_cleanup;
     }
-#line 451 "std/compiler/cgen.a"
+#line 490 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Void")))) {
-#line 451 "std/compiler/cgen.a"
+#line 490 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("a_void()"), li); goto __fn_cleanup;
     }
-#line 453 "std/compiler/cgen.a"
+#line 492 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("String")))) {
-#line 454 "std/compiler/cgen.a"
+#line 493 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_str_concat(a_string("a_string(\""), a_str_concat(fn_cgen__escape_c_str(a_array_get(node, a_string("value"))), a_string("\")"))), li); goto __fn_cleanup;
     }
-#line 457 "std/compiler/cgen.a"
+#line 496 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Ident")))) {
-#line 458 "std/compiler/cgen.a"
+#line 497 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(node, a_string("name")); a_release(__old); }
-#line 459 "std/compiler/cgen.a"
+#line 498 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("true")))) {
-#line 459 "std/compiler/cgen.a"
+#line 498 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_bool(1)"), li); goto __fn_cleanup;
         }
-#line 460 "std/compiler/cgen.a"
+#line 499 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("false")))) {
-#line 460 "std/compiler/cgen.a"
+#line 499 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_bool(0)"), li); goto __fn_cleanup;
         }
-#line 461 "std/compiler/cgen.a"
+#line 500 "std/compiler/cgen.a"
+        if (a_truthy(a_eq(fn_cgen__variant_arity(ctx, name), a_int(0)))) {
+#line 500 "std/compiler/cgen.a"
+            __ret = fn_cgen__R(a_add(a_add(a_string("a_variant_new(\""), name), a_string("\", 0)")), li); goto __fn_cleanup;
+        }
+#line 501 "std/compiler/cgen.a"
         __ret = fn_cgen__R(fn_cgen__mangle(name), li); goto __fn_cleanup;
     }
-#line 464 "std/compiler/cgen.a"
+#line 504 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("BinOp")))) {
-#line 465 "std/compiler/cgen.a"
+#line 505 "std/compiler/cgen.a"
         { AValue __old = op; op = a_array_get(node, a_string("op")); a_release(__old); }
-#line 466 "std/compiler/cgen.a"
+#line 506 "std/compiler/cgen.a"
         { AValue __old = lr; lr = fn_cgen_emit_expr(a_array_get(node, a_string("left")), bm, ctx, li); a_release(__old); }
-#line 467 "std/compiler/cgen.a"
+#line 507 "std/compiler/cgen.a"
         { AValue __old = rr; rr = fn_cgen_emit_expr(a_array_get(node, a_string("right")), bm, ctx, a_array_get(lr, a_int(1))); a_release(__old); }
-#line 468 "std/compiler/cgen.a"
+#line 508 "std/compiler/cgen.a"
         { AValue __old = l; l = a_array_get(lr, a_int(0)); a_release(__old); }
-#line 469 "std/compiler/cgen.a"
+#line 509 "std/compiler/cgen.a"
         { AValue __old = r; r = a_array_get(rr, a_int(0)); a_release(__old); }
-#line 470 "std/compiler/cgen.a"
+#line 510 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(rr, a_int(1)); a_release(__old); }
-#line 471 "std/compiler/cgen.a"
+#line 511 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_concat_arr(a_array_get(lr, a_int(2)), a_array_get(rr, a_int(2))); a_release(__old); }
-#line 472 "std/compiler/cgen.a"
+#line 512 "std/compiler/cgen.a"
         { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 473 "std/compiler/cgen.a"
+#line 513 "std/compiler/cgen.a"
         if (a_truthy(a_eq(op, a_string("+")))) {
-#line 473 "std/compiler/cgen.a"
+#line 513 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_add("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 474 "std/compiler/cgen.a"
+#line 514 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("-")), a_eq(code, a_string(""))))) {
-#line 474 "std/compiler/cgen.a"
+#line 514 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_sub("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 475 "std/compiler/cgen.a"
+#line 515 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("*")), a_eq(code, a_string(""))))) {
-#line 475 "std/compiler/cgen.a"
+#line 515 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_mul("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 476 "std/compiler/cgen.a"
+#line 516 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("/")), a_eq(code, a_string(""))))) {
-#line 476 "std/compiler/cgen.a"
+#line 516 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_div("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 477 "std/compiler/cgen.a"
+#line 517 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("%")), a_eq(code, a_string(""))))) {
-#line 477 "std/compiler/cgen.a"
+#line 517 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_mod("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 478 "std/compiler/cgen.a"
+#line 518 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("==")), a_eq(code, a_string(""))))) {
-#line 478 "std/compiler/cgen.a"
+#line 518 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_eq("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 479 "std/compiler/cgen.a"
+#line 519 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("!=")), a_eq(code, a_string(""))))) {
-#line 479 "std/compiler/cgen.a"
+#line 519 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_neq("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 480 "std/compiler/cgen.a"
+#line 520 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("<")), a_eq(code, a_string(""))))) {
-#line 480 "std/compiler/cgen.a"
+#line 520 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_lt("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 481 "std/compiler/cgen.a"
+#line 521 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string(">")), a_eq(code, a_string(""))))) {
-#line 481 "std/compiler/cgen.a"
+#line 521 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_gt("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 482 "std/compiler/cgen.a"
+#line 522 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("<=")), a_eq(code, a_string(""))))) {
-#line 482 "std/compiler/cgen.a"
+#line 522 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_lteq("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 483 "std/compiler/cgen.a"
+#line 523 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string(">=")), a_eq(code, a_string(""))))) {
-#line 483 "std/compiler/cgen.a"
+#line 523 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_gteq("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 484 "std/compiler/cgen.a"
+#line 524 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("&&")), a_eq(code, a_string(""))))) {
-#line 484 "std/compiler/cgen.a"
+#line 524 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_and("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 485 "std/compiler/cgen.a"
+#line 525 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(op, a_string("||")), a_eq(code, a_string(""))))) {
-#line 485 "std/compiler/cgen.a"
+#line 525 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("a_or("), a_str_concat(l, a_str_concat(a_string(", "), a_str_concat(r, a_string(")"))))); a_release(__old); }
         }
-#line 486 "std/compiler/cgen.a"
+#line 526 "std/compiler/cgen.a"
         if (a_truthy(a_eq(code, a_string("")))) {
-#line 486 "std/compiler/cgen.a"
+#line 526 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(a_string("/* unknown op: "), a_str_concat(op, a_string(" */a_void()"))); a_release(__old); }
         }
-#line 487 "std/compiler/cgen.a"
+#line 527 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
     }
-#line 490 "std/compiler/cgen.a"
+#line 530 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("UnaryOp")))) {
-#line 491 "std/compiler/cgen.a"
+#line 531 "std/compiler/cgen.a"
         { AValue __old = ir; ir = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 492 "std/compiler/cgen.a"
+#line 532 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(node, a_string("op")), a_string("!")))) {
-#line 492 "std/compiler/cgen.a"
+#line 532 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(a_string("a_not("), a_str_concat(a_array_get(ir, a_int(0)), a_string(")"))), a_array_get(ir, a_int(1)), a_array_get(ir, a_int(2))); goto __fn_cleanup;
         }
-#line 493 "std/compiler/cgen.a"
+#line 533 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(node, a_string("op")), a_string("-")))) {
-#line 493 "std/compiler/cgen.a"
+#line 533 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(a_string("a_neg("), a_str_concat(a_array_get(ir, a_int(0)), a_string(")"))), a_array_get(ir, a_int(1)), a_array_get(ir, a_int(2))); goto __fn_cleanup;
         }
-#line 494 "std/compiler/cgen.a"
+#line 534 "std/compiler/cgen.a"
         __ret = a_retain(ir); goto __fn_cleanup;
     }
-#line 497 "std/compiler/cgen.a"
+#line 537 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Call")))) {
-#line 498 "std/compiler/cgen.a"
+#line 538 "std/compiler/cgen.a"
         { AValue __old = func; func = a_array_get(node, a_string("func")); a_release(__old); }
-#line 499 "std/compiler/cgen.a"
+#line 539 "std/compiler/cgen.a"
         { AValue __old = a; a = a_array_get(node, a_string("args")); a_release(__old); }
-#line 500 "std/compiler/cgen.a"
+#line 540 "std/compiler/cgen.a"
         { AValue __old = fname; fname = fn_cgen__resolve_call_name(func); a_release(__old); }
-#line 502 "std/compiler/cgen.a"
+#line 542 "std/compiler/cgen.a"
         if (a_truthy(a_eq(fname, a_string("__unknown__")))) {
-#line 503 "std/compiler/cgen.a"
+#line 543 "std/compiler/cgen.a"
             { AValue __old = dotted; dotted = fn_cgen__dotted_path(func); a_release(__old); }
-#line 504 "std/compiler/cgen.a"
+#line 544 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(dotted), a_int(0)))) {
-#line 505 "std/compiler/cgen.a"
+#line 545 "std/compiler/cgen.a"
                 { AValue __old = _short; _short = fn_cgen__last_two_segments(dotted); a_release(__old); }
-#line 506 "std/compiler/cgen.a"
+#line 546 "std/compiler/cgen.a"
                 fn_cgen__compile_error(node, ctx, a_add(a_add(a_add(a_string("cannot call "), dotted), a_string(": a module is referenced by its last segment, e.g. ")), _short));
             }
-#line 509 "std/compiler/cgen.a"
+#line 549 "std/compiler/cgen.a"
             { AValue __old = fr; fr = fn_cgen_emit_expr(func, bm, ctx, li); a_release(__old); }
-#line 510 "std/compiler/cgen.a"
+#line 550 "std/compiler/cgen.a"
             { AValue __old = li2; li2 = a_array_get(fr, a_int(1)); a_release(__old); }
-#line 511 "std/compiler/cgen.a"
+#line 551 "std/compiler/cgen.a"
             { AValue __old = lifted2; lifted2 = a_array_get(fr, a_int(2)); a_release(__old); }
-#line 512 "std/compiler/cgen.a"
+#line 552 "std/compiler/cgen.a"
             { AValue __old = call_args; call_args = a_array_new(1, a_to_str(a_len(a))); a_release(__old); }
-#line 513 "std/compiler/cgen.a"
+#line 553 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(a);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue arg = {0}, ar = {0};
                     arg = a_array_get(__iter_arr, a_int(__fi));
-#line 514 "std/compiler/cgen.a"
+#line 554 "std/compiler/cgen.a"
                     { AValue __old = ar; ar = fn_cgen_emit_expr(arg, bm, ctx, li2); a_release(__old); }
-#line 515 "std/compiler/cgen.a"
+#line 555 "std/compiler/cgen.a"
                     call_args = a_array_push_move(call_args, a_array_get(ar, a_int(0)));
-#line 516 "std/compiler/cgen.a"
+#line 556 "std/compiler/cgen.a"
                     { AValue __old = li2; li2 = a_array_get(ar, a_int(1)); a_release(__old); }
-#line 517 "std/compiler/cgen.a"
+#line 557 "std/compiler/cgen.a"
                     { AValue __old = lifted2; lifted2 = a_concat_arr(lifted2, a_array_get(ar, a_int(2))); a_release(__old); }
                     a_release(arg);
                     a_release(ar);
                 }
                 a_release(__iter_arr);
             }
-#line 519 "std/compiler/cgen.a"
+#line 559 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_add(a_add(a_add(a_add(a_string("a_closure_call("), a_array_get(fr, a_int(0))), a_string(", ")), a_str_join(call_args, a_string(", "))), a_string(")")), li2, lifted2); goto __fn_cleanup;
         }
-#line 522 "std/compiler/cgen.a"
+#line 562 "std/compiler/cgen.a"
         if (a_truthy(a_eq(fname, a_string("fail")))) {
-#line 523 "std/compiler/cgen.a"
+#line 563 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(a), a_int(0)))) {
-#line 524 "std/compiler/cgen.a"
+#line 564 "std/compiler/cgen.a"
                 { AValue __old = ar; ar = fn_cgen_emit_expr(a_array_get(a, a_int(0)), bm, ctx, li); a_release(__old); }
-#line 525 "std/compiler/cgen.a"
+#line 565 "std/compiler/cgen.a"
                 __ret = fn_cgen__RL(a_str_concat(a_string("(a_fail("), a_str_concat(a_array_get(ar, a_int(0)), a_string("), a_void())"))), a_array_get(ar, a_int(1)), a_array_get(ar, a_int(2))); goto __fn_cleanup;
             }
-#line 527 "std/compiler/cgen.a"
+#line 567 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("(a_fail(a_string(\"assertion failed\")), a_void())"), li); goto __fn_cleanup;
         }
-#line 529 "std/compiler/cgen.a"
+#line 569 "std/compiler/cgen.a"
         if (a_truthy(a_eq(fname, a_string("exit")))) {
-#line 530 "std/compiler/cgen.a"
+#line 570 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(a), a_int(0)))) {
-#line 531 "std/compiler/cgen.a"
+#line 571 "std/compiler/cgen.a"
                 { AValue __old = ar; ar = fn_cgen_emit_expr(a_array_get(a, a_int(0)), bm, ctx, li); a_release(__old); }
-#line 532 "std/compiler/cgen.a"
+#line 572 "std/compiler/cgen.a"
                 __ret = fn_cgen__RL(a_str_concat(a_string("(exit((int)"), a_str_concat(a_array_get(ar, a_int(0)), a_string(".ival), a_void())"))), a_array_get(ar, a_int(1)), a_array_get(ar, a_int(2))); goto __fn_cleanup;
             }
-#line 534 "std/compiler/cgen.a"
+#line 574 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("(exit(0), a_void())"), li); goto __fn_cleanup;
         }
-#line 538 "std/compiler/cgen.a"
+#line 578 "std/compiler/cgen.a"
         { AValue __old = arg_codes; arg_codes = a_array_new(0); a_release(__old); }
-#line 539 "std/compiler/cgen.a"
+#line 579 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 540 "std/compiler/cgen.a"
+#line 580 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue arg = {0}, ar = {0};
                 arg = a_array_get(__iter_arr, a_int(__fi));
-#line 541 "std/compiler/cgen.a"
+#line 581 "std/compiler/cgen.a"
                 { AValue __old = ar; ar = fn_cgen_emit_expr(arg, bm, ctx, li); a_release(__old); }
-#line 542 "std/compiler/cgen.a"
+#line 582 "std/compiler/cgen.a"
                 arg_codes = a_array_push_move(arg_codes, a_array_get(ar, a_int(0)));
-#line 543 "std/compiler/cgen.a"
+#line 583 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(ar, a_int(1)); a_release(__old); }
-#line 544 "std/compiler/cgen.a"
+#line 584 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(ar, a_int(2))); a_release(__old); }
                 a_release(arg);
                 a_release(ar);
             }
             a_release(__iter_arr);
         }
-#line 547 "std/compiler/cgen.a"
+#line 587 "std/compiler/cgen.a"
         if (a_truthy(a_map_has(bm, fname))) {
-#line 548 "std/compiler/cgen.a"
+#line 588 "std/compiler/cgen.a"
             { AValue __old = cfn; cfn = a_array_get(bm, fname); a_release(__old); }
-#line 549 "std/compiler/cgen.a"
+#line 589 "std/compiler/cgen.a"
+            { AValue __old = mins; mins = fn_cgen__builtin_min_arity(); a_release(__old); }
+#line 590 "std/compiler/cgen.a"
+            if (a_truthy(a_and(a_map_has(mins, fname), a_gteq(a_len(arg_codes), a_array_get(mins, fname))))) {
+#line 591 "std/compiler/cgen.a"
+                { AValue __old = full; full = fn_cgen__builtin_full_arity(fname); a_release(__old); }
+#line 592 "std/compiler/cgen.a"
+                while (a_truthy(a_lt(a_len(arg_codes), full))) {
+#line 592 "std/compiler/cgen.a"
+                    arg_codes = a_array_push_move(arg_codes, a_string("a_void()"));
+                }
+            }
+#line 594 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(cfn, a_str_concat(a_string("("), a_str_concat(a_str_join(arg_codes, a_string(", ")), a_string(")")))), li, lifted); goto __fn_cleanup;
         }
-#line 553 "std/compiler/cgen.a"
+#line 597 "std/compiler/cgen.a"
+        { AValue __old = var_arity; var_arity = fn_cgen__variant_arity(ctx, fname); a_release(__old); }
+#line 598 "std/compiler/cgen.a"
+        if (a_truthy(a_gteq(var_arity, a_int(0)))) {
+#line 599 "std/compiler/cgen.a"
+            if (a_truthy(a_neq(var_arity, a_len(arg_codes)))) {
+#line 600 "std/compiler/cgen.a"
+                fn_cgen__compile_error(node, ctx, a_add(a_add(a_add(a_add(fname, a_string(" takes ")), a_to_str(var_arity)), a_string(" argument(s), got ")), a_to_str(a_len(arg_codes))));
+            }
+#line 602 "std/compiler/cgen.a"
+            { AValue __old = vargs; vargs = a_array_new(2, a_add(a_add(a_string("\""), fname), a_string("\"")), a_to_str(a_len(arg_codes))); a_release(__old); }
+#line 603 "std/compiler/cgen.a"
+            { AValue __old = vargs; vargs = a_concat_arr(vargs, arg_codes); a_release(__old); }
+#line 604 "std/compiler/cgen.a"
+            __ret = fn_cgen__RL(a_add(a_add(a_string("a_variant_new("), a_str_join(vargs, a_string(", "))), a_string(")")), li, lifted); goto __fn_cleanup;
+        }
+#line 608 "std/compiler/cgen.a"
         { AValue __old = all_fns; all_fns = a_array_get(ctx, a_string("fns")); a_release(__old); }
-#line 554 "std/compiler/cgen.a"
+#line 609 "std/compiler/cgen.a"
         { AValue __old = is_known_fn; is_known_fn = a_bool(0); a_release(__old); }
-#line 555 "std/compiler/cgen.a"
+#line 610 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_type_of(all_fns), a_string("array")))) {
-#line 555 "std/compiler/cgen.a"
+#line 610 "std/compiler/cgen.a"
             { AValue __old = is_known_fn; is_known_fn = a_contains(all_fns, fname); a_release(__old); }
         }
-#line 556 "std/compiler/cgen.a"
+#line 611 "std/compiler/cgen.a"
         if (a_truthy(a_str_contains(fname, a_string(".")))) {
-#line 556 "std/compiler/cgen.a"
+#line 611 "std/compiler/cgen.a"
             { AValue __old = is_known_fn; is_known_fn = a_bool(1); a_release(__old); }
         }
-#line 558 "std/compiler/cgen.a"
+#line 613 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_and(a_eq(a_array_get(func, a_string("tag")), a_string("Ident")), a_not(is_known_fn)), a_not(fn_cgen__is_intra_module_call(fname, ctx))))) {
-#line 560 "std/compiler/cgen.a"
+#line 615 "std/compiler/cgen.a"
             { AValue __old = call_args; call_args = a_array_new(1, a_to_str(a_len(arg_codes))); a_release(__old); }
-#line 561 "std/compiler/cgen.a"
+#line 616 "std/compiler/cgen.a"
             { AValue __old = call_args; call_args = a_concat_arr(call_args, arg_codes); a_release(__old); }
-#line 562 "std/compiler/cgen.a"
+#line 617 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(a_string("a_closure_call("), a_str_concat(fn_cgen__mangle(fname), a_str_concat(a_string(", "), a_str_concat(a_str_join(call_args, a_string(", ")), a_string(")"))))), li, lifted); goto __fn_cleanup;
         }
-#line 565 "std/compiler/cgen.a"
+#line 620 "std/compiler/cgen.a"
         { AValue __old = mangled; mangled = a_string(""); a_release(__old); }
-#line 566 "std/compiler/cgen.a"
+#line 621 "std/compiler/cgen.a"
         { AValue __old = aliases; aliases = a_array_get(ctx, a_string("import_aliases")); a_release(__old); }
-#line 567 "std/compiler/cgen.a"
+#line 622 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_eq(a_type_of(aliases), a_string("map")), a_map_has(aliases, fname)))) {
-#line 568 "std/compiler/cgen.a"
+#line 623 "std/compiler/cgen.a"
             { AValue __old = mangled; mangled = a_str_concat(a_string("fn_"), fn_cgen__mangle(a_array_get(aliases, fname))); a_release(__old); }
         } else
         if (a_truthy(fn_cgen__is_intra_module_call(fname, ctx))) {
-#line 570 "std/compiler/cgen.a"
+#line 625 "std/compiler/cgen.a"
             { AValue __old = mangled; mangled = a_str_concat(a_string("fn_"), fn_cgen__mangle(fn_cgen__prefixed_name(fname, ctx))); a_release(__old); }
         } else {
-#line 572 "std/compiler/cgen.a"
+#line 627 "std/compiler/cgen.a"
             { AValue __old = mangled; mangled = a_str_concat(a_string("fn_"), fn_cgen__mangle(fname)); a_release(__old); }
         }
-#line 574 "std/compiler/cgen.a"
+#line 629 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(mangled, a_str_concat(a_string("("), a_str_concat(a_str_join(arg_codes, a_string(", ")), a_string(")")))), li, lifted); goto __fn_cleanup;
     }
-#line 577 "std/compiler/cgen.a"
+#line 632 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("FieldAccess")))) {
-#line 578 "std/compiler/cgen.a"
+#line 633 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 579 "std/compiler/cgen.a"
+#line 634 "std/compiler/cgen.a"
         { AValue __old = field; field = a_array_get(node, a_string("field")); a_release(__old); }
-#line 580 "std/compiler/cgen.a"
+#line 635 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_map_get("), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(", a_string(\""), a_str_concat(field, a_string("\"))"))))), a_array_get(er, a_int(1)), a_array_get(er, a_int(2))); goto __fn_cleanup;
     }
-#line 583 "std/compiler/cgen.a"
+#line 638 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Index")))) {
-#line 584 "std/compiler/cgen.a"
+#line 639 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 585 "std/compiler/cgen.a"
+#line 640 "std/compiler/cgen.a"
         { AValue __old = ir; ir = fn_cgen_emit_expr(a_array_get(node, a_string("index")), bm, ctx, a_array_get(er, a_int(1))); a_release(__old); }
-#line 586 "std/compiler/cgen.a"
+#line 641 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_array_get("), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(", "), a_str_concat(a_array_get(ir, a_int(0)), a_string(")"))))), a_array_get(ir, a_int(1)), a_concat_arr(a_array_get(er, a_int(2)), a_array_get(ir, a_int(2)))); goto __fn_cleanup;
     }
-#line 589 "std/compiler/cgen.a"
+#line 644 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Array")))) {
-#line 590 "std/compiler/cgen.a"
+#line 645 "std/compiler/cgen.a"
         { AValue __old = elems; elems = a_array_get(node, a_string("elems")); a_release(__old); }
-#line 591 "std/compiler/cgen.a"
+#line 646 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_len(elems), a_int(0)))) {
-#line 591 "std/compiler/cgen.a"
+#line 646 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_array_new(0)"), li); goto __fn_cleanup;
         }
-#line 594 "std/compiler/cgen.a"
+#line 649 "std/compiler/cgen.a"
         { AValue __old = has_spread; has_spread = a_bool(0); a_release(__old); }
-#line 595 "std/compiler/cgen.a"
+#line 650 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(elems);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 595 "std/compiler/cgen.a"
+#line 650 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("Spread")))) {
-#line 595 "std/compiler/cgen.a"
+#line 650 "std/compiler/cgen.a"
                     { AValue __old = has_spread; has_spread = a_bool(1); a_release(__old); }
                 }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 597 "std/compiler/cgen.a"
+#line 652 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 598 "std/compiler/cgen.a"
+#line 653 "std/compiler/cgen.a"
         if (a_truthy(has_spread)) {
-#line 600 "std/compiler/cgen.a"
+#line 655 "std/compiler/cgen.a"
             { AValue __old = code; code = a_string("a_array_new(0)"); a_release(__old); }
-#line 601 "std/compiler/cgen.a"
+#line 656 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(elems);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue e = {0}, er = {0};
                     e = a_array_get(__iter_arr, a_int(__fi));
-#line 602 "std/compiler/cgen.a"
+#line 657 "std/compiler/cgen.a"
                     if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("Spread")))) {
-#line 603 "std/compiler/cgen.a"
+#line 658 "std/compiler/cgen.a"
                         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(e, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 604 "std/compiler/cgen.a"
+#line 659 "std/compiler/cgen.a"
                         { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 605 "std/compiler/cgen.a"
+#line 660 "std/compiler/cgen.a"
                         { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
-#line 606 "std/compiler/cgen.a"
+#line 661 "std/compiler/cgen.a"
                         { AValue __old = code; code = a_str_concat(a_string("a_concat_arr("), a_str_concat(code, a_str_concat(a_string(", "), a_str_concat(a_array_get(er, a_int(0)), a_string(")"))))); a_release(__old); }
                     } else {
-#line 608 "std/compiler/cgen.a"
+#line 663 "std/compiler/cgen.a"
                         { AValue __old = er; er = fn_cgen_emit_expr(e, bm, ctx, li); a_release(__old); }
-#line 609 "std/compiler/cgen.a"
+#line 664 "std/compiler/cgen.a"
                         { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 610 "std/compiler/cgen.a"
+#line 665 "std/compiler/cgen.a"
                         { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
-#line 611 "std/compiler/cgen.a"
+#line 666 "std/compiler/cgen.a"
                         { AValue __old = code; code = a_str_concat(a_string("a_array_push("), a_str_concat(code, a_str_concat(a_string(", "), a_str_concat(a_array_get(er, a_int(0)), a_string(")"))))); a_release(__old); }
                     }
                     a_release(e);
@@ -8089,68 +8310,68 @@ AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
                 }
                 a_release(__iter_arr);
             }
-#line 614 "std/compiler/cgen.a"
+#line 669 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
         }
-#line 617 "std/compiler/cgen.a"
+#line 672 "std/compiler/cgen.a"
         { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
-#line 618 "std/compiler/cgen.a"
+#line 673 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(elems);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, er = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 619 "std/compiler/cgen.a"
+#line 674 "std/compiler/cgen.a"
                 { AValue __old = er; er = fn_cgen_emit_expr(e, bm, ctx, li); a_release(__old); }
-#line 620 "std/compiler/cgen.a"
+#line 675 "std/compiler/cgen.a"
                 parts = a_array_push_move(parts, a_array_get(er, a_int(0)));
-#line 621 "std/compiler/cgen.a"
+#line 676 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 622 "std/compiler/cgen.a"
+#line 677 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
                 a_release(e);
                 a_release(er);
             }
             a_release(__iter_arr);
         }
-#line 624 "std/compiler/cgen.a"
+#line 679 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_array_new("), a_str_concat(a_to_str(a_len(elems)), a_str_concat(a_string(", "), a_str_concat(a_str_join(parts, a_string(", ")), a_string(")"))))), li, lifted); goto __fn_cleanup;
     }
-#line 627 "std/compiler/cgen.a"
+#line 682 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("MapLiteral")))) {
-#line 628 "std/compiler/cgen.a"
+#line 683 "std/compiler/cgen.a"
         { AValue __old = entries; entries = a_array_get(node, a_string("entries")); a_release(__old); }
-#line 629 "std/compiler/cgen.a"
+#line 684 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_len(entries), a_int(0)))) {
-#line 629 "std/compiler/cgen.a"
+#line 684 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_map_new(0)"), li); goto __fn_cleanup;
         }
-#line 630 "std/compiler/cgen.a"
+#line 685 "std/compiler/cgen.a"
         { AValue __old = parts; parts = a_array_new(0); a_release(__old); }
-#line 631 "std/compiler/cgen.a"
+#line 686 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 632 "std/compiler/cgen.a"
+#line 687 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(entries);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, key_node = {0}, key_str = {0}, vr = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 633 "std/compiler/cgen.a"
+#line 688 "std/compiler/cgen.a"
                 { AValue __old = key_node; key_node = a_array_get(e, a_string("key")); a_release(__old); }
-#line 634 "std/compiler/cgen.a"
+#line 689 "std/compiler/cgen.a"
                 { AValue __old = key_str; key_str = a_string(""); a_release(__old); }
-#line 635 "std/compiler/cgen.a"
+#line 690 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(key_node, a_string("tag")), a_string("String")))) {
-#line 635 "std/compiler/cgen.a"
+#line 690 "std/compiler/cgen.a"
                     { AValue __old = key_str; key_str = a_array_get(key_node, a_string("value")); a_release(__old); }
                 }
-#line 636 "std/compiler/cgen.a"
+#line 691 "std/compiler/cgen.a"
                 { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(e, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 637 "std/compiler/cgen.a"
+#line 692 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(vr, a_int(1)); a_release(__old); }
-#line 638 "std/compiler/cgen.a"
+#line 693 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(vr, a_int(2))); a_release(__old); }
-#line 639 "std/compiler/cgen.a"
+#line 694 "std/compiler/cgen.a"
                 parts = a_array_push_move(parts, a_str_concat(a_string("\""), a_str_concat(fn_cgen__escape_c_str(key_str), a_str_concat(a_string("\", "), a_array_get(vr, a_int(0))))));
                 a_release(e);
                 a_release(key_node);
@@ -8159,35 +8380,35 @@ AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
             }
             a_release(__iter_arr);
         }
-#line 641 "std/compiler/cgen.a"
+#line 696 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_map_new("), a_str_concat(a_to_str(a_len(entries)), a_str_concat(a_string(", "), a_str_concat(a_str_join(parts, a_string(", ")), a_string(")"))))), li, lifted); goto __fn_cleanup;
     }
-#line 644 "std/compiler/cgen.a"
+#line 699 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Interpolation")))) {
-#line 645 "std/compiler/cgen.a"
+#line 700 "std/compiler/cgen.a"
         { AValue __old = parts; parts = a_array_get(node, a_string("parts")); a_release(__old); }
-#line 646 "std/compiler/cgen.a"
+#line 701 "std/compiler/cgen.a"
         { AValue __old = cparts; cparts = a_array_new(0); a_release(__old); }
-#line 647 "std/compiler/cgen.a"
+#line 702 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 648 "std/compiler/cgen.a"
+#line 703 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(parts);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0}, er = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 649 "std/compiler/cgen.a"
+#line 704 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(p, a_string("tag")), a_string("InterpLit")))) {
-#line 650 "std/compiler/cgen.a"
+#line 705 "std/compiler/cgen.a"
                     cparts = a_array_push_move(cparts, a_str_concat(a_string("a_string(\""), a_str_concat(fn_cgen__escape_c_str(a_array_get(p, a_string("value"))), a_string("\")"))));
                 } else {
-#line 652 "std/compiler/cgen.a"
+#line 707 "std/compiler/cgen.a"
                     { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(p, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 653 "std/compiler/cgen.a"
+#line 708 "std/compiler/cgen.a"
                     { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 654 "std/compiler/cgen.a"
+#line 709 "std/compiler/cgen.a"
                     { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
-#line 655 "std/compiler/cgen.a"
+#line 710 "std/compiler/cgen.a"
                     cparts = a_array_push_move(cparts, a_str_concat(a_string("a_to_str("), a_str_concat(a_array_get(er, a_int(0)), a_string(")"))));
                 }
                 a_release(p);
@@ -8195,202 +8416,202 @@ AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
             }
             a_release(__iter_arr);
         }
-#line 658 "std/compiler/cgen.a"
+#line 713 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_concat_n("), a_str_concat(a_to_str(a_len(cparts)), a_str_concat(a_string(", "), a_str_concat(a_str_join(cparts, a_string(", ")), a_string(")"))))), li, lifted); goto __fn_cleanup;
     }
-#line 661 "std/compiler/cgen.a"
+#line 716 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("IfExpr")))) {
-#line 662 "std/compiler/cgen.a"
+#line 717 "std/compiler/cgen.a"
         { AValue __old = cr; cr = fn_cgen_emit_expr(a_array_get(node, a_string("cond")), bm, ctx, li); a_release(__old); }
-#line 663 "std/compiler/cgen.a"
+#line 718 "std/compiler/cgen.a"
         { AValue __old = tr; tr = fn_cgen_emit_expr(a_array_get(node, a_string("then")), bm, ctx, a_array_get(cr, a_int(1))); a_release(__old); }
-#line 664 "std/compiler/cgen.a"
+#line 719 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("else")), bm, ctx, a_array_get(tr, a_int(1))); a_release(__old); }
-#line 665 "std/compiler/cgen.a"
+#line 720 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_concat_arr(a_array_get(cr, a_int(2)), a_concat_arr(a_array_get(tr, a_int(2)), a_array_get(er, a_int(2)))); a_release(__old); }
-#line 666 "std/compiler/cgen.a"
+#line 721 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("(a_truthy("), a_str_concat(a_array_get(cr, a_int(0)), a_str_concat(a_string(") ? "), a_str_concat(a_array_get(tr, a_int(0)), a_str_concat(a_string(" : "), a_str_concat(a_array_get(er, a_int(0)), a_string(")"))))))), a_array_get(er, a_int(1)), lifted); goto __fn_cleanup;
     }
-#line 669 "std/compiler/cgen.a"
+#line 724 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("MatchExpr")))) {
-#line 670 "std/compiler/cgen.a"
+#line 725 "std/compiler/cgen.a"
         __ret = fn_cgen__emit_match_expr(node, bm, ctx, li); goto __fn_cleanup;
     }
-#line 673 "std/compiler/cgen.a"
+#line 728 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("BlockExpr")))) {
-#line 674 "std/compiler/cgen.a"
+#line 729 "std/compiler/cgen.a"
         { AValue __old = stmts; stmts = a_array_get(a_array_get(node, a_string("block")), a_string("stmts")); a_release(__old); }
-#line 675 "std/compiler/cgen.a"
+#line 730 "std/compiler/cgen.a"
         if (a_truthy(a_gt(a_len(stmts), a_int(0)))) {
-#line 676 "std/compiler/cgen.a"
+#line 731 "std/compiler/cgen.a"
             { AValue __old = last; last = a_array_get(stmts, a_sub(a_len(stmts), a_int(1))); a_release(__old); }
-#line 677 "std/compiler/cgen.a"
+#line 732 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(last, a_string("tag")), a_string("ExprStmt")))) {
-#line 678 "std/compiler/cgen.a"
+#line 733 "std/compiler/cgen.a"
                 __ret = fn_cgen_emit_expr(a_array_get(last, a_string("expr")), bm, ctx, li); goto __fn_cleanup;
             }
-#line 680 "std/compiler/cgen.a"
+#line 735 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(last, a_string("tag")), a_string("Return")))) {
-#line 681 "std/compiler/cgen.a"
+#line 736 "std/compiler/cgen.a"
                 if (a_truthy(a_neq(a_type_of(a_array_get(last, a_string("expr"))), a_string("void")))) {
-#line 682 "std/compiler/cgen.a"
+#line 737 "std/compiler/cgen.a"
                     __ret = fn_cgen_emit_expr(a_array_get(last, a_string("expr")), bm, ctx, li); goto __fn_cleanup;
                 }
             }
         }
-#line 686 "std/compiler/cgen.a"
+#line 741 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("a_void()"), li); goto __fn_cleanup;
     }
-#line 690 "std/compiler/cgen.a"
+#line 745 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Pipe")))) {
-#line 691 "std/compiler/cgen.a"
+#line 746 "std/compiler/cgen.a"
         { AValue __old = right; right = a_array_get(node, a_string("right")); a_release(__old); }
-#line 692 "std/compiler/cgen.a"
+#line 747 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(right, a_string("tag")), a_string("Call")))) {
-#line 693 "std/compiler/cgen.a"
+#line 748 "std/compiler/cgen.a"
             { AValue __old = new_args; new_args = a_concat_arr(a_array_new(1, a_array_get(node, a_string("left"))), a_array_get(right, a_string("args"))); a_release(__old); }
-#line 694 "std/compiler/cgen.a"
+#line 749 "std/compiler/cgen.a"
             { AValue __old = new_call; new_call = a_map_new(3, "tag", a_string("Call"), "func", a_array_get(right, a_string("func")), "args", new_args); a_release(__old); }
-#line 695 "std/compiler/cgen.a"
+#line 750 "std/compiler/cgen.a"
             __ret = fn_cgen_emit_expr(new_call, bm, ctx, li); goto __fn_cleanup;
         }
-#line 698 "std/compiler/cgen.a"
+#line 753 "std/compiler/cgen.a"
         { AValue __old = lr; lr = fn_cgen_emit_expr(a_array_get(node, a_string("left")), bm, ctx, li); a_release(__old); }
-#line 699 "std/compiler/cgen.a"
+#line 754 "std/compiler/cgen.a"
         { AValue __old = rr; rr = fn_cgen_emit_expr(a_array_get(node, a_string("right")), bm, ctx, a_array_get(lr, a_int(1))); a_release(__old); }
-#line 700 "std/compiler/cgen.a"
+#line 755 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_concat_arr(a_array_get(lr, a_int(2)), a_array_get(rr, a_int(2))); a_release(__old); }
-#line 701 "std/compiler/cgen.a"
+#line 756 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_closure_call("), a_str_concat(a_array_get(rr, a_int(0)), a_str_concat(a_string(", 1, "), a_str_concat(a_array_get(lr, a_int(0)), a_string(")"))))), a_array_get(rr, a_int(1)), lifted); goto __fn_cleanup;
     }
-#line 705 "std/compiler/cgen.a"
+#line 760 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Lambda")))) {
-#line 706 "std/compiler/cgen.a"
+#line 761 "std/compiler/cgen.a"
         { AValue __old = lambda_name; lambda_name = a_str_concat(a_string("__lambda_"), a_to_str(li)); a_release(__old); }
-#line 707 "std/compiler/cgen.a"
+#line 762 "std/compiler/cgen.a"
         { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
-#line 708 "std/compiler/cgen.a"
+#line 763 "std/compiler/cgen.a"
         { AValue __old = body; body = a_array_get(node, a_string("body")); a_release(__old); }
-#line 711 "std/compiler/cgen.a"
+#line 766 "std/compiler/cgen.a"
         { AValue __old = enclosing_vars; enclosing_vars = a_array_get(ctx, a_string("enclosing_vars")); a_release(__old); }
-#line 712 "std/compiler/cgen.a"
+#line 767 "std/compiler/cgen.a"
         { AValue __old = captures; captures = a_array_new(0); a_release(__old); }
-#line 713 "std/compiler/cgen.a"
+#line 768 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_type_of(enclosing_vars), a_string("array")))) {
-#line 714 "std/compiler/cgen.a"
+#line 769 "std/compiler/cgen.a"
             { AValue __old = captures; captures = fn_cgen__compute_captures(node, enclosing_vars, bm); a_release(__old); }
         }
-#line 718 "std/compiler/cgen.a"
+#line 773 "std/compiler/cgen.a"
         { AValue __old = fn_code; fn_code = a_str_concat(a_string("AValue "), a_str_concat(lambda_name, a_string("(AValue __env, int __argc, AValue* __argv) {"))); a_release(__old); }
-#line 721 "std/compiler/cgen.a"
+#line 776 "std/compiler/cgen.a"
         { AValue __old = ci; ci = a_int(0); a_release(__old); }
-#line 722 "std/compiler/cgen.a"
+#line 777 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(captures);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue cap = {0};
                 cap = a_array_get(__iter_arr, a_int(__fi));
-#line 723 "std/compiler/cgen.a"
+#line 778 "std/compiler/cgen.a"
                 { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(a_string("\n    AValue "), a_str_concat(fn_cgen__mangle(cap), a_str_concat(a_string(" = a_array_get(__env, a_int("), a_str_concat(a_to_str(ci), a_string("));")))))); a_release(__old); }
-#line 724 "std/compiler/cgen.a"
+#line 779 "std/compiler/cgen.a"
                 { AValue __old = ci; ci = a_add(ci, a_int(1)); a_release(__old); }
                 a_release(cap);
             }
             a_release(__iter_arr);
         }
-#line 728 "std/compiler/cgen.a"
+#line 783 "std/compiler/cgen.a"
         { AValue __old = pi; pi = a_int(0); a_release(__old); }
-#line 729 "std/compiler/cgen.a"
+#line 784 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(params);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 734 "std/compiler/cgen.a"
+#line 789 "std/compiler/cgen.a"
                 { AValue __old = fn_code; fn_code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(fn_code, a_string("\n    AValue ")), fn_cgen__mangle(a_array_get(p, a_string("name")))), a_string(" = __argc > ")), a_to_str(pi)), a_string(" ? a_retain(__argv[")), a_to_str(pi)), a_string("]) : a_void();")); a_release(__old); }
-#line 735 "std/compiler/cgen.a"
+#line 790 "std/compiler/cgen.a"
                 { AValue __old = pi; pi = a_add(pi, a_int(1)); a_release(__old); }
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 738 "std/compiler/cgen.a"
+#line 793 "std/compiler/cgen.a"
         { AValue __old = next_li; next_li = a_add(li, a_int(1)); a_release(__old); }
-#line 739 "std/compiler/cgen.a"
+#line 794 "std/compiler/cgen.a"
         { AValue __old = body_lifted; body_lifted = a_array_new(0); a_release(__old); }
-#line 742 "std/compiler/cgen.a"
+#line 797 "std/compiler/cgen.a"
         { AValue __old = lambda_vars; lambda_vars = a_array_new(0); a_release(__old); }
-#line 743 "std/compiler/cgen.a"
+#line 798 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(captures);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue cap = {0};
                 cap = a_array_get(__iter_arr, a_int(__fi));
-#line 743 "std/compiler/cgen.a"
+#line 798 "std/compiler/cgen.a"
                 lambda_vars = a_array_push_move(lambda_vars, cap);
                 a_release(cap);
             }
             a_release(__iter_arr);
         }
-#line 744 "std/compiler/cgen.a"
+#line 799 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(params);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 744 "std/compiler/cgen.a"
+#line 799 "std/compiler/cgen.a"
                 lambda_vars = a_array_push_move(lambda_vars, a_array_get(p, a_string("name")));
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 747 "std/compiler/cgen.a"
+#line 802 "std/compiler/cgen.a"
         { AValue __old = body_tag; body_tag = a_array_get(body, a_string("tag")); a_release(__old); }
-#line 748 "std/compiler/cgen.a"
+#line 803 "std/compiler/cgen.a"
         if (a_truthy(a_eq(body_tag, a_string("BlockExpr")))) {
-#line 749 "std/compiler/cgen.a"
+#line 804 "std/compiler/cgen.a"
             { AValue __old = stmts; stmts = a_array_get(a_array_get(body, a_string("block")), a_string("stmts")); a_release(__old); }
-#line 752 "std/compiler/cgen.a"
+#line 807 "std/compiler/cgen.a"
             { AValue __old = body_vars; body_vars = fn_cgen__collect_vars_in_stmts(stmts); a_release(__old); }
-#line 753 "std/compiler/cgen.a"
+#line 808 "std/compiler/cgen.a"
             { AValue __old = bound; bound = a_array_new(0); a_release(__old); }
-#line 754 "std/compiler/cgen.a"
+#line 809 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(captures);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue cap = {0};
                     cap = a_array_get(__iter_arr, a_int(__fi));
-#line 754 "std/compiler/cgen.a"
+#line 809 "std/compiler/cgen.a"
                     bound = a_array_push_move(bound, fn_cgen__mangle(cap));
                     a_release(cap);
                 }
                 a_release(__iter_arr);
             }
-#line 755 "std/compiler/cgen.a"
+#line 810 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(params);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue p = {0};
                     p = a_array_get(__iter_arr, a_int(__fi));
-#line 755 "std/compiler/cgen.a"
+#line 810 "std/compiler/cgen.a"
                     bound = a_array_push_move(bound, fn_cgen__mangle(a_array_get(p, a_string("name"))));
                     a_release(p);
                 }
                 a_release(__iter_arr);
             }
-#line 756 "std/compiler/cgen.a"
+#line 811 "std/compiler/cgen.a"
             { AValue __old = decl_vars; decl_vars = a_array_new(0); a_release(__old); }
-#line 757 "std/compiler/cgen.a"
+#line 812 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(body_vars);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue v = {0};
                     v = a_array_get(__iter_arr, a_int(__fi));
-#line 758 "std/compiler/cgen.a"
+#line 813 "std/compiler/cgen.a"
                     if (a_truthy(a_not(a_contains(bound, v)))) {
-#line 758 "std/compiler/cgen.a"
+#line 813 "std/compiler/cgen.a"
                         if (a_truthy(a_not(a_contains(decl_vars, v)))) {
-#line 758 "std/compiler/cgen.a"
+#line 813 "std/compiler/cgen.a"
                             decl_vars = a_array_push_move(decl_vars, v);
                         }
                     }
@@ -8398,308 +8619,325 @@ AValue fn_cgen_emit_expr(AValue node, AValue bm, AValue ctx, AValue li) {
                 }
                 a_release(__iter_arr);
             }
-#line 761 "std/compiler/cgen.a"
+#line 816 "std/compiler/cgen.a"
             { AValue __old = body_lets; body_lets = fn_cgen__collect_lets_in_block(a_array_get(body, a_string("block"))); a_release(__old); }
-#line 762 "std/compiler/cgen.a"
+#line 817 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(body_lets);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue bl = {0};
                     bl = a_array_get(__iter_arr, a_int(__fi));
-#line 762 "std/compiler/cgen.a"
+#line 817 "std/compiler/cgen.a"
                     lambda_vars = a_array_push_move(lambda_vars, bl);
                     a_release(bl);
                 }
                 a_release(__iter_arr);
             }
-#line 763 "std/compiler/cgen.a"
+#line 818 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(ctx, a_string("enclosing_vars"), lambda_vars); a_release(__old); }
-#line 765 "std/compiler/cgen.a"
+#line 820 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(decl_vars), a_int(0)))) {
-#line 766 "std/compiler/cgen.a"
+#line 821 "std/compiler/cgen.a"
                 { AValue __old = init_parts; init_parts = a_array_new(0); a_release(__old); }
-#line 767 "std/compiler/cgen.a"
+#line 822 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(decl_vars);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue v = {0};
                         v = a_array_get(__iter_arr, a_int(__fi));
-#line 767 "std/compiler/cgen.a"
+#line 822 "std/compiler/cgen.a"
                         init_parts = a_array_push_move(init_parts, a_str_concat(v, a_string(" = {0}")));
                         a_release(v);
                     }
                     a_release(__iter_arr);
                 }
-#line 768 "std/compiler/cgen.a"
+#line 823 "std/compiler/cgen.a"
                 { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(a_string("\n    AValue "), a_str_concat(a_str_join(init_parts, a_string(", ")), a_string(";")))); a_release(__old); }
             }
-#line 771 "std/compiler/cgen.a"
+#line 826 "std/compiler/cgen.a"
             { AValue __old = lambda_cleanup; lambda_cleanup = a_array_new(0); a_release(__old); }
-#line 772 "std/compiler/cgen.a"
+#line 827 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(captures);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue cap = {0};
                     cap = a_array_get(__iter_arr, a_int(__fi));
-#line 772 "std/compiler/cgen.a"
+#line 827 "std/compiler/cgen.a"
                     lambda_cleanup = a_array_push_move(lambda_cleanup, fn_cgen__mangle(cap));
                     a_release(cap);
                 }
                 a_release(__iter_arr);
             }
-#line 773 "std/compiler/cgen.a"
+#line 828 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(params);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue p = {0};
                     p = a_array_get(__iter_arr, a_int(__fi));
-#line 773 "std/compiler/cgen.a"
+#line 828 "std/compiler/cgen.a"
                     lambda_cleanup = a_array_push_move(lambda_cleanup, fn_cgen__mangle(a_array_get(p, a_string("name"))));
                     a_release(p);
                 }
                 a_release(__iter_arr);
             }
-#line 774 "std/compiler/cgen.a"
+#line 829 "std/compiler/cgen.a"
             { AValue __old = lambda_cleanup; lambda_cleanup = a_concat_arr(lambda_cleanup, decl_vars); a_release(__old); }
-#line 775 "std/compiler/cgen.a"
+#line 830 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(lambda_ctx, a_string("cleanup_vars"), lambda_cleanup); a_release(__old); }
-#line 776 "std/compiler/cgen.a"
+#line 831 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(lambda_ctx, a_string("goto_cleanup"), a_bool(0)); a_release(__old); }
-#line 779 "std/compiler/cgen.a"
+#line 834 "std/compiler/cgen.a"
             { AValue __old = has_return; has_return = a_bool(0); a_release(__old); }
-#line 780 "std/compiler/cgen.a"
+#line 835 "std/compiler/cgen.a"
             { AValue __old = si; si = a_int(0); a_release(__old); }
-#line 781 "std/compiler/cgen.a"
+#line 836 "std/compiler/cgen.a"
             while (a_truthy(a_lt(si, a_len(stmts)))) {
-#line 782 "std/compiler/cgen.a"
+#line 837 "std/compiler/cgen.a"
                 { AValue __old = s; s = a_array_get(stmts, si); a_release(__old); }
-#line 783 "std/compiler/cgen.a"
+#line 838 "std/compiler/cgen.a"
                 { AValue __old = is_last; is_last = a_eq(si, a_sub(a_len(stmts), a_int(1))); a_release(__old); }
-#line 784 "std/compiler/cgen.a"
+#line 839 "std/compiler/cgen.a"
                 if (a_truthy(a_and(is_last, a_eq(a_array_get(s, a_string("tag")), a_string("ExprStmt"))))) {
-#line 785 "std/compiler/cgen.a"
+#line 840 "std/compiler/cgen.a"
                     { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(s, a_string("expr")), bm, lambda_ctx, next_li); a_release(__old); }
-#line 786 "std/compiler/cgen.a"
+#line 841 "std/compiler/cgen.a"
                     { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(lambda_cleanup, a_int(1)); a_release(__old); }
-#line 789 "std/compiler/cgen.a"
+#line 844 "std/compiler/cgen.a"
                     { AValue __old = ret_expr; ret_expr = a_array_get(er, a_int(0)); a_release(__old); }
-#line 790 "std/compiler/cgen.a"
+#line 845 "std/compiler/cgen.a"
                     if (a_truthy(fn_cgen__is_ident(a_array_get(s, a_string("expr"))))) {
-#line 790 "std/compiler/cgen.a"
+#line 845 "std/compiler/cgen.a"
                         { AValue __old = ret_expr; ret_expr = a_add(a_add(a_string("a_retain("), ret_expr), a_string(")")); a_release(__old); }
                     }
-#line 791 "std/compiler/cgen.a"
+#line 846 "std/compiler/cgen.a"
                     { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(a_string("\n    { AValue __ret = "), a_str_concat(ret_expr, a_str_concat(a_string(";"), a_str_concat(cleanup, a_string("\n    return __ret; }")))))); a_release(__old); }
-#line 792 "std/compiler/cgen.a"
+#line 847 "std/compiler/cgen.a"
                     { AValue __old = next_li; next_li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 793 "std/compiler/cgen.a"
+#line 848 "std/compiler/cgen.a"
                     { AValue __old = body_lifted; body_lifted = a_concat_arr(body_lifted, a_array_get(er, a_int(2))); a_release(__old); }
-#line 794 "std/compiler/cgen.a"
+#line 849 "std/compiler/cgen.a"
                     { AValue __old = has_return; has_return = a_bool(1); a_release(__old); }
                 } else {
-#line 796 "std/compiler/cgen.a"
+#line 851 "std/compiler/cgen.a"
                     { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_int(1), bm, lambda_ctx, next_li); a_release(__old); }
-#line 797 "std/compiler/cgen.a"
+#line 852 "std/compiler/cgen.a"
                     { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 798 "std/compiler/cgen.a"
+#line 853 "std/compiler/cgen.a"
                     { AValue __old = next_li; next_li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 799 "std/compiler/cgen.a"
+#line 854 "std/compiler/cgen.a"
                     { AValue __old = body_lifted; body_lifted = a_concat_arr(body_lifted, a_array_get(sr, a_int(2))); a_release(__old); }
-#line 800 "std/compiler/cgen.a"
+#line 855 "std/compiler/cgen.a"
                     if (a_truthy(a_and(is_last, a_eq(a_array_get(s, a_string("tag")), a_string("Return"))))) {
-#line 800 "std/compiler/cgen.a"
+#line 855 "std/compiler/cgen.a"
                         { AValue __old = has_return; has_return = a_bool(1); a_release(__old); }
                     }
                 }
-#line 802 "std/compiler/cgen.a"
+#line 857 "std/compiler/cgen.a"
                 { AValue __old = si; si = a_add(si, a_int(1)); a_release(__old); }
             }
-#line 804 "std/compiler/cgen.a"
+#line 859 "std/compiler/cgen.a"
             if (a_truthy(a_not(has_return))) {
-#line 805 "std/compiler/cgen.a"
+#line 860 "std/compiler/cgen.a"
                 { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(lambda_cleanup, a_int(1)); a_release(__old); }
-#line 806 "std/compiler/cgen.a"
+#line 861 "std/compiler/cgen.a"
                 { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(cleanup, a_string("\n    return a_void();"))); a_release(__old); }
             }
         } else {
-#line 810 "std/compiler/cgen.a"
+#line 865 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(ctx, a_string("enclosing_vars"), lambda_vars); a_release(__old); }
-#line 811 "std/compiler/cgen.a"
+#line 866 "std/compiler/cgen.a"
             { AValue __old = lambda_cleanup; lambda_cleanup = a_array_new(0); a_release(__old); }
-#line 812 "std/compiler/cgen.a"
+#line 867 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(captures);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue cap = {0};
                     cap = a_array_get(__iter_arr, a_int(__fi));
-#line 812 "std/compiler/cgen.a"
+#line 867 "std/compiler/cgen.a"
                     lambda_cleanup = a_array_push_move(lambda_cleanup, fn_cgen__mangle(cap));
                     a_release(cap);
                 }
                 a_release(__iter_arr);
             }
-#line 813 "std/compiler/cgen.a"
+#line 868 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(params);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue p = {0};
                     p = a_array_get(__iter_arr, a_int(__fi));
-#line 813 "std/compiler/cgen.a"
+#line 868 "std/compiler/cgen.a"
                     lambda_cleanup = a_array_push_move(lambda_cleanup, fn_cgen__mangle(a_array_get(p, a_string("name"))));
                     a_release(p);
                 }
                 a_release(__iter_arr);
             }
-#line 814 "std/compiler/cgen.a"
+#line 869 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(lambda_ctx, a_string("cleanup_vars"), lambda_cleanup); a_release(__old); }
-#line 815 "std/compiler/cgen.a"
+#line 870 "std/compiler/cgen.a"
             { AValue __old = lambda_ctx; lambda_ctx = a_map_set(lambda_ctx, a_string("goto_cleanup"), a_bool(0)); a_release(__old); }
-#line 816 "std/compiler/cgen.a"
+#line 871 "std/compiler/cgen.a"
             { AValue __old = er; er = fn_cgen_emit_expr(body, bm, lambda_ctx, next_li); a_release(__old); }
-#line 817 "std/compiler/cgen.a"
+#line 872 "std/compiler/cgen.a"
             { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(lambda_cleanup, a_int(1)); a_release(__old); }
-#line 818 "std/compiler/cgen.a"
+#line 873 "std/compiler/cgen.a"
             { AValue __old = ret_expr; ret_expr = a_array_get(er, a_int(0)); a_release(__old); }
-#line 819 "std/compiler/cgen.a"
+#line 874 "std/compiler/cgen.a"
             if (a_truthy(fn_cgen__is_ident(body))) {
-#line 819 "std/compiler/cgen.a"
+#line 874 "std/compiler/cgen.a"
                 { AValue __old = ret_expr; ret_expr = a_add(a_add(a_string("a_retain("), ret_expr), a_string(")")); a_release(__old); }
             }
-#line 820 "std/compiler/cgen.a"
+#line 875 "std/compiler/cgen.a"
             { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_str_concat(a_string("\n    { AValue __ret = "), a_str_concat(ret_expr, a_str_concat(a_string(";"), a_str_concat(cleanup, a_string("\n    return __ret; }")))))); a_release(__old); }
-#line 821 "std/compiler/cgen.a"
+#line 876 "std/compiler/cgen.a"
             { AValue __old = next_li; next_li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 822 "std/compiler/cgen.a"
+#line 877 "std/compiler/cgen.a"
             { AValue __old = body_lifted; body_lifted = a_concat_arr(body_lifted, a_array_get(er, a_int(2))); a_release(__old); }
         }
-#line 824 "std/compiler/cgen.a"
+#line 879 "std/compiler/cgen.a"
         { AValue __old = fn_code; fn_code = a_str_concat(fn_code, a_string("\n}\n")); a_release(__old); }
-#line 827 "std/compiler/cgen.a"
+#line 882 "std/compiler/cgen.a"
         { AValue __old = env_code; env_code = a_string("a_void()"); a_release(__old); }
-#line 828 "std/compiler/cgen.a"
+#line 883 "std/compiler/cgen.a"
         if (a_truthy(a_gt(a_len(captures), a_int(0)))) {
-#line 829 "std/compiler/cgen.a"
+#line 884 "std/compiler/cgen.a"
             { AValue __old = cap_parts; cap_parts = a_array_new(0); a_release(__old); }
-#line 830 "std/compiler/cgen.a"
+#line 885 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(captures);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue cap = {0};
                     cap = a_array_get(__iter_arr, a_int(__fi));
-#line 830 "std/compiler/cgen.a"
+#line 885 "std/compiler/cgen.a"
                     cap_parts = a_array_push_move(cap_parts, a_str_concat(a_string("a_retain("), a_str_concat(fn_cgen__mangle(cap), a_string(")"))));
                     a_release(cap);
                 }
                 a_release(__iter_arr);
             }
-#line 831 "std/compiler/cgen.a"
+#line 886 "std/compiler/cgen.a"
             { AValue __old = env_code; env_code = a_str_concat(a_string("a_array_new("), a_str_concat(a_to_str(a_len(captures)), a_str_concat(a_string(", "), a_str_concat(a_str_join(cap_parts, a_string(", ")), a_string(")"))))); a_release(__old); }
         }
-#line 833 "std/compiler/cgen.a"
+#line 888 "std/compiler/cgen.a"
         { AValue __old = closure_code; closure_code = a_str_concat(a_string("a_closure("), a_str_concat(lambda_name, a_str_concat(a_string(", "), a_str_concat(env_code, a_string(")"))))); a_release(__old); }
-#line 835 "std/compiler/cgen.a"
+#line 890 "std/compiler/cgen.a"
         { AValue __old = all_lifted; all_lifted = a_concat_arr(body_lifted, a_array_new(1, fn_code)); a_release(__old); }
-#line 836 "std/compiler/cgen.a"
+#line 891 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(closure_code, next_li, all_lifted); goto __fn_cleanup;
     }
-#line 840 "std/compiler/cgen.a"
+#line 897 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Try")))) {
-#line 841 "std/compiler/cgen.a"
+#line 898 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 842 "std/compiler/cgen.a"
-        __ret = fn_cgen__RL(a_str_concat(a_string("a_try_unwrap("), a_str_concat(a_array_get(er, a_int(0)), a_string(")"))), a_array_get(er, a_int(1)), a_array_get(er, a_int(2))); goto __fn_cleanup;
+#line 899 "std/compiler/cgen.a"
+        { AValue __old = use_goto; use_goto = a_and(a_eq(a_type_of(a_array_get(ctx, a_string("goto_cleanup"))), a_string("bool")), a_array_get(ctx, a_string("goto_cleanup"))); a_release(__old); }
+#line 900 "std/compiler/cgen.a"
+        { AValue __old = cleanup_vars; cleanup_vars = a_array_get(ctx, a_string("cleanup_vars")); a_release(__old); }
+#line 901 "std/compiler/cgen.a"
+        { AValue __old = on_err; on_err = a_string("return __t;"); a_release(__old); }
+#line 902 "std/compiler/cgen.a"
+        if (a_truthy(use_goto)) {
+#line 903 "std/compiler/cgen.a"
+            { AValue __old = on_err; on_err = a_string("__ret = __t; goto __fn_cleanup;"); a_release(__old); }
+        } else
+        if (a_truthy(a_and(a_eq(a_type_of(cleanup_vars), a_string("array")), a_gt(a_len(cleanup_vars), a_int(0))))) {
+#line 905 "std/compiler/cgen.a"
+            { AValue __old = on_err; on_err = a_add(a_add(a_string("{"), fn_cgen__emit_cleanup(cleanup_vars, a_int(0))), a_string(" return __t; }")); a_release(__old); }
+        }
+#line 907 "std/compiler/cgen.a"
+        { AValue __old = code; code = a_add(a_add(a_add(a_add(a_string("({ AValue __t = "), a_array_get(er, a_int(0))), a_string("; if (a_is_err_raw(__t)) { if (a_try_depth > 0) a_try_unwrap(__t); ")), on_err), a_string(" } AValue __v = a_unwrap(__t); a_release(__t); __v; })")); a_release(__old); }
+#line 908 "std/compiler/cgen.a"
+        __ret = fn_cgen__RL(code, a_array_get(er, a_int(1)), a_array_get(er, a_int(2))); goto __fn_cleanup;
     }
-#line 846 "std/compiler/cgen.a"
+#line 912 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("TryBlock")))) {
-#line 854 "std/compiler/cgen.a"
+#line 920 "std/compiler/cgen.a"
         { AValue __old = block; block = a_array_get(node, a_string("block")); a_release(__old); }
-#line 855 "std/compiler/cgen.a"
+#line 921 "std/compiler/cgen.a"
         { AValue __old = stmts; stmts = a_array_get(block, a_string("stmts")); a_release(__old); }
-#line 856 "std/compiler/cgen.a"
+#line 922 "std/compiler/cgen.a"
         { AValue __old = nl; nl = fn_cgen__newline_char(); a_release(__old); }
-#line 857 "std/compiler/cgen.a"
+#line 923 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(a_string("({"), nl); a_release(__old); }
-#line 858 "std/compiler/cgen.a"
+#line 924 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue __try_result;"), nl)); a_release(__old); }
-#line 860 "std/compiler/cgen.a"
+#line 926 "std/compiler/cgen.a"
         { AValue __old = try_vars; try_vars = fn_cgen__collect_vars_in_stmts(stmts); a_release(__old); }
-#line 861 "std/compiler/cgen.a"
+#line 927 "std/compiler/cgen.a"
         if (a_truthy(a_gt(a_len(try_vars), a_int(0)))) {
-#line 862 "std/compiler/cgen.a"
+#line 928 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue "), a_str_concat(a_str_join(try_vars, a_string(", ")), a_str_concat(a_string(";"), nl)))); a_release(__old); }
         }
-#line 864 "std/compiler/cgen.a"
+#line 930 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        a_try_depth++;"), nl)); a_release(__old); }
-#line 865 "std/compiler/cgen.a"
+#line 931 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        if (setjmp(a_try_stack[a_try_depth - 1]) == 0) {"), nl)); a_release(__old); }
-#line 867 "std/compiler/cgen.a"
+#line 933 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 868 "std/compiler/cgen.a"
+#line 934 "std/compiler/cgen.a"
         { AValue __old = nstmts; nstmts = a_len(stmts); a_release(__old); }
-#line 869 "std/compiler/cgen.a"
+#line 935 "std/compiler/cgen.a"
         { AValue __old = has_tail; has_tail = a_and(a_gt(nstmts, a_int(0)), a_eq(a_array_get(a_array_get(stmts, a_sub(nstmts, a_int(1))), a_string("tag")), a_string("ExprStmt"))); a_release(__old); }
-#line 870 "std/compiler/cgen.a"
+#line 936 "std/compiler/cgen.a"
         if (a_truthy(has_tail)) {
-#line 871 "std/compiler/cgen.a"
+#line 937 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue __try_tail = a_void();"), nl)); a_release(__old); }
         }
-#line 873 "std/compiler/cgen.a"
+#line 939 "std/compiler/cgen.a"
         { AValue __old = si; si = a_int(0); a_release(__old); }
-#line 874 "std/compiler/cgen.a"
+#line 940 "std/compiler/cgen.a"
         while (a_truthy(a_lt(si, nstmts))) {
-#line 875 "std/compiler/cgen.a"
+#line 941 "std/compiler/cgen.a"
             { AValue __old = s; s = a_array_get(stmts, si); a_release(__old); }
-#line 876 "std/compiler/cgen.a"
+#line 942 "std/compiler/cgen.a"
             { AValue __old = is_last; is_last = a_eq(si, a_sub(nstmts, a_int(1))); a_release(__old); }
-#line 877 "std/compiler/cgen.a"
+#line 943 "std/compiler/cgen.a"
             if (a_truthy(a_and(is_last, has_tail))) {
-#line 878 "std/compiler/cgen.a"
+#line 944 "std/compiler/cgen.a"
                 { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(s, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 879 "std/compiler/cgen.a"
+#line 945 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __try_tail = "), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(";"), nl)))); a_release(__old); }
-#line 880 "std/compiler/cgen.a"
+#line 946 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 881 "std/compiler/cgen.a"
+#line 947 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
             } else {
-#line 883 "std/compiler/cgen.a"
+#line 949 "std/compiler/cgen.a"
                 { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_int(3), bm, ctx, li); a_release(__old); }
-#line 884 "std/compiler/cgen.a"
+#line 950 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_array_get(sr, a_int(0)), nl)); a_release(__old); }
-#line 885 "std/compiler/cgen.a"
+#line 951 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 886 "std/compiler/cgen.a"
+#line 952 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
             }
-#line 888 "std/compiler/cgen.a"
+#line 954 "std/compiler/cgen.a"
             { AValue __old = si; si = a_add(si, a_int(1)); a_release(__old); }
         }
-#line 891 "std/compiler/cgen.a"
+#line 957 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            a_try_depth--;"), nl)); a_release(__old); }
-#line 892 "std/compiler/cgen.a"
+#line 958 "std/compiler/cgen.a"
         if (a_truthy(has_tail)) {
-#line 893 "std/compiler/cgen.a"
+#line 959 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __try_result = a_ok(__try_tail);"), nl)); a_release(__old); }
         } else {
-#line 895 "std/compiler/cgen.a"
+#line 961 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __try_result = a_ok(a_void());"), nl)); a_release(__old); }
         }
-#line 897 "std/compiler/cgen.a"
+#line 963 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        } else {"), nl)); a_release(__old); }
-#line 898 "std/compiler/cgen.a"
+#line 964 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            a_try_depth--;"), nl)); a_release(__old); }
-#line 899 "std/compiler/cgen.a"
+#line 965 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __try_result = a_err(a_try_err);"), nl)); a_release(__old); }
-#line 900 "std/compiler/cgen.a"
+#line 966 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        }"), nl)); a_release(__old); }
-#line 901 "std/compiler/cgen.a"
+#line 967 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        __try_result;"), nl)); a_release(__old); }
-#line 902 "std/compiler/cgen.a"
+#line 968 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_string("    })")); a_release(__old); }
-#line 904 "std/compiler/cgen.a"
+#line 970 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
     }
-#line 907 "std/compiler/cgen.a"
+#line 973 "std/compiler/cgen.a"
     __ret = fn_cgen__R(a_str_concat(a_string("/* unhandled expr: "), a_str_concat(tag, a_string(" */a_void()"))), li); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -8724,6 +8962,10 @@ __fn_cleanup:
     a_release(ar);
     a_release(arg_codes);
     a_release(cfn);
+    a_release(mins);
+    a_release(full);
+    a_release(var_arity);
+    a_release(vargs);
     a_release(all_fns);
     a_release(is_known_fn);
     a_release(mangled);
@@ -8775,6 +9017,9 @@ __fn_cleanup:
     a_release(cap_parts);
     a_release(closure_code);
     a_release(all_lifted);
+    a_release(use_goto);
+    a_release(cleanup_vars);
+    a_release(on_err);
     a_release(block);
     a_release(nl);
     a_release(try_vars);
@@ -8791,29 +9036,29 @@ AValue fn_cgen__dotted_path(AValue e) {
     AValue base = {0};
     AValue __ret = a_void();
     e = a_retain(e);
-#line 912 "std/compiler/cgen.a"
+#line 978 "std/compiler/cgen.a"
     if (a_truthy(a_neq(a_type_of(e), a_string("map")))) {
-#line 912 "std/compiler/cgen.a"
+#line 978 "std/compiler/cgen.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 913 "std/compiler/cgen.a"
+#line 979 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("Ident")))) {
-#line 913 "std/compiler/cgen.a"
+#line 979 "std/compiler/cgen.a"
         __ret = a_array_get(e, a_string("name")); goto __fn_cleanup;
     }
-#line 914 "std/compiler/cgen.a"
+#line 980 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("FieldAccess")))) {
-#line 915 "std/compiler/cgen.a"
+#line 981 "std/compiler/cgen.a"
         { AValue __old = base; base = fn_cgen__dotted_path(a_array_get(e, a_string("expr"))); a_release(__old); }
-#line 916 "std/compiler/cgen.a"
+#line 982 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_len(base), a_int(0)))) {
-#line 916 "std/compiler/cgen.a"
+#line 982 "std/compiler/cgen.a"
             __ret = a_string(""); goto __fn_cleanup;
         }
-#line 917 "std/compiler/cgen.a"
+#line 983 "std/compiler/cgen.a"
         __ret = a_add(a_add(base, a_string(".")), a_array_get(e, a_string("field"))); goto __fn_cleanup;
     }
-#line 919 "std/compiler/cgen.a"
+#line 985 "std/compiler/cgen.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(base);
@@ -8825,16 +9070,16 @@ AValue fn_cgen__last_two_segments(AValue dotted) {
     AValue parts = {0}, n = {0};
     AValue __ret = a_void();
     dotted = a_retain(dotted);
-#line 923 "std/compiler/cgen.a"
+#line 989 "std/compiler/cgen.a"
     { AValue __old = parts; parts = a_str_split(dotted, a_string(".")); a_release(__old); }
-#line 924 "std/compiler/cgen.a"
+#line 990 "std/compiler/cgen.a"
     { AValue __old = n; n = a_len(parts); a_release(__old); }
-#line 925 "std/compiler/cgen.a"
+#line 991 "std/compiler/cgen.a"
     if (a_truthy(a_lt(n, a_int(2)))) {
-#line 925 "std/compiler/cgen.a"
+#line 991 "std/compiler/cgen.a"
         __ret = a_retain(dotted); goto __fn_cleanup;
     }
-#line 926 "std/compiler/cgen.a"
+#line 992 "std/compiler/cgen.a"
     __ret = a_add(a_add(a_array_get(parts, a_sub(n, a_int(2))), a_string(".")), a_array_get(parts, a_sub(n, a_int(1)))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(parts);
@@ -8849,24 +9094,24 @@ AValue fn_cgen__compile_error(AValue node, AValue ctx, AValue msg) {
     node = a_retain(node);
     ctx = a_retain(ctx);
     msg = a_retain(msg);
-#line 932 "std/compiler/cgen.a"
+#line 998 "std/compiler/cgen.a"
     { AValue __old = loc; loc = a_string(""); a_release(__old); }
-#line 933 "std/compiler/cgen.a"
+#line 999 "std/compiler/cgen.a"
     if (a_truthy(a_and(a_eq(a_type_of(ctx), a_string("map")), a_map_has(ctx, a_string("file"))))) {
-#line 933 "std/compiler/cgen.a"
+#line 999 "std/compiler/cgen.a"
         { AValue __old = loc; loc = a_array_get(ctx, a_string("file")); a_release(__old); }
     }
-#line 934 "std/compiler/cgen.a"
+#line 1000 "std/compiler/cgen.a"
     if (a_truthy(a_and(a_and(a_eq(a_type_of(node), a_string("map")), a_map_has(node, a_string("line"))), a_gt(a_array_get(node, a_string("line")), a_int(0))))) {
-#line 935 "std/compiler/cgen.a"
+#line 1001 "std/compiler/cgen.a"
         { AValue __old = loc; loc = a_add(a_add(a_add(a_add(loc, a_string(":")), a_to_str(a_array_get(node, a_string("line")))), a_string(":")), a_to_str(a_array_get(node, a_string("col")))); a_release(__old); }
     }
-#line 937 "std/compiler/cgen.a"
+#line 1003 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(loc), a_int(0)))) {
-#line 937 "std/compiler/cgen.a"
+#line 1003 "std/compiler/cgen.a"
         (a_fail(a_add(a_string("error: "), msg)), a_void());
     }
-#line 938 "std/compiler/cgen.a"
+#line 1004 "std/compiler/cgen.a"
     (a_fail(a_add(a_add(loc, a_string(": error: ")), msg)), a_void());
 __fn_cleanup:
     a_release(loc);
@@ -8880,22 +9125,22 @@ AValue fn_cgen__resolve_call_name(AValue func) {
     AValue obj = {0};
     AValue __ret = a_void();
     func = a_retain(func);
-#line 942 "std/compiler/cgen.a"
+#line 1008 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_array_get(func, a_string("tag")), a_string("Ident")))) {
-#line 942 "std/compiler/cgen.a"
+#line 1008 "std/compiler/cgen.a"
         __ret = a_array_get(func, a_string("name")); goto __fn_cleanup;
     }
-#line 943 "std/compiler/cgen.a"
+#line 1009 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_array_get(func, a_string("tag")), a_string("FieldAccess")))) {
-#line 944 "std/compiler/cgen.a"
+#line 1010 "std/compiler/cgen.a"
         { AValue __old = obj; obj = a_array_get(func, a_string("expr")); a_release(__old); }
-#line 945 "std/compiler/cgen.a"
+#line 1011 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(obj, a_string("tag")), a_string("Ident")))) {
-#line 946 "std/compiler/cgen.a"
+#line 1012 "std/compiler/cgen.a"
             __ret = a_str_concat(a_array_get(obj, a_string("name")), a_str_concat(a_string("."), a_array_get(func, a_string("field")))); goto __fn_cleanup;
         }
     }
-#line 949 "std/compiler/cgen.a"
+#line 1015 "std/compiler/cgen.a"
     __ret = a_string("__unknown__"); goto __fn_cleanup;
 __fn_cleanup:
     a_release(obj);
@@ -8904,117 +9149,168 @@ __fn_cleanup:
 }
 
 AValue fn_cgen__emit_pat_cond(AValue pat, AValue target, AValue bm, AValue ctx, AValue li) {
-    AValue tag = {0}, val = {0}, vr = {0}, name = {0}, elems = {0}, has_rest = {0}, fixed_count = {0}, cond = {0}, idx = {0}, lifted = {0}, sub = {0}, elem_var = {0}, sc = {0}, entries = {0}, key = {0}, val_expr = {0};
+    AValue tag = {0}, val = {0}, vr = {0}, name = {0}, args = {0}, cond = {0}, sc = {0}, lifted = {0}, i = {0}, elems = {0}, has_rest = {0}, fixed_count = {0}, idx = {0}, sub = {0}, elem_var = {0}, entries = {0}, key = {0}, val_expr = {0};
     AValue __ret = a_void();
     pat = a_retain(pat);
     target = a_retain(target);
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 957 "std/compiler/cgen.a"
+#line 1023 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
-#line 958 "std/compiler/cgen.a"
+#line 1024 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatWildcard")))) {
-#line 958 "std/compiler/cgen.a"
+#line 1024 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("1"), li); goto __fn_cleanup;
     }
-#line 959 "std/compiler/cgen.a"
+#line 1025 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatIdent")))) {
-#line 959 "std/compiler/cgen.a"
+#line 1027 "std/compiler/cgen.a"
+        if (a_truthy(a_eq(fn_cgen__variant_arity(ctx, a_array_get(pat, a_string("name"))), a_int(0)))) {
+#line 1027 "std/compiler/cgen.a"
+            __ret = fn_cgen__R(a_add(a_add(a_add(a_add(a_string("a_is_variant("), target), a_string(", \"")), a_array_get(pat, a_string("name"))), a_string("\")")), li); goto __fn_cleanup;
+        }
+#line 1028 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("1"), li); goto __fn_cleanup;
     }
-#line 961 "std/compiler/cgen.a"
+#line 1031 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatLiteral")))) {
-#line 962 "std/compiler/cgen.a"
+#line 1032 "std/compiler/cgen.a"
         { AValue __old = val; val = a_array_get(pat, a_string("value")); a_release(__old); }
-#line 963 "std/compiler/cgen.a"
+#line 1033 "std/compiler/cgen.a"
         { AValue __old = vr; vr = fn_cgen_emit_expr(val, bm, ctx, li); a_release(__old); }
-#line 964 "std/compiler/cgen.a"
+#line 1034 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(a_string("a_truthy(a_eq("), a_str_concat(target, a_str_concat(a_string(", "), a_str_concat(a_array_get(vr, a_int(0)), a_string("))"))))), a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
     }
-#line 967 "std/compiler/cgen.a"
+#line 1037 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatConstructor")))) {
-#line 968 "std/compiler/cgen.a"
+#line 1038 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(pat, a_string("name")); a_release(__old); }
-#line 969 "std/compiler/cgen.a"
-        if (a_truthy(a_eq(name, a_string("Ok")))) {
-#line 969 "std/compiler/cgen.a"
-            __ret = fn_cgen__R(a_str_concat(a_string("a_is_ok_raw("), a_str_concat(target, a_string(")"))), li); goto __fn_cleanup;
+#line 1039 "std/compiler/cgen.a"
+        { AValue __old = args; args = a_array_get(pat, a_string("args")); a_release(__old); }
+#line 1040 "std/compiler/cgen.a"
+        if (a_truthy(a_or(a_eq(name, a_string("Ok")), a_eq(name, a_string("Err"))))) {
+#line 1041 "std/compiler/cgen.a"
+            { AValue __old = cond; cond = a_add(a_add(a_string("a_is_err_raw("), target), a_string(")")); a_release(__old); }
+#line 1042 "std/compiler/cgen.a"
+            if (a_truthy(a_eq(name, a_string("Ok")))) {
+#line 1042 "std/compiler/cgen.a"
+                { AValue __old = cond; cond = a_add(a_add(a_string("a_is_ok_raw("), target), a_string(")")); a_release(__old); }
+            }
+#line 1043 "std/compiler/cgen.a"
+            if (a_truthy(a_and(a_and(a_gt(a_len(args), a_int(0)), a_neq(a_array_get(a_array_get(args, a_int(0)), a_string("tag")), a_string("PatIdent"))), a_neq(a_array_get(a_array_get(args, a_int(0)), a_string("tag")), a_string("PatWildcard"))))) {
+#line 1044 "std/compiler/cgen.a"
+                { AValue __old = sc; sc = fn_cgen__emit_pat_cond(a_array_get(args, a_int(0)), a_add(a_add(a_string("a_unwrap_unsafe("), target), a_string(")")), bm, ctx, li); a_release(__old); }
+#line 1045 "std/compiler/cgen.a"
+                __ret = fn_cgen__RL(a_add(a_add(cond, a_string(" && ")), a_array_get(sc, a_int(0))), a_array_get(sc, a_int(1)), a_array_get(sc, a_int(2))); goto __fn_cleanup;
+            }
+#line 1047 "std/compiler/cgen.a"
+            __ret = fn_cgen__R(cond, li); goto __fn_cleanup;
         }
-#line 970 "std/compiler/cgen.a"
-        if (a_truthy(a_eq(name, a_string("Err")))) {
-#line 970 "std/compiler/cgen.a"
-            __ret = fn_cgen__R(a_str_concat(a_string("a_is_err_raw("), a_str_concat(target, a_string(")"))), li); goto __fn_cleanup;
+#line 1049 "std/compiler/cgen.a"
+        if (a_truthy(a_lt(fn_cgen__variant_arity(ctx, name), a_int(0)))) {
+#line 1050 "std/compiler/cgen.a"
+            fn_cgen__compile_error(pat, ctx, a_add(a_add(a_string("unknown constructor "), name), a_string(" in pattern")));
         }
-#line 971 "std/compiler/cgen.a"
-        __ret = fn_cgen__R(a_string("0 /* unknown constructor */"), li); goto __fn_cleanup;
+#line 1052 "std/compiler/cgen.a"
+        { AValue __old = cond; cond = a_add(a_add(a_add(a_add(a_string("a_is_variant("), target), a_string(", \"")), name), a_string("\")")); a_release(__old); }
+#line 1053 "std/compiler/cgen.a"
+        { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
+#line 1054 "std/compiler/cgen.a"
+        { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 1055 "std/compiler/cgen.a"
+        {
+            AValue __iter_arr = a_iterable(args);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue a = {0}, sc = {0};
+                a = a_array_get(__iter_arr, a_int(__fi));
+#line 1056 "std/compiler/cgen.a"
+                if (a_truthy(a_and(a_neq(a_array_get(a, a_string("tag")), a_string("PatIdent")), a_neq(a_array_get(a, a_string("tag")), a_string("PatWildcard"))))) {
+#line 1057 "std/compiler/cgen.a"
+                    { AValue __old = sc; sc = fn_cgen__emit_pat_cond(a, a_add(a_add(a_add(a_add(a_string("a_variant_arg("), target), a_string(", ")), a_to_str(i)), a_string(")")), bm, ctx, li); a_release(__old); }
+#line 1058 "std/compiler/cgen.a"
+                    { AValue __old = li; li = a_array_get(sc, a_int(1)); a_release(__old); }
+#line 1059 "std/compiler/cgen.a"
+                    { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sc, a_int(2))); a_release(__old); }
+#line 1060 "std/compiler/cgen.a"
+                    { AValue __old = cond; cond = a_add(a_add(cond, a_string(" && ")), a_array_get(sc, a_int(0))); a_release(__old); }
+                }
+#line 1062 "std/compiler/cgen.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                a_release(a);
+                a_release(sc);
+            }
+            a_release(__iter_arr);
+        }
+#line 1064 "std/compiler/cgen.a"
+        __ret = fn_cgen__RL(cond, li, lifted); goto __fn_cleanup;
     }
-#line 974 "std/compiler/cgen.a"
+#line 1067 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatArray")))) {
-#line 975 "std/compiler/cgen.a"
+#line 1068 "std/compiler/cgen.a"
         { AValue __old = elems; elems = a_array_get(pat, a_string("elems")); a_release(__old); }
-#line 976 "std/compiler/cgen.a"
+#line 1069 "std/compiler/cgen.a"
         { AValue __old = has_rest; has_rest = a_bool(0); a_release(__old); }
-#line 977 "std/compiler/cgen.a"
+#line 1070 "std/compiler/cgen.a"
         { AValue __old = fixed_count; fixed_count = a_int(0); a_release(__old); }
-#line 978 "std/compiler/cgen.a"
+#line 1071 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(elems);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 979 "std/compiler/cgen.a"
+#line 1072 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatRest")))) {
-#line 979 "std/compiler/cgen.a"
+#line 1072 "std/compiler/cgen.a"
                     { AValue __old = has_rest; has_rest = a_bool(1); a_release(__old); }
                 }
-#line 980 "std/compiler/cgen.a"
+#line 1073 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatElem")))) {
-#line 980 "std/compiler/cgen.a"
+#line 1073 "std/compiler/cgen.a"
                     { AValue __old = fixed_count; fixed_count = a_add(fixed_count, a_int(1)); a_release(__old); }
                 }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 982 "std/compiler/cgen.a"
+#line 1075 "std/compiler/cgen.a"
         { AValue __old = cond; cond = a_string(""); a_release(__old); }
-#line 983 "std/compiler/cgen.a"
+#line 1076 "std/compiler/cgen.a"
         if (a_truthy(has_rest)) {
-#line 984 "std/compiler/cgen.a"
+#line 1077 "std/compiler/cgen.a"
             { AValue __old = cond; cond = a_str_concat(a_string("a_is_array_min_len("), a_str_concat(target, a_str_concat(a_string(", "), a_str_concat(a_to_str(fixed_count), a_string(")"))))); a_release(__old); }
         } else {
-#line 986 "std/compiler/cgen.a"
+#line 1079 "std/compiler/cgen.a"
             { AValue __old = cond; cond = a_str_concat(a_string("a_is_array_of_len("), a_str_concat(target, a_str_concat(a_string(", "), a_str_concat(a_to_str(fixed_count), a_string(")"))))); a_release(__old); }
         }
-#line 989 "std/compiler/cgen.a"
+#line 1082 "std/compiler/cgen.a"
         { AValue __old = idx; idx = a_int(0); a_release(__old); }
-#line 990 "std/compiler/cgen.a"
+#line 1083 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 991 "std/compiler/cgen.a"
+#line 1084 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(elems);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, sub = {0}, elem_var = {0}, sc = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 992 "std/compiler/cgen.a"
+#line 1085 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatElem")))) {
-#line 993 "std/compiler/cgen.a"
+#line 1086 "std/compiler/cgen.a"
                     { AValue __old = sub; sub = a_array_get(e, a_string("pattern")); a_release(__old); }
-#line 994 "std/compiler/cgen.a"
+#line 1087 "std/compiler/cgen.a"
                     if (a_truthy(a_and(a_neq(a_array_get(sub, a_string("tag")), a_string("PatIdent")), a_neq(a_array_get(sub, a_string("tag")), a_string("PatWildcard"))))) {
-#line 995 "std/compiler/cgen.a"
+#line 1088 "std/compiler/cgen.a"
                         { AValue __old = elem_var; elem_var = a_str_concat(target, a_str_concat(a_string(".aval->items["), a_str_concat(a_to_str(idx), a_string("]")))); a_release(__old); }
-#line 996 "std/compiler/cgen.a"
+#line 1089 "std/compiler/cgen.a"
                         { AValue __old = sc; sc = fn_cgen__emit_pat_cond(sub, elem_var, bm, ctx, li); a_release(__old); }
-#line 997 "std/compiler/cgen.a"
+#line 1090 "std/compiler/cgen.a"
                         { AValue __old = li; li = a_array_get(sc, a_int(1)); a_release(__old); }
-#line 998 "std/compiler/cgen.a"
+#line 1091 "std/compiler/cgen.a"
                         { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sc, a_int(2))); a_release(__old); }
-#line 999 "std/compiler/cgen.a"
+#line 1092 "std/compiler/cgen.a"
                         { AValue __old = cond; cond = a_str_concat(cond, a_str_concat(a_string(" && "), a_array_get(sc, a_int(0)))); a_release(__old); }
                     }
-#line 1001 "std/compiler/cgen.a"
+#line 1094 "std/compiler/cgen.a"
                     { AValue __old = idx; idx = a_add(idx, a_int(1)); a_release(__old); }
                 }
                 a_release(e);
@@ -9024,40 +9320,40 @@ AValue fn_cgen__emit_pat_cond(AValue pat, AValue target, AValue bm, AValue ctx, 
             }
             a_release(__iter_arr);
         }
-#line 1004 "std/compiler/cgen.a"
+#line 1097 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(cond, li, lifted); goto __fn_cleanup;
     }
-#line 1007 "std/compiler/cgen.a"
+#line 1100 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatMap")))) {
-#line 1008 "std/compiler/cgen.a"
+#line 1101 "std/compiler/cgen.a"
         { AValue __old = entries; entries = a_array_get(pat, a_string("entries")); a_release(__old); }
-#line 1009 "std/compiler/cgen.a"
+#line 1102 "std/compiler/cgen.a"
         { AValue __old = cond; cond = a_str_concat(target, a_string(".tag == TAG_MAP")); a_release(__old); }
-#line 1010 "std/compiler/cgen.a"
+#line 1103 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1011 "std/compiler/cgen.a"
+#line 1104 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(entries);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, key = {0}, sub = {0}, val_expr = {0}, sc = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 1012 "std/compiler/cgen.a"
+#line 1105 "std/compiler/cgen.a"
                 { AValue __old = key; key = a_array_get(e, a_string("key")); a_release(__old); }
-#line 1013 "std/compiler/cgen.a"
+#line 1106 "std/compiler/cgen.a"
                 { AValue __old = cond; cond = a_str_concat(cond, a_str_concat(a_string(" && a_is_map_with("), a_str_concat(target, a_str_concat(a_string(", \""), a_str_concat(fn_cgen__escape_c_str(key), a_string("\")")))))); a_release(__old); }
-#line 1015 "std/compiler/cgen.a"
+#line 1108 "std/compiler/cgen.a"
                 { AValue __old = sub; sub = a_array_get(e, a_string("pattern")); a_release(__old); }
-#line 1016 "std/compiler/cgen.a"
+#line 1109 "std/compiler/cgen.a"
                 if (a_truthy(a_and(a_neq(a_array_get(sub, a_string("tag")), a_string("PatIdent")), a_neq(a_array_get(sub, a_string("tag")), a_string("PatWildcard"))))) {
-#line 1017 "std/compiler/cgen.a"
+#line 1110 "std/compiler/cgen.a"
                     { AValue __old = val_expr; val_expr = a_add(a_add(a_add(a_add(a_string("a_map_get_borrow("), target), a_string(", \"")), fn_cgen__escape_c_str(key)), a_string("\")")); a_release(__old); }
-#line 1018 "std/compiler/cgen.a"
+#line 1111 "std/compiler/cgen.a"
                     { AValue __old = sc; sc = fn_cgen__emit_pat_cond(sub, val_expr, bm, ctx, li); a_release(__old); }
-#line 1019 "std/compiler/cgen.a"
+#line 1112 "std/compiler/cgen.a"
                     { AValue __old = li; li = a_array_get(sc, a_int(1)); a_release(__old); }
-#line 1020 "std/compiler/cgen.a"
+#line 1113 "std/compiler/cgen.a"
                     { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sc, a_int(2))); a_release(__old); }
-#line 1021 "std/compiler/cgen.a"
+#line 1114 "std/compiler/cgen.a"
                     { AValue __old = cond; cond = a_str_concat(cond, a_str_concat(a_string(" && "), a_array_get(sc, a_int(0)))); a_release(__old); }
                 }
                 a_release(e);
@@ -9068,25 +9364,27 @@ AValue fn_cgen__emit_pat_cond(AValue pat, AValue target, AValue bm, AValue ctx, 
             }
             a_release(__iter_arr);
         }
-#line 1024 "std/compiler/cgen.a"
+#line 1117 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(cond, li, lifted); goto __fn_cleanup;
     }
-#line 1027 "std/compiler/cgen.a"
+#line 1120 "std/compiler/cgen.a"
     __ret = fn_cgen__R(a_string("0 /* unknown pattern */"), li); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
     a_release(val);
     a_release(vr);
     a_release(name);
+    a_release(args);
+    a_release(cond);
+    a_release(sc);
+    a_release(lifted);
+    a_release(i);
     a_release(elems);
     a_release(has_rest);
     a_release(fixed_count);
-    a_release(cond);
     a_release(idx);
-    a_release(lifted);
     a_release(sub);
     a_release(elem_var);
-    a_release(sc);
     a_release(entries);
     a_release(key);
     a_release(val_expr);
@@ -9099,7 +9397,7 @@ __fn_cleanup:
 }
 
 AValue fn_cgen__emit_pat_bind(AValue pat, AValue target, AValue depth, AValue bm, AValue ctx, AValue li) {
-    AValue tag = {0}, ind = {0}, v = {0}, name = {0}, args = {0}, code = {0}, inner = {0}, inner_expr = {0}, br = {0}, elems = {0}, idx = {0}, lifted = {0}, elem_var = {0}, rest_expr = {0}, rv = {0}, entries = {0}, key = {0}, val_expr = {0};
+    AValue tag = {0}, ind = {0}, v = {0}, name = {0}, args = {0}, code = {0}, inner = {0}, inner_expr = {0}, br = {0}, i = {0}, elems = {0}, idx = {0}, lifted = {0}, elem_var = {0}, rest_expr = {0}, rv = {0}, entries = {0}, key = {0}, val_expr = {0};
     AValue __ret = a_void();
     pat = a_retain(pat);
     target = a_retain(target);
@@ -9107,102 +9405,133 @@ AValue fn_cgen__emit_pat_bind(AValue pat, AValue target, AValue depth, AValue bm
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1031 "std/compiler/cgen.a"
+#line 1124 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
-#line 1032 "std/compiler/cgen.a"
+#line 1125 "std/compiler/cgen.a"
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
-#line 1034 "std/compiler/cgen.a"
+#line 1127 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatWildcard")))) {
-#line 1034 "std/compiler/cgen.a"
+#line 1127 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string(""), li); goto __fn_cleanup;
     }
-#line 1036 "std/compiler/cgen.a"
+#line 1129 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatIdent")))) {
-#line 1040 "std/compiler/cgen.a"
+#line 1130 "std/compiler/cgen.a"
+        if (a_truthy(a_eq(fn_cgen__variant_arity(ctx, a_array_get(pat, a_string("name"))), a_int(0)))) {
+#line 1130 "std/compiler/cgen.a"
+            __ret = fn_cgen__R(a_string(""), li); goto __fn_cleanup;
+        }
+#line 1134 "std/compiler/cgen.a"
         { AValue __old = v; v = fn_cgen__mangle(a_array_get(pat, a_string("name"))); a_release(__old); }
-#line 1041 "std/compiler/cgen.a"
+#line 1135 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_add(a_add(a_add(a_add(a_add(a_add(a_add(ind, a_string("{ AValue __old = ")), v), a_string("; ")), v), a_string(" = a_retain(")), target), a_string("); a_release(__old); }")), li); goto __fn_cleanup;
     }
-#line 1044 "std/compiler/cgen.a"
+#line 1138 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatLiteral")))) {
-#line 1044 "std/compiler/cgen.a"
+#line 1138 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string(""), li); goto __fn_cleanup;
     }
-#line 1046 "std/compiler/cgen.a"
+#line 1140 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatConstructor")))) {
-#line 1047 "std/compiler/cgen.a"
+#line 1141 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(pat, a_string("name")); a_release(__old); }
-#line 1048 "std/compiler/cgen.a"
+#line 1142 "std/compiler/cgen.a"
         { AValue __old = args; args = a_array_get(pat, a_string("args")); a_release(__old); }
-#line 1049 "std/compiler/cgen.a"
+#line 1143 "std/compiler/cgen.a"
         { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1050 "std/compiler/cgen.a"
+#line 1144 "std/compiler/cgen.a"
         if (a_truthy(a_and(a_or(a_eq(name, a_string("Ok")), a_eq(name, a_string("Err"))), a_gt(a_len(args), a_int(0))))) {
-#line 1051 "std/compiler/cgen.a"
+#line 1145 "std/compiler/cgen.a"
             { AValue __old = inner; inner = a_array_get(args, a_int(0)); a_release(__old); }
-#line 1052 "std/compiler/cgen.a"
+#line 1146 "std/compiler/cgen.a"
             { AValue __old = inner_expr; inner_expr = a_str_concat(a_string("a_unwrap_unsafe("), a_str_concat(target, a_string(")"))); a_release(__old); }
-#line 1053 "std/compiler/cgen.a"
+#line 1147 "std/compiler/cgen.a"
             { AValue __old = br; br = fn_cgen__emit_pat_bind(inner, inner_expr, depth, bm, ctx, li); a_release(__old); }
-#line 1054 "std/compiler/cgen.a"
+#line 1148 "std/compiler/cgen.a"
             { AValue __old = code; code = a_array_get(br, a_int(0)); a_release(__old); }
-#line 1055 "std/compiler/cgen.a"
+#line 1149 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
+#line 1150 "std/compiler/cgen.a"
+            __ret = fn_cgen__R(code, li); goto __fn_cleanup;
         }
-#line 1057 "std/compiler/cgen.a"
+#line 1152 "std/compiler/cgen.a"
+        { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 1153 "std/compiler/cgen.a"
+        {
+            AValue __iter_arr = a_iterable(args);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue a = {0}, br = {0};
+                a = a_array_get(__iter_arr, a_int(__fi));
+#line 1154 "std/compiler/cgen.a"
+                { AValue __old = br; br = fn_cgen__emit_pat_bind(a, a_add(a_add(a_add(a_add(a_string("a_variant_arg("), target), a_string(", ")), a_to_str(i)), a_string(")")), depth, bm, ctx, li); a_release(__old); }
+#line 1155 "std/compiler/cgen.a"
+                if (a_truthy(a_gt(a_len(a_array_get(br, a_int(0))), a_int(0)))) {
+#line 1155 "std/compiler/cgen.a"
+                    { AValue __old = code; code = a_add(a_add(code, a_array_get(br, a_int(0))), a_string("\n")); a_release(__old); }
+                }
+#line 1156 "std/compiler/cgen.a"
+                { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
+#line 1157 "std/compiler/cgen.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+                a_release(a);
+                a_release(br);
+            }
+            a_release(__iter_arr);
+        }
+#line 1159 "std/compiler/cgen.a"
         __ret = fn_cgen__R(code, li); goto __fn_cleanup;
     }
-#line 1060 "std/compiler/cgen.a"
+#line 1162 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatArray")))) {
-#line 1061 "std/compiler/cgen.a"
+#line 1163 "std/compiler/cgen.a"
         { AValue __old = elems; elems = a_array_get(pat, a_string("elems")); a_release(__old); }
-#line 1062 "std/compiler/cgen.a"
+#line 1164 "std/compiler/cgen.a"
         { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1063 "std/compiler/cgen.a"
+#line 1165 "std/compiler/cgen.a"
         { AValue __old = idx; idx = a_int(0); a_release(__old); }
-#line 1064 "std/compiler/cgen.a"
+#line 1166 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1065 "std/compiler/cgen.a"
+#line 1167 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(elems);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, elem_var = {0}, br = {0}, rest_expr = {0}, rv = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 1066 "std/compiler/cgen.a"
+#line 1168 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatElem")))) {
-#line 1067 "std/compiler/cgen.a"
+#line 1169 "std/compiler/cgen.a"
                     { AValue __old = elem_var; elem_var = a_str_concat(target, a_str_concat(a_string(".aval->items["), a_str_concat(a_to_str(idx), a_string("]")))); a_release(__old); }
-#line 1068 "std/compiler/cgen.a"
+#line 1170 "std/compiler/cgen.a"
                     { AValue __old = br; br = fn_cgen__emit_pat_bind(a_array_get(e, a_string("pattern")), elem_var, depth, bm, ctx, li); a_release(__old); }
-#line 1069 "std/compiler/cgen.a"
+#line 1171 "std/compiler/cgen.a"
                     if (a_truthy(a_gt(a_len(a_array_get(br, a_int(0))), a_int(0)))) {
-#line 1070 "std/compiler/cgen.a"
+#line 1172 "std/compiler/cgen.a"
                         if (a_truthy(a_gt(a_len(code), a_int(0)))) {
-#line 1070 "std/compiler/cgen.a"
+#line 1172 "std/compiler/cgen.a"
                             { AValue __old = code; code = a_str_concat(code, a_string("\n")); a_release(__old); }
                         }
-#line 1071 "std/compiler/cgen.a"
+#line 1173 "std/compiler/cgen.a"
                         { AValue __old = code; code = a_str_concat(code, a_array_get(br, a_int(0))); a_release(__old); }
                     }
-#line 1073 "std/compiler/cgen.a"
+#line 1175 "std/compiler/cgen.a"
                     { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
-#line 1074 "std/compiler/cgen.a"
+#line 1176 "std/compiler/cgen.a"
                     { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br, a_int(2))); a_release(__old); }
-#line 1075 "std/compiler/cgen.a"
+#line 1177 "std/compiler/cgen.a"
                     { AValue __old = idx; idx = a_add(idx, a_int(1)); a_release(__old); }
                 }
-#line 1077 "std/compiler/cgen.a"
+#line 1179 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatRest")))) {
-#line 1079 "std/compiler/cgen.a"
+#line 1181 "std/compiler/cgen.a"
                     { AValue __old = rest_expr; rest_expr = a_add(a_add(a_add(a_add(a_string("a_drop("), target), a_string(", a_int(")), a_to_str(idx)), a_string("))")); a_release(__old); }
-#line 1080 "std/compiler/cgen.a"
+#line 1182 "std/compiler/cgen.a"
                     { AValue __old = rv; rv = fn_cgen__mangle(a_array_get(e, a_string("name"))); a_release(__old); }
-#line 1081 "std/compiler/cgen.a"
+#line 1183 "std/compiler/cgen.a"
                     if (a_truthy(a_gt(a_len(code), a_int(0)))) {
-#line 1081 "std/compiler/cgen.a"
+#line 1183 "std/compiler/cgen.a"
                         { AValue __old = code; code = a_str_concat(code, a_string("\n")); a_release(__old); }
                     }
-#line 1082 "std/compiler/cgen.a"
+#line 1184 "std/compiler/cgen.a"
                     { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(code, ind), a_string("{ AValue __old = ")), rv), a_string("; ")), rv), a_string(" = ")), rest_expr), a_string("; a_release(__old); }")); a_release(__old); }
                 }
                 a_release(e);
@@ -9213,42 +9542,42 @@ AValue fn_cgen__emit_pat_bind(AValue pat, AValue target, AValue depth, AValue bm
             }
             a_release(__iter_arr);
         }
-#line 1085 "std/compiler/cgen.a"
+#line 1187 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
     }
-#line 1088 "std/compiler/cgen.a"
+#line 1190 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatMap")))) {
-#line 1089 "std/compiler/cgen.a"
+#line 1191 "std/compiler/cgen.a"
         { AValue __old = entries; entries = a_array_get(pat, a_string("entries")); a_release(__old); }
-#line 1090 "std/compiler/cgen.a"
+#line 1192 "std/compiler/cgen.a"
         { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1091 "std/compiler/cgen.a"
+#line 1193 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1092 "std/compiler/cgen.a"
+#line 1194 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(entries);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0}, key = {0}, val_expr = {0}, br = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 1093 "std/compiler/cgen.a"
+#line 1195 "std/compiler/cgen.a"
                 { AValue __old = key; key = a_array_get(e, a_string("key")); a_release(__old); }
-#line 1094 "std/compiler/cgen.a"
+#line 1196 "std/compiler/cgen.a"
                 { AValue __old = val_expr; val_expr = a_add(a_add(a_add(a_add(a_string("a_map_get_borrow("), target), a_string(", \"")), fn_cgen__escape_c_str(key)), a_string("\")")); a_release(__old); }
-#line 1095 "std/compiler/cgen.a"
+#line 1197 "std/compiler/cgen.a"
                 { AValue __old = br; br = fn_cgen__emit_pat_bind(a_array_get(e, a_string("pattern")), val_expr, depth, bm, ctx, li); a_release(__old); }
-#line 1096 "std/compiler/cgen.a"
+#line 1198 "std/compiler/cgen.a"
                 if (a_truthy(a_gt(a_len(a_array_get(br, a_int(0))), a_int(0)))) {
-#line 1097 "std/compiler/cgen.a"
+#line 1199 "std/compiler/cgen.a"
                     if (a_truthy(a_gt(a_len(code), a_int(0)))) {
-#line 1097 "std/compiler/cgen.a"
+#line 1199 "std/compiler/cgen.a"
                         { AValue __old = code; code = a_str_concat(code, a_string("\n")); a_release(__old); }
                     }
-#line 1098 "std/compiler/cgen.a"
+#line 1200 "std/compiler/cgen.a"
                     { AValue __old = code; code = a_str_concat(code, a_array_get(br, a_int(0))); a_release(__old); }
                 }
-#line 1100 "std/compiler/cgen.a"
+#line 1202 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
-#line 1101 "std/compiler/cgen.a"
+#line 1203 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br, a_int(2))); a_release(__old); }
                 a_release(e);
                 a_release(key);
@@ -9257,10 +9586,10 @@ AValue fn_cgen__emit_pat_bind(AValue pat, AValue target, AValue depth, AValue bm
             }
             a_release(__iter_arr);
         }
-#line 1103 "std/compiler/cgen.a"
+#line 1205 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
     }
-#line 1106 "std/compiler/cgen.a"
+#line 1208 "std/compiler/cgen.a"
     __ret = fn_cgen__R(a_string(""), li); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -9272,6 +9601,7 @@ __fn_cleanup:
     a_release(inner);
     a_release(inner_expr);
     a_release(br);
+    a_release(i);
     a_release(elems);
     a_release(idx);
     a_release(lifted);
@@ -9298,30 +9628,30 @@ AValue fn_cgen__emit_arm_body(AValue body, AValue depth, AValue bm, AValue ctx, 
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1110 "std/compiler/cgen.a"
+#line 1212 "std/compiler/cgen.a"
     { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1111 "std/compiler/cgen.a"
+#line 1213 "std/compiler/cgen.a"
     { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1112 "std/compiler/cgen.a"
+#line 1214 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
-#line 1113 "std/compiler/cgen.a"
+#line 1215 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(body, a_string("stmts")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue s = {0}, sr = {0};
                 s = a_array_get(__iter_arr, a_int(__fi));
-#line 1114 "std/compiler/cgen.a"
+#line 1216 "std/compiler/cgen.a"
                 { AValue __old = sr; sr = fn_cgen_emit_stmt(s, depth, bm, ctx, li); a_release(__old); }
-#line 1115 "std/compiler/cgen.a"
+#line 1217 "std/compiler/cgen.a"
                 if (a_truthy(a_gt(a_len(code), a_int(0)))) {
-#line 1115 "std/compiler/cgen.a"
+#line 1217 "std/compiler/cgen.a"
                     { AValue __old = code; code = a_str_concat(code, a_string("\n")); a_release(__old); }
                 }
-#line 1116 "std/compiler/cgen.a"
+#line 1218 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_array_get(sr, a_int(0))); a_release(__old); }
-#line 1117 "std/compiler/cgen.a"
+#line 1219 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1118 "std/compiler/cgen.a"
+#line 1220 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                 a_release(s);
                 a_release(sr);
@@ -9329,16 +9659,16 @@ AValue fn_cgen__emit_arm_body(AValue body, AValue depth, AValue bm, AValue ctx, 
             a_release(__iter_arr);
         }
     } else {
-#line 1122 "std/compiler/cgen.a"
+#line 1224 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(body, bm, ctx, li); a_release(__old); }
-#line 1123 "std/compiler/cgen.a"
+#line 1225 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 1124 "std/compiler/cgen.a"
+#line 1226 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(er, a_int(2))); a_release(__old); }
-#line 1125 "std/compiler/cgen.a"
+#line 1227 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(fn_cgen__indent(depth), a_str_concat(a_array_get(er, a_int(0)), a_string(";"))); a_release(__old); }
     }
-#line 1127 "std/compiler/cgen.a"
+#line 1229 "std/compiler/cgen.a"
     __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
     a_release(code);
@@ -9361,108 +9691,108 @@ AValue fn_cgen__emit_match(AValue node, AValue depth, AValue bm, AValue ctx, AVa
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1131 "std/compiler/cgen.a"
+#line 1233 "std/compiler/cgen.a"
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
-#line 1132 "std/compiler/cgen.a"
+#line 1234 "std/compiler/cgen.a"
     { AValue __old = d1; d1 = fn_cgen__indent(a_add(depth, a_int(1))); a_release(__old); }
-#line 1133 "std/compiler/cgen.a"
+#line 1235 "std/compiler/cgen.a"
     { AValue __old = d2; d2 = fn_cgen__indent(a_add(depth, a_int(2))); a_release(__old); }
-#line 1134 "std/compiler/cgen.a"
+#line 1236 "std/compiler/cgen.a"
     { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1135 "std/compiler/cgen.a"
+#line 1237 "std/compiler/cgen.a"
     { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 1136 "std/compiler/cgen.a"
+#line 1238 "std/compiler/cgen.a"
     { AValue __old = lifted; lifted = a_array_get(er, a_int(2)); a_release(__old); }
-#line 1137 "std/compiler/cgen.a"
+#line 1239 "std/compiler/cgen.a"
     { AValue __old = arms; arms = a_array_get(node, a_string("arms")); a_release(__old); }
-#line 1139 "std/compiler/cgen.a"
+#line 1241 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(ind, a_string("{")); a_release(__old); }
-#line 1140 "std/compiler/cgen.a"
+#line 1242 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d1, a_str_concat(a_string("AValue __match = "), a_str_concat(a_array_get(er, a_int(0)), a_string(";")))))); a_release(__old); }
-#line 1141 "std/compiler/cgen.a"
+#line 1243 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d1, a_string("int __matched = 0;")))); a_release(__old); }
-#line 1143 "std/compiler/cgen.a"
+#line 1245 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(arms);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue arm = {0}, pat = {0}, guard = {0}, body = {0}, cr = {0}, has_guard = {0}, br = {0}, gr = {0}, br2 = {0};
             arm = a_array_get(__iter_arr, a_int(__fi));
-#line 1144 "std/compiler/cgen.a"
+#line 1246 "std/compiler/cgen.a"
             { AValue __old = pat; pat = a_array_get(arm, a_string("pattern")); a_release(__old); }
-#line 1145 "std/compiler/cgen.a"
+#line 1247 "std/compiler/cgen.a"
             { AValue __old = guard; guard = a_array_get(arm, a_string("guard")); a_release(__old); }
-#line 1146 "std/compiler/cgen.a"
+#line 1248 "std/compiler/cgen.a"
             { AValue __old = body; body = a_array_get(arm, a_string("body")); a_release(__old); }
-#line 1148 "std/compiler/cgen.a"
+#line 1250 "std/compiler/cgen.a"
             { AValue __old = cr; cr = fn_cgen__emit_pat_cond(pat, a_string("__match"), bm, ctx, li); a_release(__old); }
-#line 1149 "std/compiler/cgen.a"
+#line 1251 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(cr, a_int(1)); a_release(__old); }
-#line 1150 "std/compiler/cgen.a"
+#line 1252 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(cr, a_int(2))); a_release(__old); }
-#line 1152 "std/compiler/cgen.a"
+#line 1254 "std/compiler/cgen.a"
             { AValue __old = has_guard; has_guard = a_neq(a_type_of(guard), a_string("void")); a_release(__old); }
-#line 1153 "std/compiler/cgen.a"
+#line 1255 "std/compiler/cgen.a"
             if (a_truthy(has_guard)) {
-#line 1153 "std/compiler/cgen.a"
+#line 1255 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(guard, a_string("tag")), a_string("Void")))) {
-#line 1153 "std/compiler/cgen.a"
+#line 1255 "std/compiler/cgen.a"
                     { AValue __old = has_guard; has_guard = a_bool(0); a_release(__old); }
                 }
             }
-#line 1155 "std/compiler/cgen.a"
+#line 1257 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d1, a_str_concat(a_string("if (!__matched && "), a_str_concat(a_array_get(cr, a_int(0)), a_string(") {")))))); a_release(__old); }
-#line 1158 "std/compiler/cgen.a"
+#line 1260 "std/compiler/cgen.a"
             { AValue __old = br; br = fn_cgen__emit_pat_bind(pat, a_string("__match"), a_add(depth, a_int(2)), bm, ctx, li); a_release(__old); }
-#line 1159 "std/compiler/cgen.a"
+#line 1261 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
-#line 1160 "std/compiler/cgen.a"
+#line 1262 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br, a_int(2))); a_release(__old); }
-#line 1161 "std/compiler/cgen.a"
+#line 1263 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(a_array_get(br, a_int(0))), a_int(0)))) {
-#line 1162 "std/compiler/cgen.a"
+#line 1264 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(br, a_int(0)))); a_release(__old); }
             }
-#line 1165 "std/compiler/cgen.a"
+#line 1267 "std/compiler/cgen.a"
             if (a_truthy(has_guard)) {
-#line 1166 "std/compiler/cgen.a"
+#line 1268 "std/compiler/cgen.a"
                 { AValue __old = gr; gr = fn_cgen_emit_expr(guard, bm, ctx, li); a_release(__old); }
-#line 1167 "std/compiler/cgen.a"
+#line 1269 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(gr, a_int(1)); a_release(__old); }
-#line 1168 "std/compiler/cgen.a"
+#line 1270 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(gr, a_int(2))); a_release(__old); }
-#line 1169 "std/compiler/cgen.a"
+#line 1271 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d2, a_str_concat(a_string("if (a_truthy("), a_str_concat(a_array_get(gr, a_int(0)), a_string(")) {")))))); a_release(__old); }
-#line 1171 "std/compiler/cgen.a"
+#line 1273 "std/compiler/cgen.a"
                 { AValue __old = br2; br2 = fn_cgen__emit_arm_body(body, a_add(depth, a_int(3)), bm, ctx, li); a_release(__old); }
-#line 1172 "std/compiler/cgen.a"
+#line 1274 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(br2, a_int(1)); a_release(__old); }
-#line 1173 "std/compiler/cgen.a"
+#line 1275 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br2, a_int(2))); a_release(__old); }
-#line 1174 "std/compiler/cgen.a"
+#line 1276 "std/compiler/cgen.a"
                 if (a_truthy(a_gt(a_len(a_array_get(br2, a_int(0))), a_int(0)))) {
-#line 1174 "std/compiler/cgen.a"
+#line 1276 "std/compiler/cgen.a"
                     { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(br2, a_int(0)))); a_release(__old); }
                 }
-#line 1175 "std/compiler/cgen.a"
+#line 1277 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(3))), a_string("__matched = 1;")))); a_release(__old); }
-#line 1177 "std/compiler/cgen.a"
+#line 1279 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d2, a_string("}")))); a_release(__old); }
             } else {
-#line 1179 "std/compiler/cgen.a"
+#line 1281 "std/compiler/cgen.a"
                 { AValue __old = br2; br2 = fn_cgen__emit_arm_body(body, a_add(depth, a_int(2)), bm, ctx, li); a_release(__old); }
-#line 1180 "std/compiler/cgen.a"
+#line 1282 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(br2, a_int(1)); a_release(__old); }
-#line 1181 "std/compiler/cgen.a"
+#line 1283 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br2, a_int(2))); a_release(__old); }
-#line 1182 "std/compiler/cgen.a"
+#line 1284 "std/compiler/cgen.a"
                 if (a_truthy(a_gt(a_len(a_array_get(br2, a_int(0))), a_int(0)))) {
-#line 1182 "std/compiler/cgen.a"
+#line 1284 "std/compiler/cgen.a"
                     { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(br2, a_int(0)))); a_release(__old); }
                 }
-#line 1183 "std/compiler/cgen.a"
+#line 1285 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d2, a_string("__matched = 1;")))); a_release(__old); }
             }
-#line 1186 "std/compiler/cgen.a"
+#line 1288 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(d1, a_string("}")))); a_release(__old); }
             a_release(arm);
             a_release(pat);
@@ -9476,9 +9806,9 @@ AValue fn_cgen__emit_match(AValue node, AValue depth, AValue bm, AValue ctx, AVa
         }
         a_release(__iter_arr);
     }
-#line 1189 "std/compiler/cgen.a"
+#line 1291 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
-#line 1190 "std/compiler/cgen.a"
+#line 1292 "std/compiler/cgen.a"
     __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
     a_release(ind);
@@ -9511,43 +9841,43 @@ AValue fn_cgen__emit_match_expr(AValue node, AValue bm, AValue ctx, AValue li) {
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1194 "std/compiler/cgen.a"
+#line 1296 "std/compiler/cgen.a"
     { AValue __old = nl; nl = fn_cgen__newline_char(); a_release(__old); }
-#line 1195 "std/compiler/cgen.a"
+#line 1297 "std/compiler/cgen.a"
     { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1196 "std/compiler/cgen.a"
+#line 1298 "std/compiler/cgen.a"
     { AValue __old = li; li = a_array_get(er, a_int(1)); a_release(__old); }
-#line 1197 "std/compiler/cgen.a"
+#line 1299 "std/compiler/cgen.a"
     { AValue __old = lifted; lifted = a_array_get(er, a_int(2)); a_release(__old); }
-#line 1198 "std/compiler/cgen.a"
+#line 1300 "std/compiler/cgen.a"
     { AValue __old = arms; arms = a_array_get(node, a_string("arms")); a_release(__old); }
-#line 1200 "std/compiler/cgen.a"
+#line 1302 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(a_string("({"), nl); a_release(__old); }
-#line 1201 "std/compiler/cgen.a"
+#line 1303 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue __match = "), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(";"), nl)))); a_release(__old); }
-#line 1202 "std/compiler/cgen.a"
+#line 1304 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue __match_result = a_void();"), nl)); a_release(__old); }
-#line 1203 "std/compiler/cgen.a"
+#line 1305 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        int __matched = 0;"), nl)); a_release(__old); }
-#line 1206 "std/compiler/cgen.a"
+#line 1308 "std/compiler/cgen.a"
     { AValue __old = arm_vars; arm_vars = a_array_new(0); a_release(__old); }
-#line 1207 "std/compiler/cgen.a"
+#line 1309 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(arms);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue arm = {0}, pv = {0};
             arm = a_array_get(__iter_arr, a_int(__fi));
-#line 1208 "std/compiler/cgen.a"
+#line 1310 "std/compiler/cgen.a"
             { AValue __old = pv; pv = fn_cgen__collect_pattern_vars(a_array_get(arm, a_string("pattern"))); a_release(__old); }
-#line 1209 "std/compiler/cgen.a"
+#line 1311 "std/compiler/cgen.a"
             {
                 AValue __iter_arr = a_iterable(pv);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue v = {0};
                     v = a_array_get(__iter_arr, a_int(__fi));
-#line 1209 "std/compiler/cgen.a"
+#line 1311 "std/compiler/cgen.a"
                     if (a_truthy(a_not(a_contains(arm_vars, v)))) {
-#line 1209 "std/compiler/cgen.a"
+#line 1311 "std/compiler/cgen.a"
                         arm_vars = a_array_push_move(arm_vars, v);
                     }
                     a_release(v);
@@ -9559,87 +9889,87 @@ AValue fn_cgen__emit_match_expr(AValue node, AValue bm, AValue ctx, AValue li) {
         }
         a_release(__iter_arr);
     }
-#line 1211 "std/compiler/cgen.a"
+#line 1313 "std/compiler/cgen.a"
     if (a_truthy(a_gt(a_len(arm_vars), a_int(0)))) {
-#line 1212 "std/compiler/cgen.a"
+#line 1314 "std/compiler/cgen.a"
         { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        AValue "), a_str_concat(a_str_join(arm_vars, a_string(", ")), a_str_concat(a_string(";"), nl)))); a_release(__old); }
     }
-#line 1215 "std/compiler/cgen.a"
+#line 1317 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(arms);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue arm = {0}, pat = {0}, guard = {0}, body = {0}, cr = {0}, has_guard = {0}, br = {0}, gr = {0}, body_r = {0};
             arm = a_array_get(__iter_arr, a_int(__fi));
-#line 1216 "std/compiler/cgen.a"
+#line 1318 "std/compiler/cgen.a"
             { AValue __old = pat; pat = a_array_get(arm, a_string("pattern")); a_release(__old); }
-#line 1217 "std/compiler/cgen.a"
+#line 1319 "std/compiler/cgen.a"
             { AValue __old = guard; guard = a_array_get(arm, a_string("guard")); a_release(__old); }
-#line 1218 "std/compiler/cgen.a"
+#line 1320 "std/compiler/cgen.a"
             { AValue __old = body; body = a_array_get(arm, a_string("body")); a_release(__old); }
-#line 1220 "std/compiler/cgen.a"
+#line 1322 "std/compiler/cgen.a"
             { AValue __old = cr; cr = fn_cgen__emit_pat_cond(pat, a_string("__match"), bm, ctx, li); a_release(__old); }
-#line 1221 "std/compiler/cgen.a"
+#line 1323 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(cr, a_int(1)); a_release(__old); }
-#line 1222 "std/compiler/cgen.a"
+#line 1324 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(cr, a_int(2))); a_release(__old); }
-#line 1224 "std/compiler/cgen.a"
+#line 1326 "std/compiler/cgen.a"
             { AValue __old = has_guard; has_guard = a_neq(a_type_of(guard), a_string("void")); a_release(__old); }
-#line 1225 "std/compiler/cgen.a"
+#line 1327 "std/compiler/cgen.a"
             if (a_truthy(has_guard)) {
-#line 1225 "std/compiler/cgen.a"
+#line 1327 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(guard, a_string("tag")), a_string("Void")))) {
-#line 1225 "std/compiler/cgen.a"
+#line 1327 "std/compiler/cgen.a"
                     { AValue __old = has_guard; has_guard = a_bool(0); a_release(__old); }
                 }
             }
-#line 1227 "std/compiler/cgen.a"
+#line 1329 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        if (!__matched && "), a_str_concat(a_array_get(cr, a_int(0)), a_str_concat(a_string(") {"), nl)))); a_release(__old); }
-#line 1229 "std/compiler/cgen.a"
+#line 1331 "std/compiler/cgen.a"
             { AValue __old = br; br = fn_cgen__emit_pat_bind(pat, a_string("__match"), a_int(3), bm, ctx, li); a_release(__old); }
-#line 1230 "std/compiler/cgen.a"
+#line 1332 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(br, a_int(1)); a_release(__old); }
-#line 1231 "std/compiler/cgen.a"
+#line 1333 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(br, a_int(2))); a_release(__old); }
-#line 1232 "std/compiler/cgen.a"
+#line 1334 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(a_array_get(br, a_int(0))), a_int(0)))) {
-#line 1233 "std/compiler/cgen.a"
+#line 1335 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_array_get(br, a_int(0)), nl)); a_release(__old); }
             }
-#line 1236 "std/compiler/cgen.a"
+#line 1338 "std/compiler/cgen.a"
             if (a_truthy(has_guard)) {
-#line 1237 "std/compiler/cgen.a"
+#line 1339 "std/compiler/cgen.a"
                 { AValue __old = gr; gr = fn_cgen_emit_expr(guard, bm, ctx, li); a_release(__old); }
-#line 1238 "std/compiler/cgen.a"
+#line 1340 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(gr, a_int(1)); a_release(__old); }
-#line 1239 "std/compiler/cgen.a"
+#line 1341 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(gr, a_int(2))); a_release(__old); }
-#line 1240 "std/compiler/cgen.a"
+#line 1342 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            if (a_truthy("), a_str_concat(a_array_get(gr, a_int(0)), a_str_concat(a_string(")) {"), nl)))); a_release(__old); }
-#line 1242 "std/compiler/cgen.a"
+#line 1344 "std/compiler/cgen.a"
                 { AValue __old = body_r; body_r = fn_cgen__emit_match_expr_body(body, bm, ctx, li); a_release(__old); }
-#line 1243 "std/compiler/cgen.a"
+#line 1345 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(body_r, a_int(1)); a_release(__old); }
-#line 1244 "std/compiler/cgen.a"
+#line 1346 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(body_r, a_int(2))); a_release(__old); }
-#line 1245 "std/compiler/cgen.a"
+#line 1347 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("                __match_result = "), a_str_concat(a_array_get(body_r, a_int(0)), a_str_concat(a_string(";"), nl)))); a_release(__old); }
-#line 1246 "std/compiler/cgen.a"
+#line 1348 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("                __matched = 1;"), nl)); a_release(__old); }
-#line 1247 "std/compiler/cgen.a"
+#line 1349 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            }"), nl)); a_release(__old); }
             } else {
-#line 1249 "std/compiler/cgen.a"
+#line 1351 "std/compiler/cgen.a"
                 { AValue __old = body_r; body_r = fn_cgen__emit_match_expr_body(body, bm, ctx, li); a_release(__old); }
-#line 1250 "std/compiler/cgen.a"
+#line 1352 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(body_r, a_int(1)); a_release(__old); }
-#line 1251 "std/compiler/cgen.a"
+#line 1353 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(body_r, a_int(2))); a_release(__old); }
-#line 1252 "std/compiler/cgen.a"
+#line 1354 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __match_result = "), a_str_concat(a_array_get(body_r, a_int(0)), a_str_concat(a_string(";"), nl)))); a_release(__old); }
-#line 1253 "std/compiler/cgen.a"
+#line 1355 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("            __matched = 1;"), nl)); a_release(__old); }
             }
-#line 1256 "std/compiler/cgen.a"
+#line 1358 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        }"), nl)); a_release(__old); }
             a_release(arm);
             a_release(pat);
@@ -9653,11 +9983,11 @@ AValue fn_cgen__emit_match_expr(AValue node, AValue bm, AValue ctx, AValue li) {
         }
         a_release(__iter_arr);
     }
-#line 1259 "std/compiler/cgen.a"
+#line 1361 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("        __match_result;"), nl)); a_release(__old); }
-#line 1260 "std/compiler/cgen.a"
+#line 1362 "std/compiler/cgen.a"
     { AValue __old = code; code = a_str_concat(code, a_string("    })")); a_release(__old); }
-#line 1262 "std/compiler/cgen.a"
+#line 1364 "std/compiler/cgen.a"
     __ret = fn_cgen__RL(code, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
     a_release(nl);
@@ -9689,69 +10019,69 @@ AValue fn_cgen__emit_match_expr_body(AValue body, AValue bm, AValue ctx, AValue 
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1266 "std/compiler/cgen.a"
+#line 1368 "std/compiler/cgen.a"
     { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1267 "std/compiler/cgen.a"
+#line 1369 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
-#line 1269 "std/compiler/cgen.a"
+#line 1371 "std/compiler/cgen.a"
         { AValue __old = stmts; stmts = a_array_get(body, a_string("stmts")); a_release(__old); }
-#line 1270 "std/compiler/cgen.a"
+#line 1372 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_len(stmts), a_int(0)))) {
-#line 1270 "std/compiler/cgen.a"
+#line 1372 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_string("a_void()"), li); goto __fn_cleanup;
         }
-#line 1271 "std/compiler/cgen.a"
+#line 1373 "std/compiler/cgen.a"
         { AValue __old = last; last = a_array_get(stmts, a_sub(a_len(stmts), a_int(1))); a_release(__old); }
-#line 1272 "std/compiler/cgen.a"
+#line 1374 "std/compiler/cgen.a"
         { AValue __old = nl; nl = fn_cgen__newline_char(); a_release(__old); }
-#line 1273 "std/compiler/cgen.a"
+#line 1375 "std/compiler/cgen.a"
         { AValue __old = preamble; preamble = a_string(""); a_release(__old); }
-#line 1274 "std/compiler/cgen.a"
+#line 1376 "std/compiler/cgen.a"
         { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1275 "std/compiler/cgen.a"
+#line 1377 "std/compiler/cgen.a"
         while (a_truthy(a_lt(i, a_sub(a_len(stmts), a_int(1))))) {
-#line 1276 "std/compiler/cgen.a"
+#line 1378 "std/compiler/cgen.a"
             { AValue __old = sr; sr = fn_cgen_emit_stmt(a_array_get(stmts, i), a_int(4), bm, ctx, li); a_release(__old); }
-#line 1277 "std/compiler/cgen.a"
+#line 1379 "std/compiler/cgen.a"
             { AValue __old = preamble; preamble = a_str_concat(preamble, a_str_concat(a_array_get(sr, a_int(0)), nl)); a_release(__old); }
-#line 1278 "std/compiler/cgen.a"
+#line 1380 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1279 "std/compiler/cgen.a"
+#line 1381 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
-#line 1280 "std/compiler/cgen.a"
+#line 1382 "std/compiler/cgen.a"
             { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
         }
-#line 1283 "std/compiler/cgen.a"
+#line 1385 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(last, a_string("tag")), a_string("ExprStmt")))) {
-#line 1284 "std/compiler/cgen.a"
+#line 1386 "std/compiler/cgen.a"
             { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(last, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1285 "std/compiler/cgen.a"
+#line 1387 "std/compiler/cgen.a"
             if (a_truthy(a_gt(a_len(preamble), a_int(0)))) {
-#line 1286 "std/compiler/cgen.a"
+#line 1388 "std/compiler/cgen.a"
                 __ret = fn_cgen__RL(a_str_concat(a_string("({"), a_str_concat(nl, a_str_concat(preamble, a_str_concat(a_string("                "), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(";"), a_str_concat(nl, a_string("            })")))))))), a_array_get(er, a_int(1)), a_concat_arr(lifted, a_array_get(er, a_int(2)))); goto __fn_cleanup;
             }
-#line 1288 "std/compiler/cgen.a"
+#line 1390 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_array_get(er, a_int(0)), a_array_get(er, a_int(1)), a_concat_arr(lifted, a_array_get(er, a_int(2)))); goto __fn_cleanup;
         }
-#line 1290 "std/compiler/cgen.a"
+#line 1392 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(last, a_string("tag")), a_string("Return")))) {
-#line 1291 "std/compiler/cgen.a"
+#line 1393 "std/compiler/cgen.a"
             if (a_truthy(a_neq(a_type_of(a_array_get(last, a_string("expr"))), a_string("void")))) {
-#line 1292 "std/compiler/cgen.a"
+#line 1394 "std/compiler/cgen.a"
                 { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(last, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1293 "std/compiler/cgen.a"
+#line 1395 "std/compiler/cgen.a"
                 if (a_truthy(a_gt(a_len(preamble), a_int(0)))) {
-#line 1294 "std/compiler/cgen.a"
+#line 1396 "std/compiler/cgen.a"
                     __ret = fn_cgen__RL(a_str_concat(a_string("({"), a_str_concat(nl, a_str_concat(preamble, a_str_concat(a_string("                "), a_str_concat(a_array_get(er, a_int(0)), a_str_concat(a_string(";"), a_str_concat(nl, a_string("            })")))))))), a_array_get(er, a_int(1)), a_concat_arr(lifted, a_array_get(er, a_int(2)))); goto __fn_cleanup;
                 }
-#line 1296 "std/compiler/cgen.a"
+#line 1398 "std/compiler/cgen.a"
                 __ret = fn_cgen__RL(a_array_get(er, a_int(0)), a_array_get(er, a_int(1)), a_concat_arr(lifted, a_array_get(er, a_int(2)))); goto __fn_cleanup;
             }
         }
-#line 1299 "std/compiler/cgen.a"
+#line 1401 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_string("a_void()"), li); goto __fn_cleanup;
     }
-#line 1302 "std/compiler/cgen.a"
+#line 1404 "std/compiler/cgen.a"
     __ret = fn_cgen_emit_expr(body, bm, ctx, li); goto __fn_cleanup;
 __fn_cleanup:
     a_release(lifted);
@@ -9777,14 +10107,14 @@ AValue fn_cgen_emit_stmt(AValue node, AValue depth, AValue bm, AValue ctx, AValu
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1313 "std/compiler/cgen.a"
+#line 1415 "std/compiler/cgen.a"
     { AValue __old = r; r = fn_cgen__emit_stmt(node, depth, bm, ctx, li); a_release(__old); }
-#line 1314 "std/compiler/cgen.a"
+#line 1416 "std/compiler/cgen.a"
     if (a_truthy(a_and(a_and(a_and(a_and(a_eq(a_type_of(node), a_string("map")), a_map_has(node, a_string("line"))), a_gt(a_array_get(node, a_string("line")), a_int(0))), a_map_has(ctx, a_string("file"))), a_gt(a_len(a_array_get(ctx, a_string("file"))), a_int(0))))) {
-#line 1315 "std/compiler/cgen.a"
+#line 1417 "std/compiler/cgen.a"
         r = a_index_set(r, a_int(0), a_add(a_add(a_add(a_add(a_add(a_string("#line "), a_to_str(a_array_get(node, a_string("line")))), a_string(" \"")), a_array_get(ctx, a_string("file"))), a_string("\"\n")), a_array_get(r, a_int(0))));
     }
-#line 1317 "std/compiler/cgen.a"
+#line 1419 "std/compiler/cgen.a"
     __ret = a_retain(r); goto __fn_cleanup;
 __fn_cleanup:
     a_release(r);
@@ -9797,535 +10127,539 @@ __fn_cleanup:
 }
 
 AValue fn_cgen__emit_stmt(AValue node, AValue depth, AValue bm, AValue ctx, AValue li) {
-    AValue tag = {0}, ind = {0}, vr = {0}, vname = {0}, assign_expr = {0}, code = {0}, src = {0}, bindings = {0}, i = {0}, rest_name = {0}, target = {0}, tname = {0}, ar = {0}, tr = {0}, ir = {0}, use_goto = {0}, cleanup_vars = {0}, has_cleanup = {0}, cleanup = {0}, val_expr = {0}, ret_expr = {0}, er = {0}, cr = {0}, lifted = {0}, out = {0}, then_stmts = {0}, sr = {0}, else_branch = {0}, else_stmts = {0}, body_stmts = {0}, var_name = {0}, body_vars = {0}, for_decls = {0}, init_parts = {0}, for_cleanup = {0}, decls = {0}, bi = {0}, fd_cleanup = {0};
+    AValue tag = {0}, ind = {0}, vr = {0}, vname = {0}, assign_expr = {0}, code = {0}, src = {0}, bindings = {0}, i = {0}, rest_name = {0}, target = {0}, tname = {0}, ar = {0}, tr = {0}, ir = {0}, use_goto = {0}, cleanup_vars = {0}, has_cleanup = {0}, cleanup = {0}, val_expr = {0}, ret_expr = {0}, er = {0}, cr = {0}, lifted = {0}, out = {0}, then_stmts = {0}, sr = {0}, else_branch = {0}, else_stmts = {0}, body_stmts = {0}, var_name = {0}, body_vars = {0}, for_decls = {0}, init_parts = {0}, body_ctx = {0}, for_cleanup = {0}, decls = {0}, bi = {0}, fd_cleanup = {0};
     AValue __ret = a_void();
     node = a_retain(node);
     depth = a_retain(depth);
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1321 "std/compiler/cgen.a"
+#line 1423 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 1322 "std/compiler/cgen.a"
+#line 1424 "std/compiler/cgen.a"
     { AValue __old = ind; ind = fn_cgen__indent(depth); a_release(__old); }
-#line 1324 "std/compiler/cgen.a"
+#line 1426 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 1325 "std/compiler/cgen.a"
+#line 1427 "std/compiler/cgen.a"
         { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 1326 "std/compiler/cgen.a"
+#line 1428 "std/compiler/cgen.a"
         { AValue __old = vname; vname = fn_cgen__mangle(a_array_get(node, a_string("name"))); a_release(__old); }
-#line 1327 "std/compiler/cgen.a"
+#line 1429 "std/compiler/cgen.a"
         { AValue __old = assign_expr; assign_expr = a_array_get(vr, a_int(0)); a_release(__old); }
-#line 1328 "std/compiler/cgen.a"
+#line 1430 "std/compiler/cgen.a"
         { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1329 "std/compiler/cgen.a"
+#line 1431 "std/compiler/cgen.a"
         if (a_truthy(fn_cgen__is_ident(a_array_get(node, a_string("value"))))) {
-#line 1330 "std/compiler/cgen.a"
+#line 1432 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(ind, a_str_concat(a_string("{ AValue __old = "), a_str_concat(vname, a_str_concat(a_string("; "), a_str_concat(vname, a_str_concat(a_string(" = a_retain("), a_str_concat(assign_expr, a_string("); a_release(__old); }")))))))); a_release(__old); }
         } else {
-#line 1332 "std/compiler/cgen.a"
+#line 1434 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(ind, a_str_concat(a_string("{ AValue __old = "), a_str_concat(vname, a_str_concat(a_string("; "), a_str_concat(vname, a_str_concat(a_string(" = "), a_str_concat(assign_expr, a_string("; a_release(__old); }")))))))); a_release(__old); }
         }
-#line 1334 "std/compiler/cgen.a"
+#line 1436 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
     }
-#line 1337 "std/compiler/cgen.a"
+#line 1439 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("LetDestructure")))) {
-#line 1338 "std/compiler/cgen.a"
+#line 1440 "std/compiler/cgen.a"
         { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 1341 "std/compiler/cgen.a"
+#line 1443 "std/compiler/cgen.a"
         { AValue __old = src; src = a_array_get(vr, a_int(0)); a_release(__old); }
-#line 1342 "std/compiler/cgen.a"
+#line 1444 "std/compiler/cgen.a"
         if (a_truthy(fn_cgen__is_ident(a_array_get(node, a_string("value"))))) {
-#line 1342 "std/compiler/cgen.a"
+#line 1444 "std/compiler/cgen.a"
             { AValue __old = src; src = a_add(a_add(a_string("a_retain("), src), a_string(")")); a_release(__old); }
         }
-#line 1343 "std/compiler/cgen.a"
+#line 1445 "std/compiler/cgen.a"
         { AValue __old = code; code = a_add(a_add(a_add(ind, a_string("{ AValue __old = __dest; __dest = ")), src), a_string("; a_release(__old); }")); a_release(__old); }
-#line 1344 "std/compiler/cgen.a"
+#line 1446 "std/compiler/cgen.a"
         { AValue __old = bindings; bindings = a_array_get(node, a_string("bindings")); a_release(__old); }
-#line 1345 "std/compiler/cgen.a"
+#line 1447 "std/compiler/cgen.a"
         { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1346 "std/compiler/cgen.a"
+#line 1448 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(bindings);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue b = {0};
                 b = a_array_get(__iter_arr, a_int(__fi));
-#line 1347 "std/compiler/cgen.a"
+#line 1449 "std/compiler/cgen.a"
                 if (a_truthy(a_and(a_neq(b, a_string("")), a_neq(b, a_string("_"))))) {
-#line 1348 "std/compiler/cgen.a"
+#line 1450 "std/compiler/cgen.a"
                     { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("\n"), a_str_concat(ind, a_str_concat(fn_cgen__mangle(b), a_str_concat(a_string(" = a_array_get(__dest, a_int("), a_str_concat(a_to_str(i), a_string("));"))))))); a_release(__old); }
                 }
-#line 1350 "std/compiler/cgen.a"
+#line 1452 "std/compiler/cgen.a"
                 { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
                 a_release(b);
             }
             a_release(__iter_arr);
         }
-#line 1352 "std/compiler/cgen.a"
+#line 1454 "std/compiler/cgen.a"
         { AValue __old = rest_name; rest_name = a_array_get(node, a_string("rest")); a_release(__old); }
-#line 1353 "std/compiler/cgen.a"
+#line 1455 "std/compiler/cgen.a"
         if (a_truthy(a_neq(rest_name, a_string("")))) {
-#line 1354 "std/compiler/cgen.a"
+#line 1456 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(code, a_str_concat(a_string("\n"), a_str_concat(ind, a_str_concat(fn_cgen__mangle(rest_name), a_str_concat(a_string(" = a_drop(__dest, a_int("), a_str_concat(a_to_str(a_len(bindings)), a_string("));"))))))); a_release(__old); }
         }
-#line 1356 "std/compiler/cgen.a"
+#line 1458 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(code, a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
     }
-#line 1359 "std/compiler/cgen.a"
+#line 1461 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Assign")))) {
-#line 1360 "std/compiler/cgen.a"
+#line 1462 "std/compiler/cgen.a"
         { AValue __old = target; target = a_array_get(node, a_string("target")); a_release(__old); }
-#line 1361 "std/compiler/cgen.a"
+#line 1463 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(target, a_string("tag")), a_string("Ident")))) {
-#line 1362 "std/compiler/cgen.a"
+#line 1464 "std/compiler/cgen.a"
             { AValue __old = tname; tname = fn_cgen__mangle(a_array_get(target, a_string("name"))); a_release(__old); }
-#line 1366 "std/compiler/cgen.a"
+#line 1468 "std/compiler/cgen.a"
             if (a_truthy(fn_cgen__is_self_push(node, a_array_get(target, a_string("name"))))) {
-#line 1367 "std/compiler/cgen.a"
+#line 1469 "std/compiler/cgen.a"
                 { AValue __old = ar; ar = fn_cgen_emit_expr(a_array_get(a_array_get(a_array_get(node, a_string("value")), a_string("args")), a_int(1)), bm, ctx, li); a_release(__old); }
-#line 1368 "std/compiler/cgen.a"
+#line 1470 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_add(a_add(a_add(a_add(a_add(a_add(ind, tname), a_string(" = a_array_push_move(")), tname), a_string(", ")), a_array_get(ar, a_int(0))), a_string(");")); a_release(__old); }
-#line 1369 "std/compiler/cgen.a"
+#line 1471 "std/compiler/cgen.a"
                 __ret = fn_cgen__RL(code, a_array_get(ar, a_int(1)), a_array_get(ar, a_int(2))); goto __fn_cleanup;
             }
-#line 1371 "std/compiler/cgen.a"
+#line 1473 "std/compiler/cgen.a"
             { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 1372 "std/compiler/cgen.a"
+#line 1474 "std/compiler/cgen.a"
             { AValue __old = assign_expr; assign_expr = a_array_get(vr, a_int(0)); a_release(__old); }
-#line 1373 "std/compiler/cgen.a"
+#line 1475 "std/compiler/cgen.a"
             { AValue __old = code; code = a_string(""); a_release(__old); }
-#line 1374 "std/compiler/cgen.a"
+#line 1476 "std/compiler/cgen.a"
             if (a_truthy(fn_cgen__is_ident(a_array_get(node, a_string("value"))))) {
-#line 1375 "std/compiler/cgen.a"
+#line 1477 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(ind, a_str_concat(a_string("{ AValue __old = "), a_str_concat(tname, a_str_concat(a_string("; "), a_str_concat(tname, a_str_concat(a_string(" = a_retain("), a_str_concat(assign_expr, a_string("); a_release(__old); }")))))))); a_release(__old); }
             } else {
-#line 1377 "std/compiler/cgen.a"
+#line 1479 "std/compiler/cgen.a"
                 { AValue __old = code; code = a_str_concat(ind, a_str_concat(a_string("{ AValue __old = "), a_str_concat(tname, a_str_concat(a_string("; "), a_str_concat(tname, a_str_concat(a_string(" = "), a_str_concat(assign_expr, a_string("; a_release(__old); }")))))))); a_release(__old); }
             }
-#line 1379 "std/compiler/cgen.a"
+#line 1481 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(code, a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
         }
-#line 1381 "std/compiler/cgen.a"
+#line 1483 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(target, a_string("tag")), a_string("Index")))) {
-#line 1382 "std/compiler/cgen.a"
+#line 1484 "std/compiler/cgen.a"
             { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 1383 "std/compiler/cgen.a"
+#line 1485 "std/compiler/cgen.a"
             { AValue __old = tr; tr = fn_cgen_emit_expr(a_array_get(target, a_string("expr")), bm, ctx, a_array_get(vr, a_int(1))); a_release(__old); }
-#line 1384 "std/compiler/cgen.a"
+#line 1486 "std/compiler/cgen.a"
             { AValue __old = ir; ir = fn_cgen_emit_expr(a_array_get(target, a_string("index")), bm, ctx, a_array_get(tr, a_int(1))); a_release(__old); }
-#line 1385 "std/compiler/cgen.a"
+#line 1487 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(ind, a_str_concat(a_array_get(tr, a_int(0)), a_str_concat(a_string(" = a_index_set("), a_str_concat(a_array_get(tr, a_int(0)), a_str_concat(a_string(", "), a_str_concat(a_array_get(ir, a_int(0)), a_str_concat(a_string(", "), a_str_concat(a_array_get(vr, a_int(0)), a_string(");"))))))))), a_array_get(ir, a_int(1)), a_concat_arr(a_array_get(vr, a_int(2)), a_concat_arr(a_array_get(tr, a_int(2)), a_array_get(ir, a_int(2))))); goto __fn_cleanup;
         }
-#line 1387 "std/compiler/cgen.a"
+#line 1489 "std/compiler/cgen.a"
         { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("value")), bm, ctx, li); a_release(__old); }
-#line 1388 "std/compiler/cgen.a"
+#line 1490 "std/compiler/cgen.a"
         { AValue __old = tr; tr = fn_cgen_emit_expr(target, bm, ctx, a_array_get(vr, a_int(1))); a_release(__old); }
-#line 1389 "std/compiler/cgen.a"
+#line 1491 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(ind, a_str_concat(a_array_get(tr, a_int(0)), a_str_concat(a_string(" = "), a_str_concat(a_array_get(vr, a_int(0)), a_string(";"))))), a_array_get(tr, a_int(1)), a_concat_arr(a_array_get(vr, a_int(2)), a_array_get(tr, a_int(2)))); goto __fn_cleanup;
     }
-#line 1392 "std/compiler/cgen.a"
+#line 1494 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Return")))) {
-#line 1393 "std/compiler/cgen.a"
+#line 1495 "std/compiler/cgen.a"
         { AValue __old = use_goto; use_goto = a_and(a_eq(a_type_of(a_array_get(ctx, a_string("goto_cleanup"))), a_string("bool")), a_array_get(ctx, a_string("goto_cleanup"))); a_release(__old); }
-#line 1394 "std/compiler/cgen.a"
+#line 1496 "std/compiler/cgen.a"
         { AValue __old = cleanup_vars; cleanup_vars = a_array_get(ctx, a_string("cleanup_vars")); a_release(__old); }
-#line 1395 "std/compiler/cgen.a"
+#line 1497 "std/compiler/cgen.a"
         { AValue __old = has_cleanup; has_cleanup = a_and(a_eq(a_type_of(cleanup_vars), a_string("array")), a_gt(a_len(cleanup_vars), a_int(0))); a_release(__old); }
-#line 1396 "std/compiler/cgen.a"
+#line 1498 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_type_of(a_array_get(node, a_string("expr"))), a_string("void")))) {
-#line 1397 "std/compiler/cgen.a"
+#line 1499 "std/compiler/cgen.a"
             if (a_truthy(use_goto)) {
-#line 1398 "std/compiler/cgen.a"
+#line 1500 "std/compiler/cgen.a"
                 __ret = fn_cgen__R(a_str_concat(ind, a_string("goto __fn_cleanup;")), li); goto __fn_cleanup;
             }
-#line 1400 "std/compiler/cgen.a"
+#line 1502 "std/compiler/cgen.a"
             if (a_truthy(has_cleanup)) {
-#line 1401 "std/compiler/cgen.a"
+#line 1503 "std/compiler/cgen.a"
                 { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(cleanup_vars, depth); a_release(__old); }
-#line 1402 "std/compiler/cgen.a"
+#line 1504 "std/compiler/cgen.a"
                 __ret = fn_cgen__R(a_str_concat(ind, a_str_concat(a_string("{"), a_str_concat(cleanup, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("return a_void(); }")))))), li); goto __fn_cleanup;
             }
-#line 1404 "std/compiler/cgen.a"
+#line 1506 "std/compiler/cgen.a"
             __ret = fn_cgen__R(a_str_concat(ind, a_string("return a_void();")), li); goto __fn_cleanup;
         }
-#line 1406 "std/compiler/cgen.a"
+#line 1508 "std/compiler/cgen.a"
         { AValue __old = vr; vr = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1407 "std/compiler/cgen.a"
+#line 1509 "std/compiler/cgen.a"
         if (a_truthy(use_goto)) {
-#line 1408 "std/compiler/cgen.a"
+#line 1510 "std/compiler/cgen.a"
             { AValue __old = val_expr; val_expr = a_array_get(vr, a_int(0)); a_release(__old); }
-#line 1409 "std/compiler/cgen.a"
+#line 1511 "std/compiler/cgen.a"
             if (a_truthy(fn_cgen__is_ident(a_array_get(node, a_string("expr"))))) {
-#line 1410 "std/compiler/cgen.a"
+#line 1512 "std/compiler/cgen.a"
                 { AValue __old = val_expr; val_expr = a_str_concat(a_string("a_retain("), a_str_concat(a_array_get(vr, a_int(0)), a_string(")"))); a_release(__old); }
             }
-#line 1412 "std/compiler/cgen.a"
+#line 1514 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(a_str_concat(ind, a_str_concat(a_string("__ret = "), a_str_concat(val_expr, a_string("; goto __fn_cleanup;")))), a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
         }
-#line 1414 "std/compiler/cgen.a"
+#line 1516 "std/compiler/cgen.a"
         if (a_truthy(has_cleanup)) {
-#line 1415 "std/compiler/cgen.a"
+#line 1517 "std/compiler/cgen.a"
             { AValue __old = val_expr; val_expr = a_array_get(vr, a_int(0)); a_release(__old); }
-#line 1416 "std/compiler/cgen.a"
+#line 1518 "std/compiler/cgen.a"
             { AValue __old = ret_expr; ret_expr = a_retain(val_expr); a_release(__old); }
-#line 1417 "std/compiler/cgen.a"
+#line 1519 "std/compiler/cgen.a"
             if (a_truthy(fn_cgen__is_ident(a_array_get(node, a_string("expr"))))) {
-#line 1418 "std/compiler/cgen.a"
+#line 1520 "std/compiler/cgen.a"
                 { AValue __old = ret_expr; ret_expr = a_str_concat(a_string("a_retain("), a_str_concat(val_expr, a_string(")"))); a_release(__old); }
             }
-#line 1420 "std/compiler/cgen.a"
+#line 1522 "std/compiler/cgen.a"
             { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(cleanup_vars, depth); a_release(__old); }
-#line 1421 "std/compiler/cgen.a"
+#line 1523 "std/compiler/cgen.a"
             { AValue __old = code; code = a_str_concat(ind, a_str_concat(a_string("{ AValue __ret = "), a_str_concat(ret_expr, a_str_concat(a_string(";"), a_str_concat(cleanup, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("return __ret; }")))))))); a_release(__old); }
-#line 1422 "std/compiler/cgen.a"
+#line 1524 "std/compiler/cgen.a"
             __ret = fn_cgen__RL(code, a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
         }
-#line 1424 "std/compiler/cgen.a"
+#line 1526 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(ind, a_str_concat(a_string("return "), a_str_concat(a_array_get(vr, a_int(0)), a_string(";")))), a_array_get(vr, a_int(1)), a_array_get(vr, a_int(2))); goto __fn_cleanup;
     }
-#line 1427 "std/compiler/cgen.a"
+#line 1529 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("ExprStmt")))) {
-#line 1428 "std/compiler/cgen.a"
+#line 1530 "std/compiler/cgen.a"
         { AValue __old = er; er = fn_cgen_emit_expr(a_array_get(node, a_string("expr")), bm, ctx, li); a_release(__old); }
-#line 1429 "std/compiler/cgen.a"
+#line 1531 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(a_str_concat(ind, a_str_concat(a_array_get(er, a_int(0)), a_string(";"))), a_array_get(er, a_int(1)), a_array_get(er, a_int(2))); goto __fn_cleanup;
     }
-#line 1432 "std/compiler/cgen.a"
+#line 1534 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("If")))) {
-#line 1433 "std/compiler/cgen.a"
+#line 1535 "std/compiler/cgen.a"
         { AValue __old = cr; cr = fn_cgen_emit_expr(a_array_get(node, a_string("cond")), bm, ctx, li); a_release(__old); }
-#line 1434 "std/compiler/cgen.a"
+#line 1536 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(cr, a_int(1)); a_release(__old); }
-#line 1435 "std/compiler/cgen.a"
+#line 1537 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_get(cr, a_int(2)); a_release(__old); }
-#line 1436 "std/compiler/cgen.a"
+#line 1538 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(ind, a_str_concat(a_string("if (a_truthy("), a_str_concat(a_array_get(cr, a_int(0)), a_string(")) {")))); a_release(__old); }
-#line 1437 "std/compiler/cgen.a"
+#line 1539 "std/compiler/cgen.a"
         { AValue __old = then_stmts; then_stmts = a_array_get(a_array_get(node, a_string("then")), a_string("stmts")); a_release(__old); }
-#line 1438 "std/compiler/cgen.a"
+#line 1540 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(then_stmts);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue s = {0}, sr = {0};
                 s = a_array_get(__iter_arr, a_int(__fi));
-#line 1439 "std/compiler/cgen.a"
+#line 1541 "std/compiler/cgen.a"
                 { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(1)), bm, ctx, li); a_release(__old); }
-#line 1440 "std/compiler/cgen.a"
+#line 1542 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1441 "std/compiler/cgen.a"
+#line 1543 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1442 "std/compiler/cgen.a"
+#line 1544 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                 a_release(s);
                 a_release(sr);
             }
             a_release(__iter_arr);
         }
-#line 1444 "std/compiler/cgen.a"
+#line 1546 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
-#line 1445 "std/compiler/cgen.a"
+#line 1547 "std/compiler/cgen.a"
         { AValue __old = else_branch; else_branch = a_array_get(node, a_string("else")); a_release(__old); }
-#line 1446 "std/compiler/cgen.a"
+#line 1548 "std/compiler/cgen.a"
         if (a_truthy(a_neq(a_type_of(else_branch), a_string("void")))) {
-#line 1447 "std/compiler/cgen.a"
+#line 1549 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(else_branch, a_string("tag")), a_string("ElseBlock")))) {
-#line 1448 "std/compiler/cgen.a"
+#line 1550 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_string(" else {")); a_release(__old); }
-#line 1449 "std/compiler/cgen.a"
+#line 1551 "std/compiler/cgen.a"
                 { AValue __old = else_stmts; else_stmts = a_array_get(a_array_get(else_branch, a_string("block")), a_string("stmts")); a_release(__old); }
-#line 1450 "std/compiler/cgen.a"
+#line 1552 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(else_stmts);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue s = {0}, sr = {0};
                         s = a_array_get(__iter_arr, a_int(__fi));
-#line 1451 "std/compiler/cgen.a"
+#line 1553 "std/compiler/cgen.a"
                         { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(1)), bm, ctx, li); a_release(__old); }
-#line 1452 "std/compiler/cgen.a"
+#line 1554 "std/compiler/cgen.a"
                         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1453 "std/compiler/cgen.a"
+#line 1555 "std/compiler/cgen.a"
                         { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1454 "std/compiler/cgen.a"
+#line 1556 "std/compiler/cgen.a"
                         { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                         a_release(s);
                         a_release(sr);
                     }
                     a_release(__iter_arr);
                 }
-#line 1456 "std/compiler/cgen.a"
+#line 1558 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
             }
-#line 1458 "std/compiler/cgen.a"
+#line 1560 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(else_branch, a_string("tag")), a_string("ElseIf")))) {
-#line 1459 "std/compiler/cgen.a"
+#line 1561 "std/compiler/cgen.a"
                 { AValue __old = sr; sr = fn_cgen_emit_stmt(a_array_get(else_branch, a_string("stmt")), depth, bm, ctx, li); a_release(__old); }
-#line 1460 "std/compiler/cgen.a"
+#line 1562 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string(" else\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1461 "std/compiler/cgen.a"
+#line 1563 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1462 "std/compiler/cgen.a"
+#line 1564 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
             }
         }
-#line 1465 "std/compiler/cgen.a"
+#line 1567 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
     }
-#line 1468 "std/compiler/cgen.a"
+#line 1570 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("While")))) {
-#line 1469 "std/compiler/cgen.a"
+#line 1571 "std/compiler/cgen.a"
         { AValue __old = cr; cr = fn_cgen_emit_expr(a_array_get(node, a_string("cond")), bm, ctx, li); a_release(__old); }
-#line 1470 "std/compiler/cgen.a"
+#line 1572 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(cr, a_int(1)); a_release(__old); }
-#line 1471 "std/compiler/cgen.a"
+#line 1573 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_get(cr, a_int(2)); a_release(__old); }
-#line 1472 "std/compiler/cgen.a"
+#line 1574 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(ind, a_str_concat(a_string("while (a_truthy("), a_str_concat(a_array_get(cr, a_int(0)), a_string(")) {")))); a_release(__old); }
-#line 1473 "std/compiler/cgen.a"
+#line 1575 "std/compiler/cgen.a"
         { AValue __old = body_stmts; body_stmts = a_array_get(a_array_get(node, a_string("body")), a_string("stmts")); a_release(__old); }
-#line 1474 "std/compiler/cgen.a"
+#line 1576 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_stmts);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue s = {0}, sr = {0};
                 s = a_array_get(__iter_arr, a_int(__fi));
-#line 1475 "std/compiler/cgen.a"
+#line 1577 "std/compiler/cgen.a"
                 { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(1)), bm, ctx, li); a_release(__old); }
-#line 1476 "std/compiler/cgen.a"
+#line 1578 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1477 "std/compiler/cgen.a"
+#line 1579 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1478 "std/compiler/cgen.a"
+#line 1580 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                 a_release(s);
                 a_release(sr);
             }
             a_release(__iter_arr);
         }
-#line 1480 "std/compiler/cgen.a"
+#line 1582 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
-#line 1481 "std/compiler/cgen.a"
+#line 1583 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
     }
-#line 1484 "std/compiler/cgen.a"
+#line 1586 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("For")))) {
-#line 1485 "std/compiler/cgen.a"
+#line 1587 "std/compiler/cgen.a"
         { AValue __old = var_name; var_name = fn_cgen__mangle(a_array_get(node, a_string("var"))); a_release(__old); }
-#line 1486 "std/compiler/cgen.a"
+#line 1588 "std/compiler/cgen.a"
         { AValue __old = ir; ir = fn_cgen_emit_expr(a_array_get(node, a_string("iter")), bm, ctx, li); a_release(__old); }
-#line 1487 "std/compiler/cgen.a"
+#line 1589 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(ir, a_int(1)); a_release(__old); }
-#line 1488 "std/compiler/cgen.a"
+#line 1590 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_get(ir, a_int(2)); a_release(__old); }
-#line 1489 "std/compiler/cgen.a"
+#line 1591 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(ind, a_string("{")); a_release(__old); }
-#line 1490 "std/compiler/cgen.a"
+#line 1592 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_str_concat(a_string("AValue __iter_arr = a_iterable("), a_str_concat(a_array_get(ir, a_int(0)), a_string(");")))))); a_release(__old); }
-#line 1491 "std/compiler/cgen.a"
+#line 1593 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {")))); a_release(__old); }
-#line 1492 "std/compiler/cgen.a"
+#line 1594 "std/compiler/cgen.a"
         { AValue __old = body_vars; body_vars = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(node, a_string("body")), a_string("stmts"))); a_release(__old); }
-#line 1493 "std/compiler/cgen.a"
+#line 1595 "std/compiler/cgen.a"
         { AValue __old = for_decls; for_decls = a_array_new(1, var_name); a_release(__old); }
-#line 1494 "std/compiler/cgen.a"
+#line 1596 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_vars);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue v = {0};
                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1495 "std/compiler/cgen.a"
+#line 1597 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(for_decls, v)))) {
-#line 1495 "std/compiler/cgen.a"
+#line 1597 "std/compiler/cgen.a"
                     for_decls = a_array_push_move(for_decls, v);
                 }
                 a_release(v);
             }
             a_release(__iter_arr);
         }
-#line 1497 "std/compiler/cgen.a"
+#line 1599 "std/compiler/cgen.a"
         { AValue __old = init_parts; init_parts = a_array_new(0); a_release(__old); }
-#line 1498 "std/compiler/cgen.a"
+#line 1600 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(for_decls);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue v = {0};
                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1498 "std/compiler/cgen.a"
+#line 1600 "std/compiler/cgen.a"
                 init_parts = a_array_push_move(init_parts, a_str_concat(v, a_string(" = {0}")));
                 a_release(v);
             }
             a_release(__iter_arr);
         }
-#line 1499 "std/compiler/cgen.a"
+#line 1601 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(2))), a_str_concat(a_string("AValue "), a_str_concat(a_str_join(init_parts, a_string(", ")), a_string(";")))))); a_release(__old); }
-#line 1500 "std/compiler/cgen.a"
+#line 1602 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(2))), a_str_concat(var_name, a_string(" = a_array_get(__iter_arr, a_int(__fi));"))))); a_release(__old); }
-#line 1501 "std/compiler/cgen.a"
+#line 1604 "std/compiler/cgen.a"
+        { AValue __old = body_ctx; body_ctx = fn_cgen__with_enclosing(ctx, a_array_new(1, a_array_get(node, a_string("var")))); a_release(__old); }
+#line 1605 "std/compiler/cgen.a"
         { AValue __old = body_stmts; body_stmts = a_array_get(a_array_get(node, a_string("body")), a_string("stmts")); a_release(__old); }
-#line 1502 "std/compiler/cgen.a"
+#line 1606 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_stmts);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue s = {0}, sr = {0};
                 s = a_array_get(__iter_arr, a_int(__fi));
-#line 1503 "std/compiler/cgen.a"
-                { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(2)), bm, ctx, li); a_release(__old); }
-#line 1504 "std/compiler/cgen.a"
+#line 1607 "std/compiler/cgen.a"
+                { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(2)), bm, body_ctx, li); a_release(__old); }
+#line 1608 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1505 "std/compiler/cgen.a"
+#line 1609 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1506 "std/compiler/cgen.a"
+#line 1610 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                 a_release(s);
                 a_release(sr);
             }
             a_release(__iter_arr);
         }
-#line 1508 "std/compiler/cgen.a"
+#line 1612 "std/compiler/cgen.a"
         { AValue __old = for_cleanup; for_cleanup = fn_cgen__emit_cleanup(for_decls, a_add(depth, a_int(2))); a_release(__old); }
-#line 1509 "std/compiler/cgen.a"
+#line 1613 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, for_cleanup); a_release(__old); }
-#line 1510 "std/compiler/cgen.a"
+#line 1614 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("}")))); a_release(__old); }
-#line 1511 "std/compiler/cgen.a"
+#line 1615 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("a_release(__iter_arr);")))); a_release(__old); }
-#line 1512 "std/compiler/cgen.a"
+#line 1616 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
-#line 1513 "std/compiler/cgen.a"
+#line 1617 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
     }
-#line 1516 "std/compiler/cgen.a"
+#line 1620 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("ForDestructure")))) {
-#line 1517 "std/compiler/cgen.a"
+#line 1621 "std/compiler/cgen.a"
         { AValue __old = bindings; bindings = a_array_get(node, a_string("bindings")); a_release(__old); }
-#line 1518 "std/compiler/cgen.a"
+#line 1622 "std/compiler/cgen.a"
         { AValue __old = ir; ir = fn_cgen_emit_expr(a_array_get(node, a_string("iter")), bm, ctx, li); a_release(__old); }
-#line 1519 "std/compiler/cgen.a"
+#line 1623 "std/compiler/cgen.a"
         { AValue __old = li; li = a_array_get(ir, a_int(1)); a_release(__old); }
-#line 1520 "std/compiler/cgen.a"
+#line 1624 "std/compiler/cgen.a"
         { AValue __old = lifted; lifted = a_array_get(ir, a_int(2)); a_release(__old); }
-#line 1521 "std/compiler/cgen.a"
+#line 1625 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(ind, a_string("{")); a_release(__old); }
-#line 1522 "std/compiler/cgen.a"
+#line 1626 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_str_concat(a_string("AValue __iter_arr = a_iterable("), a_str_concat(a_array_get(ir, a_int(0)), a_string(");")))))); a_release(__old); }
-#line 1523 "std/compiler/cgen.a"
+#line 1627 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {")))); a_release(__old); }
-#line 1525 "std/compiler/cgen.a"
+#line 1629 "std/compiler/cgen.a"
         { AValue __old = decls; decls = a_array_new(1, a_string("__elem")); a_release(__old); }
-#line 1526 "std/compiler/cgen.a"
+#line 1630 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(bindings);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue b = {0};
                 b = a_array_get(__iter_arr, a_int(__fi));
-#line 1526 "std/compiler/cgen.a"
+#line 1630 "std/compiler/cgen.a"
                 decls = a_array_push_move(decls, fn_cgen__mangle(b));
                 a_release(b);
             }
             a_release(__iter_arr);
         }
-#line 1527 "std/compiler/cgen.a"
+#line 1631 "std/compiler/cgen.a"
         { AValue __old = body_vars; body_vars = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(node, a_string("body")), a_string("stmts"))); a_release(__old); }
-#line 1528 "std/compiler/cgen.a"
+#line 1632 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_vars);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue v = {0};
                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1528 "std/compiler/cgen.a"
+#line 1632 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(decls, v)))) {
-#line 1528 "std/compiler/cgen.a"
+#line 1632 "std/compiler/cgen.a"
                     decls = a_array_push_move(decls, v);
                 }
                 a_release(v);
             }
             a_release(__iter_arr);
         }
-#line 1529 "std/compiler/cgen.a"
+#line 1633 "std/compiler/cgen.a"
         { AValue __old = init_parts; init_parts = a_array_new(0); a_release(__old); }
-#line 1530 "std/compiler/cgen.a"
+#line 1634 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(decls);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue v = {0};
                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1530 "std/compiler/cgen.a"
+#line 1634 "std/compiler/cgen.a"
                 init_parts = a_array_push_move(init_parts, a_str_concat(v, a_string(" = {0}")));
                 a_release(v);
             }
             a_release(__iter_arr);
         }
-#line 1531 "std/compiler/cgen.a"
+#line 1635 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(2))), a_str_concat(a_string("AValue "), a_str_concat(a_str_join(init_parts, a_string(", ")), a_string(";")))))); a_release(__old); }
-#line 1532 "std/compiler/cgen.a"
+#line 1636 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(2))), a_string("__elem = a_array_get(__iter_arr, a_int(__fi));")))); a_release(__old); }
-#line 1533 "std/compiler/cgen.a"
+#line 1637 "std/compiler/cgen.a"
         { AValue __old = bi; bi = a_int(0); a_release(__old); }
-#line 1534 "std/compiler/cgen.a"
+#line 1638 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(bindings);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue b = {0};
                 b = a_array_get(__iter_arr, a_int(__fi));
-#line 1535 "std/compiler/cgen.a"
+#line 1639 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(2))), a_str_concat(fn_cgen__mangle(b), a_str_concat(a_string(" = a_array_get(__elem, a_int("), a_str_concat(a_to_str(bi), a_string("));"))))))); a_release(__old); }
-#line 1536 "std/compiler/cgen.a"
+#line 1640 "std/compiler/cgen.a"
                 { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
                 a_release(b);
             }
             a_release(__iter_arr);
         }
-#line 1538 "std/compiler/cgen.a"
+#line 1642 "std/compiler/cgen.a"
+        { AValue __old = body_ctx; body_ctx = fn_cgen__with_enclosing(ctx, bindings); a_release(__old); }
+#line 1643 "std/compiler/cgen.a"
         { AValue __old = body_stmts; body_stmts = a_array_get(a_array_get(node, a_string("body")), a_string("stmts")); a_release(__old); }
-#line 1539 "std/compiler/cgen.a"
+#line 1644 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(body_stmts);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue s = {0}, sr = {0};
                 s = a_array_get(__iter_arr, a_int(__fi));
-#line 1540 "std/compiler/cgen.a"
-                { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(2)), bm, ctx, li); a_release(__old); }
-#line 1541 "std/compiler/cgen.a"
+#line 1645 "std/compiler/cgen.a"
+                { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_add(depth, a_int(2)), bm, body_ctx, li); a_release(__old); }
+#line 1646 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1542 "std/compiler/cgen.a"
+#line 1647 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1543 "std/compiler/cgen.a"
+#line 1648 "std/compiler/cgen.a"
                 { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
                 a_release(s);
                 a_release(sr);
             }
             a_release(__iter_arr);
         }
-#line 1545 "std/compiler/cgen.a"
+#line 1650 "std/compiler/cgen.a"
         { AValue __old = fd_cleanup; fd_cleanup = fn_cgen__emit_cleanup(decls, a_add(depth, a_int(2))); a_release(__old); }
-#line 1546 "std/compiler/cgen.a"
+#line 1651 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, fd_cleanup); a_release(__old); }
-#line 1547 "std/compiler/cgen.a"
+#line 1652 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("}")))); a_release(__old); }
-#line 1548 "std/compiler/cgen.a"
+#line 1653 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(fn_cgen__indent(a_add(depth, a_int(1))), a_string("a_release(__iter_arr);")))); a_release(__old); }
-#line 1549 "std/compiler/cgen.a"
+#line 1654 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_str_concat(ind, a_string("}")))); a_release(__old); }
-#line 1550 "std/compiler/cgen.a"
+#line 1655 "std/compiler/cgen.a"
         __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
     }
-#line 1553 "std/compiler/cgen.a"
+#line 1658 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Match")))) {
-#line 1553 "std/compiler/cgen.a"
+#line 1658 "std/compiler/cgen.a"
         __ret = fn_cgen__emit_match(node, depth, bm, ctx, li); goto __fn_cleanup;
     }
-#line 1555 "std/compiler/cgen.a"
+#line 1660 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Break")))) {
-#line 1555 "std/compiler/cgen.a"
+#line 1660 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_str_concat(ind, a_string("break;")), li); goto __fn_cleanup;
     }
-#line 1556 "std/compiler/cgen.a"
+#line 1661 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("Continue")))) {
-#line 1556 "std/compiler/cgen.a"
+#line 1661 "std/compiler/cgen.a"
         __ret = fn_cgen__R(a_str_concat(ind, a_string("continue;")), li); goto __fn_cleanup;
     }
-#line 1558 "std/compiler/cgen.a"
+#line 1663 "std/compiler/cgen.a"
     __ret = fn_cgen__R(a_str_concat(ind, a_str_concat(a_string("/* unhandled stmt: "), a_str_concat(tag, a_string(" */")))), li); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -10362,6 +10696,7 @@ __fn_cleanup:
     a_release(body_vars);
     a_release(for_decls);
     a_release(init_parts);
+    a_release(body_ctx);
     a_release(for_cleanup);
     a_release(decls);
     a_release(bi);
@@ -10378,94 +10713,94 @@ AValue fn_cgen__collect_pattern_vars(AValue pat) {
     AValue tag = {0}, vs = {0};
     AValue __ret = a_void();
     pat = a_retain(pat);
-#line 1564 "std/compiler/cgen.a"
+#line 1669 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
-#line 1565 "std/compiler/cgen.a"
+#line 1670 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatIdent")))) {
-#line 1565 "std/compiler/cgen.a"
+#line 1670 "std/compiler/cgen.a"
         __ret = a_array_new(1, fn_cgen__mangle(a_array_get(pat, a_string("name")))); goto __fn_cleanup;
     }
-#line 1566 "std/compiler/cgen.a"
+#line 1671 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatRest")))) {
-#line 1566 "std/compiler/cgen.a"
+#line 1671 "std/compiler/cgen.a"
         __ret = a_array_new(1, fn_cgen__mangle(a_array_get(pat, a_string("name")))); goto __fn_cleanup;
     }
-#line 1567 "std/compiler/cgen.a"
+#line 1672 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatWildcard")))) {
-#line 1567 "std/compiler/cgen.a"
+#line 1672 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 1568 "std/compiler/cgen.a"
+#line 1673 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatLiteral")))) {
-#line 1568 "std/compiler/cgen.a"
+#line 1673 "std/compiler/cgen.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 1569 "std/compiler/cgen.a"
+#line 1674 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatConstructor")))) {
-#line 1570 "std/compiler/cgen.a"
+#line 1675 "std/compiler/cgen.a"
         { AValue __old = vs; vs = a_array_new(0); a_release(__old); }
-#line 1571 "std/compiler/cgen.a"
+#line 1676 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("args")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue a = {0};
                 a = a_array_get(__iter_arr, a_int(__fi));
-#line 1571 "std/compiler/cgen.a"
+#line 1676 "std/compiler/cgen.a"
                 { AValue __old = vs; vs = a_concat_arr(vs, fn_cgen__collect_pattern_vars(a)); a_release(__old); }
                 a_release(a);
             }
             a_release(__iter_arr);
         }
-#line 1572 "std/compiler/cgen.a"
+#line 1677 "std/compiler/cgen.a"
         __ret = a_retain(vs); goto __fn_cleanup;
     }
-#line 1574 "std/compiler/cgen.a"
+#line 1679 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatArray")))) {
-#line 1575 "std/compiler/cgen.a"
+#line 1680 "std/compiler/cgen.a"
         { AValue __old = vs; vs = a_array_new(0); a_release(__old); }
-#line 1576 "std/compiler/cgen.a"
+#line 1681 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("elems")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 1577 "std/compiler/cgen.a"
+#line 1682 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatElem")))) {
-#line 1577 "std/compiler/cgen.a"
+#line 1682 "std/compiler/cgen.a"
                     { AValue __old = vs; vs = a_concat_arr(vs, fn_cgen__collect_pattern_vars(a_array_get(e, a_string("pattern")))); a_release(__old); }
                 }
-#line 1578 "std/compiler/cgen.a"
+#line 1683 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_array_get(e, a_string("tag")), a_string("PatRest")))) {
-#line 1578 "std/compiler/cgen.a"
+#line 1683 "std/compiler/cgen.a"
                     vs = a_array_push_move(vs, fn_cgen__mangle(a_array_get(e, a_string("name"))));
                 }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 1580 "std/compiler/cgen.a"
+#line 1685 "std/compiler/cgen.a"
         __ret = a_retain(vs); goto __fn_cleanup;
     }
-#line 1582 "std/compiler/cgen.a"
+#line 1687 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("PatMap")))) {
-#line 1583 "std/compiler/cgen.a"
+#line 1688 "std/compiler/cgen.a"
         { AValue __old = vs; vs = a_array_new(0); a_release(__old); }
-#line 1584 "std/compiler/cgen.a"
+#line 1689 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("entries")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 1584 "std/compiler/cgen.a"
+#line 1689 "std/compiler/cgen.a"
                 { AValue __old = vs; vs = a_concat_arr(vs, fn_cgen__collect_pattern_vars(a_array_get(e, a_string("pattern")))); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 1585 "std/compiler/cgen.a"
+#line 1690 "std/compiler/cgen.a"
         __ret = a_retain(vs); goto __fn_cleanup;
     }
-#line 1587 "std/compiler/cgen.a"
+#line 1692 "std/compiler/cgen.a"
     __ret = a_array_new(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -10478,62 +10813,62 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
     AValue vars = {0}, tag = {0}, name = {0}, tv = {0}, eb = {0}, ev = {0}, eiv = {0}, wv = {0}, fv = {0}, rn = {0}, pv = {0}, body = {0}, bv = {0};
     AValue __ret = a_void();
     stmts = a_retain(stmts);
-#line 1591 "std/compiler/cgen.a"
+#line 1696 "std/compiler/cgen.a"
     { AValue __old = vars; vars = a_array_new(0); a_release(__old); }
-#line 1592 "std/compiler/cgen.a"
+#line 1697 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0}, tag = {0}, name = {0}, tv = {0}, eb = {0}, ev = {0}, eiv = {0}, wv = {0}, fv = {0}, rn = {0}, pv = {0}, body = {0}, bv = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 1593 "std/compiler/cgen.a"
+#line 1698 "std/compiler/cgen.a"
             { AValue __old = tag; tag = a_array_get(s, a_string("tag")); a_release(__old); }
-#line 1594 "std/compiler/cgen.a"
+#line 1699 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 1595 "std/compiler/cgen.a"
+#line 1700 "std/compiler/cgen.a"
                 { AValue __old = name; name = fn_cgen__mangle(a_array_get(s, a_string("name"))); a_release(__old); }
-#line 1596 "std/compiler/cgen.a"
+#line 1701 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(vars, name)))) {
-#line 1596 "std/compiler/cgen.a"
+#line 1701 "std/compiler/cgen.a"
                     vars = a_array_push_move(vars, name);
                 }
             }
-#line 1598 "std/compiler/cgen.a"
+#line 1703 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("If")))) {
-#line 1599 "std/compiler/cgen.a"
+#line 1704 "std/compiler/cgen.a"
                 { AValue __old = tv; tv = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(s, a_string("then")), a_string("stmts"))); a_release(__old); }
-#line 1600 "std/compiler/cgen.a"
+#line 1705 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(tv);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue v = {0};
                         v = a_array_get(__iter_arr, a_int(__fi));
-#line 1600 "std/compiler/cgen.a"
+#line 1705 "std/compiler/cgen.a"
                         if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1600 "std/compiler/cgen.a"
+#line 1705 "std/compiler/cgen.a"
                             vars = a_array_push_move(vars, v);
                         }
                         a_release(v);
                     }
                     a_release(__iter_arr);
                 }
-#line 1601 "std/compiler/cgen.a"
+#line 1706 "std/compiler/cgen.a"
                 { AValue __old = eb; eb = a_array_get(s, a_string("else")); a_release(__old); }
-#line 1602 "std/compiler/cgen.a"
+#line 1707 "std/compiler/cgen.a"
                 if (a_truthy(a_neq(a_type_of(eb), a_string("void")))) {
-#line 1603 "std/compiler/cgen.a"
+#line 1708 "std/compiler/cgen.a"
                     if (a_truthy(a_eq(a_array_get(eb, a_string("tag")), a_string("ElseBlock")))) {
-#line 1604 "std/compiler/cgen.a"
+#line 1709 "std/compiler/cgen.a"
                         { AValue __old = ev; ev = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(eb, a_string("block")), a_string("stmts"))); a_release(__old); }
-#line 1605 "std/compiler/cgen.a"
+#line 1710 "std/compiler/cgen.a"
                         {
                             AValue __iter_arr = a_iterable(ev);
                             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                                 AValue v = {0};
                                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1605 "std/compiler/cgen.a"
+#line 1710 "std/compiler/cgen.a"
                                 if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1605 "std/compiler/cgen.a"
+#line 1710 "std/compiler/cgen.a"
                                     vars = a_array_push_move(vars, v);
                                 }
                                 a_release(v);
@@ -10541,19 +10876,19 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                             a_release(__iter_arr);
                         }
                     }
-#line 1607 "std/compiler/cgen.a"
+#line 1712 "std/compiler/cgen.a"
                     if (a_truthy(a_eq(a_array_get(eb, a_string("tag")), a_string("ElseIf")))) {
-#line 1608 "std/compiler/cgen.a"
+#line 1713 "std/compiler/cgen.a"
                         { AValue __old = eiv; eiv = fn_cgen__collect_vars_in_stmts(a_array_new(1, a_array_get(eb, a_string("stmt")))); a_release(__old); }
-#line 1609 "std/compiler/cgen.a"
+#line 1714 "std/compiler/cgen.a"
                         {
                             AValue __iter_arr = a_iterable(eiv);
                             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                                 AValue v = {0};
                                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1609 "std/compiler/cgen.a"
+#line 1714 "std/compiler/cgen.a"
                                 if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1609 "std/compiler/cgen.a"
+#line 1714 "std/compiler/cgen.a"
                                     vars = a_array_push_move(vars, v);
                                 }
                                 a_release(v);
@@ -10563,19 +10898,19 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                     }
                 }
             }
-#line 1613 "std/compiler/cgen.a"
+#line 1718 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("While")))) {
-#line 1614 "std/compiler/cgen.a"
+#line 1719 "std/compiler/cgen.a"
                 { AValue __old = wv; wv = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(s, a_string("body")), a_string("stmts"))); a_release(__old); }
-#line 1615 "std/compiler/cgen.a"
+#line 1720 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(wv);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue v = {0};
                         v = a_array_get(__iter_arr, a_int(__fi));
-#line 1615 "std/compiler/cgen.a"
+#line 1720 "std/compiler/cgen.a"
                         if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1615 "std/compiler/cgen.a"
+#line 1720 "std/compiler/cgen.a"
                             vars = a_array_push_move(vars, v);
                         }
                         a_release(v);
@@ -10583,19 +10918,19 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                     a_release(__iter_arr);
                 }
             }
-#line 1617 "std/compiler/cgen.a"
+#line 1722 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("For")))) {
-#line 1618 "std/compiler/cgen.a"
+#line 1723 "std/compiler/cgen.a"
                 { AValue __old = fv; fv = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(s, a_string("body")), a_string("stmts"))); a_release(__old); }
-#line 1619 "std/compiler/cgen.a"
+#line 1724 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(fv);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue v = {0};
                         v = a_array_get(__iter_arr, a_int(__fi));
-#line 1619 "std/compiler/cgen.a"
+#line 1724 "std/compiler/cgen.a"
                         if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1619 "std/compiler/cgen.a"
+#line 1724 "std/compiler/cgen.a"
                             vars = a_array_push_move(vars, v);
                         }
                         a_release(v);
@@ -10603,26 +10938,26 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                     a_release(__iter_arr);
                 }
             }
-#line 1621 "std/compiler/cgen.a"
+#line 1726 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("LetDestructure")))) {
-#line 1622 "std/compiler/cgen.a"
+#line 1727 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(vars, a_string("__dest"))))) {
-#line 1622 "std/compiler/cgen.a"
+#line 1727 "std/compiler/cgen.a"
                     vars = a_array_push_move(vars, a_string("__dest"));
                 }
-#line 1623 "std/compiler/cgen.a"
+#line 1728 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(a_array_get(s, a_string("bindings")));
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue b = {0}, name = {0};
                         b = a_array_get(__iter_arr, a_int(__fi));
-#line 1624 "std/compiler/cgen.a"
+#line 1729 "std/compiler/cgen.a"
                         if (a_truthy(a_and(a_neq(b, a_string("")), a_neq(b, a_string("_"))))) {
-#line 1625 "std/compiler/cgen.a"
+#line 1730 "std/compiler/cgen.a"
                             { AValue __old = name; name = fn_cgen__mangle(b); a_release(__old); }
-#line 1626 "std/compiler/cgen.a"
+#line 1731 "std/compiler/cgen.a"
                             if (a_truthy(a_not(a_contains(vars, name)))) {
-#line 1626 "std/compiler/cgen.a"
+#line 1731 "std/compiler/cgen.a"
                                 vars = a_array_push_move(vars, name);
                             }
                         }
@@ -10631,32 +10966,32 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                     }
                     a_release(__iter_arr);
                 }
-#line 1629 "std/compiler/cgen.a"
+#line 1734 "std/compiler/cgen.a"
                 { AValue __old = rn; rn = a_array_get(s, a_string("rest")); a_release(__old); }
-#line 1630 "std/compiler/cgen.a"
+#line 1735 "std/compiler/cgen.a"
                 if (a_truthy(a_neq(rn, a_string("")))) {
-#line 1631 "std/compiler/cgen.a"
+#line 1736 "std/compiler/cgen.a"
                     { AValue __old = name; name = fn_cgen__mangle(rn); a_release(__old); }
-#line 1632 "std/compiler/cgen.a"
+#line 1737 "std/compiler/cgen.a"
                     if (a_truthy(a_not(a_contains(vars, name)))) {
-#line 1632 "std/compiler/cgen.a"
+#line 1737 "std/compiler/cgen.a"
                         vars = a_array_push_move(vars, name);
                     }
                 }
             }
-#line 1635 "std/compiler/cgen.a"
+#line 1740 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("ForDestructure")))) {
-#line 1636 "std/compiler/cgen.a"
+#line 1741 "std/compiler/cgen.a"
                 { AValue __old = fv; fv = fn_cgen__collect_vars_in_stmts(a_array_get(a_array_get(s, a_string("body")), a_string("stmts"))); a_release(__old); }
-#line 1637 "std/compiler/cgen.a"
+#line 1742 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(fv);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue v = {0};
                         v = a_array_get(__iter_arr, a_int(__fi));
-#line 1637 "std/compiler/cgen.a"
+#line 1742 "std/compiler/cgen.a"
                         if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1637 "std/compiler/cgen.a"
+#line 1742 "std/compiler/cgen.a"
                             vars = a_array_push_move(vars, v);
                         }
                         a_release(v);
@@ -10664,46 +10999,46 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
                     a_release(__iter_arr);
                 }
             }
-#line 1639 "std/compiler/cgen.a"
+#line 1744 "std/compiler/cgen.a"
             if (a_truthy(a_eq(tag, a_string("Match")))) {
-#line 1640 "std/compiler/cgen.a"
+#line 1745 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(a_array_get(s, a_string("arms")));
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue arm = {0}, pv = {0}, body = {0}, bv = {0};
                         arm = a_array_get(__iter_arr, a_int(__fi));
-#line 1641 "std/compiler/cgen.a"
+#line 1746 "std/compiler/cgen.a"
                         { AValue __old = pv; pv = fn_cgen__collect_pattern_vars(a_array_get(arm, a_string("pattern"))); a_release(__old); }
-#line 1642 "std/compiler/cgen.a"
+#line 1747 "std/compiler/cgen.a"
                         {
                             AValue __iter_arr = a_iterable(pv);
                             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                                 AValue v = {0};
                                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1642 "std/compiler/cgen.a"
+#line 1747 "std/compiler/cgen.a"
                                 if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1642 "std/compiler/cgen.a"
+#line 1747 "std/compiler/cgen.a"
                                     vars = a_array_push_move(vars, v);
                                 }
                                 a_release(v);
                             }
                             a_release(__iter_arr);
                         }
-#line 1643 "std/compiler/cgen.a"
+#line 1748 "std/compiler/cgen.a"
                         { AValue __old = body; body = a_array_get(arm, a_string("body")); a_release(__old); }
-#line 1644 "std/compiler/cgen.a"
+#line 1749 "std/compiler/cgen.a"
                         if (a_truthy(a_eq(a_type_of(a_array_get(body, a_string("stmts"))), a_string("array")))) {
-#line 1645 "std/compiler/cgen.a"
+#line 1750 "std/compiler/cgen.a"
                             { AValue __old = bv; bv = fn_cgen__collect_vars_in_stmts(a_array_get(body, a_string("stmts"))); a_release(__old); }
-#line 1646 "std/compiler/cgen.a"
+#line 1751 "std/compiler/cgen.a"
                             {
                                 AValue __iter_arr = a_iterable(bv);
                                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                                     AValue v = {0};
                                     v = a_array_get(__iter_arr, a_int(__fi));
-#line 1646 "std/compiler/cgen.a"
+#line 1751 "std/compiler/cgen.a"
                                     if (a_truthy(a_not(a_contains(vars, v)))) {
-#line 1646 "std/compiler/cgen.a"
+#line 1751 "std/compiler/cgen.a"
                                         vars = a_array_push_move(vars, v);
                                     }
                                     a_release(v);
@@ -10735,7 +11070,7 @@ AValue fn_cgen__collect_vars_in_stmts(AValue stmts) {
         }
         a_release(__iter_arr);
     }
-#line 1651 "std/compiler/cgen.a"
+#line 1756 "std/compiler/cgen.a"
     __ret = a_retain(vars); goto __fn_cleanup;
 __fn_cleanup:
     a_release(vars);
@@ -10762,66 +11097,66 @@ AValue fn_cgen_emit_fn(AValue node, AValue bm, AValue ctx, AValue li) {
     bm = a_retain(bm);
     ctx = a_retain(ctx);
     li = a_retain(li);
-#line 1657 "std/compiler/cgen.a"
+#line 1762 "std/compiler/cgen.a"
     { AValue __old = name; name = a_array_get(node, a_string("name")); a_release(__old); }
-#line 1658 "std/compiler/cgen.a"
+#line 1763 "std/compiler/cgen.a"
     { AValue __old = full_name; full_name = fn_cgen__prefixed_name(name, ctx); a_release(__old); }
-#line 1659 "std/compiler/cgen.a"
+#line 1764 "std/compiler/cgen.a"
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
-#line 1660 "std/compiler/cgen.a"
+#line 1765 "std/compiler/cgen.a"
     { AValue __old = body; body = a_array_get(node, a_string("body")); a_release(__old); }
-#line 1662 "std/compiler/cgen.a"
+#line 1767 "std/compiler/cgen.a"
     { AValue __old = param_parts; param_parts = a_array_new(0); a_release(__old); }
-#line 1663 "std/compiler/cgen.a"
+#line 1768 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1664 "std/compiler/cgen.a"
+#line 1769 "std/compiler/cgen.a"
             param_parts = a_array_push_move(param_parts, a_str_concat(a_string("AValue "), fn_cgen__mangle(a_array_get(p, a_string("name")))));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 1666 "std/compiler/cgen.a"
+#line 1771 "std/compiler/cgen.a"
     { AValue __old = param_str; param_str = a_str_join(param_parts, a_string(", ")); a_release(__old); }
-#line 1667 "std/compiler/cgen.a"
+#line 1772 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(params), a_int(0)))) {
-#line 1667 "std/compiler/cgen.a"
+#line 1772 "std/compiler/cgen.a"
         { AValue __old = param_str; param_str = a_string("void"); a_release(__old); }
     }
-#line 1669 "std/compiler/cgen.a"
+#line 1774 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(a_string("AValue fn_"), a_str_concat(fn_cgen__mangle(full_name), a_str_concat(a_string("("), a_str_concat(param_str, a_string(") {"))))); a_release(__old); }
-#line 1672 "std/compiler/cgen.a"
+#line 1777 "std/compiler/cgen.a"
     { AValue __old = all_vars; all_vars = fn_cgen__collect_vars_in_stmts(a_array_get(body, a_string("stmts"))); a_release(__old); }
-#line 1673 "std/compiler/cgen.a"
+#line 1778 "std/compiler/cgen.a"
     { AValue __old = param_names; param_names = a_array_new(0); a_release(__old); }
-#line 1674 "std/compiler/cgen.a"
+#line 1779 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1674 "std/compiler/cgen.a"
+#line 1779 "std/compiler/cgen.a"
             param_names = a_array_push_move(param_names, fn_cgen__mangle(a_array_get(p, a_string("name"))));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 1675 "std/compiler/cgen.a"
+#line 1780 "std/compiler/cgen.a"
     { AValue __old = decl_vars; decl_vars = a_array_new(0); a_release(__old); }
-#line 1676 "std/compiler/cgen.a"
+#line 1781 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(all_vars);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue v = {0};
             v = a_array_get(__iter_arr, a_int(__fi));
-#line 1677 "std/compiler/cgen.a"
+#line 1782 "std/compiler/cgen.a"
             if (a_truthy(a_not(a_contains(param_names, v)))) {
-#line 1678 "std/compiler/cgen.a"
+#line 1783 "std/compiler/cgen.a"
                 if (a_truthy(a_not(a_contains(decl_vars, v)))) {
-#line 1678 "std/compiler/cgen.a"
+#line 1783 "std/compiler/cgen.a"
                     decl_vars = a_array_push_move(decl_vars, v);
                 }
             }
@@ -10829,113 +11164,113 @@ AValue fn_cgen_emit_fn(AValue node, AValue bm, AValue ctx, AValue li) {
         }
         a_release(__iter_arr);
     }
-#line 1681 "std/compiler/cgen.a"
+#line 1786 "std/compiler/cgen.a"
     if (a_truthy(a_gt(a_len(decl_vars), a_int(0)))) {
-#line 1682 "std/compiler/cgen.a"
+#line 1787 "std/compiler/cgen.a"
         { AValue __old = init_parts; init_parts = a_array_new(0); a_release(__old); }
-#line 1683 "std/compiler/cgen.a"
+#line 1788 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(decl_vars);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue v = {0};
                 v = a_array_get(__iter_arr, a_int(__fi));
-#line 1683 "std/compiler/cgen.a"
+#line 1788 "std/compiler/cgen.a"
                 init_parts = a_array_push_move(init_parts, a_str_concat(v, a_string(" = {0}")));
                 a_release(v);
             }
             a_release(__iter_arr);
         }
-#line 1684 "std/compiler/cgen.a"
+#line 1789 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n    AValue "), a_str_concat(a_str_join(init_parts, a_string(", ")), a_string(";")))); a_release(__old); }
     }
-#line 1686 "std/compiler/cgen.a"
+#line 1791 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("\n    AValue __ret = a_void();")); a_release(__old); }
-#line 1689 "std/compiler/cgen.a"
+#line 1794 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0}, pn = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1690 "std/compiler/cgen.a"
+#line 1795 "std/compiler/cgen.a"
             { AValue __old = pn; pn = fn_cgen__mangle(a_array_get(p, a_string("name"))); a_release(__old); }
-#line 1691 "std/compiler/cgen.a"
+#line 1796 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n    "), a_str_concat(pn, a_str_concat(a_string(" = a_retain("), a_str_concat(pn, a_string(");")))))); a_release(__old); }
             a_release(p);
             a_release(pn);
         }
         a_release(__iter_arr);
     }
-#line 1694 "std/compiler/cgen.a"
+#line 1799 "std/compiler/cgen.a"
     { AValue __old = all_cleanup_vars; all_cleanup_vars = a_concat_arr(decl_vars, param_names); a_release(__old); }
-#line 1697 "std/compiler/cgen.a"
+#line 1802 "std/compiler/cgen.a"
     { AValue __old = enc_vars; enc_vars = a_array_new(0); a_release(__old); }
-#line 1698 "std/compiler/cgen.a"
+#line 1803 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1698 "std/compiler/cgen.a"
+#line 1803 "std/compiler/cgen.a"
             enc_vars = a_array_push_move(enc_vars, a_array_get(p, a_string("name")));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 1699 "std/compiler/cgen.a"
+#line 1804 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(all_vars);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue v = {0};
             v = a_array_get(__iter_arr, a_int(__fi));
-#line 1699 "std/compiler/cgen.a"
+#line 1804 "std/compiler/cgen.a"
             if (a_truthy(a_not(a_contains(enc_vars, fn_cgen__mangle(v))))) {
-#line 1699 "std/compiler/cgen.a"
+#line 1804 "std/compiler/cgen.a"
                 enc_vars = a_array_push_move(enc_vars, v);
             }
             a_release(v);
         }
         a_release(__iter_arr);
     }
-#line 1700 "std/compiler/cgen.a"
+#line 1805 "std/compiler/cgen.a"
     { AValue __old = fn_ctx; fn_ctx = a_map_set(ctx, a_string("enclosing_vars"), enc_vars); a_release(__old); }
-#line 1701 "std/compiler/cgen.a"
+#line 1806 "std/compiler/cgen.a"
     { AValue __old = fn_ctx; fn_ctx = a_map_set(fn_ctx, a_string("cleanup_vars"), all_cleanup_vars); a_release(__old); }
-#line 1702 "std/compiler/cgen.a"
+#line 1807 "std/compiler/cgen.a"
     { AValue __old = fn_ctx; fn_ctx = a_map_set(fn_ctx, a_string("goto_cleanup"), a_bool(1)); a_release(__old); }
-#line 1705 "std/compiler/cgen.a"
+#line 1810 "std/compiler/cgen.a"
     { AValue __old = fn_ctx; fn_ctx = a_map_set(fn_ctx, a_string("escaping_vars"), a_array_new(0)); a_release(__old); }
-#line 1707 "std/compiler/cgen.a"
+#line 1812 "std/compiler/cgen.a"
     { AValue __old = lifted; lifted = a_array_new(0); a_release(__old); }
-#line 1708 "std/compiler/cgen.a"
+#line 1813 "std/compiler/cgen.a"
     { AValue __old = stmts; stmts = a_array_get(body, a_string("stmts")); a_release(__old); }
-#line 1709 "std/compiler/cgen.a"
+#line 1814 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0}, sr = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 1710 "std/compiler/cgen.a"
+#line 1815 "std/compiler/cgen.a"
             { AValue __old = sr; sr = fn_cgen_emit_stmt(s, a_int(1), bm, fn_ctx, li); a_release(__old); }
-#line 1711 "std/compiler/cgen.a"
+#line 1816 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("\n"), a_array_get(sr, a_int(0)))); a_release(__old); }
-#line 1712 "std/compiler/cgen.a"
+#line 1817 "std/compiler/cgen.a"
             { AValue __old = li; li = a_array_get(sr, a_int(1)); a_release(__old); }
-#line 1713 "std/compiler/cgen.a"
+#line 1818 "std/compiler/cgen.a"
             { AValue __old = lifted; lifted = a_concat_arr(lifted, a_array_get(sr, a_int(2))); a_release(__old); }
             a_release(s);
             a_release(sr);
         }
         a_release(__iter_arr);
     }
-#line 1716 "std/compiler/cgen.a"
+#line 1821 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("\n__fn_cleanup:")); a_release(__old); }
-#line 1717 "std/compiler/cgen.a"
+#line 1822 "std/compiler/cgen.a"
     { AValue __old = cleanup; cleanup = fn_cgen__emit_cleanup(all_cleanup_vars, a_int(1)); a_release(__old); }
-#line 1718 "std/compiler/cgen.a"
+#line 1823 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_str_concat(cleanup, a_string("\n    return __ret;"))); a_release(__old); }
-#line 1720 "std/compiler/cgen.a"
+#line 1825 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("\n}\n")); a_release(__old); }
-#line 1721 "std/compiler/cgen.a"
+#line 1826 "std/compiler/cgen.a"
     __ret = fn_cgen__RL(out, li, lifted); goto __fn_cleanup;
 __fn_cleanup:
     a_release(name);
@@ -10969,28 +11304,28 @@ AValue fn_cgen__emit_fwd_decl(AValue name, AValue params) {
     AValue __ret = a_void();
     name = a_retain(name);
     params = a_retain(params);
-#line 1725 "std/compiler/cgen.a"
+#line 1830 "std/compiler/cgen.a"
     { AValue __old = param_parts; param_parts = a_array_new(0); a_release(__old); }
-#line 1726 "std/compiler/cgen.a"
+#line 1831 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1727 "std/compiler/cgen.a"
+#line 1832 "std/compiler/cgen.a"
             param_parts = a_array_push_move(param_parts, a_str_concat(a_string("AValue "), fn_cgen__mangle(a_array_get(p, a_string("name")))));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 1729 "std/compiler/cgen.a"
+#line 1834 "std/compiler/cgen.a"
     { AValue __old = param_str; param_str = a_str_join(param_parts, a_string(", ")); a_release(__old); }
-#line 1730 "std/compiler/cgen.a"
+#line 1835 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(params), a_int(0)))) {
-#line 1730 "std/compiler/cgen.a"
+#line 1835 "std/compiler/cgen.a"
         { AValue __old = param_str; param_str = a_string("void"); a_release(__old); }
     }
-#line 1731 "std/compiler/cgen.a"
+#line 1836 "std/compiler/cgen.a"
     __ret = a_str_concat(a_string("AValue fn_"), a_str_concat(fn_cgen__mangle(name), a_str_concat(a_string("("), a_str_concat(param_str, a_string(");"))))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(param_parts);
@@ -11004,21 +11339,21 @@ AValue fn_cgen__use_path_to_file(AValue path_arr) {
     AValue rel = {0}, mod_path = {0};
     AValue __ret = a_void();
     path_arr = a_retain(path_arr);
-#line 1737 "std/compiler/cgen.a"
+#line 1842 "std/compiler/cgen.a"
     { AValue __old = rel; rel = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); a_release(__old); }
-#line 1738 "std/compiler/cgen.a"
+#line 1843 "std/compiler/cgen.a"
     if (a_truthy(a_fs_exists(rel))) {
-#line 1738 "std/compiler/cgen.a"
+#line 1843 "std/compiler/cgen.a"
         __ret = a_retain(rel); goto __fn_cleanup;
     }
-#line 1739 "std/compiler/cgen.a"
+#line 1844 "std/compiler/cgen.a"
     { AValue __old = mod_path; mod_path = a_str_concat(a_string("a_modules/"), rel); a_release(__old); }
-#line 1740 "std/compiler/cgen.a"
+#line 1845 "std/compiler/cgen.a"
     if (a_truthy(a_fs_exists(mod_path))) {
-#line 1740 "std/compiler/cgen.a"
+#line 1845 "std/compiler/cgen.a"
         __ret = a_retain(mod_path); goto __fn_cleanup;
     }
-#line 1741 "std/compiler/cgen.a"
+#line 1846 "std/compiler/cgen.a"
     __ret = a_retain(rel); goto __fn_cleanup;
 __fn_cleanup:
     a_release(rel);
@@ -11030,7 +11365,7 @@ __fn_cleanup:
 AValue fn_cgen__use_path_short_name(AValue path_arr) {
     AValue __ret = a_void();
     path_arr = a_retain(path_arr);
-#line 1745 "std/compiler/cgen.a"
+#line 1850 "std/compiler/cgen.a"
     __ret = a_array_get(path_arr, a_sub(a_len(path_arr), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(path_arr);
@@ -11041,24 +11376,24 @@ AValue fn_cgen__collect_fn_names(AValue items) {
     AValue names = {0};
     AValue __ret = a_void();
     items = a_retain(items);
-#line 1749 "std/compiler/cgen.a"
+#line 1854 "std/compiler/cgen.a"
     { AValue __old = names; names = a_array_new(0); a_release(__old); }
-#line 1750 "std/compiler/cgen.a"
+#line 1855 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1751 "std/compiler/cgen.a"
+#line 1856 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
-#line 1752 "std/compiler/cgen.a"
+#line 1857 "std/compiler/cgen.a"
                 names = a_array_push_move(names, a_array_get(item, a_string("name")));
             }
             a_release(item);
         }
         a_release(__iter_arr);
     }
-#line 1755 "std/compiler/cgen.a"
+#line 1860 "std/compiler/cgen.a"
     __ret = a_retain(names); goto __fn_cleanup;
 __fn_cleanup:
     a_release(names);
@@ -11066,80 +11401,159 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_cgen__collect_variants(AValue items) {
+    AValue out = {0}, body = {0};
+    AValue __ret = a_void();
+    items = a_retain(items);
+#line 1865 "std/compiler/cgen.a"
+    { AValue __old = out; out = a_map_new(0); a_release(__old); }
+#line 1866 "std/compiler/cgen.a"
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0}, body = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+#line 1867 "std/compiler/cgen.a"
+            if (a_truthy(a_neq(a_array_get(item, a_string("tag")), a_string("TypeDecl")))) {
+#line 1867 "std/compiler/cgen.a"
+                continue;
+            }
+#line 1868 "std/compiler/cgen.a"
+            { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
+#line 1869 "std/compiler/cgen.a"
+            if (a_truthy(a_or(a_neq(a_type_of(body), a_string("map")), a_neq(a_array_get(body, a_string("tag")), a_string("TypeSum"))))) {
+#line 1869 "std/compiler/cgen.a"
+                continue;
+            }
+#line 1870 "std/compiler/cgen.a"
+            {
+                AValue __iter_arr = a_iterable(a_array_get(body, a_string("variants")));
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue v = {0};
+                    v = a_array_get(__iter_arr, a_int(__fi));
+#line 1871 "std/compiler/cgen.a"
+                    if (a_truthy(a_eq(a_type_of(v), a_string("map")))) {
+#line 1871 "std/compiler/cgen.a"
+                        { AValue __old = out; out = a_map_set(out, a_array_get(v, a_string("name")), a_len(a_array_get(v, a_string("fields")))); a_release(__old); }
+                    }
+                    a_release(v);
+                }
+                a_release(__iter_arr);
+            }
+            a_release(item);
+            a_release(body);
+        }
+        a_release(__iter_arr);
+    }
+#line 1874 "std/compiler/cgen.a"
+    __ret = a_retain(out); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(out);
+    a_release(body);
+    a_release(items);
+    return __ret;
+}
+
+AValue fn_cgen__variant_arity(AValue ctx, AValue name) {
+    AValue vs = {0};
+    AValue __ret = a_void();
+    ctx = a_retain(ctx);
+    name = a_retain(name);
+#line 1878 "std/compiler/cgen.a"
+    if (a_truthy(a_or(a_neq(a_type_of(ctx), a_string("map")), a_not(a_map_has(ctx, a_string("variants")))))) {
+#line 1878 "std/compiler/cgen.a"
+        __ret = a_neg(a_int(1)); goto __fn_cleanup;
+    }
+#line 1879 "std/compiler/cgen.a"
+    { AValue __old = vs; vs = a_array_get(ctx, a_string("variants")); a_release(__old); }
+#line 1880 "std/compiler/cgen.a"
+    if (a_truthy(a_not(a_map_has(vs, name)))) {
+#line 1880 "std/compiler/cgen.a"
+        __ret = a_neg(a_int(1)); goto __fn_cleanup;
+    }
+#line 1881 "std/compiler/cgen.a"
+    __ret = a_array_get(vs, name); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(vs);
+    a_release(ctx);
+    a_release(name);
+    return __ret;
+}
+
 AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li) {
-    AValue use_key = {0}, file_path = {0}, rel = {0}, source = {0}, mod_ast = {0}, loc = {0}, items = {0}, _short = {0}, all_fwd = {0}, all_fns = {0}, sub = {0}, fn_names = {0}, ctx = {0}, aliases = {0}, full_name = {0}, fr = {0};
+    AValue use_key = {0}, file_path = {0}, rel = {0}, source = {0}, mod_ast = {0}, loc = {0}, items = {0}, _short = {0}, all_fwd = {0}, all_fns = {0}, sub = {0}, fn_names = {0}, variants = {0}, ctx = {0}, aliases = {0}, full_name = {0}, fr = {0};
     AValue __ret = a_void();
     path_arr = a_retain(path_arr);
     bm = a_retain(bm);
     loaded = a_retain(loaded);
     li = a_retain(li);
-#line 1759 "std/compiler/cgen.a"
+#line 1885 "std/compiler/cgen.a"
     { AValue __old = use_key; use_key = a_str_join(path_arr, a_string(".")); a_release(__old); }
-#line 1760 "std/compiler/cgen.a"
+#line 1886 "std/compiler/cgen.a"
     if (a_truthy(a_contains(loaded, use_key))) {
-#line 1761 "std/compiler/cgen.a"
+#line 1887 "std/compiler/cgen.a"
         __ret = a_map_new(4, "fwd", a_array_new(0), "fns", a_array_new(0), "loaded", loaded, "li", li); goto __fn_cleanup;
     }
-#line 1763 "std/compiler/cgen.a"
+#line 1889 "std/compiler/cgen.a"
     loaded = a_array_push_move(loaded, use_key);
-#line 1765 "std/compiler/cgen.a"
+#line 1891 "std/compiler/cgen.a"
     { AValue __old = file_path; file_path = fn_cgen__use_path_to_file(path_arr); a_release(__old); }
-#line 1766 "std/compiler/cgen.a"
+#line 1892 "std/compiler/cgen.a"
     { AValue __old = rel; rel = a_str_concat(a_str_join(path_arr, a_string("/")), a_string(".a")); a_release(__old); }
-#line 1767 "std/compiler/cgen.a"
+#line 1893 "std/compiler/cgen.a"
     { AValue __old = source; source = a_embedded_file(rel); a_release(__old); }
-#line 1768 "std/compiler/cgen.a"
+#line 1894 "std/compiler/cgen.a"
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
-#line 1769 "std/compiler/cgen.a"
+#line 1895 "std/compiler/cgen.a"
         { AValue __old = source; source = a_io_read_file(file_path); a_release(__old); }
     }
-#line 1771 "std/compiler/cgen.a"
+#line 1897 "std/compiler/cgen.a"
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
-#line 1772 "std/compiler/cgen.a"
+#line 1898 "std/compiler/cgen.a"
         (a_fail(a_add(a_add(a_add(a_string("cannot load module "), use_key), a_string(": file not found: ")), file_path)), a_void());
     }
-#line 1774 "std/compiler/cgen.a"
+#line 1900 "std/compiler/cgen.a"
     { AValue __old = mod_ast; mod_ast = fn_parser_parse(source); a_release(__old); }
-#line 1777 "std/compiler/cgen.a"
+#line 1903 "std/compiler/cgen.a"
     if (a_truthy(a_and(a_eq(a_type_of(mod_ast), a_string("map")), a_map_has(mod_ast, a_string("tag"))))) {
-#line 1778 "std/compiler/cgen.a"
+#line 1904 "std/compiler/cgen.a"
         if (a_truthy(a_eq(a_array_get(mod_ast, a_string("tag")), a_string("ParseError")))) {
-#line 1779 "std/compiler/cgen.a"
+#line 1905 "std/compiler/cgen.a"
             { AValue __old = loc; loc = a_retain(file_path); a_release(__old); }
-#line 1780 "std/compiler/cgen.a"
+#line 1906 "std/compiler/cgen.a"
             if (a_truthy(a_and(a_map_has(mod_ast, a_string("line")), a_gt(a_array_get(mod_ast, a_string("line")), a_int(0))))) {
-#line 1781 "std/compiler/cgen.a"
+#line 1907 "std/compiler/cgen.a"
                 { AValue __old = loc; loc = a_add(a_add(a_add(a_add(file_path, a_string(":")), a_to_str(a_array_get(mod_ast, a_string("line")))), a_string(":")), a_to_str(a_array_get(mod_ast, a_string("col")))); a_release(__old); }
             }
-#line 1783 "std/compiler/cgen.a"
+#line 1909 "std/compiler/cgen.a"
             (a_fail(a_add(a_add(a_add(a_add(a_add(loc, a_string(": error: ")), a_array_get(mod_ast, a_string("msg"))), a_string(" (while loading module ")), use_key), a_string(")"))), a_void());
         }
     }
-#line 1786 "std/compiler/cgen.a"
+#line 1912 "std/compiler/cgen.a"
     { AValue __old = items; items = a_array_get(mod_ast, a_string("items")); a_release(__old); }
-#line 1787 "std/compiler/cgen.a"
+#line 1913 "std/compiler/cgen.a"
     { AValue __old = _short; _short = fn_cgen__use_path_short_name(path_arr); a_release(__old); }
-#line 1789 "std/compiler/cgen.a"
+#line 1915 "std/compiler/cgen.a"
     { AValue __old = all_fwd; all_fwd = a_array_new(0); a_release(__old); }
-#line 1790 "std/compiler/cgen.a"
+#line 1916 "std/compiler/cgen.a"
     { AValue __old = all_fns; all_fns = a_array_new(0); a_release(__old); }
-#line 1792 "std/compiler/cgen.a"
+#line 1918 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0}, sub = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1793 "std/compiler/cgen.a"
+#line 1919 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("UseDecl")))) {
-#line 1794 "std/compiler/cgen.a"
+#line 1920 "std/compiler/cgen.a"
                 { AValue __old = sub; sub = fn_cgen__load_module(a_array_get(item, a_string("path")), bm, loaded, li); a_release(__old); }
-#line 1795 "std/compiler/cgen.a"
+#line 1921 "std/compiler/cgen.a"
                 { AValue __old = loaded; loaded = a_array_get(sub, a_string("loaded")); a_release(__old); }
-#line 1796 "std/compiler/cgen.a"
+#line 1922 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(sub, a_string("li")); a_release(__old); }
-#line 1797 "std/compiler/cgen.a"
+#line 1923 "std/compiler/cgen.a"
                 { AValue __old = all_fwd; all_fwd = a_concat_arr(all_fwd, a_array_get(sub, a_string("fwd"))); a_release(__old); }
-#line 1798 "std/compiler/cgen.a"
+#line 1924 "std/compiler/cgen.a"
                 { AValue __old = all_fns; all_fns = a_concat_arr(all_fns, a_array_get(sub, a_string("fns"))); a_release(__old); }
             }
             a_release(item);
@@ -11147,43 +11561,45 @@ AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li
         }
         a_release(__iter_arr);
     }
-#line 1802 "std/compiler/cgen.a"
+#line 1928 "std/compiler/cgen.a"
     { AValue __old = fn_names; fn_names = fn_cgen__collect_fn_names(items); a_release(__old); }
-#line 1803 "std/compiler/cgen.a"
-    { AValue __old = ctx; ctx = a_map_new(3, "prefix", _short, "fns", fn_names, "file", file_path); a_release(__old); }
-#line 1804 "std/compiler/cgen.a"
+#line 1929 "std/compiler/cgen.a"
+    { AValue __old = variants; variants = fn_cgen__collect_variants(items); a_release(__old); }
+#line 1930 "std/compiler/cgen.a"
+    { AValue __old = ctx; ctx = a_map_new(4, "prefix", _short, "fns", fn_names, "file", file_path, "variants", variants); a_release(__old); }
+#line 1931 "std/compiler/cgen.a"
     { AValue __old = aliases; aliases = a_map_new(0); a_release(__old); }
-#line 1806 "std/compiler/cgen.a"
+#line 1933 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0}, full_name = {0}, fr = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1807 "std/compiler/cgen.a"
+#line 1934 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
-#line 1808 "std/compiler/cgen.a"
+#line 1935 "std/compiler/cgen.a"
                 { AValue __old = full_name; full_name = fn_cgen__prefixed_name(a_array_get(item, a_string("name")), ctx); a_release(__old); }
-#line 1809 "std/compiler/cgen.a"
+#line 1936 "std/compiler/cgen.a"
                 all_fwd = a_array_push_move(all_fwd, fn_cgen__emit_fwd_decl(full_name, a_array_get(item, a_string("params"))));
-#line 1810 "std/compiler/cgen.a"
+#line 1937 "std/compiler/cgen.a"
                 { AValue __old = fr; fr = fn_cgen_emit_fn(item, bm, ctx, li); a_release(__old); }
-#line 1811 "std/compiler/cgen.a"
+#line 1938 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(fr, a_int(1)); a_release(__old); }
-#line 1812 "std/compiler/cgen.a"
+#line 1939 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(a_array_get(fr, a_int(2)));
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue lf = {0};
                         lf = a_array_get(__iter_arr, a_int(__fi));
-#line 1812 "std/compiler/cgen.a"
+#line 1939 "std/compiler/cgen.a"
                         all_fns = a_array_push_move(all_fns, lf);
                         a_release(lf);
                     }
                     a_release(__iter_arr);
                 }
-#line 1813 "std/compiler/cgen.a"
+#line 1940 "std/compiler/cgen.a"
                 all_fns = a_array_push_move(all_fns, a_array_get(fr, a_int(0)));
-#line 1814 "std/compiler/cgen.a"
+#line 1941 "std/compiler/cgen.a"
                 { AValue __old = aliases; aliases = a_map_set(aliases, a_array_get(item, a_string("name")), full_name); a_release(__old); }
             }
             a_release(item);
@@ -11192,8 +11608,8 @@ AValue fn_cgen__load_module(AValue path_arr, AValue bm, AValue loaded, AValue li
         }
         a_release(__iter_arr);
     }
-#line 1818 "std/compiler/cgen.a"
-    __ret = a_map_new(5, "fwd", all_fwd, "fns", all_fns, "loaded", loaded, "li", li, "aliases", aliases); goto __fn_cleanup;
+#line 1945 "std/compiler/cgen.a"
+    __ret = a_map_new(6, "fwd", all_fwd, "fns", all_fns, "loaded", loaded, "li", li, "aliases", aliases, "variants", variants); goto __fn_cleanup;
 __fn_cleanup:
     a_release(use_key);
     a_release(file_path);
@@ -11207,6 +11623,7 @@ __fn_cleanup:
     a_release(all_fns);
     a_release(sub);
     a_release(fn_names);
+    a_release(variants);
     a_release(ctx);
     a_release(aliases);
     a_release(full_name);
@@ -11222,84 +11639,84 @@ AValue fn_cgen__ffi_c_type(AValue ty_node) {
     AValue tag = {0}, name = {0};
     AValue __ret = a_void();
     ty_node = a_retain(ty_node);
-#line 1824 "std/compiler/cgen.a"
+#line 1951 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
-#line 1825 "std/compiler/cgen.a"
+#line 1952 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
-#line 1826 "std/compiler/cgen.a"
+#line 1953 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
-#line 1827 "std/compiler/cgen.a"
+#line 1954 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("i8")))) {
-#line 1827 "std/compiler/cgen.a"
+#line 1954 "std/compiler/cgen.a"
             __ret = a_string("int8_t"); goto __fn_cleanup;
         }
-#line 1828 "std/compiler/cgen.a"
+#line 1955 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("i16")))) {
-#line 1828 "std/compiler/cgen.a"
+#line 1955 "std/compiler/cgen.a"
             __ret = a_string("int16_t"); goto __fn_cleanup;
         }
-#line 1829 "std/compiler/cgen.a"
+#line 1956 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("i32")))) {
-#line 1829 "std/compiler/cgen.a"
+#line 1956 "std/compiler/cgen.a"
             __ret = a_string("int32_t"); goto __fn_cleanup;
         }
-#line 1830 "std/compiler/cgen.a"
+#line 1957 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("i64")))) {
-#line 1830 "std/compiler/cgen.a"
+#line 1957 "std/compiler/cgen.a"
             __ret = a_string("int64_t"); goto __fn_cleanup;
         }
-#line 1831 "std/compiler/cgen.a"
+#line 1958 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("u8")))) {
-#line 1831 "std/compiler/cgen.a"
+#line 1958 "std/compiler/cgen.a"
             __ret = a_string("uint8_t"); goto __fn_cleanup;
         }
-#line 1832 "std/compiler/cgen.a"
+#line 1959 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("u16")))) {
-#line 1832 "std/compiler/cgen.a"
+#line 1959 "std/compiler/cgen.a"
             __ret = a_string("uint16_t"); goto __fn_cleanup;
         }
-#line 1833 "std/compiler/cgen.a"
+#line 1960 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("u32")))) {
-#line 1833 "std/compiler/cgen.a"
+#line 1960 "std/compiler/cgen.a"
             __ret = a_string("uint32_t"); goto __fn_cleanup;
         }
-#line 1834 "std/compiler/cgen.a"
+#line 1961 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("u64")))) {
-#line 1834 "std/compiler/cgen.a"
+#line 1961 "std/compiler/cgen.a"
             __ret = a_string("uint64_t"); goto __fn_cleanup;
         }
-#line 1835 "std/compiler/cgen.a"
+#line 1962 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("f32")))) {
-#line 1835 "std/compiler/cgen.a"
+#line 1962 "std/compiler/cgen.a"
             __ret = a_string("float"); goto __fn_cleanup;
         }
-#line 1836 "std/compiler/cgen.a"
+#line 1963 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("f64")))) {
-#line 1836 "std/compiler/cgen.a"
+#line 1963 "std/compiler/cgen.a"
             __ret = a_string("double"); goto __fn_cleanup;
         }
-#line 1837 "std/compiler/cgen.a"
+#line 1964 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("bool")))) {
-#line 1837 "std/compiler/cgen.a"
+#line 1964 "std/compiler/cgen.a"
             __ret = a_string("int"); goto __fn_cleanup;
         }
-#line 1838 "std/compiler/cgen.a"
+#line 1965 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("str")))) {
-#line 1838 "std/compiler/cgen.a"
+#line 1965 "std/compiler/cgen.a"
             __ret = a_string("const char*"); goto __fn_cleanup;
         }
-#line 1839 "std/compiler/cgen.a"
+#line 1966 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("ptr")))) {
-#line 1839 "std/compiler/cgen.a"
+#line 1966 "std/compiler/cgen.a"
             __ret = a_string("void*"); goto __fn_cleanup;
         }
-#line 1840 "std/compiler/cgen.a"
+#line 1967 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("void")))) {
-#line 1840 "std/compiler/cgen.a"
+#line 1967 "std/compiler/cgen.a"
             __ret = a_string("void"); goto __fn_cleanup;
         }
     }
-#line 1842 "std/compiler/cgen.a"
+#line 1969 "std/compiler/cgen.a"
     __ret = a_string("AValue"); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -11313,54 +11730,54 @@ AValue fn_cgen__ffi_extract(AValue ty_node, AValue var_name) {
     AValue __ret = a_void();
     ty_node = a_retain(ty_node);
     var_name = a_retain(var_name);
-#line 1846 "std/compiler/cgen.a"
+#line 1973 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
-#line 1847 "std/compiler/cgen.a"
+#line 1974 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
-#line 1848 "std/compiler/cgen.a"
+#line 1975 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
-#line 1849 "std/compiler/cgen.a"
+#line 1976 "std/compiler/cgen.a"
         if (a_truthy(a_or(a_or(a_eq(name, a_string("i8")), a_eq(name, a_string("i16"))), a_eq(name, a_string("i32"))))) {
-#line 1850 "std/compiler/cgen.a"
+#line 1977 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("("), a_str_concat(fn_cgen__ffi_c_type(ty_node), a_str_concat(a_string(")"), a_str_concat(var_name, a_string(".ival"))))); goto __fn_cleanup;
         }
-#line 1852 "std/compiler/cgen.a"
+#line 1979 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("i64")))) {
-#line 1852 "std/compiler/cgen.a"
+#line 1979 "std/compiler/cgen.a"
             __ret = a_str_concat(var_name, a_string(".ival")); goto __fn_cleanup;
         }
-#line 1853 "std/compiler/cgen.a"
+#line 1980 "std/compiler/cgen.a"
         if (a_truthy(a_or(a_or(a_or(a_eq(name, a_string("u8")), a_eq(name, a_string("u16"))), a_eq(name, a_string("u32"))), a_eq(name, a_string("u64"))))) {
-#line 1854 "std/compiler/cgen.a"
+#line 1981 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("("), a_str_concat(fn_cgen__ffi_c_type(ty_node), a_str_concat(a_string(")"), a_str_concat(var_name, a_string(".ival"))))); goto __fn_cleanup;
         }
-#line 1856 "std/compiler/cgen.a"
+#line 1983 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("f32")))) {
-#line 1856 "std/compiler/cgen.a"
+#line 1983 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("(float)"), a_str_concat(var_name, a_string(".fval"))); goto __fn_cleanup;
         }
-#line 1857 "std/compiler/cgen.a"
+#line 1984 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("f64")))) {
-#line 1857 "std/compiler/cgen.a"
+#line 1984 "std/compiler/cgen.a"
             __ret = a_str_concat(var_name, a_string(".fval")); goto __fn_cleanup;
         }
-#line 1858 "std/compiler/cgen.a"
+#line 1985 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("bool")))) {
-#line 1858 "std/compiler/cgen.a"
+#line 1985 "std/compiler/cgen.a"
             __ret = a_str_concat(var_name, a_string(".bval")); goto __fn_cleanup;
         }
-#line 1859 "std/compiler/cgen.a"
+#line 1986 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("str")))) {
-#line 1859 "std/compiler/cgen.a"
+#line 1986 "std/compiler/cgen.a"
             __ret = a_str_concat(var_name, a_string(".sval->data")); goto __fn_cleanup;
         }
-#line 1860 "std/compiler/cgen.a"
+#line 1987 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("ptr")))) {
-#line 1860 "std/compiler/cgen.a"
+#line 1987 "std/compiler/cgen.a"
             __ret = a_str_concat(var_name, a_string(".pval")); goto __fn_cleanup;
         }
     }
-#line 1862 "std/compiler/cgen.a"
+#line 1989 "std/compiler/cgen.a"
     __ret = a_retain(var_name); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -11375,44 +11792,44 @@ AValue fn_cgen__ffi_wrap(AValue ty_node, AValue expr) {
     AValue __ret = a_void();
     ty_node = a_retain(ty_node);
     expr = a_retain(expr);
-#line 1866 "std/compiler/cgen.a"
+#line 1993 "std/compiler/cgen.a"
     { AValue __old = tag; tag = a_array_get(ty_node, a_string("tag")); a_release(__old); }
-#line 1867 "std/compiler/cgen.a"
+#line 1994 "std/compiler/cgen.a"
     if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
-#line 1868 "std/compiler/cgen.a"
+#line 1995 "std/compiler/cgen.a"
         { AValue __old = name; name = a_array_get(ty_node, a_string("name")); a_release(__old); }
-#line 1869 "std/compiler/cgen.a"
+#line 1996 "std/compiler/cgen.a"
         if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_or(a_or(a_eq(name, a_string("i8")), a_eq(name, a_string("i16"))), a_eq(name, a_string("i32"))), a_eq(name, a_string("i64"))), a_eq(name, a_string("u8"))), a_eq(name, a_string("u16"))), a_eq(name, a_string("u32"))), a_eq(name, a_string("u64"))))) {
-#line 1871 "std/compiler/cgen.a"
+#line 1998 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("a_int((int64_t)"), a_str_concat(expr, a_string(")"))); goto __fn_cleanup;
         }
-#line 1873 "std/compiler/cgen.a"
+#line 2000 "std/compiler/cgen.a"
         if (a_truthy(a_or(a_eq(name, a_string("f32")), a_eq(name, a_string("f64"))))) {
-#line 1873 "std/compiler/cgen.a"
+#line 2000 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("a_float((double)"), a_str_concat(expr, a_string(")"))); goto __fn_cleanup;
         }
-#line 1874 "std/compiler/cgen.a"
+#line 2001 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("bool")))) {
-#line 1874 "std/compiler/cgen.a"
+#line 2001 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("a_bool("), a_str_concat(expr, a_string(")"))); goto __fn_cleanup;
         }
-#line 1875 "std/compiler/cgen.a"
+#line 2002 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("str")))) {
-#line 1875 "std/compiler/cgen.a"
+#line 2002 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("a_string("), a_str_concat(expr, a_string(")"))); goto __fn_cleanup;
         }
-#line 1876 "std/compiler/cgen.a"
+#line 2003 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("ptr")))) {
-#line 1876 "std/compiler/cgen.a"
+#line 2003 "std/compiler/cgen.a"
             __ret = a_str_concat(a_string("a_ptr("), a_str_concat(expr, a_string(")"))); goto __fn_cleanup;
         }
-#line 1877 "std/compiler/cgen.a"
+#line 2004 "std/compiler/cgen.a"
         if (a_truthy(a_eq(name, a_string("void")))) {
-#line 1877 "std/compiler/cgen.a"
+#line 2004 "std/compiler/cgen.a"
             __ret = a_string("a_void()"); goto __fn_cleanup;
         }
     }
-#line 1879 "std/compiler/cgen.a"
+#line 2006 "std/compiler/cgen.a"
     __ret = a_retain(expr); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -11426,93 +11843,93 @@ AValue fn_cgen__emit_extern_fn(AValue node) {
     AValue name = {0}, params = {0}, ret_type = {0}, c_ret = {0}, is_void = {0}, c_param_parts = {0}, c_param_str = {0}, raw_proto = {0}, shim_params = {0}, pi = {0}, shim_param_str = {0}, shim = {0}, call_args = {0}, p = {0}, extracted = {0}, call_str = {0}, fwd = {0};
     AValue __ret = a_void();
     node = a_retain(node);
-#line 1883 "std/compiler/cgen.a"
+#line 2010 "std/compiler/cgen.a"
     { AValue __old = name; name = a_array_get(node, a_string("name")); a_release(__old); }
-#line 1884 "std/compiler/cgen.a"
+#line 2011 "std/compiler/cgen.a"
     { AValue __old = params; params = a_array_get(node, a_string("params")); a_release(__old); }
-#line 1885 "std/compiler/cgen.a"
+#line 2012 "std/compiler/cgen.a"
     { AValue __old = ret_type; ret_type = a_array_get(node, a_string("ret_type")); a_release(__old); }
-#line 1886 "std/compiler/cgen.a"
+#line 2013 "std/compiler/cgen.a"
     { AValue __old = c_ret; c_ret = fn_cgen__ffi_c_type(ret_type); a_release(__old); }
-#line 1887 "std/compiler/cgen.a"
+#line 2014 "std/compiler/cgen.a"
     { AValue __old = is_void; is_void = a_eq(c_ret, a_string("void")); a_release(__old); }
-#line 1890 "std/compiler/cgen.a"
+#line 2017 "std/compiler/cgen.a"
     { AValue __old = c_param_parts; c_param_parts = a_array_new(0); a_release(__old); }
-#line 1891 "std/compiler/cgen.a"
+#line 2018 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(params);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue p = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 1892 "std/compiler/cgen.a"
+#line 2019 "std/compiler/cgen.a"
             c_param_parts = a_array_push_move(c_param_parts, fn_cgen__ffi_c_type(a_array_get(p, a_string("type"))));
             a_release(p);
         }
         a_release(__iter_arr);
     }
-#line 1894 "std/compiler/cgen.a"
+#line 2021 "std/compiler/cgen.a"
     { AValue __old = c_param_str; c_param_str = a_str_join(c_param_parts, a_string(", ")); a_release(__old); }
-#line 1895 "std/compiler/cgen.a"
+#line 2022 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(params), a_int(0)))) {
-#line 1895 "std/compiler/cgen.a"
+#line 2022 "std/compiler/cgen.a"
         { AValue __old = c_param_str; c_param_str = a_string("void"); a_release(__old); }
     }
-#line 1896 "std/compiler/cgen.a"
+#line 2023 "std/compiler/cgen.a"
     { AValue __old = raw_proto; raw_proto = a_str_concat(a_string("extern "), a_str_concat(c_ret, a_str_concat(a_string(" "), a_str_concat(name, a_str_concat(a_string("("), a_str_concat(c_param_str, a_string(");"))))))); a_release(__old); }
-#line 1899 "std/compiler/cgen.a"
+#line 2026 "std/compiler/cgen.a"
     { AValue __old = shim_params; shim_params = a_array_new(0); a_release(__old); }
-#line 1900 "std/compiler/cgen.a"
+#line 2027 "std/compiler/cgen.a"
     { AValue __old = pi; pi = a_int(0); a_release(__old); }
-#line 1901 "std/compiler/cgen.a"
+#line 2028 "std/compiler/cgen.a"
     while (a_truthy(a_lt(pi, a_len(params)))) {
-#line 1902 "std/compiler/cgen.a"
+#line 2029 "std/compiler/cgen.a"
         shim_params = a_array_push_move(shim_params, a_str_concat(a_string("AValue __p"), a_to_str(pi)));
-#line 1903 "std/compiler/cgen.a"
+#line 2030 "std/compiler/cgen.a"
         { AValue __old = pi; pi = a_add(pi, a_int(1)); a_release(__old); }
     }
-#line 1905 "std/compiler/cgen.a"
+#line 2032 "std/compiler/cgen.a"
     { AValue __old = shim_param_str; shim_param_str = a_str_join(shim_params, a_string(", ")); a_release(__old); }
-#line 1906 "std/compiler/cgen.a"
+#line 2033 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(params), a_int(0)))) {
-#line 1906 "std/compiler/cgen.a"
+#line 2033 "std/compiler/cgen.a"
         { AValue __old = shim_param_str; shim_param_str = a_string("void"); a_release(__old); }
     }
-#line 1908 "std/compiler/cgen.a"
+#line 2035 "std/compiler/cgen.a"
     { AValue __old = shim; shim = a_str_concat(a_string("AValue fn_"), a_str_concat(fn_cgen__mangle(name), a_str_concat(a_string("("), a_str_concat(shim_param_str, a_string(") {\n"))))); a_release(__old); }
-#line 1911 "std/compiler/cgen.a"
+#line 2038 "std/compiler/cgen.a"
     { AValue __old = call_args; call_args = a_array_new(0); a_release(__old); }
-#line 1912 "std/compiler/cgen.a"
+#line 2039 "std/compiler/cgen.a"
     { AValue __old = pi; pi = a_int(0); a_release(__old); }
-#line 1913 "std/compiler/cgen.a"
+#line 2040 "std/compiler/cgen.a"
     while (a_truthy(a_lt(pi, a_len(params)))) {
-#line 1914 "std/compiler/cgen.a"
+#line 2041 "std/compiler/cgen.a"
         { AValue __old = p; p = a_array_get(params, pi); a_release(__old); }
-#line 1915 "std/compiler/cgen.a"
+#line 2042 "std/compiler/cgen.a"
         { AValue __old = extracted; extracted = fn_cgen__ffi_extract(a_array_get(p, a_string("type")), a_str_concat(a_string("__p"), a_to_str(pi))); a_release(__old); }
-#line 1916 "std/compiler/cgen.a"
+#line 2043 "std/compiler/cgen.a"
         call_args = a_array_push_move(call_args, extracted);
-#line 1917 "std/compiler/cgen.a"
+#line 2044 "std/compiler/cgen.a"
         { AValue __old = pi; pi = a_add(pi, a_int(1)); a_release(__old); }
     }
-#line 1921 "std/compiler/cgen.a"
+#line 2048 "std/compiler/cgen.a"
     { AValue __old = call_str; call_str = a_str_concat(name, a_str_concat(a_string("("), a_str_concat(a_str_join(call_args, a_string(", ")), a_string(")")))); a_release(__old); }
-#line 1922 "std/compiler/cgen.a"
+#line 2049 "std/compiler/cgen.a"
     if (a_truthy(is_void)) {
-#line 1923 "std/compiler/cgen.a"
+#line 2050 "std/compiler/cgen.a"
         { AValue __old = shim; shim = a_str_concat(shim, a_str_concat(a_string("    "), a_str_concat(call_str, a_string(";\n")))); a_release(__old); }
-#line 1924 "std/compiler/cgen.a"
+#line 2051 "std/compiler/cgen.a"
         { AValue __old = shim; shim = a_str_concat(shim, a_string("    return a_void();\n")); a_release(__old); }
     } else {
-#line 1926 "std/compiler/cgen.a"
+#line 2053 "std/compiler/cgen.a"
         { AValue __old = shim; shim = a_str_concat(shim, a_str_concat(a_string("    "), a_str_concat(c_ret, a_str_concat(a_string(" __result = "), a_str_concat(call_str, a_string(";\n")))))); a_release(__old); }
-#line 1927 "std/compiler/cgen.a"
+#line 2054 "std/compiler/cgen.a"
         { AValue __old = shim; shim = a_str_concat(shim, a_str_concat(a_string("    return "), a_str_concat(fn_cgen__ffi_wrap(ret_type, a_string("__result")), a_string(";\n")))); a_release(__old); }
     }
-#line 1929 "std/compiler/cgen.a"
+#line 2056 "std/compiler/cgen.a"
     { AValue __old = shim; shim = a_str_concat(shim, a_string("}\n")); a_release(__old); }
-#line 1932 "std/compiler/cgen.a"
+#line 2059 "std/compiler/cgen.a"
     { AValue __old = fwd; fwd = a_str_concat(a_string("AValue fn_"), a_str_concat(fn_cgen__mangle(name), a_str_concat(a_string("("), a_str_concat(shim_param_str, a_string(");"))))); a_release(__old); }
-#line 1934 "std/compiler/cgen.a"
+#line 2061 "std/compiler/cgen.a"
     __ret = a_array_new(3, raw_proto, fwd, shim); goto __fn_cleanup;
 __fn_cleanup:
     a_release(name);
@@ -11536,46 +11953,63 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_cgen_main_file_of(AValue prog_ast) {
+    AValue __ret = a_void();
+    prog_ast = a_retain(prog_ast);
+#line 2067 "std/compiler/cgen.a"
+    if (a_truthy(a_map_has(prog_ast, a_string("file")))) {
+#line 2067 "std/compiler/cgen.a"
+        __ret = a_array_get(prog_ast, a_string("file")); goto __fn_cleanup;
+    }
+#line 2068 "std/compiler/cgen.a"
+    __ret = a_string(""); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(prog_ast);
+    return __ret;
+}
+
 AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
-    AValue items = {0}, all_fwd = {0}, all_fns = {0}, loaded = {0}, li = {0}, import_aliases = {0}, result = {0}, al = {0}, main_fn_names = {0}, extern_protos = {0}, extern_shims = {0}, parts = {0}, main_file = {0}, main_ctx = {0}, fr = {0}, out = {0}, lambda_fwd = {0}, i = {0};
+    AValue items = {0}, all_fwd = {0}, all_fns = {0}, loaded = {0}, li = {0}, import_aliases = {0}, all_variants = {0}, result = {0}, al = {0}, mv = {0}, mitems = {0}, mctx = {0}, full_name = {0}, fr = {0}, main_fn_names = {0}, extern_protos = {0}, extern_shims = {0}, parts = {0}, main_file = {0}, main_ctx = {0}, out = {0}, lambda_fwd = {0}, i = {0}, entry = {0}, where_ = {0};
     AValue __ret = a_void();
     prog_ast = a_retain(prog_ast);
     bm = a_retain(bm);
-#line 1940 "std/compiler/cgen.a"
+#line 2072 "std/compiler/cgen.a"
     { AValue __old = items; items = a_array_get(prog_ast, a_string("items")); a_release(__old); }
-#line 1942 "std/compiler/cgen.a"
+#line 2074 "std/compiler/cgen.a"
     { AValue __old = all_fwd; all_fwd = a_array_new(0); a_release(__old); }
-#line 1943 "std/compiler/cgen.a"
+#line 2075 "std/compiler/cgen.a"
     { AValue __old = all_fns; all_fns = a_array_new(0); a_release(__old); }
-#line 1944 "std/compiler/cgen.a"
+#line 2076 "std/compiler/cgen.a"
     { AValue __old = loaded; loaded = a_array_new(0); a_release(__old); }
-#line 1945 "std/compiler/cgen.a"
+#line 2077 "std/compiler/cgen.a"
     { AValue __old = li; li = a_int(0); a_release(__old); }
-#line 1946 "std/compiler/cgen.a"
+#line 2078 "std/compiler/cgen.a"
     { AValue __old = import_aliases; import_aliases = a_map_new(0); a_release(__old); }
-#line 1948 "std/compiler/cgen.a"
+#line 2079 "std/compiler/cgen.a"
+    { AValue __old = all_variants; all_variants = fn_cgen__collect_variants(items); a_release(__old); }
+#line 2081 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-            AValue item = {0}, result = {0}, al = {0};
+            AValue item = {0}, result = {0}, al = {0}, mv = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1949 "std/compiler/cgen.a"
+#line 2082 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("UseDecl")))) {
-#line 1950 "std/compiler/cgen.a"
+#line 2083 "std/compiler/cgen.a"
                 { AValue __old = result; result = fn_cgen__load_module(a_array_get(item, a_string("path")), bm, loaded, li); a_release(__old); }
-#line 1951 "std/compiler/cgen.a"
+#line 2084 "std/compiler/cgen.a"
                 { AValue __old = loaded; loaded = a_array_get(result, a_string("loaded")); a_release(__old); }
-#line 1952 "std/compiler/cgen.a"
+#line 2085 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(result, a_string("li")); a_release(__old); }
-#line 1953 "std/compiler/cgen.a"
+#line 2086 "std/compiler/cgen.a"
                 { AValue __old = all_fwd; all_fwd = a_concat_arr(all_fwd, a_array_get(result, a_string("fwd"))); a_release(__old); }
-#line 1954 "std/compiler/cgen.a"
+#line 2087 "std/compiler/cgen.a"
                 { AValue __old = all_fns; all_fns = a_concat_arr(all_fns, a_array_get(result, a_string("fns"))); a_release(__old); }
-#line 1955 "std/compiler/cgen.a"
+#line 2088 "std/compiler/cgen.a"
                 { AValue __old = al; al = a_array_get(result, a_string("aliases")); a_release(__old); }
-#line 1956 "std/compiler/cgen.a"
+#line 2089 "std/compiler/cgen.a"
                 if (a_truthy(a_eq(a_type_of(al), a_string("map")))) {
-#line 1957 "std/compiler/cgen.a"
+#line 2090 "std/compiler/cgen.a"
                     {
                         AValue __iter_arr = a_iterable(al);
                         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
@@ -11583,8 +12017,29 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
                             __elem = a_array_get(__iter_arr, a_int(__fi));
                             k = a_array_get(__elem, a_int(0));
                             v = a_array_get(__elem, a_int(1));
-#line 1957 "std/compiler/cgen.a"
+#line 2090 "std/compiler/cgen.a"
                             { AValue __old = import_aliases; import_aliases = a_map_set(import_aliases, k, v); a_release(__old); }
+                            a_release(__elem);
+                            a_release(k);
+                            a_release(v);
+                        }
+                        a_release(__iter_arr);
+                    }
+                }
+#line 2092 "std/compiler/cgen.a"
+                { AValue __old = mv; mv = a_array_get(result, a_string("variants")); a_release(__old); }
+#line 2093 "std/compiler/cgen.a"
+                if (a_truthy(a_eq(a_type_of(mv), a_string("map")))) {
+#line 2094 "std/compiler/cgen.a"
+                    {
+                        AValue __iter_arr = a_iterable(mv);
+                        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                            AValue __elem = {0}, k = {0}, v = {0};
+                            __elem = a_array_get(__iter_arr, a_int(__fi));
+                            k = a_array_get(__elem, a_int(0));
+                            v = a_array_get(__elem, a_int(1));
+#line 2094 "std/compiler/cgen.a"
+                            { AValue __old = all_variants; all_variants = a_map_set(all_variants, k, v); a_release(__old); }
                             a_release(__elem);
                             a_release(k);
                             a_release(v);
@@ -11596,12 +12051,92 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
             a_release(item);
             a_release(result);
             a_release(al);
+            a_release(mv);
         }
         a_release(__iter_arr);
     }
-#line 1962 "std/compiler/cgen.a"
+#line 2101 "std/compiler/cgen.a"
+    {
+        AValue __iter_arr = a_iterable(items);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue item = {0}, mitems = {0}, mv = {0}, mctx = {0}, full_name = {0}, fr = {0};
+            item = a_array_get(__iter_arr, a_int(__fi));
+#line 2102 "std/compiler/cgen.a"
+            if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("ModDecl")))) {
+#line 2103 "std/compiler/cgen.a"
+                { AValue __old = mitems; mitems = a_array_get(item, a_string("items")); a_release(__old); }
+#line 2104 "std/compiler/cgen.a"
+                { AValue __old = mv; mv = fn_cgen__collect_variants(mitems); a_release(__old); }
+#line 2105 "std/compiler/cgen.a"
+                {
+                    AValue __iter_arr = a_iterable(mv);
+                    for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                        AValue __elem = {0}, k = {0}, v = {0};
+                        __elem = a_array_get(__iter_arr, a_int(__fi));
+                        k = a_array_get(__elem, a_int(0));
+                        v = a_array_get(__elem, a_int(1));
+#line 2105 "std/compiler/cgen.a"
+                        { AValue __old = all_variants; all_variants = a_map_set(all_variants, k, v); a_release(__old); }
+                        a_release(__elem);
+                        a_release(k);
+                        a_release(v);
+                    }
+                    a_release(__iter_arr);
+                }
+#line 2106 "std/compiler/cgen.a"
+                { AValue __old = mctx; mctx = a_map_new(5, "prefix", a_array_get(item, a_string("name")), "fns", fn_cgen__collect_fn_names(mitems), "import_aliases", import_aliases, "file", fn_cgen_main_file_of(prog_ast), "variants", all_variants); a_release(__old); }
+#line 2107 "std/compiler/cgen.a"
+                {
+                    AValue __iter_arr = a_iterable(mitems);
+                    for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                        AValue mi = {0}, full_name = {0}, fr = {0};
+                        mi = a_array_get(__iter_arr, a_int(__fi));
+#line 2108 "std/compiler/cgen.a"
+                        if (a_truthy(a_eq(a_array_get(mi, a_string("tag")), a_string("FnDecl")))) {
+#line 2109 "std/compiler/cgen.a"
+                            { AValue __old = full_name; full_name = fn_cgen__prefixed_name(a_array_get(mi, a_string("name")), mctx); a_release(__old); }
+#line 2110 "std/compiler/cgen.a"
+                            all_fwd = a_array_push_move(all_fwd, fn_cgen__emit_fwd_decl(full_name, a_array_get(mi, a_string("params"))));
+#line 2111 "std/compiler/cgen.a"
+                            { AValue __old = fr; fr = fn_cgen_emit_fn(mi, bm, mctx, li); a_release(__old); }
+#line 2112 "std/compiler/cgen.a"
+                            { AValue __old = li; li = a_array_get(fr, a_int(1)); a_release(__old); }
+#line 2113 "std/compiler/cgen.a"
+                            {
+                                AValue __iter_arr = a_iterable(a_array_get(fr, a_int(2)));
+                                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                                    AValue lf = {0};
+                                    lf = a_array_get(__iter_arr, a_int(__fi));
+#line 2113 "std/compiler/cgen.a"
+                                    all_fns = a_array_push_move(all_fns, lf);
+                                    a_release(lf);
+                                }
+                                a_release(__iter_arr);
+                            }
+#line 2114 "std/compiler/cgen.a"
+                            all_fns = a_array_push_move(all_fns, a_array_get(fr, a_int(0)));
+#line 2115 "std/compiler/cgen.a"
+                            { AValue __old = import_aliases; import_aliases = a_map_set(import_aliases, a_array_get(mi, a_string("name")), full_name); a_release(__old); }
+                        }
+                        a_release(mi);
+                        a_release(full_name);
+                        a_release(fr);
+                    }
+                    a_release(__iter_arr);
+                }
+            }
+            a_release(item);
+            a_release(mitems);
+            a_release(mv);
+            a_release(mctx);
+            a_release(full_name);
+            a_release(fr);
+        }
+        a_release(__iter_arr);
+    }
+#line 2121 "std/compiler/cgen.a"
     { AValue __old = main_fn_names; main_fn_names = fn_cgen__collect_fn_names(items); a_release(__old); }
-#line 1963 "std/compiler/cgen.a"
+#line 2122 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(import_aliases);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
@@ -11609,7 +12144,7 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
             __elem = a_array_get(__iter_arr, a_int(__fi));
             k = a_array_get(__elem, a_int(0));
             v = a_array_get(__elem, a_int(1));
-#line 1963 "std/compiler/cgen.a"
+#line 2122 "std/compiler/cgen.a"
             main_fn_names = a_array_push_move(main_fn_names, k);
             a_release(__elem);
             a_release(k);
@@ -11617,27 +12152,27 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
         }
         a_release(__iter_arr);
     }
-#line 1966 "std/compiler/cgen.a"
+#line 2125 "std/compiler/cgen.a"
     { AValue __old = extern_protos; extern_protos = a_array_new(0); a_release(__old); }
-#line 1967 "std/compiler/cgen.a"
+#line 2126 "std/compiler/cgen.a"
     { AValue __old = extern_shims; extern_shims = a_array_new(0); a_release(__old); }
-#line 1968 "std/compiler/cgen.a"
+#line 2127 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0}, parts = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1969 "std/compiler/cgen.a"
+#line 2128 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("ExternFn")))) {
-#line 1970 "std/compiler/cgen.a"
+#line 2129 "std/compiler/cgen.a"
                 main_fn_names = a_array_push_move(main_fn_names, a_array_get(item, a_string("name")));
-#line 1971 "std/compiler/cgen.a"
+#line 2130 "std/compiler/cgen.a"
                 { AValue __old = parts; parts = fn_cgen__emit_extern_fn(item); a_release(__old); }
-#line 1972 "std/compiler/cgen.a"
+#line 2131 "std/compiler/cgen.a"
                 extern_protos = a_array_push_move(extern_protos, a_array_get(parts, a_int(0)));
-#line 1973 "std/compiler/cgen.a"
+#line 2132 "std/compiler/cgen.a"
                 all_fwd = a_array_push_move(all_fwd, a_array_get(parts, a_int(1)));
-#line 1974 "std/compiler/cgen.a"
+#line 2133 "std/compiler/cgen.a"
                 extern_shims = a_array_push_move(extern_shims, a_array_get(parts, a_int(2)));
             }
             a_release(item);
@@ -11645,42 +12180,37 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
         }
         a_release(__iter_arr);
     }
-#line 1978 "std/compiler/cgen.a"
-    { AValue __old = main_file; main_file = a_string(""); a_release(__old); }
-#line 1979 "std/compiler/cgen.a"
-    if (a_truthy(a_map_has(prog_ast, a_string("file")))) {
-#line 1979 "std/compiler/cgen.a"
-        { AValue __old = main_file; main_file = a_array_get(prog_ast, a_string("file")); a_release(__old); }
-    }
-#line 1980 "std/compiler/cgen.a"
-    { AValue __old = main_ctx; main_ctx = a_map_new(4, "prefix", a_string(""), "fns", main_fn_names, "import_aliases", import_aliases, "file", main_file); a_release(__old); }
-#line 1982 "std/compiler/cgen.a"
+#line 2137 "std/compiler/cgen.a"
+    { AValue __old = main_file; main_file = fn_cgen_main_file_of(prog_ast); a_release(__old); }
+#line 2138 "std/compiler/cgen.a"
+    { AValue __old = main_ctx; main_ctx = a_map_new(5, "prefix", a_string(""), "fns", main_fn_names, "import_aliases", import_aliases, "file", main_file, "variants", all_variants); a_release(__old); }
+#line 2140 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0}, fr = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 1983 "std/compiler/cgen.a"
+#line 2141 "std/compiler/cgen.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
-#line 1984 "std/compiler/cgen.a"
+#line 2142 "std/compiler/cgen.a"
                 all_fwd = a_array_push_move(all_fwd, fn_cgen__emit_fwd_decl(a_array_get(item, a_string("name")), a_array_get(item, a_string("params"))));
-#line 1985 "std/compiler/cgen.a"
+#line 2143 "std/compiler/cgen.a"
                 { AValue __old = fr; fr = fn_cgen_emit_fn(item, bm, main_ctx, li); a_release(__old); }
-#line 1986 "std/compiler/cgen.a"
+#line 2144 "std/compiler/cgen.a"
                 { AValue __old = li; li = a_array_get(fr, a_int(1)); a_release(__old); }
-#line 1987 "std/compiler/cgen.a"
+#line 2145 "std/compiler/cgen.a"
                 {
                     AValue __iter_arr = a_iterable(a_array_get(fr, a_int(2)));
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue lf = {0};
                         lf = a_array_get(__iter_arr, a_int(__fi));
-#line 1987 "std/compiler/cgen.a"
+#line 2145 "std/compiler/cgen.a"
                         all_fns = a_array_push_move(all_fns, lf);
                         a_release(lf);
                     }
                     a_release(__iter_arr);
                 }
-#line 1988 "std/compiler/cgen.a"
+#line 2146 "std/compiler/cgen.a"
                 all_fns = a_array_push_move(all_fns, a_array_get(fr, a_int(0)));
             }
             a_release(item);
@@ -11688,108 +12218,129 @@ AValue fn_cgen_emit_program(AValue prog_ast, AValue bm) {
         }
         a_release(__iter_arr);
     }
-#line 1992 "std/compiler/cgen.a"
+#line 2150 "std/compiler/cgen.a"
     { AValue __old = out; out = a_string("#include \"runtime.h\"\n#include <stdlib.h>\n\n"); a_release(__old); }
-#line 1995 "std/compiler/cgen.a"
+#line 2153 "std/compiler/cgen.a"
     if (a_truthy(a_gt(a_len(extern_protos), a_int(0)))) {
-#line 1996 "std/compiler/cgen.a"
+#line 2154 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_string("/* FFI extern prototypes */\n")); a_release(__old); }
-#line 1997 "std/compiler/cgen.a"
+#line 2155 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(extern_protos);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue p = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 1997 "std/compiler/cgen.a"
+#line 2155 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(p, a_string("\n"))); a_release(__old); }
                 a_release(p);
             }
             a_release(__iter_arr);
         }
-#line 1998 "std/compiler/cgen.a"
+#line 2156 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_string("\n")); a_release(__old); }
     }
-#line 2002 "std/compiler/cgen.a"
+#line 2160 "std/compiler/cgen.a"
     { AValue __old = lambda_fwd; lambda_fwd = a_array_new(0); a_release(__old); }
-#line 2003 "std/compiler/cgen.a"
+#line 2161 "std/compiler/cgen.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 2004 "std/compiler/cgen.a"
+#line 2162 "std/compiler/cgen.a"
     while (a_truthy(a_lt(i, li))) {
-#line 2005 "std/compiler/cgen.a"
+#line 2163 "std/compiler/cgen.a"
         lambda_fwd = a_array_push_move(lambda_fwd, a_str_concat(a_string("AValue __lambda_"), a_str_concat(a_to_str(i), a_string("(AValue __env, int __argc, AValue* __argv);"))));
-#line 2006 "std/compiler/cgen.a"
+#line 2164 "std/compiler/cgen.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 2008 "std/compiler/cgen.a"
+#line 2166 "std/compiler/cgen.a"
     if (a_truthy(a_gt(a_len(lambda_fwd), a_int(0)))) {
-#line 2009 "std/compiler/cgen.a"
+#line 2167 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_string("/* Lambda forward declarations */\n")); a_release(__old); }
-#line 2010 "std/compiler/cgen.a"
+#line 2168 "std/compiler/cgen.a"
         {
             AValue __iter_arr = a_iterable(lambda_fwd);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue f = {0};
                 f = a_array_get(__iter_arr, a_int(__fi));
-#line 2010 "std/compiler/cgen.a"
+#line 2168 "std/compiler/cgen.a"
                 { AValue __old = out; out = a_str_concat(out, a_str_concat(f, a_string("\n"))); a_release(__old); }
                 a_release(f);
             }
             a_release(__iter_arr);
         }
-#line 2011 "std/compiler/cgen.a"
+#line 2169 "std/compiler/cgen.a"
         { AValue __old = out; out = a_str_concat(out, a_string("\n")); a_release(__old); }
     }
-#line 2014 "std/compiler/cgen.a"
+#line 2172 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("/* Forward declarations */\n")); a_release(__old); }
-#line 2015 "std/compiler/cgen.a"
+#line 2173 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(all_fwd);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 2015 "std/compiler/cgen.a"
+#line 2173 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(f, a_string("\n"))); a_release(__old); }
             a_release(f);
         }
         a_release(__iter_arr);
     }
-#line 2016 "std/compiler/cgen.a"
+#line 2174 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("\n")); a_release(__old); }
-#line 2019 "std/compiler/cgen.a"
+#line 2177 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(extern_shims);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue s = {0};
             s = a_array_get(__iter_arr, a_int(__fi));
-#line 2019 "std/compiler/cgen.a"
+#line 2177 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(s, a_string("\n"))); a_release(__old); }
             a_release(s);
         }
         a_release(__iter_arr);
     }
-#line 2021 "std/compiler/cgen.a"
+#line 2179 "std/compiler/cgen.a"
     {
         AValue __iter_arr = a_iterable(all_fns);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 2021 "std/compiler/cgen.a"
+#line 2179 "std/compiler/cgen.a"
             { AValue __old = out; out = a_str_concat(out, a_str_concat(f, a_string("\n"))); a_release(__old); }
             a_release(f);
         }
         a_release(__iter_arr);
     }
-#line 2023 "std/compiler/cgen.a"
+#line 2181 "std/compiler/cgen.a"
+    { AValue __old = entry; entry = a_string(""); a_release(__old); }
+#line 2182 "std/compiler/cgen.a"
+    if (a_truthy(a_contains(fn_cgen__collect_fn_names(items), a_string("main")))) {
+#line 2182 "std/compiler/cgen.a"
+        { AValue __old = entry; entry = a_string("fn_main"); a_release(__old); }
+    } else
+    if (a_truthy(a_map_has(import_aliases, a_string("main")))) {
+#line 2183 "std/compiler/cgen.a"
+        { AValue __old = entry; entry = a_str_concat(a_string("fn_"), fn_cgen__mangle(a_array_get(import_aliases, a_string("main")))); a_release(__old); }
+    }
+#line 2184 "std/compiler/cgen.a"
+    if (a_truthy(a_eq(entry, a_string("")))) {
+#line 2185 "std/compiler/cgen.a"
+        { AValue __old = where_; where_ = a_retain(main_file); a_release(__old); }
+#line 2186 "std/compiler/cgen.a"
+        if (a_truthy(a_eq(a_len(where_), a_int(0)))) {
+#line 2186 "std/compiler/cgen.a"
+            { AValue __old = where_; where_ = a_string("<program>"); a_release(__old); }
+        }
+#line 2187 "std/compiler/cgen.a"
+        (a_fail(a_str_concat(where_, a_string(": error: no `fn main` found -- a program needs a main function (use `a build` only on programs, not library modules)"))), a_void());
+    }
+#line 2189 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("int main(int argc, char** argv) {\n")); a_release(__old); }
-#line 2024 "std/compiler/cgen.a"
+#line 2190 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("    g_argc = argc; g_argv = argv;\n")); a_release(__old); }
-#line 2025 "std/compiler/cgen.a"
-    { AValue __old = out; out = a_str_concat(out, a_string("    fn_main();\n")); a_release(__old); }
-#line 2026 "std/compiler/cgen.a"
-    { AValue __old = out; out = a_str_concat(out, a_string("    return 0;\n")); a_release(__old); }
-#line 2027 "std/compiler/cgen.a"
+#line 2191 "std/compiler/cgen.a"
+    { AValue __old = out; out = a_str_concat(out, a_str_concat(a_string("    return a_main_exit_code("), a_str_concat(entry, a_string("());\n")))); a_release(__old); }
+#line 2192 "std/compiler/cgen.a"
     { AValue __old = out; out = a_str_concat(out, a_string("}\n")); a_release(__old); }
-#line 2029 "std/compiler/cgen.a"
+#line 2194 "std/compiler/cgen.a"
     __ret = a_retain(out); goto __fn_cleanup;
 __fn_cleanup:
     a_release(items);
@@ -11798,18 +12349,25 @@ __fn_cleanup:
     a_release(loaded);
     a_release(li);
     a_release(import_aliases);
+    a_release(all_variants);
     a_release(result);
     a_release(al);
+    a_release(mv);
+    a_release(mitems);
+    a_release(mctx);
+    a_release(full_name);
+    a_release(fr);
     a_release(main_fn_names);
     a_release(extern_protos);
     a_release(extern_shims);
     a_release(parts);
     a_release(main_file);
     a_release(main_ctx);
-    a_release(fr);
     a_release(out);
     a_release(lambda_fwd);
     a_release(i);
+    a_release(entry);
+    a_release(where_);
     a_release(prog_ast);
     a_release(bm);
     return __ret;
@@ -11818,24 +12376,24 @@ __fn_cleanup:
 AValue fn_cgen_main(void) {
     AValue file_args = {0}, source = {0}, prog_ast = {0}, bm = {0}, c_code = {0};
     AValue __ret = a_void();
-#line 2035 "std/compiler/cgen.a"
+#line 2200 "std/compiler/cgen.a"
     { AValue __old = file_args; file_args = a_args(); a_release(__old); }
-#line 2036 "std/compiler/cgen.a"
+#line 2201 "std/compiler/cgen.a"
     if (a_truthy(a_eq(a_len(file_args), a_int(0)))) {
-#line 2037 "std/compiler/cgen.a"
+#line 2202 "std/compiler/cgen.a"
         a_eprintln(a_string("usage: a run std/compiler/cgen.a -- <input.a>"));
-#line 2038 "std/compiler/cgen.a"
+#line 2203 "std/compiler/cgen.a"
         (exit((int)a_int(1).ival), a_void());
     }
-#line 2040 "std/compiler/cgen.a"
+#line 2205 "std/compiler/cgen.a"
     { AValue __old = source; source = a_io_read_file(a_array_get(file_args, a_int(0))); a_release(__old); }
-#line 2041 "std/compiler/cgen.a"
+#line 2206 "std/compiler/cgen.a"
     { AValue __old = prog_ast; prog_ast = fn_parser_parse(source); a_release(__old); }
-#line 2042 "std/compiler/cgen.a"
+#line 2207 "std/compiler/cgen.a"
     { AValue __old = bm; bm = fn_cgen__builtin_map(); a_release(__old); }
-#line 2043 "std/compiler/cgen.a"
+#line 2208 "std/compiler/cgen.a"
     { AValue __old = c_code; c_code = fn_cgen_emit_program(prog_ast, bm); a_release(__old); }
-#line 2044 "std/compiler/cgen.a"
+#line 2209 "std/compiler/cgen.a"
     a_print(c_code);
 __fn_cleanup:
     a_release(file_args);
@@ -14692,9 +15250,982 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_types_t_any(void) {
+    AValue __ret = a_void();
+#line 26 "std/compiler/types.a"
+    __ret = a_map_new(1, "k", a_string("any")); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_types_t_prim(AValue name) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+#line 27 "std/compiler/types.a"
+    __ret = a_map_new(1, "k", name); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_types_t_array(AValue elem) {
+    AValue __ret = a_void();
+    elem = a_retain(elem);
+#line 28 "std/compiler/types.a"
+    __ret = a_map_new(2, "k", a_string("array"), "elem", elem); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(elem);
+    return __ret;
+}
+
+AValue fn_types_t_map(AValue key, AValue val) {
+    AValue __ret = a_void();
+    key = a_retain(key);
+    val = a_retain(val);
+#line 29 "std/compiler/types.a"
+    __ret = a_map_new(3, "k", a_string("map"), "key", key, "val", val); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(key);
+    a_release(val);
+    return __ret;
+}
+
+AValue fn_types_t_fn(AValue params, AValue ret_ty) {
+    AValue __ret = a_void();
+    params = a_retain(params);
+    ret_ty = a_retain(ret_ty);
+#line 30 "std/compiler/types.a"
+    __ret = a_map_new(3, "k", a_string("fn"), "params", params, "ret", ret_ty); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(params);
+    a_release(ret_ty);
+    return __ret;
+}
+
+AValue fn_types_t_result(AValue ok, AValue err) {
+    AValue __ret = a_void();
+    ok = a_retain(ok);
+    err = a_retain(err);
+#line 31 "std/compiler/types.a"
+    __ret = a_map_new(3, "k", a_string("result"), "ok", ok, "err", err); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(ok);
+    a_release(err);
+    return __ret;
+}
+
+AValue fn_types_t_named(AValue name) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+#line 32 "std/compiler/types.a"
+    __ret = a_map_new(2, "k", a_string("named"), "name", name); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_types_t_record(AValue name, AValue fields) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+    fields = a_retain(fields);
+#line 33 "std/compiler/types.a"
+    __ret = a_map_new(3, "k", a_string("record"), "name", name, "fields", fields); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    a_release(fields);
+    return __ret;
+}
+
+AValue fn_types_t_var(AValue name) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+#line 34 "std/compiler/types.a"
+    __ret = a_map_new(2, "k", a_string("var"), "name", name); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_types_is_any(AValue t) {
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 36 "std/compiler/types.a"
+    __ret = a_or(a_neq(a_type_of(t), a_string("map")), a_eq(a_array_get(t, a_string("k")), a_string("any"))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_types_is_numeric(AValue t) {
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 37 "std/compiler/types.a"
+    __ret = a_or(a_or(a_eq(a_array_get(t, a_string("k")), a_string("int")), a_eq(a_array_get(t, a_string("k")), a_string("float"))), a_eq(a_array_get(t, a_string("k")), a_string("num"))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_types__is_tvar_name(AValue name) {
+    AValue __ret = a_void();
+    name = a_retain(name);
+#line 40 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_len(name), a_int(1)))) {
+#line 40 "std/compiler/types.a"
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+#line 41 "std/compiler/types.a"
+    __ret = a_and(a_eq(a_str_upper(name), name), a_is_alpha(name)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_types_from_ast(AValue t) {
+    AValue tag = {0}, n = {0}, args = {0}, ps = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 47 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 47 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 48 "std/compiler/types.a"
+    { AValue __old = tag; tag = a_array_get(t, a_string("tag")); a_release(__old); }
+#line 49 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyInfer")))) {
+#line 49 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 50 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyPrim")))) {
+#line 51 "std/compiler/types.a"
+        { AValue __old = n; n = a_array_get(t, a_string("name")); a_release(__old); }
+#line 52 "std/compiler/types.a"
+        if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_or(a_or(a_eq(n, a_string("i8")), a_eq(n, a_string("i16"))), a_eq(n, a_string("i32"))), a_eq(n, a_string("i64"))), a_eq(n, a_string("u8"))), a_eq(n, a_string("u16"))), a_eq(n, a_string("u32"))), a_eq(n, a_string("u64"))))) {
+#line 52 "std/compiler/types.a"
+            __ret = fn_types_t_prim(a_string("int")); goto __fn_cleanup;
+        }
+#line 53 "std/compiler/types.a"
+        if (a_truthy(a_or(a_eq(n, a_string("f32")), a_eq(n, a_string("f64"))))) {
+#line 53 "std/compiler/types.a"
+            __ret = fn_types_t_prim(a_string("float")); goto __fn_cleanup;
+        }
+#line 54 "std/compiler/types.a"
+        __ret = fn_types_t_prim(n); goto __fn_cleanup;
+    }
+#line 56 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyNamed")))) {
+#line 57 "std/compiler/types.a"
+        { AValue __old = n; n = a_array_get(t, a_string("name")); a_release(__old); }
+#line 58 "std/compiler/types.a"
+        { AValue __old = args; args = a_array_get(t, a_string("args")); a_release(__old); }
+#line 59 "std/compiler/types.a"
+        if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_or(a_eq(n, a_string("int")), a_eq(n, a_string("float"))), a_eq(n, a_string("bool"))), a_eq(n, a_string("str"))), a_eq(n, a_string("void"))), a_eq(n, a_string("num"))), a_eq(n, a_string("ptr"))))) {
+#line 59 "std/compiler/types.a"
+            __ret = fn_types_t_prim(n); goto __fn_cleanup;
+        }
+#line 60 "std/compiler/types.a"
+        if (a_truthy(a_eq(n, a_string("any")))) {
+#line 60 "std/compiler/types.a"
+            __ret = fn_types_t_any(); goto __fn_cleanup;
+        }
+#line 61 "std/compiler/types.a"
+        if (a_truthy(a_eq(n, a_string("map")))) {
+#line 61 "std/compiler/types.a"
+            __ret = fn_types_t_map(fn_types_t_any(), fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 62 "std/compiler/types.a"
+        if (a_truthy(a_eq(n, a_string("array")))) {
+#line 62 "std/compiler/types.a"
+            __ret = fn_types_t_array(fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 63 "std/compiler/types.a"
+        if (a_truthy(a_eq(n, a_string("Result")))) {
+#line 64 "std/compiler/types.a"
+            if (a_truthy(a_and(a_eq(a_type_of(args), a_string("array")), a_eq(a_len(args), a_int(2))))) {
+#line 64 "std/compiler/types.a"
+                __ret = fn_types_t_result(fn_types_from_ast(a_array_get(args, a_int(0))), fn_types_from_ast(a_array_get(args, a_int(1)))); goto __fn_cleanup;
+            }
+#line 65 "std/compiler/types.a"
+            __ret = fn_types_t_result(fn_types_t_any(), fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 67 "std/compiler/types.a"
+        if (a_truthy(fn_types__is_tvar_name(n))) {
+#line 67 "std/compiler/types.a"
+            __ret = fn_types_t_var(n); goto __fn_cleanup;
+        }
+#line 68 "std/compiler/types.a"
+        __ret = fn_types_t_named(n); goto __fn_cleanup;
+    }
+#line 70 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyArray")))) {
+#line 70 "std/compiler/types.a"
+        __ret = fn_types_t_array(fn_types_from_ast(a_array_get(t, a_string("elem")))); goto __fn_cleanup;
+    }
+#line 71 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyMap")))) {
+#line 71 "std/compiler/types.a"
+        __ret = fn_types_t_map(fn_types_from_ast(a_array_get(t, a_string("key"))), fn_types_from_ast(a_array_get(t, a_string("val")))); goto __fn_cleanup;
+    }
+#line 72 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyFn")))) {
+#line 73 "std/compiler/types.a"
+        { AValue __old = ps; ps = a_array_new(0); a_release(__old); }
+#line 74 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 74 "std/compiler/types.a"
+                ps = a_array_push_move(ps, fn_types_from_ast(p));
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 75 "std/compiler/types.a"
+        __ret = fn_types_t_fn(ps, fn_types_from_ast(a_array_get(t, a_string("ret")))); goto __fn_cleanup;
+    }
+#line 77 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyTuple")))) {
+#line 77 "std/compiler/types.a"
+        __ret = fn_types_t_array(fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 78 "std/compiler/types.a"
+    if (a_truthy(a_eq(tag, a_string("TyRecord")))) {
+#line 78 "std/compiler/types.a"
+        __ret = fn_types_t_map(fn_types_t_prim(a_string("str")), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 79 "std/compiler/types.a"
+    __ret = fn_types_t_any(); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(tag);
+    a_release(n);
+    a_release(args);
+    a_release(ps);
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_types_parse_sig(AValue sig) {
+    AValue toks = {0}, r = {0};
+    AValue __ret = a_void();
+    sig = a_retain(sig);
+#line 84 "std/compiler/types.a"
+    { AValue __old = toks; toks = fn_lexer_lex_pos(sig); a_release(__old); }
+#line 85 "std/compiler/types.a"
+    { AValue __old = r; r = fn_parser_parse_type_expr(toks, a_int(0)); a_release(__old); }
+#line 86 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(r), a_string("array")))) {
+#line 86 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 87 "std/compiler/types.a"
+    __ret = fn_types_from_ast(a_array_get(r, a_int(0))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(toks);
+    a_release(r);
+    a_release(sig);
+    return __ret;
+}
+
+AValue fn_types_show(AValue t) {
+    AValue k = {0}, ps = {0}, fs = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 91 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 91 "std/compiler/types.a"
+        __ret = a_string("any"); goto __fn_cleanup;
+    }
+#line 92 "std/compiler/types.a"
+    { AValue __old = k; k = a_array_get(t, a_string("k")); a_release(__old); }
+#line 93 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("array")))) {
+#line 93 "std/compiler/types.a"
+        __ret = a_add(a_add(a_string("["), fn_types_show(a_array_get(t, a_string("elem")))), a_string("]")); goto __fn_cleanup;
+    }
+#line 94 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("map")))) {
+#line 95 "std/compiler/types.a"
+        if (a_truthy(a_and(fn_types_is_any(a_array_get(t, a_string("key"))), fn_types_is_any(a_array_get(t, a_string("val")))))) {
+#line 95 "std/compiler/types.a"
+            __ret = a_string("map"); goto __fn_cleanup;
+        }
+#line 96 "std/compiler/types.a"
+        __ret = a_add(a_add(a_add(a_add(a_string("#{"), fn_types_show(a_array_get(t, a_string("key")))), a_string(": ")), fn_types_show(a_array_get(t, a_string("val")))), a_string("}")); goto __fn_cleanup;
+    }
+#line 98 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("fn")))) {
+#line 99 "std/compiler/types.a"
+        { AValue __old = ps; ps = a_array_new(0); a_release(__old); }
+#line 100 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 100 "std/compiler/types.a"
+                ps = a_array_push_move(ps, fn_types_show(p));
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 101 "std/compiler/types.a"
+        __ret = a_add(a_add(a_add(a_string("fn("), a_str_join(ps, a_string(", "))), a_string(") -> ")), fn_types_show(a_array_get(t, a_string("ret")))); goto __fn_cleanup;
+    }
+#line 103 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("result")))) {
+#line 104 "std/compiler/types.a"
+        if (a_truthy(a_and(fn_types_is_any(a_array_get(t, a_string("ok"))), fn_types_is_any(a_array_get(t, a_string("err")))))) {
+#line 104 "std/compiler/types.a"
+            __ret = a_string("Result"); goto __fn_cleanup;
+        }
+#line 105 "std/compiler/types.a"
+        __ret = a_add(a_add(a_add(a_add(a_string("Result<"), fn_types_show(a_array_get(t, a_string("ok")))), a_string(", ")), fn_types_show(a_array_get(t, a_string("err")))), a_string(">")); goto __fn_cleanup;
+    }
+#line 107 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("record")))) {
+#line 108 "std/compiler/types.a"
+        if (a_truthy(a_neq(a_array_get(t, a_string("name")), a_string("")))) {
+#line 108 "std/compiler/types.a"
+            __ret = a_array_get(t, a_string("name")); goto __fn_cleanup;
+        }
+#line 109 "std/compiler/types.a"
+        { AValue __old = fs; fs = a_array_new(0); a_release(__old); }
+#line 110 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_sort(a_map_keys(a_array_get(t, a_string("fields")))));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue f = {0};
+                f = a_array_get(__iter_arr, a_int(__fi));
+#line 110 "std/compiler/types.a"
+                fs = a_array_push_move(fs, a_add(a_add(f, a_string(": ")), fn_types_show(a_array_get(a_array_get(t, a_string("fields")), f))));
+                a_release(f);
+            }
+            a_release(__iter_arr);
+        }
+#line 111 "std/compiler/types.a"
+        __ret = a_add(a_add(a_string("{"), a_str_join(fs, a_string(", "))), a_string("}")); goto __fn_cleanup;
+    }
+#line 113 "std/compiler/types.a"
+    if (a_truthy(a_or(a_eq(k, a_string("named")), a_eq(k, a_string("var"))))) {
+#line 113 "std/compiler/types.a"
+        __ret = a_array_get(t, a_string("name")); goto __fn_cleanup;
+    }
+#line 114 "std/compiler/types.a"
+    __ret = a_retain(k); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(k);
+    a_release(ps);
+    a_release(fs);
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_types_resolve(AValue t, AValue typedefs) {
+    AValue k = {0}, ps = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+    typedefs = a_retain(typedefs);
+#line 119 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 119 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 120 "std/compiler/types.a"
+    { AValue __old = k; k = a_array_get(t, a_string("k")); a_release(__old); }
+#line 121 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("named")))) {
+#line 122 "std/compiler/types.a"
+        if (a_truthy(a_map_has(typedefs, a_array_get(t, a_string("name"))))) {
+#line 122 "std/compiler/types.a"
+            __ret = a_array_get(typedefs, a_array_get(t, a_string("name"))); goto __fn_cleanup;
+        }
+#line 123 "std/compiler/types.a"
+        __ret = a_retain(t); goto __fn_cleanup;
+    }
+#line 125 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("array")))) {
+#line 125 "std/compiler/types.a"
+        __ret = fn_types_t_array(fn_types_resolve(a_array_get(t, a_string("elem")), typedefs)); goto __fn_cleanup;
+    }
+#line 126 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("map")))) {
+#line 126 "std/compiler/types.a"
+        __ret = fn_types_t_map(fn_types_resolve(a_array_get(t, a_string("key")), typedefs), fn_types_resolve(a_array_get(t, a_string("val")), typedefs)); goto __fn_cleanup;
+    }
+#line 127 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("result")))) {
+#line 127 "std/compiler/types.a"
+        __ret = fn_types_t_result(fn_types_resolve(a_array_get(t, a_string("ok")), typedefs), fn_types_resolve(a_array_get(t, a_string("err")), typedefs)); goto __fn_cleanup;
+    }
+#line 128 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("fn")))) {
+#line 129 "std/compiler/types.a"
+        { AValue __old = ps; ps = a_array_new(0); a_release(__old); }
+#line 130 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 130 "std/compiler/types.a"
+                ps = a_array_push_move(ps, fn_types_resolve(p, typedefs));
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 131 "std/compiler/types.a"
+        __ret = fn_types_t_fn(ps, fn_types_resolve(a_array_get(t, a_string("ret")), typedefs)); goto __fn_cleanup;
+    }
+#line 133 "std/compiler/types.a"
+    __ret = a_retain(t); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(k);
+    a_release(ps);
+    a_release(t);
+    a_release(typedefs);
+    return __ret;
+}
+
+AValue fn_types_assignable(AValue from, AValue to) {
+    AValue fk = {0}, tk = {0}, i = {0};
+    AValue __ret = a_void();
+    from = a_retain(from);
+    to = a_retain(to);
+#line 138 "std/compiler/types.a"
+    if (a_truthy(a_or(fn_types_is_any(from), fn_types_is_any(to)))) {
+#line 138 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 139 "std/compiler/types.a"
+    { AValue __old = fk; fk = a_array_get(from, a_string("k")); a_release(__old); }
+#line 140 "std/compiler/types.a"
+    { AValue __old = tk; tk = a_array_get(to, a_string("k")); a_release(__old); }
+#line 141 "std/compiler/types.a"
+    if (a_truthy(a_or(a_eq(fk, a_string("var")), a_eq(tk, a_string("var"))))) {
+#line 141 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 142 "std/compiler/types.a"
+    if (a_truthy(a_or(a_eq(fk, a_string("result")), a_eq(tk, a_string("result"))))) {
+#line 142 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 143 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("num")))) {
+#line 143 "std/compiler/types.a"
+        __ret = a_or(a_or(a_eq(tk, a_string("num")), a_eq(tk, a_string("int"))), a_eq(tk, a_string("float"))); goto __fn_cleanup;
+    }
+#line 144 "std/compiler/types.a"
+    if (a_truthy(a_eq(tk, a_string("num")))) {
+#line 144 "std/compiler/types.a"
+        __ret = a_or(a_eq(fk, a_string("int")), a_eq(fk, a_string("float"))); goto __fn_cleanup;
+    }
+#line 145 "std/compiler/types.a"
+    if (a_truthy(a_and(a_eq(fk, a_string("int")), a_eq(tk, a_string("float"))))) {
+#line 145 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 147 "std/compiler/types.a"
+    if (a_truthy(a_and(a_eq(fk, a_string("record")), a_eq(tk, a_string("map"))))) {
+#line 148 "std/compiler/types.a"
+        if (a_truthy(a_not(fn_types_assignable(fn_types_t_prim(a_string("str")), a_array_get(to, a_string("key")))))) {
+#line 148 "std/compiler/types.a"
+            __ret = a_bool(0); goto __fn_cleanup;
+        }
+#line 149 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_map_keys(a_array_get(from, a_string("fields"))));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue f = {0};
+                f = a_array_get(__iter_arr, a_int(__fi));
+#line 150 "std/compiler/types.a"
+                if (a_truthy(a_not(fn_types_assignable(a_array_get(a_array_get(from, a_string("fields")), f), a_array_get(to, a_string("val")))))) {
+#line 150 "std/compiler/types.a"
+                    __ret = a_bool(0); goto __fn_cleanup;
+                }
+                a_release(f);
+            }
+            a_release(__iter_arr);
+        }
+#line 152 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 154 "std/compiler/types.a"
+    if (a_truthy(a_and(a_eq(fk, a_string("map")), a_eq(tk, a_string("record"))))) {
+#line 154 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 155 "std/compiler/types.a"
+    if (a_truthy(a_neq(fk, tk))) {
+#line 155 "std/compiler/types.a"
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+#line 156 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("record")))) {
+#line 158 "std/compiler/types.a"
+        if (a_truthy(a_and(a_neq(a_array_get(from, a_string("name")), a_string("")), a_neq(a_array_get(to, a_string("name")), a_string(""))))) {
+#line 158 "std/compiler/types.a"
+            __ret = a_eq(a_array_get(from, a_string("name")), a_array_get(to, a_string("name"))); goto __fn_cleanup;
+        }
+#line 159 "std/compiler/types.a"
+        __ret = a_eq(fn_types_record_diff(from, to), a_string("")); goto __fn_cleanup;
+    }
+#line 161 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("array")))) {
+#line 161 "std/compiler/types.a"
+        __ret = fn_types_assignable(a_array_get(from, a_string("elem")), a_array_get(to, a_string("elem"))); goto __fn_cleanup;
+    }
+#line 162 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("map")))) {
+#line 162 "std/compiler/types.a"
+        __ret = a_and(fn_types_assignable(a_array_get(from, a_string("key")), a_array_get(to, a_string("key"))), fn_types_assignable(a_array_get(from, a_string("val")), a_array_get(to, a_string("val")))); goto __fn_cleanup;
+    }
+#line 163 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("fn")))) {
+#line 164 "std/compiler/types.a"
+        if (a_truthy(a_neq(a_len(a_array_get(from, a_string("params"))), a_len(a_array_get(to, a_string("params")))))) {
+#line 164 "std/compiler/types.a"
+            __ret = a_bool(0); goto __fn_cleanup;
+        }
+#line 165 "std/compiler/types.a"
+        { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 166 "std/compiler/types.a"
+        while (a_truthy(a_lt(i, a_len(a_array_get(from, a_string("params")))))) {
+#line 167 "std/compiler/types.a"
+            if (a_truthy(a_not(fn_types_assignable(a_array_get(a_array_get(to, a_string("params")), i), a_array_get(a_array_get(from, a_string("params")), i))))) {
+#line 167 "std/compiler/types.a"
+                __ret = a_bool(0); goto __fn_cleanup;
+            }
+#line 168 "std/compiler/types.a"
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+        }
+#line 170 "std/compiler/types.a"
+        __ret = fn_types_assignable(a_array_get(from, a_string("ret")), a_array_get(to, a_string("ret"))); goto __fn_cleanup;
+    }
+#line 172 "std/compiler/types.a"
+    if (a_truthy(a_eq(fk, a_string("named")))) {
+#line 172 "std/compiler/types.a"
+        __ret = a_eq(a_array_get(from, a_string("name")), a_array_get(to, a_string("name"))); goto __fn_cleanup;
+    }
+#line 173 "std/compiler/types.a"
+    __ret = a_bool(1); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(fk);
+    a_release(tk);
+    a_release(i);
+    a_release(from);
+    a_release(to);
+    return __ret;
+}
+
+AValue fn_types_record_diff(AValue from, AValue to) {
+    AValue ff = {0}, tf = {0};
+    AValue __ret = a_void();
+    from = a_retain(from);
+    to = a_retain(to);
+#line 180 "std/compiler/types.a"
+    { AValue __old = ff; ff = a_array_get(from, a_string("fields")); a_release(__old); }
+#line 181 "std/compiler/types.a"
+    { AValue __old = tf; tf = a_array_get(to, a_string("fields")); a_release(__old); }
+#line 182 "std/compiler/types.a"
+    {
+        AValue __iter_arr = a_iterable(a_sort(a_map_keys(tf)));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue f = {0};
+            f = a_array_get(__iter_arr, a_int(__fi));
+#line 183 "std/compiler/types.a"
+            if (a_truthy(a_not(a_map_has(ff, f)))) {
+#line 183 "std/compiler/types.a"
+                __ret = a_add(a_string("missing field "), f); goto __fn_cleanup;
+            }
+#line 184 "std/compiler/types.a"
+            if (a_truthy(a_not(fn_types_assignable(a_array_get(ff, f), a_array_get(tf, f))))) {
+#line 184 "std/compiler/types.a"
+                __ret = a_add(a_add(a_add(a_add(a_add(a_string("field "), f), a_string(": expected ")), fn_types_show(a_array_get(tf, f))), a_string(", got ")), fn_types_show(a_array_get(ff, f))); goto __fn_cleanup;
+            }
+            a_release(f);
+        }
+        a_release(__iter_arr);
+    }
+#line 186 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_array_get(to, a_string("name")), a_string("")))) {
+#line 187 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_sort(a_map_keys(ff)));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue f = {0};
+                f = a_array_get(__iter_arr, a_int(__fi));
+#line 188 "std/compiler/types.a"
+                if (a_truthy(a_not(a_map_has(tf, f)))) {
+#line 188 "std/compiler/types.a"
+                    __ret = a_add(a_add(a_add(a_add(a_string("unknown field "), f), a_string(" (fields: ")), a_str_join(a_sort(a_map_keys(tf)), a_string(", "))), a_string(")")); goto __fn_cleanup;
+                }
+                a_release(f);
+            }
+            a_release(__iter_arr);
+        }
+    }
+#line 191 "std/compiler/types.a"
+    __ret = a_string(""); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(ff);
+    a_release(tf);
+    a_release(from);
+    a_release(to);
+    return __ret;
+}
+
+AValue fn_types__is_maplike(AValue t) {
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 194 "std/compiler/types.a"
+    __ret = a_or(a_eq(a_array_get(t, a_string("k")), a_string("map")), a_eq(a_array_get(t, a_string("k")), a_string("record"))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_types_join(AValue a, AValue b) {
+    AValue __ret = a_void();
+    a = a_retain(a);
+    b = a_retain(b);
+#line 198 "std/compiler/types.a"
+    if (a_truthy(a_or(fn_types_is_any(a), fn_types_is_any(b)))) {
+#line 198 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 199 "std/compiler/types.a"
+    if (a_truthy(a_and(fn_types__is_maplike(a), fn_types__is_maplike(b)))) {
+#line 200 "std/compiler/types.a"
+        if (a_truthy(a_and(a_and(a_and(a_eq(a_array_get(a, a_string("k")), a_string("record")), a_eq(a_array_get(b, a_string("k")), a_string("record"))), a_neq(a_array_get(a, a_string("name")), a_string(""))), a_eq(a_array_get(a, a_string("name")), a_array_get(b, a_string("name")))))) {
+#line 200 "std/compiler/types.a"
+            __ret = a_retain(a); goto __fn_cleanup;
+        }
+#line 201 "std/compiler/types.a"
+        if (a_truthy(a_and(a_and(a_and(a_eq(a_array_get(a, a_string("k")), a_string("map")), a_eq(a_array_get(b, a_string("k")), a_string("map"))), fn_types_assignable(a, b)), fn_types_assignable(b, a)))) {
+#line 201 "std/compiler/types.a"
+            __ret = a_retain(a); goto __fn_cleanup;
+        }
+#line 203 "std/compiler/types.a"
+        __ret = fn_types_t_map(fn_types_t_prim(a_string("str")), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 205 "std/compiler/types.a"
+    if (a_truthy(a_and(fn_types_assignable(a, b), fn_types_assignable(b, a)))) {
+#line 205 "std/compiler/types.a"
+        __ret = a_retain(a); goto __fn_cleanup;
+    }
+#line 206 "std/compiler/types.a"
+    if (a_truthy(a_and(fn_types_is_numeric(a), fn_types_is_numeric(b)))) {
+#line 206 "std/compiler/types.a"
+        __ret = fn_types_t_prim(a_string("float")); goto __fn_cleanup;
+    }
+#line 207 "std/compiler/types.a"
+    if (a_truthy(a_and(a_eq(a_array_get(a, a_string("k")), a_string("array")), a_eq(a_array_get(b, a_string("k")), a_string("array"))))) {
+#line 207 "std/compiler/types.a"
+        __ret = fn_types_t_array(fn_types_join(a_array_get(a, a_string("elem")), a_array_get(b, a_string("elem")))); goto __fn_cleanup;
+    }
+#line 208 "std/compiler/types.a"
+    __ret = fn_types_t_any(); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(a);
+    a_release(b);
+    return __ret;
+}
+
+AValue fn_types_unify(AValue pattern, AValue actual, AValue bindings) {
+    AValue pk = {0}, n = {0}, cur = {0}, b = {0}, i = {0};
+    AValue __ret = a_void();
+    pattern = a_retain(pattern);
+    actual = a_retain(actual);
+    bindings = a_retain(bindings);
+#line 215 "std/compiler/types.a"
+    if (a_truthy(a_or(a_neq(a_type_of(pattern), a_string("map")), a_neq(a_type_of(actual), a_string("map"))))) {
+#line 215 "std/compiler/types.a"
+        __ret = a_retain(bindings); goto __fn_cleanup;
+    }
+#line 216 "std/compiler/types.a"
+    { AValue __old = pk; pk = a_array_get(pattern, a_string("k")); a_release(__old); }
+#line 217 "std/compiler/types.a"
+    if (a_truthy(a_eq(pk, a_string("var")))) {
+#line 218 "std/compiler/types.a"
+        { AValue __old = n; n = a_array_get(pattern, a_string("name")); a_release(__old); }
+#line 219 "std/compiler/types.a"
+        if (a_truthy(a_map_has(bindings, n))) {
+#line 220 "std/compiler/types.a"
+            { AValue __old = cur; cur = a_array_get(bindings, n); a_release(__old); }
+#line 221 "std/compiler/types.a"
+            if (a_truthy(fn_types_assignable(actual, cur))) {
+#line 221 "std/compiler/types.a"
+                __ret = a_retain(bindings); goto __fn_cleanup;
+            }
+#line 222 "std/compiler/types.a"
+            if (a_truthy(fn_types_assignable(cur, actual))) {
+#line 222 "std/compiler/types.a"
+                __ret = a_map_set(bindings, n, actual); goto __fn_cleanup;
+            }
+#line 224 "std/compiler/types.a"
+            __ret = a_retain(bindings); goto __fn_cleanup;
+        }
+#line 226 "std/compiler/types.a"
+        __ret = a_map_set(bindings, n, actual); goto __fn_cleanup;
+    }
+#line 230 "std/compiler/types.a"
+    if (a_truthy(a_or(a_eq(a_array_get(actual, a_string("k")), a_string("any")), a_neq(pk, a_array_get(actual, a_string("k")))))) {
+#line 230 "std/compiler/types.a"
+        __ret = fn_types__bind_unbound_any(pattern, bindings); goto __fn_cleanup;
+    }
+#line 231 "std/compiler/types.a"
+    { AValue __old = b; b = a_retain(bindings); a_release(__old); }
+#line 232 "std/compiler/types.a"
+    if (a_truthy(a_eq(pk, a_string("array")))) {
+#line 232 "std/compiler/types.a"
+        __ret = fn_types_unify(a_array_get(pattern, a_string("elem")), a_array_get(actual, a_string("elem")), b); goto __fn_cleanup;
+    }
+#line 233 "std/compiler/types.a"
+    if (a_truthy(a_eq(pk, a_string("map")))) {
+#line 234 "std/compiler/types.a"
+        { AValue __old = b; b = fn_types_unify(a_array_get(pattern, a_string("key")), a_array_get(actual, a_string("key")), b); a_release(__old); }
+#line 235 "std/compiler/types.a"
+        __ret = fn_types_unify(a_array_get(pattern, a_string("val")), a_array_get(actual, a_string("val")), b); goto __fn_cleanup;
+    }
+#line 237 "std/compiler/types.a"
+    if (a_truthy(a_eq(pk, a_string("result")))) {
+#line 238 "std/compiler/types.a"
+        { AValue __old = b; b = fn_types_unify(a_array_get(pattern, a_string("ok")), a_array_get(actual, a_string("ok")), b); a_release(__old); }
+#line 239 "std/compiler/types.a"
+        __ret = fn_types_unify(a_array_get(pattern, a_string("err")), a_array_get(actual, a_string("err")), b); goto __fn_cleanup;
+    }
+#line 241 "std/compiler/types.a"
+    if (a_truthy(a_eq(pk, a_string("fn")))) {
+#line 242 "std/compiler/types.a"
+        { AValue __old = n; n = a_len(a_array_get(pattern, a_string("params"))); a_release(__old); }
+#line 243 "std/compiler/types.a"
+        if (a_truthy(a_eq(n, a_len(a_array_get(actual, a_string("params")))))) {
+#line 244 "std/compiler/types.a"
+            { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 245 "std/compiler/types.a"
+            while (a_truthy(a_lt(i, n))) {
+#line 246 "std/compiler/types.a"
+                { AValue __old = b; b = fn_types_unify(a_array_get(a_array_get(pattern, a_string("params")), i), a_array_get(a_array_get(actual, a_string("params")), i), b); a_release(__old); }
+#line 247 "std/compiler/types.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+#line 250 "std/compiler/types.a"
+        __ret = fn_types_unify(a_array_get(pattern, a_string("ret")), a_array_get(actual, a_string("ret")), b); goto __fn_cleanup;
+    }
+#line 252 "std/compiler/types.a"
+    __ret = a_retain(b); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(pk);
+    a_release(n);
+    a_release(cur);
+    a_release(b);
+    a_release(i);
+    a_release(pattern);
+    a_release(actual);
+    a_release(bindings);
+    return __ret;
+}
+
+AValue fn_types__bind_unbound_any(AValue t, AValue bindings) {
+    AValue k = {0}, b = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+    bindings = a_retain(bindings);
+#line 256 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 256 "std/compiler/types.a"
+        __ret = a_retain(bindings); goto __fn_cleanup;
+    }
+#line 257 "std/compiler/types.a"
+    { AValue __old = k; k = a_array_get(t, a_string("k")); a_release(__old); }
+#line 258 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("var")))) {
+#line 259 "std/compiler/types.a"
+        if (a_truthy(a_map_has(bindings, a_array_get(t, a_string("name"))))) {
+#line 259 "std/compiler/types.a"
+            __ret = a_retain(bindings); goto __fn_cleanup;
+        }
+#line 260 "std/compiler/types.a"
+        __ret = a_map_set(bindings, a_array_get(t, a_string("name")), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 262 "std/compiler/types.a"
+    { AValue __old = b; b = a_retain(bindings); a_release(__old); }
+#line 263 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("array")))) {
+#line 263 "std/compiler/types.a"
+        __ret = fn_types__bind_unbound_any(a_array_get(t, a_string("elem")), b); goto __fn_cleanup;
+    }
+#line 264 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("map")))) {
+#line 264 "std/compiler/types.a"
+        __ret = fn_types__bind_unbound_any(a_array_get(t, a_string("val")), fn_types__bind_unbound_any(a_array_get(t, a_string("key")), b)); goto __fn_cleanup;
+    }
+#line 265 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("result")))) {
+#line 265 "std/compiler/types.a"
+        __ret = fn_types__bind_unbound_any(a_array_get(t, a_string("err")), fn_types__bind_unbound_any(a_array_get(t, a_string("ok")), b)); goto __fn_cleanup;
+    }
+#line 266 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("fn")))) {
+#line 267 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 267 "std/compiler/types.a"
+                { AValue __old = b; b = fn_types__bind_unbound_any(p, b); a_release(__old); }
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 268 "std/compiler/types.a"
+        __ret = fn_types__bind_unbound_any(a_array_get(t, a_string("ret")), b); goto __fn_cleanup;
+    }
+#line 270 "std/compiler/types.a"
+    __ret = a_retain(b); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(k);
+    a_release(b);
+    a_release(t);
+    a_release(bindings);
+    return __ret;
+}
+
+AValue fn_types_subst(AValue t, AValue bindings) {
+    AValue k = {0}, ps = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+    bindings = a_retain(bindings);
+#line 275 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 275 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 276 "std/compiler/types.a"
+    { AValue __old = k; k = a_array_get(t, a_string("k")); a_release(__old); }
+#line 277 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("var")))) {
+#line 278 "std/compiler/types.a"
+        if (a_truthy(a_map_has(bindings, a_array_get(t, a_string("name"))))) {
+#line 278 "std/compiler/types.a"
+            __ret = a_array_get(bindings, a_array_get(t, a_string("name"))); goto __fn_cleanup;
+        }
+#line 279 "std/compiler/types.a"
+        __ret = fn_types_t_any(); goto __fn_cleanup;
+    }
+#line 281 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("array")))) {
+#line 281 "std/compiler/types.a"
+        __ret = fn_types_t_array(fn_types_subst(a_array_get(t, a_string("elem")), bindings)); goto __fn_cleanup;
+    }
+#line 282 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("map")))) {
+#line 282 "std/compiler/types.a"
+        __ret = fn_types_t_map(fn_types_subst(a_array_get(t, a_string("key")), bindings), fn_types_subst(a_array_get(t, a_string("val")), bindings)); goto __fn_cleanup;
+    }
+#line 283 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("result")))) {
+#line 283 "std/compiler/types.a"
+        __ret = fn_types_t_result(fn_types_subst(a_array_get(t, a_string("ok")), bindings), fn_types_subst(a_array_get(t, a_string("err")), bindings)); goto __fn_cleanup;
+    }
+#line 284 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("fn")))) {
+#line 285 "std/compiler/types.a"
+        { AValue __old = ps; ps = a_array_new(0); a_release(__old); }
+#line 286 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 286 "std/compiler/types.a"
+                ps = a_array_push_move(ps, fn_types_subst(p, bindings));
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 287 "std/compiler/types.a"
+        __ret = fn_types_t_fn(ps, fn_types_subst(a_array_get(t, a_string("ret")), bindings)); goto __fn_cleanup;
+    }
+#line 289 "std/compiler/types.a"
+    __ret = a_retain(t); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(k);
+    a_release(ps);
+    a_release(t);
+    a_release(bindings);
+    return __ret;
+}
+
+AValue fn_types_has_vars(AValue t) {
+    AValue k = {0};
+    AValue __ret = a_void();
+    t = a_retain(t);
+#line 294 "std/compiler/types.a"
+    if (a_truthy(a_neq(a_type_of(t), a_string("map")))) {
+#line 294 "std/compiler/types.a"
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+#line 295 "std/compiler/types.a"
+    { AValue __old = k; k = a_array_get(t, a_string("k")); a_release(__old); }
+#line 296 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("var")))) {
+#line 296 "std/compiler/types.a"
+        __ret = a_bool(1); goto __fn_cleanup;
+    }
+#line 297 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("array")))) {
+#line 297 "std/compiler/types.a"
+        __ret = fn_types_has_vars(a_array_get(t, a_string("elem"))); goto __fn_cleanup;
+    }
+#line 298 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("map")))) {
+#line 298 "std/compiler/types.a"
+        __ret = a_or(fn_types_has_vars(a_array_get(t, a_string("key"))), fn_types_has_vars(a_array_get(t, a_string("val")))); goto __fn_cleanup;
+    }
+#line 299 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("result")))) {
+#line 299 "std/compiler/types.a"
+        __ret = a_or(fn_types_has_vars(a_array_get(t, a_string("ok"))), fn_types_has_vars(a_array_get(t, a_string("err")))); goto __fn_cleanup;
+    }
+#line 300 "std/compiler/types.a"
+    if (a_truthy(a_eq(k, a_string("fn")))) {
+#line 301 "std/compiler/types.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(t, a_string("params")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue p = {0};
+                p = a_array_get(__iter_arr, a_int(__fi));
+#line 301 "std/compiler/types.a"
+                if (a_truthy(fn_types_has_vars(p))) {
+#line 301 "std/compiler/types.a"
+                    __ret = a_bool(1); goto __fn_cleanup;
+                }
+                a_release(p);
+            }
+            a_release(__iter_arr);
+        }
+#line 302 "std/compiler/types.a"
+        __ret = fn_types_has_vars(a_array_get(t, a_string("ret"))); goto __fn_cleanup;
+    }
+#line 304 "std/compiler/types.a"
+    __ret = a_bool(0); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(k);
+    a_release(t);
+    return __ret;
+}
+
 AValue fn_checker__literal_names(void) {
     AValue __ret = a_void();
-#line 20 "std/compiler/checker.a"
+#line 27 "std/compiler/checker.a"
     __ret = a_map_new(5, "true", a_bool(1), "false", a_bool(1), "void", a_bool(1), "nil", a_bool(1), "self", a_bool(1)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -14705,19 +16236,19 @@ AValue fn_checker__new_state(AValue builtins, AValue arity) {
     AValue __ret = a_void();
     builtins = a_retain(builtins);
     arity = a_retain(arity);
-#line 37 "std/compiler/checker.a"
+#line 44 "std/compiler/checker.a"
     { AValue __old = namespaces; namespaces = a_map_new(0); a_release(__old); }
-#line 38 "std/compiler/checker.a"
+#line 45 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(a_map_keys(builtins));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue k = {0}, dot = {0};
             k = a_array_get(__iter_arr, a_int(__fi));
-#line 39 "std/compiler/checker.a"
+#line 46 "std/compiler/checker.a"
             { AValue __old = dot; dot = a_str_find(k, a_string(".")); a_release(__old); }
-#line 40 "std/compiler/checker.a"
+#line 47 "std/compiler/checker.a"
             if (a_truthy(a_gt(dot, a_int(0)))) {
-#line 40 "std/compiler/checker.a"
+#line 47 "std/compiler/checker.a"
                 { AValue __old = namespaces; namespaces = a_map_set(namespaces, a_str_slice(k, a_int(0), dot), a_bool(1)); a_release(__old); }
             }
             a_release(k);
@@ -14725,17 +16256,17 @@ AValue fn_checker__new_state(AValue builtins, AValue arity) {
         }
         a_release(__iter_arr);
     }
-#line 42 "std/compiler/checker.a"
+#line 49 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(a_map_keys(arity));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue k = {0}, dot = {0};
             k = a_array_get(__iter_arr, a_int(__fi));
-#line 43 "std/compiler/checker.a"
+#line 50 "std/compiler/checker.a"
             { AValue __old = dot; dot = a_str_find(k, a_string(".")); a_release(__old); }
-#line 44 "std/compiler/checker.a"
+#line 51 "std/compiler/checker.a"
             if (a_truthy(a_gt(dot, a_int(0)))) {
-#line 44 "std/compiler/checker.a"
+#line 51 "std/compiler/checker.a"
                 { AValue __old = namespaces; namespaces = a_map_set(namespaces, a_str_slice(k, a_int(0), dot), a_bool(1)); a_release(__old); }
             }
             a_release(k);
@@ -14743,8 +16274,8 @@ AValue fn_checker__new_state(AValue builtins, AValue arity) {
         }
         a_release(__iter_arr);
     }
-#line 46 "std/compiler/checker.a"
-    __ret = a_map_new(7, "scopes", a_array_new(0), "diags", a_array_new(0), "arity", arity, "builtins", builtins, "namespaces", namespaces, "line", a_int(0), "col", a_int(0)); goto __fn_cleanup;
+#line 53 "std/compiler/checker.a"
+    __ret = a_map_new(16, "scopes", a_array_new(0), "diags", a_array_new(0), "arity", arity, "builtins", builtins, "namespaces", namespaces, "modules", a_map_new(0), "line", a_int(0), "col", a_int(0), "variants", a_map_new(0), "sums", a_map_new(0), "fn_ret", a_string("any"), "fn_ret_ty", fn_types_t_any(), "in_try", a_int(0), "ty", fn_types_t_any(), "sigs", fn_checker__parse_sigs(), "typedefs", a_map_new(0)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(namespaces);
     a_release(dot);
@@ -14753,26 +16284,167 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_checker__ann(AValue st, AValue t) {
+    AValue __ret = a_void();
+    st = a_retain(st);
+    t = a_retain(t);
+#line 61 "std/compiler/checker.a"
+    __ret = fn_types_resolve(fn_types_from_ast(t), a_array_get(st, a_string("typedefs"))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(st);
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_checker__declare_typedef(AValue st, AValue item) {
+    AValue body = {0}, fields = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    item = a_retain(item);
+#line 66 "std/compiler/checker.a"
+    { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
+#line 67 "std/compiler/checker.a"
+    if (a_truthy(a_neq(a_type_of(body), a_string("map")))) {
+#line 67 "std/compiler/checker.a"
+        __ret = a_retain(st); goto __fn_cleanup;
+    }
+#line 68 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_array_get(body, a_string("tag")), a_string("TypeRecord")))) {
+#line 69 "std/compiler/checker.a"
+        { AValue __old = fields; fields = a_map_new(0); a_release(__old); }
+#line 70 "std/compiler/checker.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(body, a_string("fields")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue f = {0};
+                f = a_array_get(__iter_arr, a_int(__fi));
+#line 71 "std/compiler/checker.a"
+                if (a_truthy(a_and(a_eq(a_type_of(f), a_string("map")), a_map_has(f, a_string("name"))))) {
+#line 71 "std/compiler/checker.a"
+                    { AValue __old = fields; fields = a_map_set(fields, a_array_get(f, a_string("name")), fn_checker__ann(st, a_array_get(f, a_string("type")))); a_release(__old); }
+                }
+                a_release(f);
+            }
+            a_release(__iter_arr);
+        }
+#line 73 "std/compiler/checker.a"
+        __ret = a_map_set(st, a_string("typedefs"), a_map_set(a_array_get(st, a_string("typedefs")), a_array_get(item, a_string("name")), fn_types_t_record(a_array_get(item, a_string("name")), fields))); goto __fn_cleanup;
+    }
+#line 75 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_array_get(body, a_string("tag")), a_string("TypeAlias")))) {
+#line 76 "std/compiler/checker.a"
+        __ret = a_map_set(st, a_string("typedefs"), a_map_set(a_array_get(st, a_string("typedefs")), a_array_get(item, a_string("name")), fn_checker__ann(st, a_array_get(body, a_string("type"))))); goto __fn_cleanup;
+    }
+#line 78 "std/compiler/checker.a"
+    __ret = a_retain(st); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(body);
+    a_release(fields);
+    a_release(st);
+    a_release(item);
+    return __ret;
+}
+
+AValue fn_checker__parse_sigs(void) {
+    AValue raw = {0}, out = {0};
+    AValue __ret = a_void();
+#line 82 "std/compiler/checker.a"
+    { AValue __old = raw; raw = fn_builtin_sigs_sigs(); a_release(__old); }
+#line 83 "std/compiler/checker.a"
+    { AValue __old = out; out = a_map_new(0); a_release(__old); }
+#line 84 "std/compiler/checker.a"
+    {
+        AValue __iter_arr = a_iterable(a_map_keys(raw));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue name = {0};
+            name = a_array_get(__iter_arr, a_int(__fi));
+#line 84 "std/compiler/checker.a"
+            { AValue __old = out; out = a_map_set(out, name, fn_types_parse_sig(a_array_get(raw, name))); a_release(__old); }
+            a_release(name);
+        }
+        a_release(__iter_arr);
+    }
+#line 85 "std/compiler/checker.a"
+    __ret = a_retain(out); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(raw);
+    a_release(out);
+    return __ret;
+}
+
+AValue fn_checker__set_ty(AValue st, AValue t) {
+    AValue __ret = a_void();
+    st = a_retain(st);
+    t = a_retain(t);
+#line 89 "std/compiler/checker.a"
+    __ret = a_map_set(st, a_string("ty"), t); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(st);
+    a_release(t);
+    return __ret;
+}
+
+AValue fn_checker__ty(AValue st) {
+    AValue __ret = a_void();
+    st = a_retain(st);
+#line 90 "std/compiler/checker.a"
+    __ret = a_array_get(st, a_string("ty")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(st);
+    return __ret;
+}
+
+AValue fn_checker__type_mismatch(AValue st, AValue what, AValue expected, AValue got) {
+    AValue why = {0}, d = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    what = a_retain(what);
+    expected = a_retain(expected);
+    got = a_retain(got);
+#line 93 "std/compiler/checker.a"
+    { AValue __old = why; why = a_string(""); a_release(__old); }
+#line 94 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_and(a_and(a_and(a_eq(a_type_of(expected), a_string("map")), a_eq(a_type_of(got), a_string("map"))), a_eq(a_array_get(expected, a_string("k")), a_string("record"))), a_eq(a_array_get(got, a_string("k")), a_string("record"))), a_eq(a_array_get(got, a_string("name")), a_string(""))))) {
+#line 95 "std/compiler/checker.a"
+        { AValue __old = d; d = fn_types_record_diff(got, expected); a_release(__old); }
+#line 96 "std/compiler/checker.a"
+        if (a_truthy(a_neq(d, a_string("")))) {
+#line 96 "std/compiler/checker.a"
+            { AValue __old = why; why = a_add(a_add(a_string(" ("), d), a_string(")")); a_release(__old); }
+        }
+    }
+#line 98 "std/compiler/checker.a"
+    __ret = fn_checker__diag(st, a_string("error"), a_string("E0007"), a_add(a_add(a_add(a_add(a_add(what, a_string(": expected ")), fn_types_show(expected)), a_string(", got ")), fn_types_show(got)), why)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(why);
+    a_release(d);
+    a_release(st);
+    a_release(what);
+    a_release(expected);
+    a_release(got);
+    return __ret;
+}
+
 AValue fn_checker__pos(AValue st, AValue node) {
     AValue s = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 51 "std/compiler/checker.a"
+#line 102 "std/compiler/checker.a"
     if (a_truthy(a_and(a_and(a_eq(a_type_of(node), a_string("map")), a_map_has(node, a_string("line"))), a_gt(a_array_get(node, a_string("line")), a_int(0))))) {
-#line 52 "std/compiler/checker.a"
+#line 103 "std/compiler/checker.a"
         if (a_truthy(a_and(a_eq(a_array_get(st, a_string("line")), a_array_get(node, a_string("line"))), a_eq(a_array_get(st, a_string("col")), a_array_get(node, a_string("col")))))) {
-#line 52 "std/compiler/checker.a"
+#line 103 "std/compiler/checker.a"
             __ret = a_retain(st); goto __fn_cleanup;
         }
-#line 53 "std/compiler/checker.a"
+#line 104 "std/compiler/checker.a"
         { AValue __old = s; s = a_map_set(st, a_string("line"), a_array_get(node, a_string("line"))); a_release(__old); }
-#line 54 "std/compiler/checker.a"
+#line 105 "std/compiler/checker.a"
         { AValue __old = s; s = a_map_set(s, a_string("col"), a_array_get(node, a_string("col"))); a_release(__old); }
-#line 55 "std/compiler/checker.a"
+#line 106 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 57 "std/compiler/checker.a"
+#line 108 "std/compiler/checker.a"
     __ret = a_retain(st); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -14781,40 +16453,40 @@ __fn_cleanup:
     return __ret;
 }
 
-AValue fn_checker__diag(AValue st, AValue severity, AValue msg) {
-    AValue d = {0};
+AValue fn_checker__diag(AValue st, AValue severity, AValue code, AValue msg) {
     AValue __ret = a_void();
     st = a_retain(st);
     severity = a_retain(severity);
+    code = a_retain(code);
     msg = a_retain(msg);
-#line 61 "std/compiler/checker.a"
-    { AValue __old = d; d = a_map_new(4, "severity", severity, "line", a_array_get(st, a_string("line")), "col", a_array_get(st, a_string("col")), "msg", msg); a_release(__old); }
-#line 62 "std/compiler/checker.a"
-    __ret = a_map_set(st, a_string("diags"), a_array_push(a_array_get(st, a_string("diags")), d)); goto __fn_cleanup;
+#line 113 "std/compiler/checker.a"
+    __ret = fn_checker__diag_at(st, severity, code, a_array_get(st, a_string("line")), a_array_get(st, a_string("col")), msg); goto __fn_cleanup;
 __fn_cleanup:
-    a_release(d);
     a_release(st);
     a_release(severity);
+    a_release(code);
     a_release(msg);
     return __ret;
 }
 
-AValue fn_checker__diag_at(AValue st, AValue severity, AValue line, AValue col, AValue msg) {
+AValue fn_checker__diag_at(AValue st, AValue severity, AValue code, AValue line, AValue col, AValue msg) {
     AValue d = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     severity = a_retain(severity);
+    code = a_retain(code);
     line = a_retain(line);
     col = a_retain(col);
     msg = a_retain(msg);
-#line 66 "std/compiler/checker.a"
-    { AValue __old = d; d = a_map_new(4, "severity", severity, "line", line, "col", col, "msg", msg); a_release(__old); }
-#line 67 "std/compiler/checker.a"
+#line 117 "std/compiler/checker.a"
+    { AValue __old = d; d = a_map_new(5, "severity", severity, "code", code, "line", line, "col", col, "msg", msg); a_release(__old); }
+#line 118 "std/compiler/checker.a"
     __ret = a_map_set(st, a_string("diags"), a_array_push(a_array_get(st, a_string("diags")), d)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(d);
     a_release(st);
     a_release(severity);
+    a_release(code);
     a_release(line);
     a_release(col);
     a_release(msg);
@@ -14824,7 +16496,7 @@ __fn_cleanup:
 AValue fn_checker__push_scope(AValue st) {
     AValue __ret = a_void();
     st = a_retain(st);
-#line 71 "std/compiler/checker.a"
+#line 122 "std/compiler/checker.a"
     __ret = a_map_set(st, a_string("scopes"), a_array_push(a_array_get(st, a_string("scopes")), a_map_new(0))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(st);
@@ -14835,33 +16507,33 @@ AValue fn_checker__pop_scope(AValue st) {
     AValue scopes = {0}, n = {0}, inner = {0}, s = {0}, e = {0};
     AValue __ret = a_void();
     st = a_retain(st);
-#line 76 "std/compiler/checker.a"
+#line 127 "std/compiler/checker.a"
     { AValue __old = scopes; scopes = a_array_get(st, a_string("scopes")); a_release(__old); }
-#line 77 "std/compiler/checker.a"
+#line 128 "std/compiler/checker.a"
     { AValue __old = n; n = a_len(scopes); a_release(__old); }
-#line 78 "std/compiler/checker.a"
+#line 129 "std/compiler/checker.a"
     { AValue __old = inner; inner = a_array_get(scopes, a_sub(n, a_int(1))); a_release(__old); }
-#line 79 "std/compiler/checker.a"
+#line 130 "std/compiler/checker.a"
     { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 80 "std/compiler/checker.a"
+#line 131 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(a_map_keys(inner));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue name = {0}, e = {0};
             name = a_array_get(__iter_arr, a_int(__fi));
-#line 81 "std/compiler/checker.a"
+#line 132 "std/compiler/checker.a"
             { AValue __old = e; e = a_array_get(inner, name); a_release(__old); }
-#line 82 "std/compiler/checker.a"
+#line 133 "std/compiler/checker.a"
             if (a_truthy(a_and(a_and(a_eq(a_array_get(e, a_string("kind")), a_string("let")), a_not(a_array_get(e, a_string("used")))), a_not(a_str_starts_with(name, a_string("_")))))) {
-#line 83 "std/compiler/checker.a"
-                { AValue __old = s; s = fn_checker__diag_at(s, a_string("warning"), a_array_get(e, a_string("line")), a_array_get(e, a_string("col")), a_add(a_string("unused variable: "), name)); a_release(__old); }
+#line 134 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag_at(s, a_string("warning"), a_string("W0001"), a_array_get(e, a_string("line")), a_array_get(e, a_string("col")), a_add(a_string("unused variable: "), name)); a_release(__old); }
             }
             a_release(name);
             a_release(e);
         }
         a_release(__iter_arr);
     }
-#line 86 "std/compiler/checker.a"
+#line 137 "std/compiler/checker.a"
     __ret = a_map_set(s, a_string("scopes"), a_array_slice(a_array_get(s, a_string("scopes")), a_int(0), a_sub(n, a_int(1)))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(scopes);
@@ -14874,28 +16546,46 @@ __fn_cleanup:
 }
 
 AValue fn_checker__declare(AValue st, AValue name, AValue kind, AValue arity) {
+    AValue __ret = a_void();
+    st = a_retain(st);
+    name = a_retain(name);
+    kind = a_retain(kind);
+    arity = a_retain(arity);
+#line 141 "std/compiler/checker.a"
+    __ret = fn_checker__declare_typed(st, name, kind, arity, fn_types_t_any(), a_bool(0)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(st);
+    a_release(name);
+    a_release(kind);
+    a_release(arity);
+    return __ret;
+}
+
+AValue fn_checker__declare_typed(AValue st, AValue name, AValue kind, AValue arity, AValue t, AValue annotated) {
     AValue scopes = {0}, n = {0}, entry = {0}, scopes2 = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     name = a_retain(name);
     kind = a_retain(kind);
     arity = a_retain(arity);
-#line 90 "std/compiler/checker.a"
+    t = a_retain(t);
+    annotated = a_retain(annotated);
+#line 146 "std/compiler/checker.a"
     if (a_truthy(a_or(a_eq(name, a_string("")), a_eq(name, a_string("_"))))) {
-#line 90 "std/compiler/checker.a"
+#line 146 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 91 "std/compiler/checker.a"
+#line 147 "std/compiler/checker.a"
     { AValue __old = scopes; scopes = a_array_get(st, a_string("scopes")); a_release(__old); }
-#line 92 "std/compiler/checker.a"
+#line 148 "std/compiler/checker.a"
     { AValue __old = n; n = a_len(scopes); a_release(__old); }
-#line 93 "std/compiler/checker.a"
-    { AValue __old = entry; entry = a_map_new(5, "line", a_array_get(st, a_string("line")), "col", a_array_get(st, a_string("col")), "used", a_bool(0), "kind", kind, "arity", arity); a_release(__old); }
-#line 94 "std/compiler/checker.a"
+#line 149 "std/compiler/checker.a"
+    { AValue __old = entry; entry = a_map_new(7, "line", a_array_get(st, a_string("line")), "col", a_array_get(st, a_string("col")), "used", a_bool(0), "kind", kind, "arity", arity, "ty", t, "annotated", annotated); a_release(__old); }
+#line 150 "std/compiler/checker.a"
     { AValue __old = scopes2; scopes2 = a_retain(scopes); a_release(__old); }
-#line 95 "std/compiler/checker.a"
+#line 151 "std/compiler/checker.a"
     scopes2 = a_index_set(scopes2, a_sub(n, a_int(1)), a_map_set(a_array_get(scopes, a_sub(n, a_int(1))), name, entry));
-#line 96 "std/compiler/checker.a"
+#line 152 "std/compiler/checker.a"
     __ret = a_map_set(st, a_string("scopes"), scopes2); goto __fn_cleanup;
 __fn_cleanup:
     a_release(scopes);
@@ -14906,6 +16596,8 @@ __fn_cleanup:
     a_release(name);
     a_release(kind);
     a_release(arity);
+    a_release(t);
+    a_release(annotated);
     return __ret;
 }
 
@@ -14914,21 +16606,21 @@ AValue fn_checker__resolve(AValue st, AValue name) {
     AValue __ret = a_void();
     st = a_retain(st);
     name = a_retain(name);
-#line 101 "std/compiler/checker.a"
+#line 157 "std/compiler/checker.a"
     { AValue __old = scopes; scopes = a_array_get(st, a_string("scopes")); a_release(__old); }
-#line 102 "std/compiler/checker.a"
+#line 158 "std/compiler/checker.a"
     { AValue __old = i; i = a_sub(a_len(scopes), a_int(1)); a_release(__old); }
-#line 103 "std/compiler/checker.a"
+#line 159 "std/compiler/checker.a"
     while (a_truthy(a_gteq(i, a_int(0)))) {
-#line 104 "std/compiler/checker.a"
+#line 160 "std/compiler/checker.a"
         if (a_truthy(a_map_has(a_array_get(scopes, i), name))) {
-#line 104 "std/compiler/checker.a"
+#line 160 "std/compiler/checker.a"
             __ret = a_retain(i); goto __fn_cleanup;
         }
-#line 105 "std/compiler/checker.a"
+#line 161 "std/compiler/checker.a"
         { AValue __old = i; i = a_sub(i, a_int(1)); a_release(__old); }
     }
-#line 107 "std/compiler/checker.a"
+#line 163 "std/compiler/checker.a"
     __ret = a_neg(a_int(1)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(scopes);
@@ -14943,19 +16635,44 @@ AValue fn_checker__lookup(AValue st, AValue name) {
     AValue __ret = a_void();
     st = a_retain(st);
     name = a_retain(name);
-#line 111 "std/compiler/checker.a"
+#line 167 "std/compiler/checker.a"
     { AValue __old = i; i = fn_checker__resolve(st, name); a_release(__old); }
-#line 112 "std/compiler/checker.a"
+#line 168 "std/compiler/checker.a"
     if (a_truthy(a_lt(i, a_int(0)))) {
-#line 112 "std/compiler/checker.a"
+#line 168 "std/compiler/checker.a"
         __ret = a_map_new(0); goto __fn_cleanup;
     }
-#line 113 "std/compiler/checker.a"
+#line 169 "std/compiler/checker.a"
     __ret = a_array_get(a_array_get(a_array_get(st, a_string("scopes")), i), name); goto __fn_cleanup;
 __fn_cleanup:
     a_release(i);
     a_release(st);
     a_release(name);
+    return __ret;
+}
+
+AValue fn_checker__set_entry_ty(AValue st, AValue idx, AValue name, AValue t) {
+    AValue scopes = {0}, scopes2 = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    idx = a_retain(idx);
+    name = a_retain(name);
+    t = a_retain(t);
+#line 173 "std/compiler/checker.a"
+    { AValue __old = scopes; scopes = a_array_get(st, a_string("scopes")); a_release(__old); }
+#line 174 "std/compiler/checker.a"
+    { AValue __old = scopes2; scopes2 = a_retain(scopes); a_release(__old); }
+#line 175 "std/compiler/checker.a"
+    scopes2 = a_index_set(scopes2, idx, a_map_set(a_array_get(scopes, idx), name, a_map_set(a_array_get(a_array_get(scopes, idx), name), a_string("ty"), t)));
+#line 176 "std/compiler/checker.a"
+    __ret = a_map_set(st, a_string("scopes"), scopes2); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(scopes);
+    a_release(scopes2);
+    a_release(st);
+    a_release(idx);
+    a_release(name);
+    a_release(t);
     return __ret;
 }
 
@@ -14965,20 +16682,20 @@ AValue fn_checker__mark_used(AValue st, AValue idx, AValue name) {
     st = a_retain(st);
     idx = a_retain(idx);
     name = a_retain(name);
-#line 117 "std/compiler/checker.a"
+#line 180 "std/compiler/checker.a"
     { AValue __old = scopes; scopes = a_array_get(st, a_string("scopes")); a_release(__old); }
-#line 118 "std/compiler/checker.a"
+#line 181 "std/compiler/checker.a"
     { AValue __old = e; e = a_array_get(a_array_get(scopes, idx), name); a_release(__old); }
-#line 119 "std/compiler/checker.a"
+#line 182 "std/compiler/checker.a"
     if (a_truthy(a_array_get(e, a_string("used")))) {
-#line 119 "std/compiler/checker.a"
+#line 182 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 120 "std/compiler/checker.a"
+#line 183 "std/compiler/checker.a"
     { AValue __old = scopes2; scopes2 = a_retain(scopes); a_release(__old); }
-#line 121 "std/compiler/checker.a"
+#line 184 "std/compiler/checker.a"
     scopes2 = a_index_set(scopes2, idx, a_map_set(a_array_get(scopes, idx), name, a_map_set(e, a_string("used"), a_bool(1))));
-#line 122 "std/compiler/checker.a"
+#line 185 "std/compiler/checker.a"
     __ret = a_map_set(st, a_string("scopes"), scopes2); goto __fn_cleanup;
 __fn_cleanup:
     a_release(scopes);
@@ -14992,7 +16709,7 @@ __fn_cleanup:
 
 AValue fn_checker__special_forms(void) {
     AValue __ret = a_void();
-#line 127 "std/compiler/checker.a"
+#line 190 "std/compiler/checker.a"
     __ret = a_map_new(1, "exit", a_bool(1)); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -15002,7 +16719,7 @@ AValue fn_checker__is_builtin(AValue st, AValue name) {
     AValue __ret = a_void();
     st = a_retain(st);
     name = a_retain(name);
-#line 131 "std/compiler/checker.a"
+#line 194 "std/compiler/checker.a"
     __ret = a_or(a_or(a_map_has(a_array_get(st, a_string("builtins")), name), a_map_has(a_array_get(st, a_string("arity")), name)), a_map_has(fn_checker__special_forms(), name)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(st);
@@ -15014,7 +16731,7 @@ AValue fn_checker__is_builtin_namespace(AValue st, AValue ns) {
     AValue __ret = a_void();
     st = a_retain(st);
     ns = a_retain(ns);
-#line 136 "std/compiler/checker.a"
+#line 199 "std/compiler/checker.a"
     __ret = a_map_has(a_array_get(st, a_string("namespaces")), ns); goto __fn_cleanup;
 __fn_cleanup:
     a_release(st);
@@ -15023,50 +16740,183 @@ __fn_cleanup:
 }
 
 AValue fn_checker__use_name(AValue st, AValue name) {
-    AValue idx = {0};
+    AValue idx = {0}, e = {0}, t = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     name = a_retain(name);
-#line 141 "std/compiler/checker.a"
+#line 204 "std/compiler/checker.a"
     { AValue __old = idx; idx = fn_checker__resolve(st, name); a_release(__old); }
-#line 142 "std/compiler/checker.a"
+#line 205 "std/compiler/checker.a"
     if (a_truthy(a_gteq(idx, a_int(0)))) {
-#line 142 "std/compiler/checker.a"
-        __ret = fn_checker__mark_used(st, idx, name); goto __fn_cleanup;
+#line 206 "std/compiler/checker.a"
+        { AValue __old = e; e = a_array_get(a_array_get(a_array_get(st, a_string("scopes")), idx), name); a_release(__old); }
+#line 207 "std/compiler/checker.a"
+        { AValue __old = t; t = fn_types_t_any(); a_release(__old); }
+#line 208 "std/compiler/checker.a"
+        if (a_truthy(a_map_has(e, a_string("ty")))) {
+#line 208 "std/compiler/checker.a"
+            { AValue __old = t; t = a_array_get(e, a_string("ty")); a_release(__old); }
+        }
+#line 210 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_and(a_eq(a_array_get(e, a_string("kind")), a_string("fn")), a_map_has(a_array_get(st, a_string("variants")), name)), a_eq(a_array_get(e, a_string("arity")), a_int(0))))) {
+#line 210 "std/compiler/checker.a"
+            { AValue __old = t; t = fn_types_t_named(a_array_get(a_array_get(st, a_string("variants")), name)); a_release(__old); }
+        }
+#line 211 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__mark_used(st, idx, name), t); goto __fn_cleanup;
     }
-#line 143 "std/compiler/checker.a"
+#line 213 "std/compiler/checker.a"
     if (a_truthy(fn_checker__is_builtin(st, name))) {
-#line 143 "std/compiler/checker.a"
-        __ret = a_retain(st); goto __fn_cleanup;
+#line 213 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(st, fn_types_t_any()); goto __fn_cleanup;
     }
-#line 144 "std/compiler/checker.a"
+#line 214 "std/compiler/checker.a"
     if (a_truthy(a_map_has(fn_checker__literal_names(), name))) {
-#line 144 "std/compiler/checker.a"
-        __ret = a_retain(st); goto __fn_cleanup;
+#line 215 "std/compiler/checker.a"
+        if (a_truthy(a_or(a_eq(name, a_string("true")), a_eq(name, a_string("false"))))) {
+#line 215 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(st, fn_types_t_prim(a_string("bool"))); goto __fn_cleanup;
+        }
+#line 216 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(st, fn_types_t_any()); goto __fn_cleanup;
     }
-#line 145 "std/compiler/checker.a"
-    __ret = fn_checker__diag(st, a_string("error"), a_add(a_string("undefined variable: "), name)); goto __fn_cleanup;
+#line 218 "std/compiler/checker.a"
+    __ret = fn_checker__set_ty(fn_checker__diag(st, a_string("error"), a_string("E0001"), a_add(a_string("undefined variable: "), name)), fn_types_t_any()); goto __fn_cleanup;
 __fn_cleanup:
     a_release(idx);
+    a_release(e);
+    a_release(t);
     a_release(st);
     a_release(name);
     return __ret;
 }
 
+AValue fn_checker__fn_sig(AValue st, AValue item) {
+    AValue ps = {0}, rt = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    item = a_retain(item);
+#line 223 "std/compiler/checker.a"
+    { AValue __old = ps; ps = a_array_new(0); a_release(__old); }
+#line 224 "std/compiler/checker.a"
+    {
+        AValue __iter_arr = a_iterable(a_array_get(item, a_string("params")));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue p = {0};
+            p = a_array_get(__iter_arr, a_int(__fi));
+#line 225 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_eq(a_type_of(p), a_string("map")), a_map_has(p, a_string("type"))))) {
+#line 225 "std/compiler/checker.a"
+                ps = a_array_push_move(ps, fn_checker__ann(st, a_array_get(p, a_string("type"))));
+            } else {
+#line 226 "std/compiler/checker.a"
+                ps = a_array_push_move(ps, fn_types_t_any());
+            }
+            a_release(p);
+        }
+        a_release(__iter_arr);
+    }
+#line 228 "std/compiler/checker.a"
+    { AValue __old = rt; rt = fn_types_t_any(); a_release(__old); }
+#line 229 "std/compiler/checker.a"
+    if (a_truthy(a_map_has(item, a_string("ret_type")))) {
+#line 229 "std/compiler/checker.a"
+        { AValue __old = rt; rt = fn_checker__ann(st, a_array_get(item, a_string("ret_type"))); a_release(__old); }
+    }
+#line 230 "std/compiler/checker.a"
+    __ret = fn_types_t_fn(ps, rt); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(ps);
+    a_release(rt);
+    a_release(st);
+    a_release(item);
+    return __ret;
+}
+
+AValue fn_checker__check_call_types(AValue st, AValue display, AValue sig, AValue arg_tys) {
+    AValue s = {0}, params = {0}, b = {0}, i = {0}, want = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    display = a_retain(display);
+    sig = a_retain(sig);
+    arg_tys = a_retain(arg_tys);
+#line 236 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_neq(a_type_of(sig), a_string("map")), a_neq(a_array_get(sig, a_string("k")), a_string("fn"))))) {
+#line 236 "std/compiler/checker.a"
+        __ret = a_array_new(2, st, fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 237 "std/compiler/checker.a"
+    { AValue __old = s; s = a_retain(st); a_release(__old); }
+#line 238 "std/compiler/checker.a"
+    { AValue __old = params; params = a_array_get(sig, a_string("params")); a_release(__old); }
+#line 239 "std/compiler/checker.a"
+    { AValue __old = b; b = a_map_new(0); a_release(__old); }
+#line 240 "std/compiler/checker.a"
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 241 "std/compiler/checker.a"
+    while (a_truthy(a_and(a_lt(i, a_len(arg_tys)), a_lt(i, a_len(params))))) {
+#line 242 "std/compiler/checker.a"
+        { AValue __old = b; b = fn_types_unify(a_array_get(params, i), a_array_get(arg_tys, i), b); a_release(__old); }
+#line 243 "std/compiler/checker.a"
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+#line 245 "std/compiler/checker.a"
+    { AValue __old = i; i = a_int(0); a_release(__old); }
+#line 246 "std/compiler/checker.a"
+    while (a_truthy(a_and(a_lt(i, a_len(arg_tys)), a_lt(i, a_len(params))))) {
+#line 247 "std/compiler/checker.a"
+        { AValue __old = want; want = fn_types_subst(a_array_get(params, i), b); a_release(__old); }
+#line 248 "std/compiler/checker.a"
+        if (a_truthy(a_not(fn_types_assignable(a_array_get(arg_tys, i), want)))) {
+#line 249 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__type_mismatch(s, a_add(a_add(a_add(a_string("argument "), a_to_str(a_add(i, a_int(1)))), a_string(" of ")), display), want, a_array_get(arg_tys, i)); a_release(__old); }
+        }
+#line 251 "std/compiler/checker.a"
+        { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+    }
+#line 253 "std/compiler/checker.a"
+    __ret = a_array_new(2, s, fn_types_subst(a_array_get(sig, a_string("ret")), b)); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(s);
+    a_release(params);
+    a_release(b);
+    a_release(i);
+    a_release(want);
+    a_release(st);
+    a_release(display);
+    a_release(sig);
+    a_release(arg_tys);
+    return __ret;
+}
+
 AValue fn_checker__check_arity(AValue st, AValue display, AValue expected, AValue got) {
+    AValue mins = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     display = a_retain(display);
     expected = a_retain(expected);
     got = a_retain(got);
-#line 149 "std/compiler/checker.a"
-    if (a_truthy(a_and(a_gteq(expected, a_int(0)), a_neq(expected, got)))) {
-#line 150 "std/compiler/checker.a"
-        __ret = fn_checker__diag(st, a_string("error"), a_add(a_add(a_add(a_add(display, a_string(" expects ")), a_to_str(expected)), a_string(" argument(s), got ")), a_to_str(got))); goto __fn_cleanup;
+#line 257 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_lt(expected, a_int(0)), a_eq(expected, got)))) {
+#line 257 "std/compiler/checker.a"
+        __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 152 "std/compiler/checker.a"
-    __ret = a_retain(st); goto __fn_cleanup;
+#line 258 "std/compiler/checker.a"
+    { AValue __old = mins; mins = fn_cgen__builtin_min_arity(); a_release(__old); }
+#line 259 "std/compiler/checker.a"
+    if (a_truthy(a_map_has(mins, display))) {
+#line 260 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_gteq(got, a_array_get(mins, display)), a_lteq(got, expected)))) {
+#line 260 "std/compiler/checker.a"
+            __ret = a_retain(st); goto __fn_cleanup;
+        }
+#line 261 "std/compiler/checker.a"
+        __ret = fn_checker__diag(st, a_string("error"), a_string("E0004"), a_add(a_add(a_add(a_add(a_add(a_add(display, a_string(" expects ")), a_to_str(a_array_get(mins, display))), a_string(" to ")), a_to_str(expected)), a_string(" argument(s), got ")), a_to_str(got))); goto __fn_cleanup;
+    }
+#line 263 "std/compiler/checker.a"
+    __ret = fn_checker__diag(st, a_string("error"), a_string("E0004"), a_add(a_add(a_add(a_add(display, a_string(" expects ")), a_to_str(expected)), a_string(" argument(s), got ")), a_to_str(got))); goto __fn_cleanup;
 __fn_cleanup:
+    a_release(mins);
     a_release(st);
     a_release(display);
     a_release(expected);
@@ -15080,87 +16930,92 @@ AValue fn_checker__declare_pattern(AValue st, AValue pat, AValue kind) {
     st = a_retain(st);
     pat = a_retain(pat);
     kind = a_retain(kind);
-#line 160 "std/compiler/checker.a"
+#line 271 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(pat), a_string("map")))) {
-#line 160 "std/compiler/checker.a"
+#line 271 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 161 "std/compiler/checker.a"
+#line 272 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__pos(st, pat); a_release(__old); }
-#line 162 "std/compiler/checker.a"
+#line 273 "std/compiler/checker.a"
     { AValue __old = tag; tag = a_array_get(pat, a_string("tag")); a_release(__old); }
-#line 163 "std/compiler/checker.a"
+#line 274 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatIdent")))) {
-#line 164 "std/compiler/checker.a"
+#line 275 "std/compiler/checker.a"
+        if (a_truthy(fn_checker__is_nullary_variant(s, a_array_get(pat, a_string("name"))))) {
+#line 275 "std/compiler/checker.a"
+            __ret = a_retain(s); goto __fn_cleanup;
+        }
+#line 276 "std/compiler/checker.a"
         __ret = fn_checker__declare(s, a_array_get(pat, a_string("name")), kind, a_neg(a_int(1))); goto __fn_cleanup;
     }
-#line 166 "std/compiler/checker.a"
+#line 278 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatRest")))) {
-#line 167 "std/compiler/checker.a"
+#line 279 "std/compiler/checker.a"
         __ret = fn_checker__declare(s, a_array_get(pat, a_string("name")), kind, a_neg(a_int(1))); goto __fn_cleanup;
     }
-#line 169 "std/compiler/checker.a"
+#line 281 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatConstructor")))) {
-#line 170 "std/compiler/checker.a"
+#line 282 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("args")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue a = {0};
                 a = a_array_get(__iter_arr, a_int(__fi));
-#line 170 "std/compiler/checker.a"
+#line 282 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__declare_pattern(s, a, kind); a_release(__old); }
                 a_release(a);
             }
             a_release(__iter_arr);
         }
-#line 171 "std/compiler/checker.a"
+#line 283 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 173 "std/compiler/checker.a"
+#line 285 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatArray")))) {
-#line 174 "std/compiler/checker.a"
+#line 286 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("elems")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 174 "std/compiler/checker.a"
+#line 286 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__declare_pattern(s, e, kind); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 175 "std/compiler/checker.a"
+#line 287 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 177 "std/compiler/checker.a"
+#line 289 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatElem")))) {
-#line 178 "std/compiler/checker.a"
+#line 290 "std/compiler/checker.a"
         __ret = fn_checker__declare_pattern(s, a_array_get(pat, a_string("pattern")), kind); goto __fn_cleanup;
     }
-#line 180 "std/compiler/checker.a"
+#line 292 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatMap")))) {
-#line 181 "std/compiler/checker.a"
+#line 293 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(pat, a_string("entries")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue e = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 181 "std/compiler/checker.a"
+#line 293 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__declare_pattern(s, e, kind); a_release(__old); }
                 a_release(e);
             }
             a_release(__iter_arr);
         }
-#line 182 "std/compiler/checker.a"
+#line 294 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 184 "std/compiler/checker.a"
+#line 296 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("PatMapEntry")))) {
-#line 185 "std/compiler/checker.a"
+#line 297 "std/compiler/checker.a"
         __ret = fn_checker__declare_pattern(s, a_array_get(pat, a_string("pattern")), kind); goto __fn_cleanup;
     }
-#line 187 "std/compiler/checker.a"
+#line 299 "std/compiler/checker.a"
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -15175,14 +17030,14 @@ AValue fn_checker__is_terminator(AValue s) {
     AValue t = {0};
     AValue __ret = a_void();
     s = a_retain(s);
-#line 195 "std/compiler/checker.a"
+#line 307 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(s), a_string("map")))) {
-#line 195 "std/compiler/checker.a"
+#line 307 "std/compiler/checker.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 196 "std/compiler/checker.a"
+#line 308 "std/compiler/checker.a"
     { AValue __old = t; t = a_array_get(s, a_string("tag")); a_release(__old); }
-#line 197 "std/compiler/checker.a"
+#line 309 "std/compiler/checker.a"
     __ret = a_or(a_or(a_eq(t, a_string("Return")), a_eq(t, a_string("Break"))), a_eq(t, a_string("Continue"))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(t);
@@ -15195,39 +17050,39 @@ AValue fn_checker__walk_stmts(AValue st, AValue stmts) {
     AValue __ret = a_void();
     st = a_retain(st);
     stmts = a_retain(stmts);
-#line 202 "std/compiler/checker.a"
+#line 314 "std/compiler/checker.a"
     { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 203 "std/compiler/checker.a"
+#line 315 "std/compiler/checker.a"
     { AValue __old = dead_reported; dead_reported = a_bool(0); a_release(__old); }
-#line 204 "std/compiler/checker.a"
+#line 316 "std/compiler/checker.a"
     { AValue __old = terminated; terminated = a_bool(0); a_release(__old); }
-#line 205 "std/compiler/checker.a"
+#line 317 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue stmt = {0};
             stmt = a_array_get(__iter_arr, a_int(__fi));
-#line 206 "std/compiler/checker.a"
+#line 318 "std/compiler/checker.a"
             if (a_truthy(a_and(terminated, a_not(dead_reported)))) {
-#line 207 "std/compiler/checker.a"
+#line 319 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__pos(s, stmt); a_release(__old); }
-#line 208 "std/compiler/checker.a"
-                { AValue __old = s; s = fn_checker__diag(s, a_string("warning"), a_string("unreachable code")); a_release(__old); }
-#line 209 "std/compiler/checker.a"
+#line 320 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("warning"), a_string("W0002"), a_string("unreachable code")); a_release(__old); }
+#line 321 "std/compiler/checker.a"
                 { AValue __old = dead_reported; dead_reported = a_bool(1); a_release(__old); }
             }
-#line 211 "std/compiler/checker.a"
+#line 323 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__walk_stmt(s, stmt); a_release(__old); }
-#line 212 "std/compiler/checker.a"
+#line 324 "std/compiler/checker.a"
             if (a_truthy(fn_checker__is_terminator(stmt))) {
-#line 212 "std/compiler/checker.a"
+#line 324 "std/compiler/checker.a"
                 { AValue __old = terminated; terminated = a_bool(1); a_release(__old); }
             }
             a_release(stmt);
         }
         a_release(__iter_arr);
     }
-#line 214 "std/compiler/checker.a"
+#line 326 "std/compiler/checker.a"
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -15243,21 +17098,21 @@ AValue fn_checker__walk_block(AValue st, AValue block) {
     AValue __ret = a_void();
     st = a_retain(st);
     block = a_retain(block);
-#line 218 "std/compiler/checker.a"
+#line 330 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(block), a_string("map")))) {
-#line 218 "std/compiler/checker.a"
+#line 330 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 219 "std/compiler/checker.a"
+#line 331 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_array_get(block, a_string("tag")), a_string("Block")))) {
-#line 219 "std/compiler/checker.a"
+#line 331 "std/compiler/checker.a"
         __ret = fn_checker__walk_stmt(st, block); goto __fn_cleanup;
     }
-#line 220 "std/compiler/checker.a"
+#line 332 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__push_scope(st); a_release(__old); }
-#line 221 "std/compiler/checker.a"
+#line 333 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__walk_stmts(s, a_array_get(block, a_string("stmts"))); a_release(__old); }
-#line 222 "std/compiler/checker.a"
+#line 334 "std/compiler/checker.a"
     __ret = fn_checker__pop_scope(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -15270,17 +17125,17 @@ AValue fn_checker__walk_body(AValue st, AValue body) {
     AValue __ret = a_void();
     st = a_retain(st);
     body = a_retain(body);
-#line 227 "std/compiler/checker.a"
+#line 339 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(body), a_string("map")))) {
-#line 227 "std/compiler/checker.a"
+#line 339 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 228 "std/compiler/checker.a"
+#line 340 "std/compiler/checker.a"
     if (a_truthy(a_eq(a_array_get(body, a_string("tag")), a_string("Block")))) {
-#line 228 "std/compiler/checker.a"
+#line 340 "std/compiler/checker.a"
         __ret = fn_checker__walk_block(st, body); goto __fn_cleanup;
     }
-#line 229 "std/compiler/checker.a"
+#line 341 "std/compiler/checker.a"
     __ret = fn_checker__walk_stmt(st, body); goto __fn_cleanup;
 __fn_cleanup:
     a_release(st);
@@ -15293,24 +17148,24 @@ AValue fn_checker__walk_else(AValue st, AValue node) {
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 233 "std/compiler/checker.a"
+#line 345 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
-#line 233 "std/compiler/checker.a"
+#line 345 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 234 "std/compiler/checker.a"
+#line 346 "std/compiler/checker.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 235 "std/compiler/checker.a"
+#line 347 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("ElseBlock")))) {
-#line 235 "std/compiler/checker.a"
+#line 347 "std/compiler/checker.a"
         __ret = fn_checker__walk_block(st, a_array_get(node, a_string("block"))); goto __fn_cleanup;
     }
-#line 236 "std/compiler/checker.a"
+#line 348 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("ElseIf")))) {
-#line 236 "std/compiler/checker.a"
+#line 348 "std/compiler/checker.a"
         __ret = fn_checker__walk_stmt(st, a_array_get(node, a_string("stmt"))); goto __fn_cleanup;
     }
-#line 237 "std/compiler/checker.a"
+#line 349 "std/compiler/checker.a"
     __ret = fn_checker__walk_block(st, node); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -15319,39 +17174,179 @@ __fn_cleanup:
     return __ret;
 }
 
+AValue fn_checker__check_exhaustive(AValue st, AValue arms) {
+    AValue covered = {0}, sum_type = {0}, mixed = {0}, pat = {0}, guarded = {0}, ptag = {0}, vname = {0}, t = {0}, missing = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    arms = a_retain(arms);
+#line 356 "std/compiler/checker.a"
+    { AValue __old = covered; covered = a_map_new(0); a_release(__old); }
+#line 357 "std/compiler/checker.a"
+    { AValue __old = sum_type; sum_type = a_string(""); a_release(__old); }
+#line 358 "std/compiler/checker.a"
+    { AValue __old = mixed; mixed = a_bool(0); a_release(__old); }
+#line 359 "std/compiler/checker.a"
+    {
+        AValue __iter_arr = a_iterable(arms);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue arm = {0}, pat = {0}, guarded = {0}, ptag = {0}, vname = {0}, t = {0};
+            arm = a_array_get(__iter_arr, a_int(__fi));
+#line 360 "std/compiler/checker.a"
+            { AValue __old = pat; pat = a_array_get(arm, a_string("pattern")); a_release(__old); }
+#line 361 "std/compiler/checker.a"
+            if (a_truthy(a_neq(a_type_of(pat), a_string("map")))) {
+#line 361 "std/compiler/checker.a"
+                __ret = a_retain(st); goto __fn_cleanup;
+            }
+#line 362 "std/compiler/checker.a"
+            { AValue __old = guarded; guarded = a_and(a_and(a_map_has(arm, a_string("guard")), a_eq(a_type_of(a_array_get(arm, a_string("guard"))), a_string("map"))), a_neq(a_array_get(a_array_get(arm, a_string("guard")), a_string("tag")), a_string("Void"))); a_release(__old); }
+#line 363 "std/compiler/checker.a"
+            { AValue __old = ptag; ptag = a_array_get(pat, a_string("tag")); a_release(__old); }
+#line 364 "std/compiler/checker.a"
+            if (a_truthy(a_eq(ptag, a_string("PatWildcard")))) {
+#line 364 "std/compiler/checker.a"
+                if (a_truthy(a_not(guarded))) {
+#line 364 "std/compiler/checker.a"
+                    __ret = a_retain(st); goto __fn_cleanup;
+                } else {
+#line 364 "std/compiler/checker.a"
+                    continue;
+                }
+            }
+#line 365 "std/compiler/checker.a"
+            { AValue __old = vname; vname = a_string(""); a_release(__old); }
+#line 366 "std/compiler/checker.a"
+            if (a_truthy(a_eq(ptag, a_string("PatConstructor")))) {
+#line 366 "std/compiler/checker.a"
+                { AValue __old = vname; vname = a_array_get(pat, a_string("name")); a_release(__old); }
+            }
+#line 367 "std/compiler/checker.a"
+            if (a_truthy(a_eq(ptag, a_string("PatIdent")))) {
+#line 368 "std/compiler/checker.a"
+                if (a_truthy(fn_checker__is_nullary_variant(st, a_array_get(pat, a_string("name"))))) {
+#line 368 "std/compiler/checker.a"
+                    { AValue __old = vname; vname = a_array_get(pat, a_string("name")); a_release(__old); }
+                } else
+                if (a_truthy(a_not(guarded))) {
+#line 369 "std/compiler/checker.a"
+                    __ret = a_retain(st); goto __fn_cleanup;
+                } else {
+#line 370 "std/compiler/checker.a"
+                    continue;
+                }
+            }
+#line 372 "std/compiler/checker.a"
+            if (a_truthy(a_eq(vname, a_string("")))) {
+#line 372 "std/compiler/checker.a"
+                __ret = a_retain(st); goto __fn_cleanup;
+            }
+#line 373 "std/compiler/checker.a"
+            if (a_truthy(a_not(a_map_has(a_array_get(st, a_string("variants")), vname)))) {
+#line 373 "std/compiler/checker.a"
+                __ret = a_retain(st); goto __fn_cleanup;
+            }
+#line 374 "std/compiler/checker.a"
+            { AValue __old = t; t = a_array_get(a_array_get(st, a_string("variants")), vname); a_release(__old); }
+#line 375 "std/compiler/checker.a"
+            if (a_truthy(a_eq(sum_type, a_string("")))) {
+#line 375 "std/compiler/checker.a"
+                { AValue __old = sum_type; sum_type = a_retain(t); a_release(__old); }
+            } else
+            if (a_truthy(a_neq(sum_type, t))) {
+#line 376 "std/compiler/checker.a"
+                { AValue __old = mixed; mixed = a_bool(1); a_release(__old); }
+            }
+#line 377 "std/compiler/checker.a"
+            if (a_truthy(a_not(guarded))) {
+#line 377 "std/compiler/checker.a"
+                { AValue __old = covered; covered = a_map_set(covered, vname, a_bool(1)); a_release(__old); }
+            }
+            a_release(arm);
+            a_release(pat);
+            a_release(guarded);
+            a_release(ptag);
+            a_release(vname);
+            a_release(t);
+        }
+        a_release(__iter_arr);
+    }
+#line 379 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(sum_type, a_string("")), mixed))) {
+#line 379 "std/compiler/checker.a"
+        __ret = a_retain(st); goto __fn_cleanup;
+    }
+#line 380 "std/compiler/checker.a"
+    { AValue __old = missing; missing = a_array_new(0); a_release(__old); }
+#line 381 "std/compiler/checker.a"
+    {
+        AValue __iter_arr = a_iterable(a_array_get(a_array_get(st, a_string("sums")), sum_type));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue v = {0};
+            v = a_array_get(__iter_arr, a_int(__fi));
+#line 382 "std/compiler/checker.a"
+            if (a_truthy(a_not(a_map_has(covered, v)))) {
+#line 382 "std/compiler/checker.a"
+                missing = a_array_push_move(missing, v);
+            }
+            a_release(v);
+        }
+        a_release(__iter_arr);
+    }
+#line 384 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_len(missing), a_int(0)))) {
+#line 384 "std/compiler/checker.a"
+        __ret = a_retain(st); goto __fn_cleanup;
+    }
+#line 385 "std/compiler/checker.a"
+    __ret = fn_checker__diag(st, a_string("error"), a_string("E0005"), a_add(a_add(a_add(a_string("non-exhaustive match on "), sum_type), a_string(": missing ")), a_str_join(missing, a_string(", ")))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(covered);
+    a_release(sum_type);
+    a_release(mixed);
+    a_release(pat);
+    a_release(guarded);
+    a_release(ptag);
+    a_release(vname);
+    a_release(t);
+    a_release(missing);
+    a_release(st);
+    a_release(arms);
+    return __ret;
+}
+
 AValue fn_checker__walk_arms(AValue st, AValue arms) {
     AValue s = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     arms = a_retain(arms);
-#line 241 "std/compiler/checker.a"
-    { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 242 "std/compiler/checker.a"
+#line 389 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__check_exhaustive(st, arms); a_release(__old); }
+#line 390 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(arms);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue arm = {0};
             arm = a_array_get(__iter_arr, a_int(__fi));
-#line 243 "std/compiler/checker.a"
+#line 391 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__pos(s, arm); a_release(__old); }
-#line 244 "std/compiler/checker.a"
+#line 392 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 245 "std/compiler/checker.a"
+#line 393 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__declare_pattern(s, a_array_get(arm, a_string("pattern")), a_string("pattern")); a_release(__old); }
-#line 246 "std/compiler/checker.a"
+#line 394 "std/compiler/checker.a"
             if (a_truthy(a_map_has(arm, a_string("guard")))) {
-#line 246 "std/compiler/checker.a"
+#line 394 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(arm, a_string("guard"))); a_release(__old); }
             }
-#line 247 "std/compiler/checker.a"
+#line 395 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__walk_body(s, a_array_get(arm, a_string("body"))); a_release(__old); }
-#line 248 "std/compiler/checker.a"
+#line 396 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__pop_scope(s); a_release(__old); }
             a_release(arm);
         }
         a_release(__iter_arr);
     }
-#line 250 "std/compiler/checker.a"
+#line 398 "std/compiler/checker.a"
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -15361,338 +17356,539 @@ __fn_cleanup:
 }
 
 AValue fn_checker__walk_stmt(AValue st, AValue node) {
-    AValue s = {0}, tag = {0}, target = {0};
+    AValue s = {0}, tag = {0}, vt = {0}, dt = {0}, et = {0}, target = {0}, name = {0}, idx = {0}, e = {0}, rt = {0}, it = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 254 "std/compiler/checker.a"
+#line 402 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
-#line 254 "std/compiler/checker.a"
+#line 402 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 255 "std/compiler/checker.a"
+#line 403 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__pos(st, node); a_release(__old); }
-#line 256 "std/compiler/checker.a"
+#line 404 "std/compiler/checker.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 258 "std/compiler/checker.a"
+#line 406 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 259 "std/compiler/checker.a"
+#line 407 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("value"))); a_release(__old); }
-#line 260 "std/compiler/checker.a"
+#line 408 "std/compiler/checker.a"
+        { AValue __old = vt; vt = fn_checker__ty(s); a_release(__old); }
+#line 409 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
-#line 261 "std/compiler/checker.a"
-        __ret = fn_checker__declare(s, a_array_get(node, a_string("name")), a_string("let"), a_neg(a_int(1))); goto __fn_cleanup;
+#line 410 "std/compiler/checker.a"
+        { AValue __old = dt; dt = fn_types_t_any(); a_release(__old); }
+#line 411 "std/compiler/checker.a"
+        if (a_truthy(a_map_has(node, a_string("type")))) {
+#line 411 "std/compiler/checker.a"
+            { AValue __old = dt; dt = fn_checker__ann(s, a_array_get(node, a_string("type"))); a_release(__old); }
+        }
+#line 412 "std/compiler/checker.a"
+        if (a_truthy(a_not(fn_types_is_any(dt)))) {
+#line 413 "std/compiler/checker.a"
+            if (a_truthy(a_not(fn_types_assignable(vt, dt)))) {
+#line 413 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__type_mismatch(s, a_add(a_add(a_add(a_string("let "), a_array_get(node, a_string("name"))), a_string(": ")), fn_types_show(dt)), dt, vt); a_release(__old); }
+            }
+#line 414 "std/compiler/checker.a"
+            __ret = fn_checker__declare_typed(s, a_array_get(node, a_string("name")), a_string("let"), a_neg(a_int(1)), dt, a_bool(1)); goto __fn_cleanup;
+        }
+#line 416 "std/compiler/checker.a"
+        __ret = fn_checker__declare_typed(s, a_array_get(node, a_string("name")), a_string("let"), a_neg(a_int(1)), vt, a_bool(0)); goto __fn_cleanup;
     }
-#line 263 "std/compiler/checker.a"
+#line 418 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("LetDestructure")))) {
-#line 264 "std/compiler/checker.a"
+#line 419 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("value"))); a_release(__old); }
-#line 265 "std/compiler/checker.a"
+#line 420 "std/compiler/checker.a"
+        { AValue __old = vt; vt = fn_checker__ty(s); a_release(__old); }
+#line 421 "std/compiler/checker.a"
+        { AValue __old = et; et = fn_types_t_any(); a_release(__old); }
+#line 422 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(vt, a_string("k")), a_string("array")))) {
+#line 422 "std/compiler/checker.a"
+            { AValue __old = et; et = a_array_get(vt, a_string("elem")); a_release(__old); }
+        }
+#line 423 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
-#line 266 "std/compiler/checker.a"
+#line 424 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("bindings")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue b = {0};
                 b = a_array_get(__iter_arr, a_int(__fi));
-#line 267 "std/compiler/checker.a"
+#line 425 "std/compiler/checker.a"
                 if (a_truthy(a_eq(a_type_of(b), a_string("str")))) {
-#line 267 "std/compiler/checker.a"
-                    { AValue __old = s; s = fn_checker__declare(s, b, a_string("let"), a_neg(a_int(1))); a_release(__old); }
+#line 425 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__declare_typed(s, b, a_string("let"), a_neg(a_int(1)), et, a_bool(0)); a_release(__old); }
                 } else {
-#line 268 "std/compiler/checker.a"
+#line 426 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__declare_pattern(s, b, a_string("let")); a_release(__old); }
                 }
                 a_release(b);
             }
             a_release(__iter_arr);
         }
-#line 270 "std/compiler/checker.a"
+#line 428 "std/compiler/checker.a"
         if (a_truthy(a_and(a_map_has(node, a_string("rest")), a_eq(a_type_of(a_array_get(node, a_string("rest"))), a_string("str"))))) {
-#line 271 "std/compiler/checker.a"
+#line 429 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__declare(s, a_array_get(node, a_string("rest")), a_string("let"), a_neg(a_int(1))); a_release(__old); }
         }
-#line 273 "std/compiler/checker.a"
+#line 431 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 275 "std/compiler/checker.a"
+#line 433 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Assign")))) {
-#line 276 "std/compiler/checker.a"
+#line 434 "std/compiler/checker.a"
         { AValue __old = target; target = a_array_get(node, a_string("target")); a_release(__old); }
-#line 277 "std/compiler/checker.a"
+#line 435 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("value"))); a_release(__old); }
+#line 436 "std/compiler/checker.a"
+        { AValue __old = vt; vt = fn_checker__ty(s); a_release(__old); }
+#line 437 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
+#line 438 "std/compiler/checker.a"
         if (a_truthy(a_and(a_eq(a_type_of(target), a_string("map")), a_eq(a_array_get(target, a_string("tag")), a_string("Ident"))))) {
-#line 278 "std/compiler/checker.a"
-            { AValue __old = s; s = fn_checker__use_name(s, a_array_get(target, a_string("name"))); a_release(__old); }
-        } else {
-#line 280 "std/compiler/checker.a"
-            { AValue __old = s; s = fn_checker__walk_expr(s, target); a_release(__old); }
+#line 439 "std/compiler/checker.a"
+            { AValue __old = name; name = a_array_get(target, a_string("name")); a_release(__old); }
+#line 440 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__use_name(s, name); a_release(__old); }
+#line 441 "std/compiler/checker.a"
+            { AValue __old = idx; idx = fn_checker__resolve(s, name); a_release(__old); }
+#line 442 "std/compiler/checker.a"
+            if (a_truthy(a_gteq(idx, a_int(0)))) {
+#line 443 "std/compiler/checker.a"
+                { AValue __old = e; e = a_array_get(a_array_get(a_array_get(s, a_string("scopes")), idx), name); a_release(__old); }
+#line 444 "std/compiler/checker.a"
+                if (a_truthy(a_array_get(e, a_string("annotated")))) {
+#line 445 "std/compiler/checker.a"
+                    if (a_truthy(a_not(fn_types_assignable(vt, a_array_get(e, a_string("ty")))))) {
+#line 445 "std/compiler/checker.a"
+                        { AValue __old = s; s = fn_checker__type_mismatch(s, a_add(a_add(name, a_string(" is ")), fn_types_show(a_array_get(e, a_string("ty")))), a_array_get(e, a_string("ty")), vt); a_release(__old); }
+                    }
+                } else {
+#line 448 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__set_entry_ty(s, idx, name, fn_types_join(a_array_get(e, a_string("ty")), vt)); a_release(__old); }
+                }
+            }
+#line 451 "std/compiler/checker.a"
+            __ret = a_retain(s); goto __fn_cleanup;
         }
-#line 282 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("value"))); goto __fn_cleanup;
+#line 453 "std/compiler/checker.a"
+        __ret = fn_checker__walk_expr(s, target); goto __fn_cleanup;
     }
-#line 284 "std/compiler/checker.a"
+#line 455 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Return")))) {
-#line 285 "std/compiler/checker.a"
-        if (a_truthy(a_map_has(node, a_string("expr")))) {
-#line 285 "std/compiler/checker.a"
-            __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); goto __fn_cleanup;
+#line 456 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_and(a_map_has(node, a_string("expr")), a_eq(a_type_of(a_array_get(node, a_string("expr"))), a_string("map"))), a_neq(a_array_get(a_array_get(node, a_string("expr")), a_string("tag")), a_string("Void"))))) {
+#line 457 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); a_release(__old); }
+#line 458 "std/compiler/checker.a"
+            { AValue __old = rt; rt = a_array_get(s, a_string("fn_ret_ty")); a_release(__old); }
+#line 459 "std/compiler/checker.a"
+            { AValue __old = vt; vt = fn_checker__ty(s); a_release(__old); }
+#line 460 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
+#line 461 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_and(a_and(a_eq(a_array_get(rt, a_string("k")), a_string("void")), a_neq(a_array_get(vt, a_string("k")), a_string("void"))), a_neq(a_array_get(vt, a_string("k")), a_string("any"))), a_neq(a_array_get(vt, a_string("k")), a_string("result"))))) {
+#line 462 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0008"), a_string("ret with a value in a function declared -> void")); a_release(__old); }
+            } else
+            if (a_truthy(a_not(fn_types_assignable(vt, rt)))) {
+#line 464 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__type_mismatch(s, a_add(a_string("ret in a function declared -> "), fn_types_show(rt)), rt, vt); a_release(__old); }
+            }
+#line 466 "std/compiler/checker.a"
+            __ret = a_retain(s); goto __fn_cleanup;
         }
-#line 286 "std/compiler/checker.a"
+#line 468 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 288 "std/compiler/checker.a"
+#line 470 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("ExprStmt")))) {
-#line 288 "std/compiler/checker.a"
+#line 470 "std/compiler/checker.a"
         __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); goto __fn_cleanup;
     }
-#line 289 "std/compiler/checker.a"
+#line 471 "std/compiler/checker.a"
     if (a_truthy(a_or(a_eq(tag, a_string("If")), a_eq(tag, a_string("IfExpr"))))) {
-#line 290 "std/compiler/checker.a"
+#line 472 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("cond"))); a_release(__old); }
-#line 291 "std/compiler/checker.a"
+#line 473 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_block(s, a_array_get(node, a_string("then"))); a_release(__old); }
-#line 292 "std/compiler/checker.a"
+#line 474 "std/compiler/checker.a"
         if (a_truthy(a_map_has(node, a_string("else")))) {
-#line 292 "std/compiler/checker.a"
+#line 474 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__walk_else(s, a_array_get(node, a_string("else"))); a_release(__old); }
         }
-#line 293 "std/compiler/checker.a"
+#line 475 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 295 "std/compiler/checker.a"
+#line 477 "std/compiler/checker.a"
     if (a_truthy(a_or(a_eq(tag, a_string("Match")), a_eq(tag, a_string("MatchExpr"))))) {
-#line 296 "std/compiler/checker.a"
+#line 478 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); a_release(__old); }
-#line 297 "std/compiler/checker.a"
+#line 479 "std/compiler/checker.a"
         __ret = fn_checker__walk_arms(s, a_array_get(node, a_string("arms"))); goto __fn_cleanup;
     }
-#line 299 "std/compiler/checker.a"
+#line 481 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("For")))) {
-#line 300 "std/compiler/checker.a"
+#line 482 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("iter"))); a_release(__old); }
-#line 301 "std/compiler/checker.a"
+#line 483 "std/compiler/checker.a"
+        { AValue __old = it; it = fn_checker__ty(s); a_release(__old); }
+#line 484 "std/compiler/checker.a"
+        { AValue __old = et; et = fn_types_t_any(); a_release(__old); }
+#line 485 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(it, a_string("k")), a_string("array")))) {
+#line 485 "std/compiler/checker.a"
+            { AValue __old = et; et = a_array_get(it, a_string("elem")); a_release(__old); }
+        }
+#line 486 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(it, a_string("k")), a_string("str")))) {
+#line 486 "std/compiler/checker.a"
+            { AValue __old = et; et = fn_types_t_prim(a_string("str")); a_release(__old); }
+        }
+#line 487 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(it, a_string("k")), a_string("map")))) {
+#line 487 "std/compiler/checker.a"
+            { AValue __old = et; et = a_array_get(it, a_string("key")); a_release(__old); }
+        }
+#line 488 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
-#line 302 "std/compiler/checker.a"
+#line 489 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 303 "std/compiler/checker.a"
-        { AValue __old = s; s = fn_checker__declare(s, a_array_get(node, a_string("var")), a_string("loopvar"), a_neg(a_int(1))); a_release(__old); }
-#line 304 "std/compiler/checker.a"
+#line 490 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(node, a_string("var")), a_string("loopvar"), a_neg(a_int(1)), et, a_bool(0)); a_release(__old); }
+#line 491 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_body(s, a_array_get(node, a_string("body"))); a_release(__old); }
-#line 305 "std/compiler/checker.a"
+#line 492 "std/compiler/checker.a"
         __ret = fn_checker__pop_scope(s); goto __fn_cleanup;
     }
-#line 307 "std/compiler/checker.a"
+#line 494 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("ForDestructure")))) {
-#line 308 "std/compiler/checker.a"
+#line 495 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("iter"))); a_release(__old); }
-#line 309 "std/compiler/checker.a"
+#line 496 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
-#line 310 "std/compiler/checker.a"
+#line 497 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 311 "std/compiler/checker.a"
+#line 498 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("bindings")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue b = {0};
                 b = a_array_get(__iter_arr, a_int(__fi));
-#line 312 "std/compiler/checker.a"
+#line 499 "std/compiler/checker.a"
                 if (a_truthy(a_eq(a_type_of(b), a_string("str")))) {
-#line 312 "std/compiler/checker.a"
+#line 499 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__declare(s, b, a_string("loopvar"), a_neg(a_int(1))); a_release(__old); }
                 } else {
-#line 313 "std/compiler/checker.a"
+#line 500 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__declare_pattern(s, b, a_string("loopvar")); a_release(__old); }
                 }
                 a_release(b);
             }
             a_release(__iter_arr);
         }
-#line 315 "std/compiler/checker.a"
+#line 502 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_body(s, a_array_get(node, a_string("body"))); a_release(__old); }
-#line 316 "std/compiler/checker.a"
+#line 503 "std/compiler/checker.a"
         __ret = fn_checker__pop_scope(s); goto __fn_cleanup;
     }
-#line 318 "std/compiler/checker.a"
+#line 505 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("While")))) {
-#line 319 "std/compiler/checker.a"
+#line 506 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("cond"))); a_release(__old); }
-#line 320 "std/compiler/checker.a"
+#line 507 "std/compiler/checker.a"
         __ret = fn_checker__walk_block(s, a_array_get(node, a_string("body"))); goto __fn_cleanup;
     }
-#line 322 "std/compiler/checker.a"
+#line 509 "std/compiler/checker.a"
     if (a_truthy(a_or(a_eq(tag, a_string("Break")), a_eq(tag, a_string("Continue"))))) {
-#line 322 "std/compiler/checker.a"
+#line 509 "std/compiler/checker.a"
         __ret = a_retain(s); goto __fn_cleanup;
     }
-#line 323 "std/compiler/checker.a"
+#line 510 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Block")))) {
-#line 323 "std/compiler/checker.a"
+#line 510 "std/compiler/checker.a"
         __ret = fn_checker__walk_block(s, node); goto __fn_cleanup;
     }
-#line 324 "std/compiler/checker.a"
+#line 511 "std/compiler/checker.a"
     __ret = fn_checker__walk_expr(s, node); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
     a_release(tag);
+    a_release(vt);
+    a_release(dt);
+    a_release(et);
     a_release(target);
+    a_release(name);
+    a_release(idx);
+    a_release(e);
+    a_release(rt);
+    a_release(it);
     a_release(st);
     a_release(node);
     return __ret;
 }
 
 AValue fn_checker__walk_call(AValue st, AValue node) {
-    AValue s = {0}, func = {0}, args = {0}, nargs = {0}, handled = {0}, name = {0}, idx = {0}, e = {0}, base = {0}, full = {0};
+    AValue s = {0}, func = {0}, args = {0}, nargs = {0}, handled = {0}, sig = {0}, display = {0}, name = {0}, idx = {0}, e = {0}, base = {0}, full = {0}, fns = {0}, arg_tys = {0}, r = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 328 "std/compiler/checker.a"
+#line 515 "std/compiler/checker.a"
     { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 329 "std/compiler/checker.a"
+#line 516 "std/compiler/checker.a"
     { AValue __old = func; func = a_array_get(node, a_string("func")); a_release(__old); }
-#line 330 "std/compiler/checker.a"
+#line 517 "std/compiler/checker.a"
     { AValue __old = args; args = a_array_get(node, a_string("args")); a_release(__old); }
-#line 331 "std/compiler/checker.a"
+#line 518 "std/compiler/checker.a"
     { AValue __old = nargs; nargs = a_len(args); a_release(__old); }
-#line 332 "std/compiler/checker.a"
+#line 519 "std/compiler/checker.a"
     { AValue __old = handled; handled = a_bool(0); a_release(__old); }
-#line 334 "std/compiler/checker.a"
+#line 520 "std/compiler/checker.a"
+    { AValue __old = sig; sig = fn_types_t_any(); a_release(__old); }
+#line 521 "std/compiler/checker.a"
+    { AValue __old = display; display = a_string(""); a_release(__old); }
+#line 523 "std/compiler/checker.a"
     if (a_truthy(a_and(a_eq(a_type_of(func), a_string("map")), a_eq(a_array_get(func, a_string("tag")), a_string("Ident"))))) {
-#line 335 "std/compiler/checker.a"
+#line 524 "std/compiler/checker.a"
         { AValue __old = name; name = a_array_get(func, a_string("name")); a_release(__old); }
-#line 336 "std/compiler/checker.a"
+#line 525 "std/compiler/checker.a"
+        { AValue __old = display; display = a_retain(name); a_release(__old); }
+#line 526 "std/compiler/checker.a"
         { AValue __old = idx; idx = fn_checker__resolve(s, name); a_release(__old); }
-#line 337 "std/compiler/checker.a"
+#line 527 "std/compiler/checker.a"
         if (a_truthy(fn_checker__is_builtin(s, name))) {
-#line 340 "std/compiler/checker.a"
+#line 530 "std/compiler/checker.a"
             if (a_truthy(a_map_has(a_array_get(s, a_string("arity")), name))) {
-#line 340 "std/compiler/checker.a"
+#line 530 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__check_arity(s, name, a_array_get(a_array_get(s, a_string("arity")), name), nargs); a_release(__old); }
+            }
+#line 531 "std/compiler/checker.a"
+            if (a_truthy(a_map_has(a_array_get(s, a_string("sigs")), name))) {
+#line 531 "std/compiler/checker.a"
+                { AValue __old = sig; sig = a_array_get(a_array_get(s, a_string("sigs")), name); a_release(__old); }
             }
         } else
         if (a_truthy(a_gteq(idx, a_int(0)))) {
-#line 342 "std/compiler/checker.a"
+#line 533 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__mark_used(s, idx, name); a_release(__old); }
-#line 343 "std/compiler/checker.a"
+#line 534 "std/compiler/checker.a"
             { AValue __old = e; e = fn_checker__lookup(s, name); a_release(__old); }
-#line 344 "std/compiler/checker.a"
+#line 535 "std/compiler/checker.a"
             if (a_truthy(a_or(a_eq(a_array_get(e, a_string("kind")), a_string("fn")), a_eq(a_array_get(e, a_string("kind")), a_string("imported"))))) {
-#line 344 "std/compiler/checker.a"
+#line 535 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__check_arity(s, name, a_array_get(e, a_string("arity")), nargs); a_release(__old); }
             }
+#line 536 "std/compiler/checker.a"
+            if (a_truthy(a_map_has(e, a_string("ty")))) {
+#line 536 "std/compiler/checker.a"
+                { AValue __old = sig; sig = a_array_get(e, a_string("ty")); a_release(__old); }
+            }
         } else {
-#line 346 "std/compiler/checker.a"
-            { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_add(a_string("undefined function: "), name)); a_release(__old); }
+#line 538 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0002"), a_add(a_string("undefined function: "), name)); a_release(__old); }
         }
-#line 348 "std/compiler/checker.a"
+#line 540 "std/compiler/checker.a"
         { AValue __old = handled; handled = a_bool(1); a_release(__old); }
     }
-#line 351 "std/compiler/checker.a"
+#line 543 "std/compiler/checker.a"
     if (a_truthy(a_and(a_and(a_not(handled), a_eq(a_type_of(func), a_string("map"))), a_eq(a_array_get(func, a_string("tag")), a_string("FieldAccess"))))) {
-#line 352 "std/compiler/checker.a"
+#line 544 "std/compiler/checker.a"
         { AValue __old = base; base = a_array_get(func, a_string("expr")); a_release(__old); }
-#line 353 "std/compiler/checker.a"
+#line 545 "std/compiler/checker.a"
         if (a_truthy(a_and(a_eq(a_type_of(base), a_string("map")), a_eq(a_array_get(base, a_string("tag")), a_string("Ident"))))) {
-#line 354 "std/compiler/checker.a"
+#line 546 "std/compiler/checker.a"
             { AValue __old = full; full = a_add(a_add(a_array_get(base, a_string("name")), a_string(".")), a_array_get(func, a_string("field"))); a_release(__old); }
-#line 355 "std/compiler/checker.a"
+#line 547 "std/compiler/checker.a"
+            { AValue __old = display; display = a_retain(full); a_release(__old); }
+#line 548 "std/compiler/checker.a"
             { AValue __old = idx; idx = fn_checker__resolve(s, a_array_get(base, a_string("name"))); a_release(__old); }
-#line 356 "std/compiler/checker.a"
+#line 549 "std/compiler/checker.a"
             if (a_truthy(a_gteq(idx, a_int(0)))) {
-#line 357 "std/compiler/checker.a"
+#line 550 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__mark_used(s, idx, a_array_get(base, a_string("name"))); a_release(__old); }
+#line 551 "std/compiler/checker.a"
+                if (a_truthy(fn_checker__is_builtin(s, full))) {
+#line 553 "std/compiler/checker.a"
+                    if (a_truthy(a_map_has(a_array_get(s, a_string("arity")), full))) {
+#line 553 "std/compiler/checker.a"
+                        { AValue __old = s; s = fn_checker__check_arity(s, full, a_array_get(a_array_get(s, a_string("arity")), full), nargs); a_release(__old); }
+                    }
+#line 554 "std/compiler/checker.a"
+                    if (a_truthy(a_map_has(a_array_get(s, a_string("sigs")), full))) {
+#line 554 "std/compiler/checker.a"
+                        { AValue __old = sig; sig = a_array_get(a_array_get(s, a_string("sigs")), full); a_release(__old); }
+                    }
+                } else
+                if (a_truthy(a_map_has(a_array_get(s, a_string("modules")), a_array_get(base, a_string("name"))))) {
+#line 556 "std/compiler/checker.a"
+                    { AValue __old = fns; fns = a_array_get(a_array_get(s, a_string("modules")), a_array_get(base, a_string("name"))); a_release(__old); }
+#line 557 "std/compiler/checker.a"
+                    if (a_truthy(a_map_has(fns, a_array_get(func, a_string("field"))))) {
+#line 558 "std/compiler/checker.a"
+                        { AValue __old = s; s = fn_checker__check_arity(s, full, a_array_get(a_array_get(fns, a_array_get(func, a_string("field"))), a_string("arity")), nargs); a_release(__old); }
+#line 559 "std/compiler/checker.a"
+                        { AValue __old = sig; sig = a_array_get(a_array_get(fns, a_array_get(func, a_string("field"))), a_string("ty")); a_release(__old); }
+                    } else {
+#line 561 "std/compiler/checker.a"
+                        { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0002"), a_add(a_string("undefined function: "), full)); a_release(__old); }
+                    }
+                }
             } else
             if (a_truthy(fn_checker__is_builtin(s, full))) {
-#line 359 "std/compiler/checker.a"
+#line 565 "std/compiler/checker.a"
                 if (a_truthy(a_map_has(a_array_get(s, a_string("arity")), full))) {
-#line 359 "std/compiler/checker.a"
+#line 565 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__check_arity(s, full, a_array_get(a_array_get(s, a_string("arity")), full), nargs); a_release(__old); }
+                }
+#line 566 "std/compiler/checker.a"
+                if (a_truthy(a_map_has(a_array_get(s, a_string("sigs")), full))) {
+#line 566 "std/compiler/checker.a"
+                    { AValue __old = sig; sig = a_array_get(a_array_get(s, a_string("sigs")), full); a_release(__old); }
                 }
             } else
             if (a_truthy(fn_checker__is_builtin_namespace(s, a_array_get(base, a_string("name"))))) {
-#line 361 "std/compiler/checker.a"
-                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_add(a_string("unknown builtin: "), full)); a_release(__old); }
+#line 568 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0003"), a_add(a_string("unknown builtin: "), full)); a_release(__old); }
             } else {
-#line 363 "std/compiler/checker.a"
-                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_add(a_string("undefined variable: "), a_array_get(base, a_string("name")))); a_release(__old); }
+#line 570 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0001"), a_add(a_string("undefined variable: "), a_array_get(base, a_string("name")))); a_release(__old); }
             }
-#line 365 "std/compiler/checker.a"
+#line 572 "std/compiler/checker.a"
             { AValue __old = handled; handled = a_bool(1); a_release(__old); }
         }
     }
-#line 369 "std/compiler/checker.a"
+#line 576 "std/compiler/checker.a"
     if (a_truthy(a_not(handled))) {
-#line 369 "std/compiler/checker.a"
+#line 577 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, func); a_release(__old); }
+#line 578 "std/compiler/checker.a"
+        { AValue __old = sig; sig = fn_checker__ty(s); a_release(__old); }
+#line 579 "std/compiler/checker.a"
+        { AValue __old = display; display = a_string("closure"); a_release(__old); }
     }
-#line 370 "std/compiler/checker.a"
+#line 581 "std/compiler/checker.a"
+    { AValue __old = arg_tys; arg_tys = a_array_new(0); a_release(__old); }
+#line 582 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(args);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue a = {0};
             a = a_array_get(__iter_arr, a_int(__fi));
-#line 370 "std/compiler/checker.a"
+#line 583 "std/compiler/checker.a"
             { AValue __old = s; s = fn_checker__walk_expr(s, a); a_release(__old); }
+#line 584 "std/compiler/checker.a"
+            arg_tys = a_array_push_move(arg_tys, fn_checker__ty(s));
             a_release(a);
         }
         a_release(__iter_arr);
     }
-#line 371 "std/compiler/checker.a"
-    __ret = a_retain(s); goto __fn_cleanup;
+#line 586 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
+#line 587 "std/compiler/checker.a"
+    { AValue __old = r; r = fn_checker__check_call_types(s, display, sig, arg_tys); a_release(__old); }
+#line 588 "std/compiler/checker.a"
+    __ret = fn_checker__set_ty(a_array_get(r, a_int(0)), a_array_get(r, a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
     a_release(func);
     a_release(args);
     a_release(nargs);
     a_release(handled);
+    a_release(sig);
+    a_release(display);
     a_release(name);
     a_release(idx);
     a_release(e);
     a_release(base);
     a_release(full);
+    a_release(fns);
+    a_release(arg_tys);
+    a_release(r);
     a_release(st);
     a_release(node);
     return __ret;
 }
 
 AValue fn_checker__walk_field_access(AValue st, AValue node) {
-    AValue base = {0}, name = {0}, idx = {0};
+    AValue base = {0}, s = {0}, bt = {0}, name = {0}, idx = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 375 "std/compiler/checker.a"
+#line 592 "std/compiler/checker.a"
     { AValue __old = base; base = a_array_get(node, a_string("expr")); a_release(__old); }
-#line 376 "std/compiler/checker.a"
+#line 593 "std/compiler/checker.a"
+    { AValue __old = s; s = a_retain(st); a_release(__old); }
+#line 594 "std/compiler/checker.a"
+    { AValue __old = bt; bt = fn_types_t_any(); a_release(__old); }
+#line 595 "std/compiler/checker.a"
     if (a_truthy(a_and(a_eq(a_type_of(base), a_string("map")), a_eq(a_array_get(base, a_string("tag")), a_string("Ident"))))) {
-#line 377 "std/compiler/checker.a"
+#line 596 "std/compiler/checker.a"
         { AValue __old = name; name = a_array_get(base, a_string("name")); a_release(__old); }
-#line 378 "std/compiler/checker.a"
-        { AValue __old = idx; idx = fn_checker__resolve(st, name); a_release(__old); }
-#line 379 "std/compiler/checker.a"
+#line 597 "std/compiler/checker.a"
+        { AValue __old = idx; idx = fn_checker__resolve(s, name); a_release(__old); }
+#line 598 "std/compiler/checker.a"
         if (a_truthy(a_gteq(idx, a_int(0)))) {
-#line 379 "std/compiler/checker.a"
-            __ret = fn_checker__mark_used(st, idx, name); goto __fn_cleanup;
+#line 599 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__use_name(s, name); a_release(__old); }
+#line 600 "std/compiler/checker.a"
+            { AValue __old = bt; bt = fn_checker__ty(s); a_release(__old); }
+        } else
+        if (a_truthy(a_or(fn_checker__is_builtin_namespace(s, name), a_map_has(fn_checker__literal_names(), name)))) {
+#line 602 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+        } else {
+#line 604 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(fn_checker__diag(s, a_string("error"), a_string("E0001"), a_add(a_string("undefined variable: "), name)), fn_types_t_any()); goto __fn_cleanup;
         }
-#line 380 "std/compiler/checker.a"
-        if (a_truthy(fn_checker__is_builtin_namespace(st, name))) {
-#line 380 "std/compiler/checker.a"
-            __ret = a_retain(st); goto __fn_cleanup;
-        }
-#line 381 "std/compiler/checker.a"
-        if (a_truthy(a_map_has(fn_checker__literal_names(), name))) {
-#line 381 "std/compiler/checker.a"
-            __ret = a_retain(st); goto __fn_cleanup;
-        }
-#line 382 "std/compiler/checker.a"
-        __ret = fn_checker__diag(st, a_string("error"), a_add(a_string("undefined variable: "), name)); goto __fn_cleanup;
+    } else {
+#line 607 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, base); a_release(__old); }
+#line 608 "std/compiler/checker.a"
+        { AValue __old = bt; bt = fn_checker__ty(s); a_release(__old); }
     }
-#line 384 "std/compiler/checker.a"
-    __ret = fn_checker__walk_expr(st, base); goto __fn_cleanup;
+#line 610 "std/compiler/checker.a"
+    __ret = fn_checker__record_field(s, bt, a_array_get(node, a_string("field"))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(base);
+    a_release(s);
+    a_release(bt);
     a_release(name);
     a_release(idx);
     a_release(st);
     a_release(node);
+    return __ret;
+}
+
+AValue fn_checker__record_field(AValue st, AValue bt, AValue field) {
+    AValue __ret = a_void();
+    st = a_retain(st);
+    bt = a_retain(bt);
+    field = a_retain(field);
+#line 615 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_eq(a_type_of(bt), a_string("map")), a_eq(a_array_get(bt, a_string("k")), a_string("record"))))) {
+#line 616 "std/compiler/checker.a"
+        if (a_truthy(a_map_has(a_array_get(bt, a_string("fields")), field))) {
+#line 616 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(st, a_array_get(a_array_get(bt, a_string("fields")), field)); goto __fn_cleanup;
+        }
+#line 618 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(bt, a_string("name")), a_string("")))) {
+#line 618 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(st, fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 619 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__diag(st, a_string("error"), a_string("E0009"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("unknown field "), field), a_string(" on ")), a_array_get(bt, a_string("name"))), a_string(" (fields: ")), a_str_join(a_map_keys(a_array_get(bt, a_string("fields"))), a_string(", "))), a_string(")"))), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 621 "std/compiler/checker.a"
+    __ret = fn_checker__set_ty(st, fn_types_t_any()); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(st);
+    a_release(bt);
+    a_release(field);
     return __ret;
 }
 
@@ -15701,39 +17897,39 @@ AValue fn_checker__walk_children(AValue st, AValue node) {
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 389 "std/compiler/checker.a"
+#line 626 "std/compiler/checker.a"
     { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 390 "std/compiler/checker.a"
+#line 627 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(a_map_keys(node));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue k = {0}, v = {0};
             k = a_array_get(__iter_arr, a_int(__fi));
-#line 391 "std/compiler/checker.a"
+#line 628 "std/compiler/checker.a"
             if (a_truthy(a_or(a_or(a_or(a_eq(k, a_string("tag")), a_eq(k, a_string("line"))), a_eq(k, a_string("col"))), a_eq(k, a_string("pos"))))) {
-#line 391 "std/compiler/checker.a"
+#line 628 "std/compiler/checker.a"
                 continue;
             }
-#line 392 "std/compiler/checker.a"
+#line 629 "std/compiler/checker.a"
             { AValue __old = v; v = a_array_get(node, k); a_release(__old); }
-#line 393 "std/compiler/checker.a"
+#line 630 "std/compiler/checker.a"
             if (a_truthy(a_eq(a_type_of(v), a_string("map")))) {
-#line 394 "std/compiler/checker.a"
+#line 631 "std/compiler/checker.a"
                 if (a_truthy(a_map_has(v, a_string("tag")))) {
-#line 394 "std/compiler/checker.a"
+#line 631 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__walk_stmt(s, v); a_release(__old); }
                 }
             } else
             if (a_truthy(a_eq(a_type_of(v), a_string("array")))) {
-#line 396 "std/compiler/checker.a"
+#line 633 "std/compiler/checker.a"
                 {
                     AValue __iter_arr = a_iterable(v);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue item = {0};
                         item = a_array_get(__iter_arr, a_int(__fi));
-#line 397 "std/compiler/checker.a"
+#line 634 "std/compiler/checker.a"
                         if (a_truthy(a_and(a_eq(a_type_of(item), a_string("map")), a_map_has(item, a_string("tag"))))) {
-#line 397 "std/compiler/checker.a"
+#line 634 "std/compiler/checker.a"
                             { AValue __old = s; s = fn_checker__walk_stmt(s, item); a_release(__old); }
                         }
                         a_release(item);
@@ -15746,7 +17942,7 @@ AValue fn_checker__walk_children(AValue st, AValue node) {
         }
         a_release(__iter_arr);
     }
-#line 401 "std/compiler/checker.a"
+#line 638 "std/compiler/checker.a"
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -15757,179 +17953,576 @@ __fn_cleanup:
 }
 
 AValue fn_checker__walk_expr(AValue st, AValue node) {
-    AValue s0 = {0}, s = {0}, tag = {0};
+    AValue s0 = {0}, s = {0}, tag = {0}, lt = {0}, rt = {0}, t = {0}, bt = {0}, it = {0}, ix = {0}, right = {0}, call = {0}, et = {0}, first = {0}, kt = {0}, fields = {0}, shaped = {0}, k = {0}, key = {0}, outer_ret = {0}, outer_ret_ty = {0}, pts = {0}, pt = {0}, body = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     node = a_retain(node);
-#line 405 "std/compiler/checker.a"
+#line 642 "std/compiler/checker.a"
     if (a_truthy(a_eq(a_type_of(node), a_string("array")))) {
-#line 406 "std/compiler/checker.a"
+#line 643 "std/compiler/checker.a"
         { AValue __old = s0; s0 = a_retain(st); a_release(__old); }
-#line 407 "std/compiler/checker.a"
+#line 644 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(node);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue item = {0};
                 item = a_array_get(__iter_arr, a_int(__fi));
-#line 407 "std/compiler/checker.a"
+#line 644 "std/compiler/checker.a"
                 { AValue __old = s0; s0 = fn_checker__walk_expr(s0, item); a_release(__old); }
                 a_release(item);
             }
             a_release(__iter_arr);
         }
-#line 408 "std/compiler/checker.a"
+#line 645 "std/compiler/checker.a"
         __ret = a_retain(s0); goto __fn_cleanup;
     }
-#line 410 "std/compiler/checker.a"
+#line 647 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(node), a_string("map")))) {
-#line 410 "std/compiler/checker.a"
+#line 647 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 411 "std/compiler/checker.a"
+#line 648 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__pos(st, node); a_release(__old); }
-#line 412 "std/compiler/checker.a"
+#line 649 "std/compiler/checker.a"
     { AValue __old = tag; tag = a_array_get(node, a_string("tag")); a_release(__old); }
-#line 414 "std/compiler/checker.a"
+#line 651 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Ident")))) {
-#line 414 "std/compiler/checker.a"
+#line 651 "std/compiler/checker.a"
         __ret = fn_checker__use_name(s, a_array_get(node, a_string("name"))); goto __fn_cleanup;
     }
-#line 415 "std/compiler/checker.a"
+#line 652 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Call")))) {
-#line 415 "std/compiler/checker.a"
+#line 652 "std/compiler/checker.a"
         __ret = fn_checker__walk_call(s, node); goto __fn_cleanup;
     }
-#line 416 "std/compiler/checker.a"
+#line 653 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("FieldAccess")))) {
-#line 416 "std/compiler/checker.a"
+#line 653 "std/compiler/checker.a"
         __ret = fn_checker__walk_field_access(s, node); goto __fn_cleanup;
     }
-#line 417 "std/compiler/checker.a"
+#line 654 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("BinOp")))) {
-#line 418 "std/compiler/checker.a"
+#line 655 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("left"))); a_release(__old); }
-#line 419 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("right"))); goto __fn_cleanup;
+#line 656 "std/compiler/checker.a"
+        { AValue __old = lt; lt = fn_checker__ty(s); a_release(__old); }
+#line 657 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("right"))); a_release(__old); }
+#line 658 "std/compiler/checker.a"
+        { AValue __old = rt; rt = fn_checker__ty(s); a_release(__old); }
+#line 659 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
+#line 660 "std/compiler/checker.a"
+        __ret = fn_checker__binop_type(s, a_array_get(node, a_string("op")), lt, rt); goto __fn_cleanup;
     }
-#line 421 "std/compiler/checker.a"
-    if (a_truthy(a_or(a_or(a_or(a_eq(tag, a_string("UnaryOp")), a_eq(tag, a_string("Try"))), a_eq(tag, a_string("Spread"))), a_eq(tag, a_string("InterpExpr"))))) {
-#line 422 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); goto __fn_cleanup;
-    }
-#line 424 "std/compiler/checker.a"
-    if (a_truthy(a_eq(tag, a_string("Index")))) {
-#line 425 "std/compiler/checker.a"
+#line 662 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Try")))) {
+#line 663 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_eq(a_array_get(s, a_string("fn_ret")), a_string("other")), a_eq(a_array_get(s, a_string("in_try")), a_int(0))))) {
+#line 664 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0006"), a_add(a_add(a_string("`?` in a function declared -> "), a_array_get(s, a_string("fn_ret_str"))), a_string(": only a function returning Result (or one with no return type) can propagate an Err"))); a_release(__old); }
+        }
+#line 666 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); a_release(__old); }
-#line 426 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("index"))); goto __fn_cleanup;
+#line 667 "std/compiler/checker.a"
+        { AValue __old = t; t = fn_checker__ty(s); a_release(__old); }
+#line 668 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(t, a_string("k")), a_string("result")))) {
+#line 668 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, a_array_get(t, a_string("ok"))); goto __fn_cleanup;
+        }
+#line 669 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
     }
-#line 428 "std/compiler/checker.a"
+#line 671 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("UnaryOp")))) {
+#line 672 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); a_release(__old); }
+#line 673 "std/compiler/checker.a"
+        { AValue __old = t; t = fn_checker__ty(s); a_release(__old); }
+#line 674 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(node, a_string("op")), a_string("!")))) {
+#line 674 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("bool"))); goto __fn_cleanup;
+        }
+#line 675 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(node, a_string("op")), a_string("-")))) {
+#line 676 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_and(a_not(fn_types_is_any(t)), a_not(fn_types_is_numeric(t))), a_neq(a_array_get(t, a_string("k")), a_string("result"))))) {
+#line 676 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0010"), a_add(a_string("unary - on a "), fn_types_show(t))); a_release(__old); }
+            }
+#line 677 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, t); goto __fn_cleanup;
+        }
+#line 679 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 681 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(tag, a_string("Spread")), a_eq(tag, a_string("InterpExpr"))))) {
+#line 682 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 684 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Index")))) {
+#line 685 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("expr"))); a_release(__old); }
+#line 686 "std/compiler/checker.a"
+        { AValue __old = bt; bt = fn_checker__ty(s); a_release(__old); }
+#line 687 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("index"))); a_release(__old); }
+#line 688 "std/compiler/checker.a"
+        { AValue __old = it; it = fn_checker__ty(s); a_release(__old); }
+#line 689 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__pos(s, node); a_release(__old); }
+#line 690 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(bt, a_string("k")), a_string("array")))) {
+#line 691 "std/compiler/checker.a"
+            if (a_truthy(a_not(fn_types_assignable(it, fn_types_t_prim(a_string("int")))))) {
+#line 691 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__type_mismatch(s, a_string("array index"), fn_types_t_prim(a_string("int")), it); a_release(__old); }
+            }
+#line 692 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, a_array_get(bt, a_string("elem"))); goto __fn_cleanup;
+        }
+#line 694 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(bt, a_string("k")), a_string("map")))) {
+#line 695 "std/compiler/checker.a"
+            if (a_truthy(a_not(fn_types_assignable(it, a_array_get(bt, a_string("key")))))) {
+#line 695 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__type_mismatch(s, a_string("map key"), a_array_get(bt, a_string("key")), it); a_release(__old); }
+            }
+#line 696 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, a_array_get(bt, a_string("val"))); goto __fn_cleanup;
+        }
+#line 698 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(bt, a_string("k")), a_string("record")))) {
+#line 699 "std/compiler/checker.a"
+            { AValue __old = ix; ix = a_array_get(node, a_string("index")); a_release(__old); }
+#line 700 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_eq(a_type_of(ix), a_string("map")), a_eq(a_array_get(ix, a_string("tag")), a_string("String"))))) {
+#line 700 "std/compiler/checker.a"
+                __ret = fn_checker__record_field(s, bt, a_array_get(ix, a_string("value"))); goto __fn_cleanup;
+            }
+#line 701 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 703 "std/compiler/checker.a"
+        if (a_truthy(a_eq(a_array_get(bt, a_string("k")), a_string("str")))) {
+#line 703 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("str"))); goto __fn_cleanup;
+        }
+#line 704 "std/compiler/checker.a"
+        if (a_truthy(a_or(a_or(a_or(a_or(a_eq(a_array_get(bt, a_string("k")), a_string("int")), a_eq(a_array_get(bt, a_string("k")), a_string("float"))), a_eq(a_array_get(bt, a_string("k")), a_string("bool"))), a_eq(a_array_get(bt, a_string("k")), a_string("void"))), a_eq(a_array_get(bt, a_string("k")), a_string("fn"))))) {
+#line 705 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0010"), a_add(a_string("cannot index a value of type "), fn_types_show(bt))); a_release(__old); }
+        }
+#line 707 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 709 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Pipe")))) {
-#line 429 "std/compiler/checker.a"
+#line 711 "std/compiler/checker.a"
+        { AValue __old = right; right = a_array_get(node, a_string("right")); a_release(__old); }
+#line 712 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_eq(a_type_of(right), a_string("map")), a_eq(a_array_get(right, a_string("tag")), a_string("Call"))))) {
+#line 713 "std/compiler/checker.a"
+            { AValue __old = call; call = a_map_set(right, a_string("args"), a_concat_arr(a_array_new(1, a_array_get(node, a_string("left"))), a_array_get(right, a_string("args")))); a_release(__old); }
+#line 714 "std/compiler/checker.a"
+            __ret = fn_checker__walk_expr(s, call); goto __fn_cleanup;
+        }
+#line 716 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("left"))); a_release(__old); }
-#line 430 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("right"))); goto __fn_cleanup;
+#line 717 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(node, a_string("right"))); a_release(__old); }
+#line 718 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
     }
-#line 432 "std/compiler/checker.a"
-    if (a_truthy(a_or(a_eq(tag, a_string("TryBlock")), a_eq(tag, a_string("BlockExpr"))))) {
-#line 432 "std/compiler/checker.a"
-        __ret = fn_checker__walk_block(s, a_array_get(node, a_string("block"))); goto __fn_cleanup;
+#line 720 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("TryBlock")))) {
+#line 721 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("in_try"), a_add(a_array_get(s, a_string("in_try")), a_int(1))); a_release(__old); }
+#line 722 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__walk_block(s, a_array_get(node, a_string("block"))); a_release(__old); }
+#line 723 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("in_try"), a_sub(a_array_get(s, a_string("in_try")), a_int(1))); a_release(__old); }
+#line 724 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_result(fn_types_t_any(), fn_types_t_any())); goto __fn_cleanup;
     }
-#line 433 "std/compiler/checker.a"
+#line 726 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("BlockExpr")))) {
+#line 726 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__walk_block(s, a_array_get(node, a_string("block"))), fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 727 "std/compiler/checker.a"
     if (a_truthy(a_or(a_eq(tag, a_string("IfExpr")), a_eq(tag, a_string("MatchExpr"))))) {
-#line 433 "std/compiler/checker.a"
-        __ret = fn_checker__walk_stmt(s, node); goto __fn_cleanup;
+#line 727 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__walk_stmt(s, node), fn_types_t_any()); goto __fn_cleanup;
     }
-#line 434 "std/compiler/checker.a"
+#line 728 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Array")))) {
-#line 434 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("elems"))); goto __fn_cleanup;
+#line 729 "std/compiler/checker.a"
+        { AValue __old = et; et = fn_types_t_any(); a_release(__old); }
+#line 730 "std/compiler/checker.a"
+        { AValue __old = first; first = a_bool(1); a_release(__old); }
+#line 731 "std/compiler/checker.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(node, a_string("elems")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue e = {0};
+                e = a_array_get(__iter_arr, a_int(__fi));
+#line 732 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__walk_expr(s, e); a_release(__old); }
+#line 733 "std/compiler/checker.a"
+                if (a_truthy(first)) {
+#line 733 "std/compiler/checker.a"
+                    { AValue __old = et; et = fn_checker__ty(s); a_release(__old); }
+                } else {
+#line 733 "std/compiler/checker.a"
+                    { AValue __old = et; et = fn_types_join(et, fn_checker__ty(s)); a_release(__old); }
+                }
+#line 734 "std/compiler/checker.a"
+                { AValue __old = first; first = a_bool(0); a_release(__old); }
+                a_release(e);
+            }
+            a_release(__iter_arr);
+        }
+#line 736 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_array(et)); goto __fn_cleanup;
     }
-#line 435 "std/compiler/checker.a"
+#line 738 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Record")))) {
-#line 436 "std/compiler/checker.a"
+#line 739 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("fields")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue f = {0};
                 f = a_array_get(__iter_arr, a_int(__fi));
-#line 436 "std/compiler/checker.a"
+#line 739 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(f, a_string("value"))); a_release(__old); }
                 a_release(f);
             }
             a_release(__iter_arr);
         }
-#line 437 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
+#line 740 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_map(fn_types_t_prim(a_string("str")), fn_types_t_any())); goto __fn_cleanup;
     }
-#line 439 "std/compiler/checker.a"
+#line 742 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("MapLiteral")))) {
-#line 440 "std/compiler/checker.a"
+#line 745 "std/compiler/checker.a"
+        { AValue __old = kt; kt = fn_types_t_any(); a_release(__old); }
+#line 746 "std/compiler/checker.a"
+        { AValue __old = fields; fields = a_map_new(0); a_release(__old); }
+#line 747 "std/compiler/checker.a"
+        { AValue __old = shaped; shaped = a_gt(a_len(a_array_get(node, a_string("entries"))), a_int(0)); a_release(__old); }
+#line 748 "std/compiler/checker.a"
+        { AValue __old = first; first = a_bool(1); a_release(__old); }
+#line 749 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("entries")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-                AValue e = {0};
+                AValue e = {0}, k = {0}, key = {0};
                 e = a_array_get(__iter_arr, a_int(__fi));
-#line 441 "std/compiler/checker.a"
-                if (a_truthy(a_eq(a_type_of(a_array_get(e, a_string("key"))), a_string("map")))) {
-#line 441 "std/compiler/checker.a"
-                    { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(e, a_string("key"))); a_release(__old); }
+#line 750 "std/compiler/checker.a"
+                { AValue __old = k; k = fn_types_t_prim(a_string("str")); a_release(__old); }
+#line 751 "std/compiler/checker.a"
+                { AValue __old = key; key = a_array_get(e, a_string("key")); a_release(__old); }
+#line 752 "std/compiler/checker.a"
+                if (a_truthy(a_eq(a_type_of(key), a_string("map")))) {
+#line 753 "std/compiler/checker.a"
+                    if (a_truthy(a_eq(a_array_get(key, a_string("tag")), a_string("String")))) {
+#line 754 "std/compiler/checker.a"
+                        { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(e, a_string("value"))); a_release(__old); }
+#line 755 "std/compiler/checker.a"
+                        { AValue __old = fields; fields = a_map_set(fields, a_array_get(key, a_string("value")), fn_checker__ty(s)); a_release(__old); }
+#line 756 "std/compiler/checker.a"
+                        if (a_truthy(first)) {
+#line 756 "std/compiler/checker.a"
+                            { AValue __old = kt; kt = a_retain(k); a_release(__old); }
+                        } else {
+#line 756 "std/compiler/checker.a"
+                            { AValue __old = kt; kt = fn_types_join(kt, k); a_release(__old); }
+                        }
+#line 757 "std/compiler/checker.a"
+                        { AValue __old = first; first = a_bool(0); a_release(__old); }
+#line 758 "std/compiler/checker.a"
+                        continue;
+                    }
+#line 760 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__walk_expr(s, key); a_release(__old); }
+#line 761 "std/compiler/checker.a"
+                    { AValue __old = k; k = fn_checker__ty(s); a_release(__old); }
+                } else
+                if (a_truthy(a_eq(a_type_of(key), a_string("str")))) {
+#line 763 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(e, a_string("value"))); a_release(__old); }
+#line 764 "std/compiler/checker.a"
+                    { AValue __old = fields; fields = a_map_set(fields, key, fn_checker__ty(s)); a_release(__old); }
+#line 765 "std/compiler/checker.a"
+                    if (a_truthy(first)) {
+#line 765 "std/compiler/checker.a"
+                        { AValue __old = kt; kt = a_retain(k); a_release(__old); }
+                    } else {
+#line 765 "std/compiler/checker.a"
+                        { AValue __old = kt; kt = fn_types_join(kt, k); a_release(__old); }
+                    }
+#line 766 "std/compiler/checker.a"
+                    { AValue __old = first; first = a_bool(0); a_release(__old); }
+#line 767 "std/compiler/checker.a"
+                    continue;
                 }
-#line 442 "std/compiler/checker.a"
+#line 769 "std/compiler/checker.a"
+                { AValue __old = shaped; shaped = a_bool(0); a_release(__old); }
+#line 770 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(e, a_string("value"))); a_release(__old); }
+#line 771 "std/compiler/checker.a"
+                if (a_truthy(first)) {
+#line 771 "std/compiler/checker.a"
+                    { AValue __old = kt; kt = a_retain(k); a_release(__old); }
+                } else {
+#line 771 "std/compiler/checker.a"
+                    { AValue __old = kt; kt = fn_types_join(kt, k); a_release(__old); }
+                }
+#line 772 "std/compiler/checker.a"
+                { AValue __old = first; first = a_bool(0); a_release(__old); }
                 a_release(e);
+                a_release(k);
+                a_release(key);
             }
             a_release(__iter_arr);
         }
-#line 444 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
+#line 774 "std/compiler/checker.a"
+        if (a_truthy(shaped)) {
+#line 774 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_record(a_string(""), fields)); goto __fn_cleanup;
+        }
+#line 775 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_map(kt, fn_types_t_any())); goto __fn_cleanup;
     }
-#line 446 "std/compiler/checker.a"
+#line 777 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Interpolation")))) {
-#line 446 "std/compiler/checker.a"
-        __ret = fn_checker__walk_expr(s, a_array_get(node, a_string("parts"))); goto __fn_cleanup;
+#line 777 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(fn_checker__walk_expr(s, a_array_get(node, a_string("parts"))), fn_types_t_prim(a_string("str"))); goto __fn_cleanup;
     }
-#line 447 "std/compiler/checker.a"
+#line 778 "std/compiler/checker.a"
     if (a_truthy(a_eq(tag, a_string("Lambda")))) {
-#line 448 "std/compiler/checker.a"
+#line 779 "std/compiler/checker.a"
+        { AValue __old = outer_ret; outer_ret = a_array_get(s, a_string("fn_ret")); a_release(__old); }
+#line 780 "std/compiler/checker.a"
+        { AValue __old = outer_ret_ty; outer_ret_ty = a_array_get(s, a_string("fn_ret_ty")); a_release(__old); }
+#line 781 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("fn_ret"), a_string("any")); a_release(__old); }
+#line 782 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("fn_ret_ty"), fn_types_t_any()); a_release(__old); }
+#line 783 "std/compiler/checker.a"
         { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 449 "std/compiler/checker.a"
+#line 784 "std/compiler/checker.a"
+        { AValue __old = pts; pts = a_array_new(0); a_release(__old); }
+#line 785 "std/compiler/checker.a"
         {
             AValue __iter_arr = a_iterable(a_array_get(node, a_string("params")));
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-                AValue p = {0};
+                AValue p = {0}, pt = {0};
                 p = a_array_get(__iter_arr, a_int(__fi));
-#line 450 "std/compiler/checker.a"
+#line 786 "std/compiler/checker.a"
                 if (a_truthy(a_eq(a_type_of(p), a_string("str")))) {
-#line 450 "std/compiler/checker.a"
+#line 786 "std/compiler/checker.a"
                     { AValue __old = s; s = fn_checker__declare(s, p, a_string("param"), a_neg(a_int(1))); a_release(__old); }
+#line 787 "std/compiler/checker.a"
+                    pts = a_array_push_move(pts, fn_types_t_any());
                 } else
                 if (a_truthy(a_eq(a_type_of(p), a_string("map")))) {
-#line 451 "std/compiler/checker.a"
-                    { AValue __old = s; s = fn_checker__declare(s, a_array_get(p, a_string("name")), a_string("param"), a_neg(a_int(1))); a_release(__old); }
+#line 789 "std/compiler/checker.a"
+                    { AValue __old = pt; pt = fn_checker__ann(s, a_array_get(p, a_string("type"))); a_release(__old); }
+#line 790 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(p, a_string("name")), a_string("param"), a_neg(a_int(1)), pt, a_not(fn_types_is_any(pt))); a_release(__old); }
+#line 791 "std/compiler/checker.a"
+                    pts = a_array_push_move(pts, pt);
                 }
                 a_release(p);
+                a_release(pt);
             }
             a_release(__iter_arr);
         }
-#line 453 "std/compiler/checker.a"
-        { AValue __old = s; s = fn_checker__walk_body(s, a_array_get(node, a_string("body"))); a_release(__old); }
-#line 454 "std/compiler/checker.a"
-        __ret = fn_checker__pop_scope(s); goto __fn_cleanup;
+#line 794 "std/compiler/checker.a"
+        { AValue __old = body; body = a_array_get(node, a_string("body")); a_release(__old); }
+#line 795 "std/compiler/checker.a"
+        { AValue __old = rt; rt = fn_types_t_any(); a_release(__old); }
+#line 796 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_eq(a_type_of(body), a_string("map")), a_neq(a_array_get(body, a_string("tag")), a_string("Block"))))) {
+#line 797 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__walk_expr(s, body); a_release(__old); }
+#line 798 "std/compiler/checker.a"
+            { AValue __old = rt; rt = fn_checker__ty(s); a_release(__old); }
+        } else {
+#line 800 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__walk_body(s, body); a_release(__old); }
+        }
+#line 802 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__pop_scope(s); a_release(__old); }
+#line 803 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("fn_ret"), outer_ret); a_release(__old); }
+#line 804 "std/compiler/checker.a"
+        { AValue __old = s; s = a_map_set(s, a_string("fn_ret_ty"), outer_ret_ty); a_release(__old); }
+#line 805 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_fn(pts, rt)); goto __fn_cleanup;
     }
-#line 456 "std/compiler/checker.a"
-    if (a_truthy(a_or(a_or(a_or(a_or(a_or(a_eq(tag, a_string("Int")), a_eq(tag, a_string("Float"))), a_eq(tag, a_string("String"))), a_eq(tag, a_string("Bool"))), a_eq(tag, a_string("Void"))), a_eq(tag, a_string("InterpLit"))))) {
-#line 457 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
+#line 807 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Int")))) {
+#line 807 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("int"))); goto __fn_cleanup;
     }
-#line 459 "std/compiler/checker.a"
-    __ret = fn_checker__walk_children(s, node); goto __fn_cleanup;
+#line 808 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Float")))) {
+#line 808 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("float"))); goto __fn_cleanup;
+    }
+#line 809 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(tag, a_string("String")), a_eq(tag, a_string("InterpLit"))))) {
+#line 809 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("str"))); goto __fn_cleanup;
+    }
+#line 810 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Bool")))) {
+#line 810 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("bool"))); goto __fn_cleanup;
+    }
+#line 811 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Void")))) {
+#line 811 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("void"))); goto __fn_cleanup;
+    }
+#line 812 "std/compiler/checker.a"
+    __ret = fn_checker__set_ty(fn_checker__walk_children(s, node), fn_types_t_any()); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s0);
     a_release(s);
     a_release(tag);
+    a_release(lt);
+    a_release(rt);
+    a_release(t);
+    a_release(bt);
+    a_release(it);
+    a_release(ix);
+    a_release(right);
+    a_release(call);
+    a_release(et);
+    a_release(first);
+    a_release(kt);
+    a_release(fields);
+    a_release(shaped);
+    a_release(k);
+    a_release(key);
+    a_release(outer_ret);
+    a_release(outer_ret_ty);
+    a_release(pts);
+    a_release(pt);
+    a_release(body);
     a_release(st);
     a_release(node);
+    return __ret;
+}
+
+AValue fn_checker__binop_type(AValue st, AValue op, AValue lt, AValue rt) {
+    AValue s = {0}, bool_t = {0}, lk = {0}, rk = {0}, known = {0}, both_num = {0}, both_str = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    op = a_retain(op);
+    lt = a_retain(lt);
+    rt = a_retain(rt);
+#line 818 "std/compiler/checker.a"
+    { AValue __old = s; s = a_retain(st); a_release(__old); }
+#line 819 "std/compiler/checker.a"
+    { AValue __old = bool_t; bool_t = fn_types_t_prim(a_string("bool")); a_release(__old); }
+#line 820 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(op, a_string("&&")), a_eq(op, a_string("||"))))) {
+#line 820 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, bool_t); goto __fn_cleanup;
+    }
+#line 821 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(op, a_string("==")), a_eq(op, a_string("!="))))) {
+#line 821 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, bool_t); goto __fn_cleanup;
+    }
+#line 822 "std/compiler/checker.a"
+    { AValue __old = lk; lk = a_array_get(lt, a_string("k")); a_release(__old); }
+#line 823 "std/compiler/checker.a"
+    { AValue __old = rk; rk = a_array_get(rt, a_string("k")); a_release(__old); }
+#line 824 "std/compiler/checker.a"
+    { AValue __old = known; known = a_and(a_and(a_and(a_and(a_and(a_not(fn_types_is_any(lt)), a_not(fn_types_is_any(rt))), a_neq(lk, a_string("result"))), a_neq(rk, a_string("result"))), a_neq(lk, a_string("var"))), a_neq(rk, a_string("var"))); a_release(__old); }
+#line 825 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_or(a_or(a_eq(op, a_string("<")), a_eq(op, a_string(">"))), a_eq(op, a_string("<="))), a_eq(op, a_string(">="))))) {
+#line 826 "std/compiler/checker.a"
+        if (a_truthy(known)) {
+#line 827 "std/compiler/checker.a"
+            { AValue __old = both_num; both_num = a_and(fn_types_is_numeric(lt), fn_types_is_numeric(rt)); a_release(__old); }
+#line 828 "std/compiler/checker.a"
+            { AValue __old = both_str; both_str = a_and(a_eq(lk, a_string("str")), a_eq(rk, a_string("str"))); a_release(__old); }
+#line 829 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_not(both_num), a_not(both_str)))) {
+#line 829 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0010"), a_add(a_add(a_add(a_add(a_add(a_string("cannot compare "), fn_types_show(lt)), a_string(" ")), op), a_string(" ")), fn_types_show(rt))); a_release(__old); }
+            }
+        }
+#line 831 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, bool_t); goto __fn_cleanup;
+    }
+#line 833 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_or(a_or(a_or(a_eq(op, a_string("+")), a_eq(op, a_string("-"))), a_eq(op, a_string("*"))), a_eq(op, a_string("/"))), a_eq(op, a_string("%"))))) {
+#line 834 "std/compiler/checker.a"
+        if (a_truthy(a_and(fn_types_is_numeric(lt), fn_types_is_numeric(rt)))) {
+#line 835 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_eq(lk, a_string("int")), a_eq(rk, a_string("int"))))) {
+#line 835 "std/compiler/checker.a"
+                __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("int"))); goto __fn_cleanup;
+            }
+#line 836 "std/compiler/checker.a"
+            if (a_truthy(a_or(a_eq(lk, a_string("num")), a_eq(rk, a_string("num"))))) {
+#line 836 "std/compiler/checker.a"
+                __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("num"))); goto __fn_cleanup;
+            }
+#line 837 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("float"))); goto __fn_cleanup;
+        }
+#line 839 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_and(a_eq(op, a_string("+")), a_eq(lk, a_string("str"))), a_eq(rk, a_string("str"))))) {
+#line 839 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("str"))); goto __fn_cleanup;
+        }
+#line 840 "std/compiler/checker.a"
+        if (a_truthy(known)) {
+#line 841 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__diag(s, a_string("error"), a_string("E0010"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("cannot apply "), op), a_string(" to ")), fn_types_show(lt)), a_string(" and ")), fn_types_show(rt)), a_string(" (the result would be void at runtime)"))); a_release(__old); }
+#line 842 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 845 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_eq(op, a_string("+")), a_or(a_eq(lk, a_string("str")), a_eq(rk, a_string("str")))))) {
+#line 845 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_prim(a_string("str"))); goto __fn_cleanup;
+        }
+#line 846 "std/compiler/checker.a"
+        if (a_truthy(fn_types_is_numeric(lt))) {
+#line 846 "std/compiler/checker.a"
+            __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+        }
+#line 847 "std/compiler/checker.a"
+        __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+    }
+#line 849 "std/compiler/checker.a"
+    __ret = fn_checker__set_ty(s, fn_types_t_any()); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(s);
+    a_release(bool_t);
+    a_release(lk);
+    a_release(rk);
+    a_release(known);
+    a_release(both_num);
+    a_release(both_str);
+    a_release(st);
+    a_release(op);
+    a_release(lt);
+    a_release(rt);
     return __ret;
 }
 
@@ -15937,19 +18530,19 @@ AValue fn_checker__module_short_name(AValue path) {
     AValue parts = {0};
     AValue __ret = a_void();
     path = a_retain(path);
-#line 468 "std/compiler/checker.a"
+#line 858 "std/compiler/checker.a"
     if (a_truthy(a_eq(a_type_of(path), a_string("str")))) {
-#line 469 "std/compiler/checker.a"
+#line 859 "std/compiler/checker.a"
         { AValue __old = parts; parts = a_str_split(path, a_string(".")); a_release(__old); }
-#line 470 "std/compiler/checker.a"
+#line 860 "std/compiler/checker.a"
         __ret = a_array_get(parts, a_sub(a_len(parts), a_int(1))); goto __fn_cleanup;
     }
-#line 472 "std/compiler/checker.a"
+#line 862 "std/compiler/checker.a"
     if (a_truthy(a_eq(a_len(path), a_int(0)))) {
-#line 472 "std/compiler/checker.a"
+#line 862 "std/compiler/checker.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 473 "std/compiler/checker.a"
+#line 863 "std/compiler/checker.a"
     __ret = a_array_get(path, a_sub(a_len(path), a_int(1))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(parts);
@@ -15957,155 +18550,396 @@ __fn_cleanup:
     return __ret;
 }
 
-AValue fn_checker__declare_top_level(AValue st, AValue item) {
-    AValue s = {0}, tag = {0}, file = {0}, src = {0}, mod_ast = {0}, body = {0};
+AValue fn_checker__variant_field_ty(AValue st, AValue f) {
+    AValue t = {0}, c = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    f = a_retain(f);
+#line 870 "std/compiler/checker.a"
+    { AValue __old = t; t = fn_checker__ann(st, f); a_release(__old); }
+#line 871 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_eq(a_array_get(t, a_string("k")), a_string("named")), a_not(a_map_has(a_array_get(st, a_string("typedefs")), a_array_get(t, a_string("name"))))))) {
+#line 872 "std/compiler/checker.a"
+        { AValue __old = c; c = a_str_slice(a_array_get(t, a_string("name")), a_int(0), a_int(1)); a_release(__old); }
+#line 873 "std/compiler/checker.a"
+        if (a_truthy(a_eq(c, a_str_lower(c)))) {
+#line 873 "std/compiler/checker.a"
+            __ret = fn_types_t_any(); goto __fn_cleanup;
+        }
+    }
+#line 875 "std/compiler/checker.a"
+    __ret = a_retain(t); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(t);
+    a_release(c);
+    a_release(st);
+    a_release(f);
+    return __ret;
+}
+
+AValue fn_checker__declare_sum_type(AValue st, AValue item) {
+    AValue body = {0}, s = {0}, names = {0}, fts = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     item = a_retain(item);
-#line 477 "std/compiler/checker.a"
-    if (a_truthy(a_neq(a_type_of(item), a_string("map")))) {
-#line 477 "std/compiler/checker.a"
+#line 879 "std/compiler/checker.a"
+    { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
+#line 880 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_neq(a_type_of(body), a_string("map")), a_neq(a_array_get(body, a_string("tag")), a_string("TypeSum"))))) {
+#line 880 "std/compiler/checker.a"
         __ret = a_retain(st); goto __fn_cleanup;
     }
-#line 478 "std/compiler/checker.a"
-    { AValue __old = s; s = fn_checker__pos(st, item); a_release(__old); }
-#line 479 "std/compiler/checker.a"
-    { AValue __old = tag; tag = a_array_get(item, a_string("tag")); a_release(__old); }
-#line 480 "std/compiler/checker.a"
-    if (a_truthy(a_or(a_eq(tag, a_string("FnDecl")), a_eq(tag, a_string("ExternFn"))))) {
-#line 481 "std/compiler/checker.a"
-        if (a_truthy(fn_checker__is_builtin(s, a_array_get(item, a_string("name"))))) {
-#line 484 "std/compiler/checker.a"
-            { AValue __old = s; s = fn_checker__diag(s, a_string("warning"), a_add(a_add(a_string("function "), a_array_get(item, a_string("name"))), a_string(" shadows a builtin; unqualified calls resolve to the builtin"))); a_release(__old); }
-        }
-#line 486 "std/compiler/checker.a"
-        __ret = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("fn"), a_len(a_array_get(item, a_string("params")))); goto __fn_cleanup;
-    }
-#line 488 "std/compiler/checker.a"
-    if (a_truthy(a_eq(tag, a_string("UseDecl")))) {
-#line 489 "std/compiler/checker.a"
-        { AValue __old = s; s = fn_checker__declare(s, fn_checker__module_short_name(a_array_get(item, a_string("path"))), a_string("module"), a_neg(a_int(1))); a_release(__old); }
-#line 492 "std/compiler/checker.a"
-        { AValue __old = file; file = fn_cgen__use_path_to_file(a_array_get(item, a_string("path"))); a_release(__old); }
-#line 493 "std/compiler/checker.a"
-        { AValue __old = src; src = a_io_read_file(file); a_release(__old); }
-#line 494 "std/compiler/checker.a"
-        if (a_truthy(a_and(a_eq(a_type_of(src), a_string("str")), a_gt(a_len(src), a_int(0))))) {
-#line 495 "std/compiler/checker.a"
-            { AValue __old = mod_ast; mod_ast = fn_parser_parse(src); a_release(__old); }
-#line 496 "std/compiler/checker.a"
-            if (a_truthy(a_and(a_eq(a_type_of(mod_ast), a_string("map")), a_eq(a_array_get(mod_ast, a_string("tag")), a_string("Program"))))) {
-#line 497 "std/compiler/checker.a"
-                {
-                    AValue __iter_arr = a_iterable(a_array_get(mod_ast, a_string("items")));
-                    for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-                        AValue mi = {0};
-                        mi = a_array_get(__iter_arr, a_int(__fi));
-#line 498 "std/compiler/checker.a"
-                        if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("FnDecl"))))) {
-#line 499 "std/compiler/checker.a"
-                            { AValue __old = s; s = fn_checker__declare(s, a_array_get(mi, a_string("name")), a_string("imported"), a_len(a_array_get(mi, a_string("params")))); a_release(__old); }
-                        }
-                        a_release(mi);
-                    }
-                    a_release(__iter_arr);
-                }
+#line 881 "std/compiler/checker.a"
+    { AValue __old = s; s = a_retain(st); a_release(__old); }
+#line 882 "std/compiler/checker.a"
+    { AValue __old = names; names = a_array_new(0); a_release(__old); }
+#line 883 "std/compiler/checker.a"
+    {
+        AValue __iter_arr = a_iterable(a_array_get(body, a_string("variants")));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue v = {0}, fts = {0};
+            v = a_array_get(__iter_arr, a_int(__fi));
+#line 884 "std/compiler/checker.a"
+            if (a_truthy(a_neq(a_type_of(v), a_string("map")))) {
+#line 884 "std/compiler/checker.a"
+                continue;
             }
-        }
-#line 504 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
-    }
-#line 506 "std/compiler/checker.a"
-    if (a_truthy(a_eq(tag, a_string("TypeDecl")))) {
-#line 507 "std/compiler/checker.a"
-        { AValue __old = s; s = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("type"), a_neg(a_int(1))); a_release(__old); }
-#line 508 "std/compiler/checker.a"
-        { AValue __old = body; body = a_array_get(item, a_string("body")); a_release(__old); }
-#line 509 "std/compiler/checker.a"
-        if (a_truthy(a_and(a_eq(a_type_of(body), a_string("map")), a_eq(a_array_get(body, a_string("tag")), a_string("TypeSum"))))) {
-#line 511 "std/compiler/checker.a"
+#line 885 "std/compiler/checker.a"
+            names = a_array_push_move(names, a_array_get(v, a_string("name")));
+#line 886 "std/compiler/checker.a"
+            { AValue __old = s; s = a_map_set(s, a_string("variants"), a_map_set(a_array_get(s, a_string("variants")), a_array_get(v, a_string("name")), a_array_get(item, a_string("name")))); a_release(__old); }
+#line 888 "std/compiler/checker.a"
+            { AValue __old = fts; fts = a_array_new(0); a_release(__old); }
+#line 889 "std/compiler/checker.a"
             {
-                AValue __iter_arr = a_iterable(a_array_get(body, a_string("variants")));
+                AValue __iter_arr = a_iterable(a_array_get(v, a_string("fields")));
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-                    AValue v = {0};
-                    v = a_array_get(__iter_arr, a_int(__fi));
-#line 512 "std/compiler/checker.a"
-                    if (a_truthy(a_eq(a_type_of(v), a_string("map")))) {
-#line 512 "std/compiler/checker.a"
-                        { AValue __old = s; s = fn_checker__declare(s, a_array_get(v, a_string("name")), a_string("fn"), a_len(a_array_get(v, a_string("fields")))); a_release(__old); }
+                    AValue f = {0};
+                    f = a_array_get(__iter_arr, a_int(__fi));
+#line 890 "std/compiler/checker.a"
+                    if (a_truthy(a_and(a_and(a_eq(a_type_of(f), a_string("map")), a_map_has(f, a_string("tag"))), a_str_starts_with(a_array_get(f, a_string("tag")), a_string("Ty"))))) {
+#line 890 "std/compiler/checker.a"
+                        fts = a_array_push_move(fts, fn_checker__variant_field_ty(s, f));
+                    } else
+                    if (a_truthy(a_and(a_eq(a_type_of(f), a_string("map")), a_map_has(f, a_string("type"))))) {
+#line 891 "std/compiler/checker.a"
+                        fts = a_array_push_move(fts, fn_checker__ann(s, a_array_get(f, a_string("type"))));
+                    } else {
+#line 892 "std/compiler/checker.a"
+                        fts = a_array_push_move(fts, fn_types_t_any());
                     }
-                    a_release(v);
+                    a_release(f);
                 }
                 a_release(__iter_arr);
             }
+#line 894 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(v, a_string("name")), a_string("fn"), a_len(a_array_get(v, a_string("fields"))), fn_types_t_fn(fts, fn_types_t_named(a_array_get(item, a_string("name")))), a_bool(1)); a_release(__old); }
+            a_release(v);
+            a_release(fts);
         }
-#line 515 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
+        a_release(__iter_arr);
     }
-#line 517 "std/compiler/checker.a"
-    if (a_truthy(a_eq(tag, a_string("ModDecl")))) {
-#line 518 "std/compiler/checker.a"
-        { AValue __old = s; s = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("module"), a_neg(a_int(1))); a_release(__old); }
-#line 519 "std/compiler/checker.a"
-        __ret = a_retain(s); goto __fn_cleanup;
-    }
-#line 521 "std/compiler/checker.a"
-    if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 522 "std/compiler/checker.a"
-        __ret = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("global"), a_neg(a_int(1))); goto __fn_cleanup;
-    }
-#line 524 "std/compiler/checker.a"
-    __ret = a_retain(s); goto __fn_cleanup;
+#line 896 "std/compiler/checker.a"
+    __ret = a_map_set(s, a_string("sums"), a_map_set(a_array_get(s, a_string("sums")), a_array_get(item, a_string("name")), names)); goto __fn_cleanup;
 __fn_cleanup:
-    a_release(s);
-    a_release(tag);
-    a_release(file);
-    a_release(src);
-    a_release(mod_ast);
     a_release(body);
+    a_release(s);
+    a_release(names);
+    a_release(fts);
     a_release(st);
     a_release(item);
     return __ret;
 }
 
+AValue fn_checker__is_nullary_variant(AValue st, AValue name) {
+    AValue e = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    name = a_retain(name);
+#line 900 "std/compiler/checker.a"
+    if (a_truthy(a_not(a_map_has(a_array_get(st, a_string("variants")), name)))) {
+#line 900 "std/compiler/checker.a"
+        __ret = a_bool(0); goto __fn_cleanup;
+    }
+#line 901 "std/compiler/checker.a"
+    { AValue __old = e; e = fn_checker__lookup(st, name); a_release(__old); }
+#line 902 "std/compiler/checker.a"
+    __ret = a_and(a_map_has(e, a_string("arity")), a_eq(a_array_get(e, a_string("arity")), a_int(0))); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(e);
+    a_release(st);
+    a_release(name);
+    return __ret;
+}
+
+AValue fn_checker__declare_top_level(AValue st, AValue item) {
+    AValue s = {0}, tag = {0}, _short = {0}, file = {0}, src = {0}, mod_ast = {0}, fns = {0};
+    AValue __ret = a_void();
+    st = a_retain(st);
+    item = a_retain(item);
+#line 906 "std/compiler/checker.a"
+    if (a_truthy(a_neq(a_type_of(item), a_string("map")))) {
+#line 906 "std/compiler/checker.a"
+        __ret = a_retain(st); goto __fn_cleanup;
+    }
+#line 907 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__pos(st, item); a_release(__old); }
+#line 908 "std/compiler/checker.a"
+    { AValue __old = tag; tag = a_array_get(item, a_string("tag")); a_release(__old); }
+#line 909 "std/compiler/checker.a"
+    if (a_truthy(a_or(a_eq(tag, a_string("FnDecl")), a_eq(tag, a_string("ExternFn"))))) {
+#line 910 "std/compiler/checker.a"
+        if (a_truthy(fn_checker__is_builtin(s, a_array_get(item, a_string("name"))))) {
+#line 913 "std/compiler/checker.a"
+            { AValue __old = s; s = fn_checker__diag(s, a_string("warning"), a_string("W0003"), a_add(a_add(a_string("function "), a_array_get(item, a_string("name"))), a_string(" shadows a builtin; unqualified calls resolve to the builtin"))); a_release(__old); }
+        }
+#line 915 "std/compiler/checker.a"
+        __ret = fn_checker__declare_typed(s, a_array_get(item, a_string("name")), a_string("fn"), a_len(a_array_get(item, a_string("params"))), fn_checker__fn_sig(s, item), a_bool(1)); goto __fn_cleanup;
+    }
+#line 917 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("UseDecl")))) {
+#line 918 "std/compiler/checker.a"
+        { AValue __old = _short; _short = fn_checker__module_short_name(a_array_get(item, a_string("path"))); a_release(__old); }
+#line 919 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__declare(s, _short, a_string("module"), a_neg(a_int(1))); a_release(__old); }
+#line 923 "std/compiler/checker.a"
+        { AValue __old = file; file = fn_cgen__use_path_to_file(a_array_get(item, a_string("path"))); a_release(__old); }
+#line 924 "std/compiler/checker.a"
+        { AValue __old = src; src = a_io_read_file(file); a_release(__old); }
+#line 925 "std/compiler/checker.a"
+        if (a_truthy(a_and(a_eq(a_type_of(src), a_string("str")), a_gt(a_len(src), a_int(0))))) {
+#line 926 "std/compiler/checker.a"
+            { AValue __old = mod_ast; mod_ast = fn_parser_parse(src); a_release(__old); }
+#line 927 "std/compiler/checker.a"
+            if (a_truthy(a_and(a_eq(a_type_of(mod_ast), a_string("map")), a_eq(a_array_get(mod_ast, a_string("tag")), a_string("Program"))))) {
+#line 928 "std/compiler/checker.a"
+                { AValue __old = fns; fns = a_map_new(0); a_release(__old); }
+#line 929 "std/compiler/checker.a"
+                {
+                    AValue __iter_arr = a_iterable(a_array_get(mod_ast, a_string("items")));
+                    for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                        AValue mi = {0};
+                        mi = a_array_get(__iter_arr, a_int(__fi));
+#line 930 "std/compiler/checker.a"
+                        if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("FnDecl"))))) {
+#line 931 "std/compiler/checker.a"
+                            { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(mi, a_string("name")), a_string("imported"), a_len(a_array_get(mi, a_string("params"))), fn_checker__fn_sig(s, mi), a_bool(1)); a_release(__old); }
+#line 932 "std/compiler/checker.a"
+                            { AValue __old = fns; fns = a_map_set(fns, a_array_get(mi, a_string("name")), a_map_new(2, "arity", a_len(a_array_get(mi, a_string("params"))), "ty", fn_checker__fn_sig(s, mi))); a_release(__old); }
+                        }
+#line 934 "std/compiler/checker.a"
+                        if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("ExternFn"))))) {
+#line 935 "std/compiler/checker.a"
+                            { AValue __old = fns; fns = a_map_set(fns, a_array_get(mi, a_string("name")), a_map_new(2, "arity", a_len(a_array_get(mi, a_string("params"))), "ty", fn_checker__fn_sig(s, mi))); a_release(__old); }
+                        }
+#line 937 "std/compiler/checker.a"
+                        if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("TypeDecl"))))) {
+#line 938 "std/compiler/checker.a"
+                            { AValue __old = s; s = fn_checker__declare_typedef(s, mi); a_release(__old); }
+#line 939 "std/compiler/checker.a"
+                            { AValue __old = s; s = fn_checker__declare_sum_type(s, mi); a_release(__old); }
+                        }
+                        a_release(mi);
+                    }
+                    a_release(__iter_arr);
+                }
+#line 942 "std/compiler/checker.a"
+                { AValue __old = s; s = a_map_set(s, a_string("modules"), a_map_set(a_array_get(s, a_string("modules")), _short, fns)); a_release(__old); }
+            }
+        }
+#line 945 "std/compiler/checker.a"
+        __ret = a_retain(s); goto __fn_cleanup;
+    }
+#line 947 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("TypeDecl")))) {
+#line 948 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("type"), a_neg(a_int(1))); a_release(__old); }
+#line 949 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__declare_typedef(s, item); a_release(__old); }
+#line 950 "std/compiler/checker.a"
+        __ret = fn_checker__declare_sum_type(s, item); goto __fn_cleanup;
+    }
+#line 952 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("ModDecl")))) {
+#line 954 "std/compiler/checker.a"
+        { AValue __old = s; s = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("module"), a_neg(a_int(1))); a_release(__old); }
+#line 955 "std/compiler/checker.a"
+        { AValue __old = fns; fns = a_map_new(0); a_release(__old); }
+#line 956 "std/compiler/checker.a"
+        {
+            AValue __iter_arr = a_iterable(a_array_get(item, a_string("items")));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue mi = {0};
+                mi = a_array_get(__iter_arr, a_int(__fi));
+#line 957 "std/compiler/checker.a"
+                if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("FnDecl"))))) {
+#line 958 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(mi, a_string("name")), a_string("imported"), a_len(a_array_get(mi, a_string("params"))), fn_checker__fn_sig(s, mi), a_bool(1)); a_release(__old); }
+#line 959 "std/compiler/checker.a"
+                    { AValue __old = fns; fns = a_map_set(fns, a_array_get(mi, a_string("name")), a_map_new(2, "arity", a_len(a_array_get(mi, a_string("params"))), "ty", fn_checker__fn_sig(s, mi))); a_release(__old); }
+                }
+#line 961 "std/compiler/checker.a"
+                if (a_truthy(a_and(a_eq(a_type_of(mi), a_string("map")), a_eq(a_array_get(mi, a_string("tag")), a_string("TypeDecl"))))) {
+#line 962 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__declare_typedef(s, mi); a_release(__old); }
+#line 963 "std/compiler/checker.a"
+                    { AValue __old = s; s = fn_checker__declare_sum_type(s, mi); a_release(__old); }
+                }
+                a_release(mi);
+            }
+            a_release(__iter_arr);
+        }
+#line 966 "std/compiler/checker.a"
+        __ret = a_map_set(s, a_string("modules"), a_map_set(a_array_get(s, a_string("modules")), a_array_get(item, a_string("name")), fns)); goto __fn_cleanup;
+    }
+#line 968 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("Let")))) {
+#line 969 "std/compiler/checker.a"
+        __ret = fn_checker__declare(s, a_array_get(item, a_string("name")), a_string("global"), a_neg(a_int(1))); goto __fn_cleanup;
+    }
+#line 971 "std/compiler/checker.a"
+    __ret = a_retain(s); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(s);
+    a_release(tag);
+    a_release(_short);
+    a_release(file);
+    a_release(src);
+    a_release(mod_ast);
+    a_release(fns);
+    a_release(st);
+    a_release(item);
+    return __ret;
+}
+
+AValue fn_checker__ret_kind(AValue rt) {
+    AValue tag = {0};
+    AValue __ret = a_void();
+    rt = a_retain(rt);
+#line 977 "std/compiler/checker.a"
+    if (a_truthy(a_neq(a_type_of(rt), a_string("map")))) {
+#line 977 "std/compiler/checker.a"
+        __ret = a_string("any"); goto __fn_cleanup;
+    }
+#line 978 "std/compiler/checker.a"
+    { AValue __old = tag; tag = a_array_get(rt, a_string("tag")); a_release(__old); }
+#line 979 "std/compiler/checker.a"
+    if (a_truthy(a_eq(tag, a_string("TyInfer")))) {
+#line 979 "std/compiler/checker.a"
+        __ret = a_string("any"); goto __fn_cleanup;
+    }
+#line 980 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_eq(tag, a_string("TyPrim")), a_eq(a_array_get(rt, a_string("name")), a_string("any"))))) {
+#line 980 "std/compiler/checker.a"
+        __ret = a_string("any"); goto __fn_cleanup;
+    }
+#line 981 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_eq(tag, a_string("TyNamed")), a_eq(a_array_get(rt, a_string("name")), a_string("any"))))) {
+#line 981 "std/compiler/checker.a"
+        __ret = a_string("any"); goto __fn_cleanup;
+    }
+#line 982 "std/compiler/checker.a"
+    if (a_truthy(a_and(a_eq(tag, a_string("TyNamed")), a_eq(a_array_get(rt, a_string("name")), a_string("Result"))))) {
+#line 982 "std/compiler/checker.a"
+        __ret = a_string("result"); goto __fn_cleanup;
+    }
+#line 983 "std/compiler/checker.a"
+    __ret = a_string("other"); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(tag);
+    a_release(rt);
+    return __ret;
+}
+
+AValue fn_checker__ty_str(AValue rt) {
+    AValue __ret = a_void();
+    rt = a_retain(rt);
+#line 987 "std/compiler/checker.a"
+    if (a_truthy(a_neq(a_type_of(rt), a_string("map")))) {
+#line 987 "std/compiler/checker.a"
+        __ret = a_string("?"); goto __fn_cleanup;
+    }
+#line 988 "std/compiler/checker.a"
+    if (a_truthy(a_map_has(rt, a_string("name")))) {
+#line 988 "std/compiler/checker.a"
+        __ret = a_array_get(rt, a_string("name")); goto __fn_cleanup;
+    }
+#line 989 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_array_get(rt, a_string("tag")), a_string("TyArray")))) {
+#line 989 "std/compiler/checker.a"
+        __ret = a_add(a_add(a_string("["), fn_checker__ty_str(a_array_get(rt, a_string("elem")))), a_string("]")); goto __fn_cleanup;
+    }
+#line 990 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_array_get(rt, a_string("tag")), a_string("TyMap")))) {
+#line 990 "std/compiler/checker.a"
+        __ret = a_string("map"); goto __fn_cleanup;
+    }
+#line 991 "std/compiler/checker.a"
+    if (a_truthy(a_eq(a_array_get(rt, a_string("tag")), a_string("TyFn")))) {
+#line 991 "std/compiler/checker.a"
+        __ret = a_string("fn"); goto __fn_cleanup;
+    }
+#line 992 "std/compiler/checker.a"
+    __ret = a_string("type"); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(rt);
+    return __ret;
+}
+
 AValue fn_checker__check_fn(AValue st, AValue fn_node) {
-    AValue s = {0};
+    AValue s = {0}, pt = {0};
     AValue __ret = a_void();
     st = a_retain(st);
     fn_node = a_retain(fn_node);
-#line 528 "std/compiler/checker.a"
+#line 996 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__pos(st, fn_node); a_release(__old); }
-#line 529 "std/compiler/checker.a"
+#line 997 "std/compiler/checker.a"
+    { AValue __old = s; s = a_map_set(s, a_string("fn_ret"), fn_checker__ret_kind(a_array_get(fn_node, a_string("ret_type")))); a_release(__old); }
+#line 998 "std/compiler/checker.a"
+    { AValue __old = s; s = a_map_set(s, a_string("fn_ret_str"), fn_checker__ty_str(a_array_get(fn_node, a_string("ret_type")))); a_release(__old); }
+#line 999 "std/compiler/checker.a"
+    { AValue __old = s; s = a_map_set(s, a_string("fn_ret_ty"), fn_checker__ann(s, a_array_get(fn_node, a_string("ret_type")))); a_release(__old); }
+#line 1000 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 530 "std/compiler/checker.a"
+#line 1001 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(a_array_get(fn_node, a_string("params")));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-            AValue p = {0};
+            AValue p = {0}, pt = {0};
             p = a_array_get(__iter_arr, a_int(__fi));
-#line 531 "std/compiler/checker.a"
+#line 1002 "std/compiler/checker.a"
             if (a_truthy(a_eq(a_type_of(p), a_string("str")))) {
-#line 531 "std/compiler/checker.a"
+#line 1002 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__declare(s, p, a_string("param"), a_neg(a_int(1))); a_release(__old); }
             } else
             if (a_truthy(a_eq(a_type_of(p), a_string("map")))) {
-#line 532 "std/compiler/checker.a"
-                { AValue __old = s; s = fn_checker__declare(s, a_array_get(p, a_string("name")), a_string("param"), a_neg(a_int(1))); a_release(__old); }
+#line 1004 "std/compiler/checker.a"
+                { AValue __old = pt; pt = fn_checker__ann(s, a_array_get(p, a_string("type"))); a_release(__old); }
+#line 1005 "std/compiler/checker.a"
+                { AValue __old = s; s = fn_checker__declare_typed(s, a_array_get(p, a_string("name")), a_string("param"), a_neg(a_int(1)), pt, a_not(fn_types_is_any(pt))); a_release(__old); }
             }
             a_release(p);
+            a_release(pt);
         }
         a_release(__iter_arr);
     }
-#line 534 "std/compiler/checker.a"
+#line 1008 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(fn_node, a_string("pre"))); a_release(__old); }
-#line 535 "std/compiler/checker.a"
+#line 1009 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__walk_body(s, a_array_get(fn_node, a_string("body"))); a_release(__old); }
-#line 536 "std/compiler/checker.a"
+#line 1011 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
+#line 1012 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__declare(s, a_string("ret"), a_string("param"), a_neg(a_int(1))); a_release(__old); }
+#line 1013 "std/compiler/checker.a"
     { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(fn_node, a_string("post"))); a_release(__old); }
-#line 537 "std/compiler/checker.a"
+#line 1014 "std/compiler/checker.a"
+    { AValue __old = s; s = fn_checker__pop_scope(s); a_release(__old); }
+#line 1015 "std/compiler/checker.a"
     __ret = fn_checker__pop_scope(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
+    a_release(pt);
     a_release(st);
     a_release(fn_node);
     return __ret;
@@ -16116,52 +18950,52 @@ AValue fn_checker__check_items(AValue st, AValue items) {
     AValue __ret = a_void();
     st = a_retain(st);
     items = a_retain(items);
-#line 541 "std/compiler/checker.a"
+#line 1019 "std/compiler/checker.a"
     { AValue __old = s; s = a_retain(st); a_release(__old); }
-#line 542 "std/compiler/checker.a"
+#line 1020 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0}, tag = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 543 "std/compiler/checker.a"
+#line 1021 "std/compiler/checker.a"
             if (a_truthy(a_neq(a_type_of(item), a_string("map")))) {
-#line 543 "std/compiler/checker.a"
+#line 1021 "std/compiler/checker.a"
                 continue;
             }
-#line 544 "std/compiler/checker.a"
+#line 1022 "std/compiler/checker.a"
             { AValue __old = tag; tag = a_array_get(item, a_string("tag")); a_release(__old); }
-#line 545 "std/compiler/checker.a"
+#line 1023 "std/compiler/checker.a"
             if (a_truthy(a_eq(tag, a_string("FnDecl")))) {
-#line 546 "std/compiler/checker.a"
+#line 1024 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__check_fn(s, item); a_release(__old); }
             } else
             if (a_truthy(a_eq(tag, a_string("ModDecl")))) {
-#line 549 "std/compiler/checker.a"
+#line 1027 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__push_scope(s); a_release(__old); }
-#line 550 "std/compiler/checker.a"
+#line 1028 "std/compiler/checker.a"
                 {
                     AValue __iter_arr = a_iterable(a_array_get(item, a_string("items")));
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue inner = {0};
                         inner = a_array_get(__iter_arr, a_int(__fi));
-#line 550 "std/compiler/checker.a"
+#line 1028 "std/compiler/checker.a"
                         { AValue __old = s; s = fn_checker__declare_top_level(s, inner); a_release(__old); }
                         a_release(inner);
                     }
                     a_release(__iter_arr);
                 }
-#line 551 "std/compiler/checker.a"
+#line 1029 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__check_items(s, a_array_get(item, a_string("items"))); a_release(__old); }
-#line 552 "std/compiler/checker.a"
+#line 1030 "std/compiler/checker.a"
                 { AValue __old = s; s = a_map_set(s, a_string("scopes"), a_array_slice(a_array_get(s, a_string("scopes")), a_int(0), a_sub(a_len(a_array_get(s, a_string("scopes"))), a_int(1)))); a_release(__old); }
             } else
             if (a_truthy(a_eq(tag, a_string("Let")))) {
-#line 554 "std/compiler/checker.a"
+#line 1032 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(item, a_string("value"))); a_release(__old); }
             } else
             if (a_truthy(a_eq(tag, a_string("ExprStmt")))) {
-#line 556 "std/compiler/checker.a"
+#line 1034 "std/compiler/checker.a"
                 { AValue __old = s; s = fn_checker__walk_expr(s, a_array_get(item, a_string("expr"))); a_release(__old); }
             }
             a_release(item);
@@ -16169,7 +19003,7 @@ AValue fn_checker__check_items(AValue st, AValue items) {
         }
         a_release(__iter_arr);
     }
-#line 559 "std/compiler/checker.a"
+#line 1037 "std/compiler/checker.a"
     __ret = a_retain(s); goto __fn_cleanup;
 __fn_cleanup:
     a_release(s);
@@ -16183,32 +19017,32 @@ AValue fn_checker_check(AValue ast) {
     AValue items = {0}, st = {0};
     AValue __ret = a_void();
     ast = a_retain(ast);
-#line 564 "std/compiler/checker.a"
+#line 1042 "std/compiler/checker.a"
     if (a_truthy(a_neq(a_type_of(ast), a_string("map")))) {
-#line 564 "std/compiler/checker.a"
+#line 1042 "std/compiler/checker.a"
         __ret = a_array_new(0); goto __fn_cleanup;
     }
-#line 565 "std/compiler/checker.a"
+#line 1043 "std/compiler/checker.a"
     { AValue __old = items; items = a_array_get(ast, a_string("items")); a_release(__old); }
-#line 566 "std/compiler/checker.a"
+#line 1044 "std/compiler/checker.a"
     { AValue __old = st; st = fn_checker__new_state(fn_cgen__builtin_map(), fn_builtin_arity_table()); a_release(__old); }
-#line 567 "std/compiler/checker.a"
+#line 1045 "std/compiler/checker.a"
     { AValue __old = st; st = fn_checker__push_scope(st); a_release(__old); }
-#line 568 "std/compiler/checker.a"
+#line 1046 "std/compiler/checker.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 568 "std/compiler/checker.a"
+#line 1046 "std/compiler/checker.a"
             { AValue __old = st; st = fn_checker__declare_top_level(st, item); a_release(__old); }
             a_release(item);
         }
         a_release(__iter_arr);
     }
-#line 569 "std/compiler/checker.a"
+#line 1047 "std/compiler/checker.a"
     { AValue __old = st; st = fn_checker__check_items(st, items); a_release(__old); }
-#line 570 "std/compiler/checker.a"
+#line 1048 "std/compiler/checker.a"
     __ret = a_array_get(st, a_string("diags")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(items);
@@ -16218,23 +19052,72 @@ __fn_cleanup:
 }
 
 AValue fn_checker_format_diag(AValue file, AValue d) {
-    AValue loc = {0};
+    AValue loc = {0}, sev = {0};
     AValue __ret = a_void();
     file = a_retain(file);
     d = a_retain(d);
-#line 575 "std/compiler/checker.a"
+#line 1053 "std/compiler/checker.a"
     { AValue __old = loc; loc = a_retain(file); a_release(__old); }
-#line 576 "std/compiler/checker.a"
+#line 1054 "std/compiler/checker.a"
     if (a_truthy(a_gt(a_array_get(d, a_string("line")), a_int(0)))) {
-#line 577 "std/compiler/checker.a"
+#line 1055 "std/compiler/checker.a"
         { AValue __old = loc; loc = a_add(a_add(a_add(a_add(file, a_string(":")), a_to_str(a_array_get(d, a_string("line")))), a_string(":")), a_to_str(a_array_get(d, a_string("col")))); a_release(__old); }
     }
-#line 579 "std/compiler/checker.a"
-    __ret = a_add(a_add(a_add(a_add(loc, a_string(": ")), a_array_get(d, a_string("severity"))), a_string(": ")), a_array_get(d, a_string("msg"))); goto __fn_cleanup;
+#line 1057 "std/compiler/checker.a"
+    { AValue __old = sev; sev = a_array_get(d, a_string("severity")); a_release(__old); }
+#line 1058 "std/compiler/checker.a"
+    if (a_truthy(a_map_has(d, a_string("code")))) {
+#line 1058 "std/compiler/checker.a"
+        { AValue __old = sev; sev = a_add(a_add(a_add(sev, a_string("[")), a_array_get(d, a_string("code"))), a_string("]")); a_release(__old); }
+    }
+#line 1059 "std/compiler/checker.a"
+    __ret = a_add(a_add(a_add(a_add(loc, a_string(": ")), sev), a_string(": ")), a_array_get(d, a_string("msg"))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(loc);
+    a_release(sev);
     a_release(file);
     a_release(d);
+    return __ret;
+}
+
+AValue fn_diag_codes_catalog(void) {
+    AValue __ret = a_void();
+#line 10 "std/compiler/diag_codes.a"
+    __ret = a_map_new(13, "E0001", a_map_new(3, "title", a_string("undefined variable"), "text", a_string("A name was used that is not a parameter, a `let` binding, a function, a variant constructor or a builtin in scope.\n\nCommon causes: a typo, a variable declared inside an inner block (`if`, `for`, `match`) and used after it, or a module function called without its `mod.` prefix."), "example", a_string("fn main() {\n  let total = 1\n  println(totl)   ; E0001: undefined variable: totl\n}")), "E0002", a_map_new(3, "title", a_string("undefined function"), "text", a_string("A call names a function that does not exist, either in this file or in the `use`d module you qualified it with (`math.nope`).\n\nRun `a doc std.math` (or read `std/*.a`) to see what a module exports."), "example", a_string("use std.math\nfn main() {\n  println(math.nope(1))   ; E0002: undefined function: math.nope\n}")), "E0003", a_map_new(3, "title", a_string("unknown builtin"), "text", a_string("A qualified name uses a builtin namespace (`str.`, `map.`, `fs.`, ...) but that namespace has no such function. The full list is in std/compiler/builtin_sigs.a and REFERENCE.md."), "example", a_string("fn main() {\n  println(str.length(\"x\"))   ; E0003: unknown builtin: str.length (it is len)\n}")), "E0004", a_map_new(3, "title", a_string("wrong number of arguments"), "text", a_string("A call passes more or fewer arguments than the callee accepts. Builtins with optional trailing arguments report a range (`expects 1 to 2 argument(s)`). With the pipe operator `x |> f(a)` the left operand counts as the first argument."), "example", a_string("fn add(a: int, b: int) -> int { ret a + b }\nfn main() {\n  println(add(1))   ; E0004: add expects 2 argument(s), got 1\n}")), "E0005", a_map_new(3, "title", a_string("non-exhaustive match"), "text", a_string("A `match` on a sum type does not cover every variant and has no catch-all arm. Arms with a guard (`X(v) if v > 0 => ...`) do not count as covering their variant. Add the missing arms or a final `_ => ...` arm."), "example", a_string("ty Shape = Circle(float) | Square(float)\nfn area(s: Shape) -> float {\n  match s {\n    Circle(r) => { ret 3.14 * r * r }\n  }   ; E0005: non-exhaustive match on Shape: missing Square\n}")), "E0006", a_map_new(3, "title", a_string("`?` outside a Result-returning function"), "text", a_string("The `?` operator returns early with the `Err` when its operand is one. That is only meaningful in a function that returns `Result` (or has no declared return type). In a function declared `-> int` (or any other non-Result type) use `match` or `unwrap_or` instead."), "example", a_string("fn n() -> int {\n  let v = parse_int(\"4\")?   ; E0006\n  ret v\n}\n; fix: fn n() -> Result<int, str> { ... }  or  match parse_int(\"4\") { ... }")), "E0007", a_map_new(3, "title", a_string("type mismatch"), "text", a_string("Two *known* types disagree: a `let x: T = ...` initialiser, an argument against the parameter type, a `ret` value against the declared return type, an assignment to an annotated `let mut`, or a map key against the map's key type.\n\nTyping is gradual: `any` and unannotated values are compatible with everything, `int` widens to `float`, `num` accepts both, and sized integers (`i64`, `u8`, ...) are all `int`. A `Result` is compatible with everything because unwrapping is dynamic. So this error only fires when both sides are concrete and incompatible -- fix the value, or loosen the annotation to `any` if the value really is dynamic."), "example", a_string("fn greet(name: str) -> str { ret \"hi \" + name }\nfn main() {\n  let n: int = \"five\"        ; E0007: let n: int: expected int, got str\n  println(greet(3))          ; E0007: argument 1 of greet: expected str, got int\n}")), "E0008", a_map_new(3, "title", a_string("`ret` with a value in a `-> void` function"), "text", a_string("A function declared `-> void` returns a value. Either drop the value (`ret`) or declare the return type."), "example", a_string("fn log(m: str) -> void {\n  println(m)\n  ret 1   ; E0008\n}")), "E0009", a_map_new(3, "title", a_string("unknown record field"), "text", a_string("A value of a record type (`ty P = {x: int, y: int}`) is accessed with a field the type does not declare, via `p.z` or `p[\"z\"]`. The message lists the declared fields. Records are maps at runtime, so the access would return void instead of failing -- the checker catches it early."), "example", a_string("ty Point = {x: int, y: int}\nfn main() {\n  let p: Point = #{\"x\": 1, \"y\": 2}\n  println(p.z)   ; E0009: unknown field z on Point (fields: x, y)\n}")), "E0010", a_map_new(3, "title", a_string("operator applied to incompatible types"), "text", a_string("An operator's operands have known types it does not accept: `+ - * / %` need two numbers (or `+` on two strings), `< <= > >=` need two numbers or two strings, unary `-` needs a number, and indexing needs an array, map or string. At runtime these would silently produce `void`; the checker reports them instead."), "example", a_string("fn main() {\n  let s = \"a\" + 1      ; E0010: cannot apply + to str and int\n  let k = 5\n  println(k[0])        ; E0010: cannot index a value of type int\n}")), "W0001", a_map_new(3, "title", a_string("unused variable"), "text", a_string("A `let` binding is never read. Prefix the name with `_` to silence the warning when the binding is intentional (destructuring, a value kept for its side effects)."), "example", a_string("fn main() {\n  let unused = compute()   ; W0001: unused variable: unused\n}")), "W0002", a_map_new(3, "title", a_string("unreachable code"), "text", a_string("A statement follows `ret` in the same block, so it can never run."), "example", a_string("fn f() -> int {\n  ret 1\n  println(\"never\")   ; W0002\n}")), "W0003", a_map_new(3, "title", a_string("function shadows a builtin"), "text", a_string("A top-level function has the same name as a builtin (`map`, `filter`, `push`, `to_str`, ...). Unqualified calls always resolve to the builtin, so the function can only be reached with a module prefix. Rename it to avoid confusion."), "example", a_string("fn map(xs) { ... }   ; W0003: function map shadows a builtin"))); goto __fn_cleanup;
+__fn_cleanup:
+    return __ret;
+}
+
+AValue fn_diag_codes_explain(AValue code) {
+    AValue c = {0}, k = {0}, e = {0};
+    AValue __ret = a_void();
+    code = a_retain(code);
+#line 81 "std/compiler/diag_codes.a"
+    { AValue __old = c; c = fn_diag_codes_catalog(); a_release(__old); }
+#line 82 "std/compiler/diag_codes.a"
+    { AValue __old = k; k = a_str_upper(code); a_release(__old); }
+#line 83 "std/compiler/diag_codes.a"
+    if (a_truthy(a_not(a_map_has(c, k)))) {
+#line 83 "std/compiler/diag_codes.a"
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+#line 84 "std/compiler/diag_codes.a"
+    { AValue __old = e; e = a_array_get(c, k); a_release(__old); }
+#line 85 "std/compiler/diag_codes.a"
+    __ret = a_add(a_add(a_add(a_add(a_add(a_add(a_add(k, a_string(": ")), a_array_get(e, a_string("title"))), a_string("\n\n")), a_array_get(e, a_string("text"))), a_string("\n\nExample:\n\n")), a_array_get(e, a_string("example"))), a_string("\n")); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(c);
+    a_release(k);
+    a_release(e);
+    a_release(code);
+    return __ret;
+}
+
+AValue fn_diag_codes_all_codes(void) {
+    AValue __ret = a_void();
+#line 89 "std/compiler/diag_codes.a"
+    __ret = a_sort(a_map_keys(fn_diag_codes_catalog())); goto __fn_cleanup;
+__fn_cleanup:
     return __ret;
 }
 
@@ -21410,7 +24293,7 @@ __fn_cleanup:
 
 AValue fn__version(void) {
     AValue __ret = a_void();
-#line 14 "src/cli.a"
+#line 15 "src/cli.a"
     __ret = a_string("2.1.1"); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -21419,15 +24302,15 @@ __fn_cleanup:
 AValue fn__die(AValue msg) {
     AValue __ret = a_void();
     msg = a_retain(msg);
-#line 18 "src/cli.a"
-    if (a_truthy(a_str_contains(msg, a_string(": error: ")))) {
 #line 19 "src/cli.a"
+    if (a_truthy(a_str_contains(msg, a_string(": error: ")))) {
+#line 20 "src/cli.a"
         a_eprintln(fn_cli_red(msg));
     } else {
-#line 21 "src/cli.a"
+#line 22 "src/cli.a"
         a_eprintln(fn_cli_red(a_add(a_string("error: "), msg)));
     }
-#line 23 "src/cli.a"
+#line 24 "src/cli.a"
     (exit((int)a_int(1).ival), a_void());
 __fn_cleanup:
     a_release(msg);
@@ -21437,52 +24320,52 @@ __fn_cleanup:
 AValue fn__find_runtime_dir(void) {
     AValue candidates = {0}, cache = {0}, probe = {0}, rt_files = {0}, content = {0}, stub = {0}, stub2 = {0};
     AValue __ret = a_void();
-#line 27 "src/cli.a"
-    { AValue __old = candidates; candidates = a_array_new(2, a_string("c_runtime"), a_string("../c_runtime")); a_release(__old); }
 #line 28 "src/cli.a"
+    { AValue __old = candidates; candidates = a_array_new(2, a_string("c_runtime"), a_string("../c_runtime")); a_release(__old); }
+#line 29 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(candidates);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue dir = {0};
             dir = a_array_get(__iter_arr, a_int(__fi));
-#line 29 "src/cli.a"
+#line 30 "src/cli.a"
             if (a_truthy(a_fs_exists(a_str_concat(dir, a_string("/runtime.c"))))) {
-#line 29 "src/cli.a"
+#line 30 "src/cli.a"
                 __ret = a_retain(dir); goto __fn_cleanup;
             }
             a_release(dir);
         }
         a_release(__iter_arr);
     }
-#line 32 "src/cli.a"
+#line 33 "src/cli.a"
     { AValue __old = cache; cache = a_string("/tmp/a_rt"); a_release(__old); }
-#line 33 "src/cli.a"
+#line 34 "src/cli.a"
     if (a_truthy(a_fs_exists(a_str_concat(cache, a_string("/runtime.c"))))) {
-#line 33 "src/cli.a"
+#line 34 "src/cli.a"
         __ret = a_retain(cache); goto __fn_cleanup;
     }
-#line 34 "src/cli.a"
-    { AValue __old = probe; probe = a_embedded_file(a_string("c_runtime/runtime.c")); a_release(__old); }
 #line 35 "src/cli.a"
-    if (a_truthy(a_or(a_eq(a_type_of(probe), a_string("void")), a_eq(a_len(probe), a_int(0))))) {
+    { AValue __old = probe; probe = a_embedded_file(a_string("c_runtime/runtime.c")); a_release(__old); }
 #line 36 "src/cli.a"
+    if (a_truthy(a_or(a_eq(a_type_of(probe), a_string("void")), a_eq(a_len(probe), a_int(0))))) {
+#line 37 "src/cli.a"
         fn__die(a_string("cannot find c_runtime/ directory and no embedded runtime available"));
     }
-#line 38 "src/cli.a"
-    a_fs_mkdir(cache);
 #line 39 "src/cli.a"
+    a_fs_mkdir(cache);
+#line 40 "src/cli.a"
     { AValue __old = rt_files; rt_files = a_array_new(9, a_string("runtime.c"), a_string("runtime.h"), a_string("sqlite3.c"), a_string("sqlite3.h"), a_string("miniz.c"), a_string("miniz.h"), a_string("stb_image.h"), a_string("stb_image_write.h"), a_string("stb_impl.c")); a_release(__old); }
-#line 41 "src/cli.a"
+#line 42 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(rt_files);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0}, content = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 42 "src/cli.a"
-            { AValue __old = content; content = a_embedded_file(a_add(a_string("c_runtime/"), f)); a_release(__old); }
 #line 43 "src/cli.a"
-            if (a_truthy(a_neq(a_type_of(content), a_string("void")))) {
+            { AValue __old = content; content = a_embedded_file(a_add(a_string("c_runtime/"), f)); a_release(__old); }
 #line 44 "src/cli.a"
+            if (a_truthy(a_neq(a_type_of(content), a_string("void")))) {
+#line 45 "src/cli.a"
                 a_io_write_file(a_add(a_add(cache, a_string("/")), f), content);
             }
             a_release(f);
@@ -21490,13 +24373,13 @@ AValue fn__find_runtime_dir(void) {
         }
         a_release(__iter_arr);
     }
-#line 48 "src/cli.a"
-    { AValue __old = stub; stub = a_add(a_add(a_add(a_add(a_string("#include "), a_from_code(a_int(34))), a_string("runtime.h")), a_from_code(a_int(34))), a_from_code(a_int(10))); a_release(__old); }
 #line 49 "src/cli.a"
-    { AValue __old = stub2; stub2 = a_add(a_add(a_add(a_add(a_add(stub, a_string("AValue a_embedded_file(AValue p)")), a_from_code(a_int(123))), a_string("(void)p;return a_void();")), a_from_code(a_int(125))), a_from_code(a_int(10))); a_release(__old); }
+    { AValue __old = stub; stub = a_add(a_add(a_add(a_add(a_string("#include "), a_from_code(a_int(34))), a_string("runtime.h")), a_from_code(a_int(34))), a_from_code(a_int(10))); a_release(__old); }
 #line 50 "src/cli.a"
-    a_io_write_file(a_add(cache, a_string("/embedded.c")), stub2);
+    { AValue __old = stub2; stub2 = a_add(a_add(a_add(a_add(a_add(stub, a_string("AValue a_embedded_file(AValue p)")), a_from_code(a_int(123))), a_string("(void)p;return a_void();")), a_from_code(a_int(125))), a_from_code(a_int(10))); a_release(__old); }
 #line 51 "src/cli.a"
+    a_io_write_file(a_add(cache, a_string("/embedded.c")), stub2);
+#line 52 "src/cli.a"
     __ret = a_retain(cache); goto __fn_cleanup;
 __fn_cleanup:
     a_release(candidates);
@@ -21514,14 +24397,14 @@ AValue fn__format_parse_error(AValue file, AValue perr) {
     AValue __ret = a_void();
     file = a_retain(file);
     perr = a_retain(perr);
-#line 57 "src/cli.a"
-    { AValue __old = loc; loc = a_retain(file); a_release(__old); }
 #line 58 "src/cli.a"
-    if (a_truthy(a_and(a_map_has(perr, a_string("line")), a_gt(a_array_get(perr, a_string("line")), a_int(0))))) {
+    { AValue __old = loc; loc = a_retain(file); a_release(__old); }
 #line 59 "src/cli.a"
+    if (a_truthy(a_and(a_map_has(perr, a_string("line")), a_gt(a_array_get(perr, a_string("line")), a_int(0))))) {
+#line 60 "src/cli.a"
         { AValue __old = loc; loc = a_add(a_add(a_add(a_add(file, a_string(":")), a_to_str(a_array_get(perr, a_string("line")))), a_string(":")), a_to_str(a_array_get(perr, a_string("col")))); a_release(__old); }
     }
-#line 61 "src/cli.a"
+#line 62 "src/cli.a"
     __ret = a_add(a_add(loc, a_string(": error: ")), a_array_get(perr, a_string("msg"))); goto __fn_cleanup;
 __fn_cleanup:
     a_release(loc);
@@ -21531,49 +24414,75 @@ __fn_cleanup:
 }
 
 AValue fn__try_generate_c(AValue source_path) {
-    AValue source = {0}, nl = {0}, prog_ast = {0}, bm = {0};
+    AValue source = {0}, nl = {0}, prog_ast = {0}, errs = {0}, bm = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 67 "src/cli.a"
-    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
 #line 68 "src/cli.a"
-    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+    { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
 #line 69 "src/cli.a"
+    if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
+#line 70 "src/cli.a"
         __ret = a_err(a_add(a_string("cannot read file: "), source_path)); goto __fn_cleanup;
     }
-#line 71 "src/cli.a"
+#line 72 "src/cli.a"
     if (a_truthy(a_str_starts_with(source, a_string("#!")))) {
-#line 73 "src/cli.a"
+#line 74 "src/cli.a"
         { AValue __old = nl; nl = a_str_find(source, a_string("\n")); a_release(__old); }
-#line 74 "src/cli.a"
+#line 75 "src/cli.a"
         if (a_truthy(a_lt(nl, a_int(0)))) {
-#line 74 "src/cli.a"
+#line 75 "src/cli.a"
             { AValue __old = source; source = a_string(""); a_release(__old); }
         } else {
-#line 74 "src/cli.a"
+#line 75 "src/cli.a"
             { AValue __old = source; source = a_str_slice(source, nl, a_len(source)); a_release(__old); }
         }
     }
-#line 76 "src/cli.a"
-    { AValue __old = prog_ast; prog_ast = fn_parser_parse(source); a_release(__old); }
 #line 77 "src/cli.a"
-    if (a_truthy(a_and(a_eq(a_type_of(prog_ast), a_string("map")), a_map_has(prog_ast, a_string("tag"))))) {
+    { AValue __old = prog_ast; prog_ast = fn_parser_parse(source); a_release(__old); }
 #line 78 "src/cli.a"
-        if (a_truthy(a_eq(a_array_get(prog_ast, a_string("tag")), a_string("ParseError")))) {
+    if (a_truthy(a_and(a_eq(a_type_of(prog_ast), a_string("map")), a_map_has(prog_ast, a_string("tag"))))) {
 #line 79 "src/cli.a"
+        if (a_truthy(a_eq(a_array_get(prog_ast, a_string("tag")), a_string("ParseError")))) {
+#line 80 "src/cli.a"
             __ret = a_err(fn__format_parse_error(source_path, prog_ast)); goto __fn_cleanup;
         }
     }
-#line 82 "src/cli.a"
-    { AValue __old = prog_ast; prog_ast = a_map_set(prog_ast, a_string("file"), source_path); a_release(__old); }
 #line 83 "src/cli.a"
+    { AValue __old = prog_ast; prog_ast = a_map_set(prog_ast, a_string("file"), source_path); a_release(__old); }
+#line 87 "src/cli.a"
+    if (a_truthy(a_neq(a_env_get(a_string("A_NO_CHECK")), a_string("1")))) {
+#line 88 "src/cli.a"
+        { AValue __old = errs; errs = a_array_new(0); a_release(__old); }
+#line 89 "src/cli.a"
+        {
+            AValue __iter_arr = a_iterable(fn_checker_check(prog_ast));
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue d = {0};
+                d = a_array_get(__iter_arr, a_int(__fi));
+#line 90 "src/cli.a"
+                if (a_truthy(a_eq(a_array_get(d, a_string("severity")), a_string("error")))) {
+#line 90 "src/cli.a"
+                    errs = a_array_push_move(errs, fn_checker_format_diag(source_path, d));
+                }
+                a_release(d);
+            }
+            a_release(__iter_arr);
+        }
+#line 92 "src/cli.a"
+        if (a_truthy(a_gt(a_len(errs), a_int(0)))) {
+#line 92 "src/cli.a"
+            __ret = a_err(a_str_join(errs, a_string("\n"))); goto __fn_cleanup;
+        }
+    }
+#line 94 "src/cli.a"
     { AValue __old = bm; bm = fn_cgen__builtin_map(); a_release(__old); }
-#line 84 "src/cli.a"
+#line 95 "src/cli.a"
     __ret = a_ok(fn_cgen_emit_program(prog_ast, bm)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(source);
     a_release(nl);
     a_release(prog_ast);
+    a_release(errs);
     a_release(bm);
     a_release(source_path);
     return __ret;
@@ -21583,23 +24492,23 @@ AValue fn__err_message(AValue r) {
     AValue e = {0};
     AValue __ret = a_void();
     r = a_retain(r);
-#line 88 "src/cli.a"
+#line 99 "src/cli.a"
     {
         AValue __match = r;
         int __matched = 0;
         if (!__matched && a_is_err_raw(__match)) {
             { AValue __old = e; e = a_retain(a_unwrap_unsafe(__match)); a_release(__old); }
-#line 89 "src/cli.a"
+#line 100 "src/cli.a"
             __ret = a_to_str(e); goto __fn_cleanup;
             __matched = 1;
         }
         if (!__matched && 1) {
-#line 90 "src/cli.a"
+#line 101 "src/cli.a"
             __ret = a_string(""); goto __fn_cleanup;
             __matched = 1;
         }
     }
-#line 92 "src/cli.a"
+#line 103 "src/cli.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(e);
@@ -21611,14 +24520,14 @@ AValue fn__generate_c(AValue source_path) {
     AValue r = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 96 "src/cli.a"
+#line 107 "src/cli.a"
     { AValue __old = r; r = fn__try_generate_c(source_path); a_release(__old); }
-#line 97 "src/cli.a"
+#line 108 "src/cli.a"
     if (a_truthy(a_is_err(r))) {
-#line 97 "src/cli.a"
+#line 108 "src/cli.a"
         fn__die(fn__err_message(r));
     }
-#line 98 "src/cli.a"
+#line 109 "src/cli.a"
     __ret = a_unwrap(r); goto __fn_cleanup;
 __fn_cleanup:
     a_release(r);
@@ -21629,16 +24538,16 @@ __fn_cleanup:
 AValue fn__gcc_flags(void) {
     AValue uname_result = {0}, os = {0};
     AValue __ret = a_void();
-#line 102 "src/cli.a"
+#line 113 "src/cli.a"
     { AValue __old = uname_result; uname_result = a_exec(a_string("uname -s")); a_release(__old); }
-#line 103 "src/cli.a"
+#line 114 "src/cli.a"
     { AValue __old = os; os = a_str_trim(a_array_get(uname_result, a_string("stdout"))); a_release(__old); }
-#line 104 "src/cli.a"
+#line 115 "src/cli.a"
     if (a_truthy(a_eq(os, a_string("Darwin")))) {
-#line 105 "src/cli.a"
+#line 116 "src/cli.a"
         __ret = a_string("-lm -O2 -Wl,-stack_size,0x10000000 -framework Security -framework CoreFoundation"); goto __fn_cleanup;
     }
-#line 107 "src/cli.a"
+#line 118 "src/cli.a"
     __ret = a_string("-lm -O2 -ldl"); goto __fn_cleanup;
 __fn_cleanup:
     a_release(uname_result);
@@ -21648,7 +24557,7 @@ __fn_cleanup:
 
 AValue fn__sqlite_flags(void) {
     AValue __ret = a_void();
-#line 111 "src/cli.a"
+#line 122 "src/cli.a"
     __ret = a_string("-DSQLITE_THREADSAFE=0 -DSQLITE_OMIT_LOAD_EXTENSION"); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -21658,52 +24567,52 @@ AValue fn__ensure_runtime_objs(AValue runtime_dir) {
     AValue sentinel = {0}, h = {0}, obj_dir = {0}, inc = {0}, sf = {0}, sources = {0}, r = {0};
     AValue __ret = a_void();
     runtime_dir = a_retain(runtime_dir);
-#line 115 "src/cli.a"
+#line 126 "src/cli.a"
     { AValue __old = sentinel; sentinel = a_io_read_file(a_add(runtime_dir, a_string("/runtime.c"))); a_release(__old); }
-#line 116 "src/cli.a"
+#line 127 "src/cli.a"
     if (a_truthy(a_or(a_eq(a_type_of(sentinel), a_string("void")), a_eq(a_len(sentinel), a_int(0))))) {
-#line 116 "src/cli.a"
+#line 127 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 117 "src/cli.a"
+#line 128 "src/cli.a"
     { AValue __old = h; h = a_hash_sha256(sentinel); a_release(__old); }
-#line 118 "src/cli.a"
+#line 129 "src/cli.a"
     { AValue __old = obj_dir; obj_dir = a_add(a_string("/tmp/a_obj/"), h); a_release(__old); }
-#line 119 "src/cli.a"
+#line 130 "src/cli.a"
     if (a_truthy(a_fs_exists(a_add(obj_dir, a_string("/runtime.o"))))) {
-#line 119 "src/cli.a"
+#line 130 "src/cli.a"
         __ret = a_retain(obj_dir); goto __fn_cleanup;
     }
-#line 120 "src/cli.a"
+#line 131 "src/cli.a"
     a_eprintln(a_string("precompiling runtime (one-time)..."));
-#line 121 "src/cli.a"
-    a_exec(a_add(a_string("mkdir -p "), obj_dir));
-#line 122 "src/cli.a"
-    { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
-#line 123 "src/cli.a"
-    { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
-#line 124 "src/cli.a"
-    { AValue __old = sources; sources = a_array_new(6, a_array_new(2, a_string("runtime.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/runtime.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/runtime.o"))), a_array_new(2, a_string("gguf.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/gguf.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/gguf.o"))), a_array_new(2, a_string("sqlite3.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/sqlite3.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/sqlite3.o"))), a_array_new(2, a_string("miniz.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/miniz.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/miniz.o"))), a_array_new(2, a_string("stb_impl.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/stb_impl.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/stb_impl.o"))), a_array_new(2, a_string("embedded.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/embedded.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/embedded.o")))); a_release(__old); }
 #line 132 "src/cli.a"
+    a_exec(a_add(a_string("mkdir -p "), obj_dir));
+#line 133 "src/cli.a"
+    { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
+#line 134 "src/cli.a"
+    { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
+#line 135 "src/cli.a"
+    { AValue __old = sources; sources = a_array_new(6, a_array_new(2, a_string("runtime.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/runtime.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/runtime.o"))), a_array_new(2, a_string("gguf.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/gguf.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/gguf.o"))), a_array_new(2, a_string("sqlite3.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/sqlite3.c ")), inc), a_string(" -O2 ")), sf), a_string(" -o ")), obj_dir), a_string("/sqlite3.o"))), a_array_new(2, a_string("miniz.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/miniz.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/miniz.o"))), a_array_new(2, a_string("stb_impl.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/stb_impl.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/stb_impl.o"))), a_array_new(2, a_string("embedded.c"), a_add(a_add(a_add(a_add(a_add(a_add(a_string("gcc -c "), runtime_dir), a_string("/embedded.c ")), inc), a_string(" -O2 -o ")), obj_dir), a_string("/embedded.o")))); a_release(__old); }
+#line 143 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(sources);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue pair = {0}, r = {0};
             pair = a_array_get(__iter_arr, a_int(__fi));
-#line 133 "src/cli.a"
+#line 144 "src/cli.a"
             { AValue __old = r; r = a_exec(a_array_get(pair, a_int(1))); a_release(__old); }
-#line 134 "src/cli.a"
+#line 145 "src/cli.a"
             if (a_truthy(a_neq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 135 "src/cli.a"
+#line 146 "src/cli.a"
                 a_eprintln(fn_cli_red(a_add(a_string("failed to precompile "), a_array_get(pair, a_int(0)))));
-#line 136 "src/cli.a"
+#line 147 "src/cli.a"
                 if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stderr"))), a_int(0)))) {
-#line 136 "src/cli.a"
+#line 147 "src/cli.a"
                     a_eprintln(a_array_get(r, a_string("stderr")));
                 }
-#line 137 "src/cli.a"
+#line 148 "src/cli.a"
                 a_exec(a_add(a_string("rm -rf "), obj_dir));
-#line 138 "src/cli.a"
+#line 149 "src/cli.a"
                 __ret = a_string(""); goto __fn_cleanup;
             }
             a_release(pair);
@@ -21711,7 +24620,7 @@ AValue fn__ensure_runtime_objs(AValue runtime_dir) {
         }
         a_release(__iter_arr);
     }
-#line 141 "src/cli.a"
+#line 152 "src/cli.a"
     __ret = a_retain(obj_dir); goto __fn_cleanup;
 __fn_cleanup:
     a_release(sentinel);
@@ -21730,7 +24639,7 @@ AValue fn__gcc_try(AValue c_path, AValue out_path, AValue runtime_dir) {
     c_path = a_retain(c_path);
     out_path = a_retain(out_path);
     runtime_dir = a_retain(runtime_dir);
-#line 145 "src/cli.a"
+#line 156 "src/cli.a"
     __ret = a_array_get(fn__gcc_run(c_path, out_path, runtime_dir), a_string("code")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(c_path);
@@ -21745,41 +24654,41 @@ AValue fn__gcc_run(AValue c_path, AValue out_path, AValue runtime_dir) {
     c_path = a_retain(c_path);
     out_path = a_retain(out_path);
     runtime_dir = a_retain(runtime_dir);
-#line 150 "src/cli.a"
+#line 161 "src/cli.a"
     { AValue __old = obj_dir; obj_dir = fn__ensure_runtime_objs(runtime_dir); a_release(__old); }
-#line 151 "src/cli.a"
+#line 162 "src/cli.a"
     { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
-#line 152 "src/cli.a"
+#line 163 "src/cli.a"
     { AValue __old = flags; flags = fn__gcc_flags(); a_release(__old); }
-#line 153 "src/cli.a"
+#line 164 "src/cli.a"
     { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
-#line 154 "src/cli.a"
+#line 165 "src/cli.a"
     if (a_truthy(a_gt(a_len(obj_dir), a_int(0)))) {
-#line 155 "src/cli.a"
+#line 166 "src/cli.a"
         { AValue __old = user_o; user_o = fn__tmp_path(a_string(".o")); a_release(__old); }
-#line 156 "src/cli.a"
+#line 167 "src/cli.a"
         { AValue __old = compile; compile = a_str_join(a_array_new(7, a_string("gcc -c"), c_path, inc, a_string("-O2"), sf, a_string("-o"), user_o), a_string(" ")); a_release(__old); }
-#line 157 "src/cli.a"
+#line 168 "src/cli.a"
         { AValue __old = cr; cr = a_exec_timeout(compile, a_int(0)); a_release(__old); }
-#line 158 "src/cli.a"
+#line 169 "src/cli.a"
         if (a_truthy(a_neq(a_array_get(cr, a_string("code")), a_int(0)))) {
-#line 159 "src/cli.a"
+#line 170 "src/cli.a"
             a_fs_rm(user_o);
-#line 160 "src/cli.a"
+#line 171 "src/cli.a"
             __ret = a_retain(cr); goto __fn_cleanup;
         }
-#line 162 "src/cli.a"
+#line 173 "src/cli.a"
         { AValue __old = link; link = a_str_join(a_array_new(11, a_string("gcc"), user_o, a_add(obj_dir, a_string("/runtime.o")), a_add(obj_dir, a_string("/gguf.o")), a_add(obj_dir, a_string("/sqlite3.o")), a_add(obj_dir, a_string("/miniz.o")), a_add(obj_dir, a_string("/stb_impl.o")), a_add(obj_dir, a_string("/embedded.o")), a_string("-o"), out_path, flags), a_string(" ")); a_release(__old); }
-#line 169 "src/cli.a"
+#line 180 "src/cli.a"
         { AValue __old = lr; lr = a_exec_timeout(link, a_int(0)); a_release(__old); }
-#line 170 "src/cli.a"
+#line 181 "src/cli.a"
         a_fs_rm(user_o);
-#line 171 "src/cli.a"
+#line 182 "src/cli.a"
         __ret = a_retain(lr); goto __fn_cleanup;
     }
-#line 173 "src/cli.a"
+#line 184 "src/cli.a"
     { AValue __old = cmd; cmd = a_str_join(a_array_new(13, a_string("gcc"), c_path, a_add(runtime_dir, a_string("/runtime.c")), a_add(runtime_dir, a_string("/gguf.c")), a_add(runtime_dir, a_string("/sqlite3.c")), a_add(runtime_dir, a_string("/miniz.c")), a_add(runtime_dir, a_string("/stb_impl.c")), a_add(runtime_dir, a_string("/embedded.c")), a_string("-o"), out_path, inc, flags, sf), a_string(" ")); a_release(__old); }
-#line 180 "src/cli.a"
+#line 191 "src/cli.a"
     __ret = a_exec_timeout(cmd, a_int(0)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(obj_dir);
@@ -21804,35 +24713,35 @@ AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
     c_path = a_retain(c_path);
     out_path = a_retain(out_path);
     runtime_dir = a_retain(runtime_dir);
-#line 188 "src/cli.a"
+#line 199 "src/cli.a"
     { AValue __old = result; result = fn__gcc_run(c_path, out_path, runtime_dir); a_release(__old); }
-#line 189 "src/cli.a"
+#line 200 "src/cli.a"
     if (a_truthy(a_eq(a_array_get(result, a_string("code")), a_int(0)))) {
-#line 189 "src/cli.a"
+#line 200 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 190 "src/cli.a"
+#line 201 "src/cli.a"
     { AValue __old = stderr; stderr = a_array_get(result, a_string("stderr")); a_release(__old); }
-#line 193 "src/cli.a"
+#line 204 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(a_str_lines(stderr));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue line = {0}, q = {0}, sym = {0}, e = {0};
             line = a_array_get(__iter_arr, a_int(__fi));
-#line 194 "src/cli.a"
+#line 205 "src/cli.a"
             if (a_truthy(a_str_contains(line, a_string("undefined reference to")))) {
-#line 195 "src/cli.a"
+#line 206 "src/cli.a"
                 { AValue __old = q; q = a_str_find(line, a_string("`")); a_release(__old); }
-#line 196 "src/cli.a"
+#line 207 "src/cli.a"
                 { AValue __old = sym; sym = a_str_slice(line, a_add(q, a_int(1)), a_len(line)); a_release(__old); }
-#line 197 "src/cli.a"
+#line 208 "src/cli.a"
                 { AValue __old = e; e = a_str_find(sym, a_string("'")); a_release(__old); }
-#line 198 "src/cli.a"
+#line 209 "src/cli.a"
                 if (a_truthy(a_gt(e, a_int(0)))) {
-#line 198 "src/cli.a"
+#line 209 "src/cli.a"
                     { AValue __old = sym; sym = a_str_slice(sym, a_int(0), e); a_release(__old); }
                 }
-#line 199 "src/cli.a"
+#line 210 "src/cli.a"
                 fn__die(a_add(a_add(a_string("link error: undefined symbol "), sym), a_string(" -- check `extern fn` declarations and link flags")));
             }
             a_release(line);
@@ -21842,23 +24751,23 @@ AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
         }
         a_release(__iter_arr);
     }
-#line 202 "src/cli.a"
+#line 213 "src/cli.a"
     { AValue __old = loc; loc = a_string(""); a_release(__old); }
-#line 203 "src/cli.a"
+#line 214 "src/cli.a"
     { AValue __old = first; first = a_string(""); a_release(__old); }
-#line 204 "src/cli.a"
+#line 215 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(a_str_lines(stderr));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue line = {0}, p = {0};
             line = a_array_get(__iter_arr, a_int(__fi));
-#line 205 "src/cli.a"
+#line 216 "src/cli.a"
             if (a_truthy(a_and(a_str_contains(line, a_string(": error: ")), a_eq(a_len(first), a_int(0))))) {
-#line 206 "src/cli.a"
+#line 217 "src/cli.a"
                 { AValue __old = first; first = a_retain(line); a_release(__old); }
-#line 207 "src/cli.a"
+#line 218 "src/cli.a"
                 { AValue __old = p; p = a_str_find(line, a_string(": error: ")); a_release(__old); }
-#line 208 "src/cli.a"
+#line 219 "src/cli.a"
                 { AValue __old = loc; loc = a_str_slice(line, a_int(0), p); a_release(__old); }
             }
             a_release(line);
@@ -21866,21 +24775,21 @@ AValue fn__gcc(AValue c_path, AValue out_path, AValue runtime_dir) {
         }
         a_release(__iter_arr);
     }
-#line 212 "src/cli.a"
+#line 223 "src/cli.a"
     if (a_truthy(a_not(a_str_contains(loc, a_string(".a:"))))) {
-#line 212 "src/cli.a"
+#line 223 "src/cli.a"
         { AValue __old = loc; loc = a_retain(c_path); a_release(__old); }
     }
-#line 213 "src/cli.a"
+#line 224 "src/cli.a"
     a_eprintln(a_add(a_add(a_add(loc, a_string(": ")), fn_cli_red(a_string("internal compiler error"))), a_string(": generated C did not compile")));
-#line 214 "src/cli.a"
+#line 225 "src/cli.a"
     if (a_truthy(a_gt(a_len(first), a_int(0)))) {
-#line 214 "src/cli.a"
+#line 225 "src/cli.a"
         a_eprintln(a_add(a_string("  "), a_str_trim(first)));
     }
-#line 215 "src/cli.a"
+#line 226 "src/cli.a"
     a_eprintln(a_add(a_add(a_string("  C source kept at "), c_path), a_string(" -- please report this with the .a source")));
-#line 216 "src/cli.a"
+#line 227 "src/cli.a"
     (exit((int)a_int(1).ival), a_void());
 __fn_cleanup:
     a_release(result);
@@ -21901,9 +24810,9 @@ AValue fn__tmp_path(AValue suffix) {
     AValue ts = {0};
     AValue __ret = a_void();
     suffix = a_retain(suffix);
-#line 220 "src/cli.a"
+#line 231 "src/cli.a"
     { AValue __old = ts; ts = a_to_str(a_time_now()); a_release(__old); }
-#line 221 "src/cli.a"
+#line 232 "src/cli.a"
     __ret = a_str_concat(a_string("/tmp/a_cli_"), a_str_concat(ts, suffix)); goto __fn_cleanup;
 __fn_cleanup:
     a_release(ts);
@@ -21916,14 +24825,14 @@ AValue fn_cmd_cc(AValue source_path, AValue out_file) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     out_file = a_retain(out_file);
-#line 225 "src/cli.a"
+#line 236 "src/cli.a"
     { AValue __old = c_code; c_code = fn__generate_c(source_path); a_release(__old); }
-#line 226 "src/cli.a"
+#line 237 "src/cli.a"
     if (a_truthy(a_gt(a_len(out_file), a_int(0)))) {
-#line 227 "src/cli.a"
+#line 238 "src/cli.a"
         a_io_write_file(out_file, c_code);
     } else {
-#line 229 "src/cli.a"
+#line 240 "src/cli.a"
         a_print(c_code);
     }
 __fn_cleanup:
@@ -21938,18 +24847,18 @@ AValue fn_cmd_wat(AValue source_path, AValue out_file) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     out_file = a_retain(out_file);
-#line 234 "src/cli.a"
+#line 245 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 235 "src/cli.a"
+#line 246 "src/cli.a"
     { AValue __old = wat_code; wat_code = fn_wasmgen_compile(source); a_release(__old); }
-#line 236 "src/cli.a"
+#line 247 "src/cli.a"
     if (a_truthy(a_gt(a_len(out_file), a_int(0)))) {
-#line 237 "src/cli.a"
+#line 248 "src/cli.a"
         a_io_write_file(out_file, wat_code);
-#line 238 "src/cli.a"
+#line 249 "src/cli.a"
         a_eprintln(a_add(a_add(fn_cli_green(a_string("generated")), a_string(" ")), out_file));
     } else {
-#line 240 "src/cli.a"
+#line 251 "src/cli.a"
         a_print(wat_code);
     }
 __fn_cleanup:
@@ -21965,54 +24874,54 @@ AValue fn__codegen_subprocess(AValue source_path, AValue c_path) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     c_path = a_retain(c_path);
-#line 249 "src/cli.a"
+#line 260 "src/cli.a"
     { AValue __old = self; self = a_argv0(); a_release(__old); }
-#line 250 "src/cli.a"
+#line 261 "src/cli.a"
     { AValue __old = cmd; cmd = a_str_join(a_array_new(5, self, a_string("cc"), source_path, a_string("-o"), c_path), a_string(" ")); a_release(__old); }
-#line 251 "src/cli.a"
+#line 262 "src/cli.a"
     { AValue __old = max_attempts; max_attempts = a_int(3); a_release(__old); }
-#line 252 "src/cli.a"
+#line 263 "src/cli.a"
     { AValue __old = attempts; attempts = a_int(0); a_release(__old); }
-#line 253 "src/cli.a"
+#line 264 "src/cli.a"
     while (a_truthy(a_lt(attempts, max_attempts))) {
-#line 254 "src/cli.a"
+#line 265 "src/cli.a"
         { AValue __old = result; result = a_exec_timeout(cmd, a_int(0)); a_release(__old); }
-#line 255 "src/cli.a"
+#line 266 "src/cli.a"
         if (a_truthy(a_eq(a_array_get(result, a_string("code")), a_int(0)))) {
-#line 255 "src/cli.a"
+#line 266 "src/cli.a"
             __ret = a_void(); goto __fn_cleanup;
         }
-#line 256 "src/cli.a"
+#line 267 "src/cli.a"
         { AValue __old = attempts; attempts = a_add(attempts, a_int(1)); a_release(__old); }
-#line 257 "src/cli.a"
+#line 268 "src/cli.a"
         { AValue __old = crashed; crashed = a_gt(a_array_get(result, a_string("code")), a_int(128)); a_release(__old); }
-#line 258 "src/cli.a"
+#line 269 "src/cli.a"
         if (a_truthy(a_or(a_not(crashed), a_eq(attempts, max_attempts)))) {
-#line 259 "src/cli.a"
+#line 270 "src/cli.a"
             { AValue __old = stderr; stderr = a_str_trim(a_array_get(result, a_string("stderr"))); a_release(__old); }
-#line 261 "src/cli.a"
+#line 272 "src/cli.a"
             if (a_truthy(a_and(a_str_starts_with(stderr, a_string("runtime error: ")), a_str_contains(stderr, a_string(": error: "))))) {
-#line 262 "src/cli.a"
+#line 273 "src/cli.a"
                 { AValue __old = stderr; stderr = a_str_slice(stderr, a_len(a_string("runtime error: ")), a_len(stderr)); a_release(__old); }
             }
-#line 264 "src/cli.a"
+#line 275 "src/cli.a"
             if (a_truthy(a_gt(a_len(stderr), a_int(0)))) {
-#line 264 "src/cli.a"
+#line 275 "src/cli.a"
                 a_eprintln(stderr);
             }
-#line 265 "src/cli.a"
+#line 276 "src/cli.a"
             if (a_truthy(crashed)) {
-#line 266 "src/cli.a"
+#line 277 "src/cli.a"
                 a_eprintln(fn_cli_red(a_add(a_add(a_add(a_add(a_string("codegen crashed (exit "), a_to_str(a_array_get(result, a_string("code")))), a_string(") ")), a_to_str(attempts)), a_string(" times; giving up"))));
             } else
             if (a_truthy(a_not(a_str_contains(stderr, a_string(": error: "))))) {
-#line 268 "src/cli.a"
+#line 279 "src/cli.a"
                 a_eprintln(fn_cli_red(a_string("codegen failed")));
             }
-#line 270 "src/cli.a"
+#line 281 "src/cli.a"
             (exit((int)a_int(1).ival), a_void());
         }
-#line 272 "src/cli.a"
+#line 283 "src/cli.a"
         a_eprintln(fn_cli_yellow(a_add(a_add(a_add(a_add(a_add(a_add(a_string("codegen crashed (exit "), a_to_str(a_array_get(result, a_string("code")))), a_string("), retrying (")), a_to_str(attempts)), a_string("/")), a_to_str(max_attempts)), a_string(")"))));
     }
 __fn_cleanup:
@@ -22033,17 +24942,17 @@ AValue fn_cmd_build(AValue source_path, AValue out_path) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     out_path = a_retain(out_path);
-#line 277 "src/cli.a"
+#line 288 "src/cli.a"
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 278 "src/cli.a"
+#line 289 "src/cli.a"
     { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
-#line 279 "src/cli.a"
+#line 290 "src/cli.a"
     fn__codegen_subprocess(source_path, c_path);
-#line 280 "src/cli.a"
+#line 291 "src/cli.a"
     fn__gcc(c_path, out_path, runtime_dir);
-#line 281 "src/cli.a"
+#line 292 "src/cli.a"
     a_fs_rm(c_path);
-#line 282 "src/cli.a"
+#line 293 "src/cli.a"
     a_eprintln(a_str_concat(fn_cli_green(a_string("built")), a_str_concat(a_string(" "), out_path)));
 __fn_cleanup:
     a_release(runtime_dir);
@@ -22055,7 +24964,7 @@ __fn_cleanup:
 
 AValue fn__known_targets(void) {
     AValue __ret = a_void();
-#line 288 "src/cli.a"
+#line 299 "src/cli.a"
     __ret = a_array_new(6, a_string("wasm32-wasi"), a_string("linux-x86_64"), a_string("linux-aarch64"), a_string("windows-x86_64"), a_string("macos-x86_64"), a_string("macos-aarch64")); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -22065,77 +24974,40 @@ AValue fn__target_compiler(AValue tgt) {
     AValue has_emcc = {0}, has_clang = {0}, ccs = {0}, r = {0}, uname = {0}, arch = {0};
     AValue __ret = a_void();
     tgt = a_retain(tgt);
-#line 292 "src/cli.a"
+#line 303 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("wasm32-wasi")))) {
-#line 293 "src/cli.a"
+#line 304 "src/cli.a"
         { AValue __old = has_emcc; has_emcc = a_exec(a_string("which emcc 2>/dev/null")); a_release(__old); }
-#line 294 "src/cli.a"
+#line 305 "src/cli.a"
         if (a_truthy(a_eq(a_array_get(has_emcc, a_string("code")), a_int(0)))) {
-#line 294 "src/cli.a"
+#line 305 "src/cli.a"
             __ret = a_string("emcc"); goto __fn_cleanup;
         }
-#line 295 "src/cli.a"
+#line 306 "src/cli.a"
         { AValue __old = has_clang; has_clang = a_exec(a_string("which clang 2>/dev/null")); a_release(__old); }
-#line 296 "src/cli.a"
+#line 307 "src/cli.a"
         if (a_truthy(a_eq(a_array_get(has_clang, a_string("code")), a_int(0)))) {
-#line 296 "src/cli.a"
+#line 307 "src/cli.a"
             __ret = a_string("clang"); goto __fn_cleanup;
         }
-#line 297 "src/cli.a"
+#line 308 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 299 "src/cli.a"
-    if (a_truthy(a_eq(tgt, a_string("linux-x86_64")))) {
-#line 300 "src/cli.a"
-        { AValue __old = ccs; ccs = a_array_new(3, a_string("x86_64-linux-musl-gcc"), a_string("x86_64-linux-gnu-gcc"), a_string("x86_64-unknown-linux-gnu-gcc")); a_release(__old); }
-#line 301 "src/cli.a"
-        {
-            AValue __iter_arr = a_iterable(ccs);
-            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-                AValue cc = {0}, r = {0};
-                cc = a_array_get(__iter_arr, a_int(__fi));
-#line 302 "src/cli.a"
-                { AValue __old = r; r = a_exec(a_add(a_add(a_string("which "), cc), a_string(" 2>/dev/null"))); a_release(__old); }
-#line 303 "src/cli.a"
-                if (a_truthy(a_eq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 303 "src/cli.a"
-                    __ret = a_retain(cc); goto __fn_cleanup;
-                }
-                a_release(cc);
-                a_release(r);
-            }
-            a_release(__iter_arr);
-        }
-#line 305 "src/cli.a"
-        { AValue __old = uname; uname = a_str_trim(a_array_get(a_exec(a_string("uname -s")), a_string("stdout"))); a_release(__old); }
-#line 306 "src/cli.a"
-        if (a_truthy(a_eq(uname, a_string("Linux")))) {
-#line 307 "src/cli.a"
-            { AValue __old = arch; arch = a_str_trim(a_array_get(a_exec(a_string("uname -m")), a_string("stdout"))); a_release(__old); }
-#line 308 "src/cli.a"
-            if (a_truthy(a_eq(arch, a_string("x86_64")))) {
-#line 308 "src/cli.a"
-                __ret = a_string("gcc"); goto __fn_cleanup;
-            }
-        }
 #line 310 "src/cli.a"
-        __ret = a_string(""); goto __fn_cleanup;
-    }
+    if (a_truthy(a_eq(tgt, a_string("linux-x86_64")))) {
+#line 311 "src/cli.a"
+        { AValue __old = ccs; ccs = a_array_new(3, a_string("x86_64-linux-musl-gcc"), a_string("x86_64-linux-gnu-gcc"), a_string("x86_64-unknown-linux-gnu-gcc")); a_release(__old); }
 #line 312 "src/cli.a"
-    if (a_truthy(a_eq(tgt, a_string("linux-aarch64")))) {
-#line 313 "src/cli.a"
-        { AValue __old = ccs; ccs = a_array_new(2, a_string("aarch64-linux-musl-gcc"), a_string("aarch64-linux-gnu-gcc")); a_release(__old); }
-#line 314 "src/cli.a"
         {
             AValue __iter_arr = a_iterable(ccs);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue cc = {0}, r = {0};
                 cc = a_array_get(__iter_arr, a_int(__fi));
-#line 315 "src/cli.a"
+#line 313 "src/cli.a"
                 { AValue __old = r; r = a_exec(a_add(a_add(a_string("which "), cc), a_string(" 2>/dev/null"))); a_release(__old); }
-#line 316 "src/cli.a"
+#line 314 "src/cli.a"
                 if (a_truthy(a_eq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 316 "src/cli.a"
+#line 314 "src/cli.a"
                     __ret = a_retain(cc); goto __fn_cleanup;
                 }
                 a_release(cc);
@@ -22143,36 +25015,36 @@ AValue fn__target_compiler(AValue tgt) {
             }
             a_release(__iter_arr);
         }
-#line 318 "src/cli.a"
+#line 316 "src/cli.a"
         { AValue __old = uname; uname = a_str_trim(a_array_get(a_exec(a_string("uname -s")), a_string("stdout"))); a_release(__old); }
-#line 319 "src/cli.a"
+#line 317 "src/cli.a"
         if (a_truthy(a_eq(uname, a_string("Linux")))) {
-#line 320 "src/cli.a"
+#line 318 "src/cli.a"
             { AValue __old = arch; arch = a_str_trim(a_array_get(a_exec(a_string("uname -m")), a_string("stdout"))); a_release(__old); }
-#line 321 "src/cli.a"
-            if (a_truthy(a_eq(arch, a_string("aarch64")))) {
-#line 321 "src/cli.a"
+#line 319 "src/cli.a"
+            if (a_truthy(a_eq(arch, a_string("x86_64")))) {
+#line 319 "src/cli.a"
                 __ret = a_string("gcc"); goto __fn_cleanup;
             }
         }
-#line 323 "src/cli.a"
+#line 321 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
+#line 323 "src/cli.a"
+    if (a_truthy(a_eq(tgt, a_string("linux-aarch64")))) {
+#line 324 "src/cli.a"
+        { AValue __old = ccs; ccs = a_array_new(2, a_string("aarch64-linux-musl-gcc"), a_string("aarch64-linux-gnu-gcc")); a_release(__old); }
 #line 325 "src/cli.a"
-    if (a_truthy(a_eq(tgt, a_string("windows-x86_64")))) {
-#line 326 "src/cli.a"
-        { AValue __old = ccs; ccs = a_array_new(2, a_string("x86_64-w64-mingw32-gcc"), a_string("i686-w64-mingw32-gcc")); a_release(__old); }
-#line 327 "src/cli.a"
         {
             AValue __iter_arr = a_iterable(ccs);
             for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                 AValue cc = {0}, r = {0};
                 cc = a_array_get(__iter_arr, a_int(__fi));
-#line 328 "src/cli.a"
+#line 326 "src/cli.a"
                 { AValue __old = r; r = a_exec(a_add(a_add(a_string("which "), cc), a_string(" 2>/dev/null"))); a_release(__old); }
-#line 329 "src/cli.a"
+#line 327 "src/cli.a"
                 if (a_truthy(a_eq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 329 "src/cli.a"
+#line 327 "src/cli.a"
                     __ret = a_retain(cc); goto __fn_cleanup;
                 }
                 a_release(cc);
@@ -22180,22 +25052,59 @@ AValue fn__target_compiler(AValue tgt) {
             }
             a_release(__iter_arr);
         }
+#line 329 "src/cli.a"
+        { AValue __old = uname; uname = a_str_trim(a_array_get(a_exec(a_string("uname -s")), a_string("stdout"))); a_release(__old); }
+#line 330 "src/cli.a"
+        if (a_truthy(a_eq(uname, a_string("Linux")))) {
 #line 331 "src/cli.a"
+            { AValue __old = arch; arch = a_str_trim(a_array_get(a_exec(a_string("uname -m")), a_string("stdout"))); a_release(__old); }
+#line 332 "src/cli.a"
+            if (a_truthy(a_eq(arch, a_string("aarch64")))) {
+#line 332 "src/cli.a"
+                __ret = a_string("gcc"); goto __fn_cleanup;
+            }
+        }
+#line 334 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 333 "src/cli.a"
+#line 336 "src/cli.a"
+    if (a_truthy(a_eq(tgt, a_string("windows-x86_64")))) {
+#line 337 "src/cli.a"
+        { AValue __old = ccs; ccs = a_array_new(2, a_string("x86_64-w64-mingw32-gcc"), a_string("i686-w64-mingw32-gcc")); a_release(__old); }
+#line 338 "src/cli.a"
+        {
+            AValue __iter_arr = a_iterable(ccs);
+            for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                AValue cc = {0}, r = {0};
+                cc = a_array_get(__iter_arr, a_int(__fi));
+#line 339 "src/cli.a"
+                { AValue __old = r; r = a_exec(a_add(a_add(a_string("which "), cc), a_string(" 2>/dev/null"))); a_release(__old); }
+#line 340 "src/cli.a"
+                if (a_truthy(a_eq(a_array_get(r, a_string("code")), a_int(0)))) {
+#line 340 "src/cli.a"
+                    __ret = a_retain(cc); goto __fn_cleanup;
+                }
+                a_release(cc);
+                a_release(r);
+            }
+            a_release(__iter_arr);
+        }
+#line 342 "src/cli.a"
+        __ret = a_string(""); goto __fn_cleanup;
+    }
+#line 344 "src/cli.a"
     if (a_truthy(a_or(a_eq(tgt, a_string("macos-x86_64")), a_eq(tgt, a_string("macos-aarch64"))))) {
-#line 334 "src/cli.a"
+#line 345 "src/cli.a"
         { AValue __old = uname; uname = a_str_trim(a_array_get(a_exec(a_string("uname -s")), a_string("stdout"))); a_release(__old); }
-#line 335 "src/cli.a"
+#line 346 "src/cli.a"
         if (a_truthy(a_eq(uname, a_string("Darwin")))) {
-#line 335 "src/cli.a"
+#line 346 "src/cli.a"
             __ret = a_string("gcc"); goto __fn_cleanup;
         }
-#line 336 "src/cli.a"
+#line 347 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 338 "src/cli.a"
+#line 349 "src/cli.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(has_emcc);
@@ -22211,37 +25120,37 @@ __fn_cleanup:
 AValue fn__target_flags(AValue tgt) {
     AValue __ret = a_void();
     tgt = a_retain(tgt);
-#line 342 "src/cli.a"
+#line 353 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("wasm32-wasi")))) {
-#line 343 "src/cli.a"
+#line 354 "src/cli.a"
         __ret = a_string("-O2 -DWASM_BUILD -DNO_FORK -DNO_SIGNAL -DNO_IMAGE"); goto __fn_cleanup;
     }
-#line 345 "src/cli.a"
+#line 356 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("linux-x86_64")))) {
-#line 346 "src/cli.a"
+#line 357 "src/cli.a"
         __ret = a_string("-lm -O2 -ldl -DLINUX_BUILD"); goto __fn_cleanup;
     }
-#line 348 "src/cli.a"
+#line 359 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("linux-aarch64")))) {
-#line 349 "src/cli.a"
+#line 360 "src/cli.a"
         __ret = a_string("-lm -O2 -ldl -DLINUX_BUILD"); goto __fn_cleanup;
     }
-#line 351 "src/cli.a"
+#line 362 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("windows-x86_64")))) {
-#line 352 "src/cli.a"
+#line 363 "src/cli.a"
         __ret = a_string("-lm -O2 -lws2_32 -DWINDOWS_BUILD"); goto __fn_cleanup;
     }
-#line 354 "src/cli.a"
+#line 365 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("macos-x86_64")))) {
-#line 355 "src/cli.a"
+#line 366 "src/cli.a"
         __ret = a_string("-lm -O2 -target x86_64-apple-macos11 -framework Security -framework CoreFoundation"); goto __fn_cleanup;
     }
-#line 357 "src/cli.a"
+#line 368 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("macos-aarch64")))) {
-#line 358 "src/cli.a"
+#line 369 "src/cli.a"
         __ret = a_string("-lm -O2 -target arm64-apple-macos11 -framework Security -framework CoreFoundation"); goto __fn_cleanup;
     }
-#line 360 "src/cli.a"
+#line 371 "src/cli.a"
     __ret = a_string("-lm -O2"); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tgt);
@@ -22251,17 +25160,17 @@ __fn_cleanup:
 AValue fn__target_ext(AValue tgt) {
     AValue __ret = a_void();
     tgt = a_retain(tgt);
-#line 364 "src/cli.a"
+#line 375 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("wasm32-wasi")))) {
-#line 364 "src/cli.a"
+#line 375 "src/cli.a"
         __ret = a_string(".wasm"); goto __fn_cleanup;
     }
-#line 365 "src/cli.a"
+#line 376 "src/cli.a"
     if (a_truthy(a_eq(tgt, a_string("windows-x86_64")))) {
-#line 365 "src/cli.a"
+#line 376 "src/cli.a"
         __ret = a_string(".exe"); goto __fn_cleanup;
     }
-#line 366 "src/cli.a"
+#line 377 "src/cli.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tgt);
@@ -22270,7 +25179,7 @@ __fn_cleanup:
 
 AValue fn__target_emcc_flags(void) {
     AValue __ret = a_void();
-#line 370 "src/cli.a"
+#line 381 "src/cli.a"
     __ret = a_string("-s WASI=1 -s STANDALONE_WASM=1 -s TOTAL_MEMORY=67108864 --no-entry"); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -22282,60 +25191,60 @@ AValue fn_cmd_build_target(AValue source_path, AValue out_path, AValue tgt) {
     source_path = a_retain(source_path);
     out_path = a_retain(out_path);
     tgt = a_retain(tgt);
-#line 374 "src/cli.a"
+#line 385 "src/cli.a"
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 375 "src/cli.a"
+#line 386 "src/cli.a"
     { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
-#line 376 "src/cli.a"
+#line 387 "src/cli.a"
     fn__codegen_subprocess(source_path, c_path);
-#line 378 "src/cli.a"
+#line 389 "src/cli.a"
     { AValue __old = cc; cc = fn__target_compiler(tgt); a_release(__old); }
-#line 379 "src/cli.a"
+#line 390 "src/cli.a"
     if (a_truthy(a_eq(a_len(cc), a_int(0)))) {
-#line 380 "src/cli.a"
+#line 391 "src/cli.a"
         a_fs_rm(c_path);
-#line 381 "src/cli.a"
+#line 392 "src/cli.a"
         fn__die(a_add(a_add(a_string("no compiler found for target: "), tgt), a_string(". Install the appropriate cross-compilation toolchain.")));
     }
-#line 384 "src/cli.a"
+#line 395 "src/cli.a"
     { AValue __old = flags; flags = fn__target_flags(tgt); a_release(__old); }
-#line 385 "src/cli.a"
+#line 396 "src/cli.a"
     { AValue __old = sf; sf = fn__sqlite_flags(); a_release(__old); }
-#line 386 "src/cli.a"
+#line 397 "src/cli.a"
     { AValue __old = inc; inc = a_add(a_string("-I "), runtime_dir); a_release(__old); }
-#line 388 "src/cli.a"
+#line 399 "src/cli.a"
     { AValue __old = cmd; cmd = a_string(""); a_release(__old); }
-#line 389 "src/cli.a"
+#line 400 "src/cli.a"
     if (a_truthy(a_and(a_eq(tgt, a_string("wasm32-wasi")), a_eq(cc, a_string("emcc"))))) {
-#line 390 "src/cli.a"
+#line 401 "src/cli.a"
         { AValue __old = emcc_extra; emcc_extra = fn__target_emcc_flags(); a_release(__old); }
-#line 391 "src/cli.a"
+#line 402 "src/cli.a"
         { AValue __old = cmd; cmd = a_str_join(a_array_new(13, cc, c_path, a_add(runtime_dir, a_string("/runtime.c")), a_add(runtime_dir, a_string("/gguf.c")), a_add(runtime_dir, a_string("/sqlite3.c")), a_add(runtime_dir, a_string("/miniz.c")), a_add(runtime_dir, a_string("/embedded.c")), a_string("-o"), out_path, inc, flags, sf, emcc_extra), a_string(" ")); a_release(__old); }
     } else {
-#line 399 "src/cli.a"
+#line 410 "src/cli.a"
         if (a_truthy(a_and(a_eq(tgt, a_string("wasm32-wasi")), a_eq(cc, a_string("clang"))))) {
-#line 400 "src/cli.a"
+#line 411 "src/cli.a"
             { AValue __old = cmd; cmd = a_str_join(a_array_new(14, cc, a_string("--target=wasm32-wasi"), a_string("--sysroot=/opt/wasi-sdk/share/wasi-sysroot"), c_path, a_add(runtime_dir, a_string("/runtime.c")), a_add(runtime_dir, a_string("/gguf.c")), a_add(runtime_dir, a_string("/sqlite3.c")), a_add(runtime_dir, a_string("/miniz.c")), a_add(runtime_dir, a_string("/embedded.c")), a_string("-o"), out_path, inc, flags, sf), a_string(" ")); a_release(__old); }
         } else {
-#line 409 "src/cli.a"
+#line 420 "src/cli.a"
             { AValue __old = cmd; cmd = a_str_join(a_array_new(13, cc, c_path, a_add(runtime_dir, a_string("/runtime.c")), a_add(runtime_dir, a_string("/gguf.c")), a_add(runtime_dir, a_string("/sqlite3.c")), a_add(runtime_dir, a_string("/miniz.c")), a_add(runtime_dir, a_string("/stb_impl.c")), a_add(runtime_dir, a_string("/embedded.c")), a_string("-o"), out_path, inc, flags, sf), a_string(" ")); a_release(__old); }
         }
     }
-#line 419 "src/cli.a"
+#line 430 "src/cli.a"
     { AValue __old = r; r = a_exec(cmd); a_release(__old); }
-#line 420 "src/cli.a"
+#line 431 "src/cli.a"
     a_fs_rm(c_path);
-#line 421 "src/cli.a"
+#line 432 "src/cli.a"
     if (a_truthy(a_neq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 422 "src/cli.a"
+#line 433 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stderr"))), a_int(0)))) {
-#line 422 "src/cli.a"
+#line 433 "src/cli.a"
             a_eprintln(a_array_get(r, a_string("stderr")));
         }
-#line 423 "src/cli.a"
+#line 434 "src/cli.a"
         fn__die(a_add(a_string("cross-compilation failed for target: "), tgt));
     }
-#line 425 "src/cli.a"
+#line 436 "src/cli.a"
     a_eprintln(a_add(a_add(a_add(a_add(a_add(fn_cli_green(a_string("built")), a_string(" ")), out_path), a_string(" (")), tgt), a_string(")")));
 __fn_cleanup:
     a_release(runtime_dir);
@@ -22356,26 +25265,26 @@ __fn_cleanup:
 AValue fn_cmd_targets(void) {
     AValue targets = {0}, cc = {0}, status = {0};
     AValue __ret = a_void();
-#line 429 "src/cli.a"
+#line 440 "src/cli.a"
     { AValue __old = targets; targets = fn__known_targets(); a_release(__old); }
-#line 430 "src/cli.a"
+#line 441 "src/cli.a"
     a_eprintln(a_string("supported cross-compilation targets:"));
-#line 431 "src/cli.a"
+#line 442 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(targets);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue tgt = {0}, cc = {0}, status = {0};
             tgt = a_array_get(__iter_arr, a_int(__fi));
-#line 432 "src/cli.a"
+#line 443 "src/cli.a"
             { AValue __old = cc; cc = fn__target_compiler(tgt); a_release(__old); }
-#line 433 "src/cli.a"
+#line 444 "src/cli.a"
             { AValue __old = status; status = fn_cli_dim(a_string("(not available)")); a_release(__old); }
-#line 434 "src/cli.a"
+#line 445 "src/cli.a"
             if (a_truthy(a_gt(a_len(cc), a_int(0)))) {
-#line 435 "src/cli.a"
+#line 446 "src/cli.a"
                 { AValue __old = status; status = a_add(a_add(fn_cli_green(a_string("available")), a_string(" via ")), cc); a_release(__old); }
             }
-#line 437 "src/cli.a"
+#line 448 "src/cli.a"
             a_eprintln(a_add(a_add(a_add(a_string("  "), fn_cli_bold(tgt)), a_string("  ")), status));
             a_release(tgt);
             a_release(cc);
@@ -22392,7 +25301,7 @@ __fn_cleanup:
 
 AValue fn__cache_dir(void) {
     AValue __ret = a_void();
-#line 442 "src/cli.a"
+#line 453 "src/cli.a"
     __ret = a_string(".a_cache"); goto __fn_cleanup;
 __fn_cleanup:
     return __ret;
@@ -22401,11 +25310,11 @@ __fn_cleanup:
 AValue fn__ensure_cache_dir(void) {
     AValue dir = {0};
     AValue __ret = a_void();
-#line 446 "src/cli.a"
+#line 457 "src/cli.a"
     { AValue __old = dir; dir = fn__cache_dir(); a_release(__old); }
-#line 447 "src/cli.a"
+#line 458 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(dir)))) {
-#line 448 "src/cli.a"
+#line 459 "src/cli.a"
         a_fs_mkdir(dir);
     }
 __fn_cleanup:
@@ -22418,39 +25327,39 @@ AValue fn__use_closure(AValue source_path, AValue seen) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     seen = a_retain(seen);
-#line 455 "src/cli.a"
+#line 466 "src/cli.a"
     if (a_truthy(a_contains(seen, source_path))) {
-#line 455 "src/cli.a"
+#line 466 "src/cli.a"
         __ret = a_retain(seen); goto __fn_cleanup;
     }
-#line 456 "src/cli.a"
+#line 467 "src/cli.a"
     seen = a_array_push_move(seen, source_path);
-#line 457 "src/cli.a"
+#line 468 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 458 "src/cli.a"
+#line 469 "src/cli.a"
     if (a_truthy(a_eq(a_type_of(source), a_string("void")))) {
-#line 458 "src/cli.a"
+#line 469 "src/cli.a"
         __ret = a_retain(seen); goto __fn_cleanup;
     }
-#line 459 "src/cli.a"
+#line 470 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(a_str_lines(source));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue line = {0}, t = {0}, spec = {0}, dotted = {0}, file = {0};
             line = a_array_get(__iter_arr, a_int(__fi));
-#line 460 "src/cli.a"
+#line 471 "src/cli.a"
             { AValue __old = t; t = a_str_trim(line); a_release(__old); }
-#line 461 "src/cli.a"
+#line 472 "src/cli.a"
             if (a_truthy(a_str_starts_with(t, a_string("use ")))) {
-#line 462 "src/cli.a"
+#line 473 "src/cli.a"
                 { AValue __old = spec; spec = a_str_trim(a_str_slice(t, a_int(4), a_len(t))); a_release(__old); }
-#line 463 "src/cli.a"
+#line 474 "src/cli.a"
                 { AValue __old = dotted; dotted = a_array_get(a_str_split(spec, a_string(" ")), a_int(0)); a_release(__old); }
-#line 464 "src/cli.a"
+#line 475 "src/cli.a"
                 { AValue __old = file; file = fn_cgen__use_path_to_file(a_str_split(dotted, a_string("."))); a_release(__old); }
-#line 465 "src/cli.a"
+#line 476 "src/cli.a"
                 if (a_truthy(a_fs_exists(file))) {
-#line 465 "src/cli.a"
+#line 476 "src/cli.a"
                     { AValue __old = seen; seen = fn__use_closure(file, seen); a_release(__old); }
                 }
             }
@@ -22462,7 +25371,7 @@ AValue fn__use_closure(AValue source_path, AValue seen) {
         }
         a_release(__iter_arr);
     }
-#line 468 "src/cli.a"
+#line 479 "src/cli.a"
     __ret = a_retain(seen); goto __fn_cleanup;
 __fn_cleanup:
     a_release(source);
@@ -22479,33 +25388,33 @@ AValue fn__cache_key(AValue source_path) {
     AValue source = {0}, acc = {0}, rt = {0}, content = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 474 "src/cli.a"
+#line 485 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 475 "src/cli.a"
+#line 486 "src/cli.a"
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
-#line 475 "src/cli.a"
+#line 486 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 476 "src/cli.a"
+#line 487 "src/cli.a"
     { AValue __old = acc; acc = a_add(a_add(a_string("a-"), fn__version()), a_string("\n")); a_release(__old); }
-#line 477 "src/cli.a"
+#line 488 "src/cli.a"
     { AValue __old = rt; rt = a_io_read_file(a_add(fn__find_runtime_dir(), a_string("/runtime.c"))); a_release(__old); }
-#line 478 "src/cli.a"
+#line 489 "src/cli.a"
     if (a_truthy(a_neq(a_type_of(rt), a_string("void")))) {
-#line 478 "src/cli.a"
+#line 489 "src/cli.a"
         { AValue __old = acc; acc = a_add(a_add(acc, a_hash_sha256(rt)), a_string("\n")); a_release(__old); }
     }
-#line 479 "src/cli.a"
+#line 490 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(a_sort(fn__use_closure(source_path, a_array_new(0))));
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0}, content = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 480 "src/cli.a"
+#line 491 "src/cli.a"
             { AValue __old = content; content = a_io_read_file(f); a_release(__old); }
-#line 481 "src/cli.a"
+#line 492 "src/cli.a"
             if (a_truthy(a_neq(a_type_of(content), a_string("void")))) {
-#line 481 "src/cli.a"
+#line 492 "src/cli.a"
                 { AValue __old = acc; acc = a_add(a_add(a_add(a_add(acc, f), a_string(":")), a_hash_sha256(content)), a_string("\n")); a_release(__old); }
             }
             a_release(f);
@@ -22513,7 +25422,7 @@ AValue fn__cache_key(AValue source_path) {
         }
         a_release(__iter_arr);
     }
-#line 483 "src/cli.a"
+#line 494 "src/cli.a"
     __ret = a_hash_sha256(acc); goto __fn_cleanup;
 __fn_cleanup:
     a_release(source);
@@ -22528,21 +25437,21 @@ AValue fn__cached_bin(AValue source_path) {
     AValue h = {0}, cache_path = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 487 "src/cli.a"
+#line 498 "src/cli.a"
     { AValue __old = h; h = fn__cache_key(source_path); a_release(__old); }
-#line 488 "src/cli.a"
+#line 499 "src/cli.a"
     if (a_truthy(a_eq(a_len(h), a_int(0)))) {
-#line 488 "src/cli.a"
+#line 499 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 489 "src/cli.a"
+#line 500 "src/cli.a"
     { AValue __old = cache_path; cache_path = a_add(a_add(fn__cache_dir(), a_string("/")), h); a_release(__old); }
-#line 490 "src/cli.a"
+#line 501 "src/cli.a"
     if (a_truthy(a_fs_exists(cache_path))) {
-#line 490 "src/cli.a"
+#line 501 "src/cli.a"
         __ret = a_retain(cache_path); goto __fn_cleanup;
     }
-#line 491 "src/cli.a"
+#line 502 "src/cli.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(h);
@@ -22556,22 +25465,22 @@ AValue fn__store_cache(AValue source_path, AValue bin_path) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     bin_path = a_retain(bin_path);
-#line 495 "src/cli.a"
+#line 506 "src/cli.a"
     { AValue __old = h; h = fn__cache_key(source_path); a_release(__old); }
-#line 496 "src/cli.a"
+#line 507 "src/cli.a"
     if (a_truthy(a_eq(a_len(h), a_int(0)))) {
-#line 496 "src/cli.a"
+#line 507 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 497 "src/cli.a"
+#line 508 "src/cli.a"
     fn__ensure_cache_dir();
-#line 498 "src/cli.a"
+#line 509 "src/cli.a"
     { AValue __old = cache_path; cache_path = a_add(a_add(fn__cache_dir(), a_string("/")), h); a_release(__old); }
-#line 499 "src/cli.a"
+#line 510 "src/cli.a"
     a_fs_cp(bin_path, cache_path);
-#line 500 "src/cli.a"
+#line 511 "src/cli.a"
     a_exec(a_add(a_string("chmod +x "), cache_path));
-#line 501 "src/cli.a"
+#line 512 "src/cli.a"
     __ret = a_string(""); goto __fn_cleanup;
 __fn_cleanup:
     a_release(h);
@@ -22586,75 +25495,75 @@ AValue fn_cmd_run(AValue source_path, AValue extra_args) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     extra_args = a_retain(extra_args);
-#line 505 "src/cli.a"
+#line 516 "src/cli.a"
     { AValue __old = cached; cached = fn__cached_bin(source_path); a_release(__old); }
-#line 506 "src/cli.a"
+#line 517 "src/cli.a"
     if (a_truthy(a_gt(a_len(cached), a_int(0)))) {
-#line 507 "src/cli.a"
+#line 518 "src/cli.a"
         { AValue __old = run_cmd; run_cmd = a_retain(cached); a_release(__old); }
-#line 508 "src/cli.a"
+#line 519 "src/cli.a"
         if (a_truthy(a_gt(a_len(extra_args), a_int(0)))) {
-#line 509 "src/cli.a"
+#line 520 "src/cli.a"
             { AValue __old = run_cmd; run_cmd = a_str_concat(cached, a_str_concat(a_string(" "), a_str_join(extra_args, a_string(" ")))); a_release(__old); }
         }
-#line 511 "src/cli.a"
+#line 522 "src/cli.a"
         { AValue __old = result; result = a_exec(run_cmd); a_release(__old); }
-#line 512 "src/cli.a"
+#line 523 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-#line 512 "src/cli.a"
+#line 523 "src/cli.a"
             a_print(a_array_get(result, a_string("stdout")));
         }
-#line 513 "src/cli.a"
+#line 524 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
-#line 513 "src/cli.a"
+#line 524 "src/cli.a"
             a_eprintln(a_array_get(result, a_string("stderr")));
         }
-#line 514 "src/cli.a"
+#line 525 "src/cli.a"
         if (a_truthy(a_neq(a_array_get(result, a_string("code")), a_int(0)))) {
-#line 514 "src/cli.a"
+#line 525 "src/cli.a"
             (exit((int)a_array_get(result, a_string("code")).ival), a_void());
         }
-#line 515 "src/cli.a"
+#line 526 "src/cli.a"
         __ret = a_string(""); goto __fn_cleanup;
     }
-#line 518 "src/cli.a"
-    { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 519 "src/cli.a"
-    { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
-#line 520 "src/cli.a"
-    { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("")); a_release(__old); }
-#line 521 "src/cli.a"
-    fn__codegen_subprocess(source_path, c_path);
-#line 522 "src/cli.a"
-    fn__gcc(c_path, bin_path, runtime_dir);
-#line 523 "src/cli.a"
-    a_fs_rm(c_path);
-#line 525 "src/cli.a"
-    fn__store_cache(source_path, bin_path);
-#line 527 "src/cli.a"
-    { AValue __old = run_cmd; run_cmd = a_retain(bin_path); a_release(__old); }
-#line 528 "src/cli.a"
-    if (a_truthy(a_gt(a_len(extra_args), a_int(0)))) {
 #line 529 "src/cli.a"
+    { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
+#line 530 "src/cli.a"
+    { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
+#line 531 "src/cli.a"
+    { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("")); a_release(__old); }
+#line 532 "src/cli.a"
+    fn__codegen_subprocess(source_path, c_path);
+#line 533 "src/cli.a"
+    fn__gcc(c_path, bin_path, runtime_dir);
+#line 534 "src/cli.a"
+    a_fs_rm(c_path);
+#line 536 "src/cli.a"
+    fn__store_cache(source_path, bin_path);
+#line 538 "src/cli.a"
+    { AValue __old = run_cmd; run_cmd = a_retain(bin_path); a_release(__old); }
+#line 539 "src/cli.a"
+    if (a_truthy(a_gt(a_len(extra_args), a_int(0)))) {
+#line 540 "src/cli.a"
         { AValue __old = run_cmd; run_cmd = a_str_concat(bin_path, a_str_concat(a_string(" "), a_str_join(extra_args, a_string(" ")))); a_release(__old); }
     }
-#line 531 "src/cli.a"
+#line 542 "src/cli.a"
     { AValue __old = result; result = a_exec(run_cmd); a_release(__old); }
-#line 532 "src/cli.a"
+#line 543 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-#line 532 "src/cli.a"
+#line 543 "src/cli.a"
         a_print(a_array_get(result, a_string("stdout")));
     }
-#line 533 "src/cli.a"
+#line 544 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
-#line 533 "src/cli.a"
+#line 544 "src/cli.a"
         a_eprintln(a_array_get(result, a_string("stderr")));
     }
-#line 534 "src/cli.a"
+#line 545 "src/cli.a"
     a_fs_rm(bin_path);
-#line 535 "src/cli.a"
+#line 546 "src/cli.a"
     if (a_truthy(a_neq(a_array_get(result, a_string("code")), a_int(0)))) {
-#line 535 "src/cli.a"
+#line 546 "src/cli.a"
         (exit((int)a_array_get(result, a_string("code")).ival), a_void());
     }
 __fn_cleanup:
@@ -22674,42 +25583,42 @@ AValue fn_cmd_test(AValue test_dir, AValue opts) {
     AValue __ret = a_void();
     test_dir = a_retain(test_dir);
     opts = a_retain(opts);
-#line 544 "src/cli.a"
+#line 555 "src/cli.a"
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 545 "src/cli.a"
+#line 556 "src/cli.a"
     { AValue __old = timeout_ms; timeout_ms = a_array_get(opts, a_string("timeout_ms")); a_release(__old); }
-#line 546 "src/cli.a"
+#line 557 "src/cli.a"
     { AValue __old = filter; filter = a_array_get(opts, a_string("filter")); a_release(__old); }
-#line 547 "src/cli.a"
+#line 558 "src/cli.a"
     { AValue __old = skip; skip = a_array_get(opts, a_string("skip")); a_release(__old); }
-#line 548 "src/cli.a"
+#line 559 "src/cli.a"
     { AValue __old = verbose; verbose = a_array_get(opts, a_string("verbose")); a_release(__old); }
-#line 549 "src/cli.a"
+#line 560 "src/cli.a"
     { AValue __old = entries; entries = a_fs_ls(test_dir); a_release(__old); }
-#line 550 "src/cli.a"
+#line 561 "src/cli.a"
     { AValue __old = test_files; test_files = a_array_new(0); a_release(__old); }
-#line 551 "src/cli.a"
+#line 562 "src/cli.a"
     { AValue __old = skipped; skipped = a_int(0); a_release(__old); }
-#line 552 "src/cli.a"
+#line 563 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(entries);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue entry = {0}, name = {0};
             entry = a_array_get(__iter_arr, a_int(__fi));
-#line 553 "src/cli.a"
+#line 564 "src/cli.a"
             { AValue __old = name; name = a_array_get(entry, a_string("name")); a_release(__old); }
-#line 554 "src/cli.a"
+#line 565 "src/cli.a"
             if (a_truthy(a_and(a_str_starts_with(name, a_string("test_")), a_str_ends_with(name, a_string(".a"))))) {
-#line 555 "src/cli.a"
+#line 566 "src/cli.a"
                 if (a_truthy(a_or(a_eq(a_len(filter), a_int(0)), a_str_contains(name, filter)))) {
-#line 556 "src/cli.a"
+#line 567 "src/cli.a"
                     if (a_truthy(a_or(a_contains(skip, name), a_contains(skip, fn_path_stem(name))))) {
-#line 557 "src/cli.a"
+#line 568 "src/cli.a"
                         a_println(a_add(a_add(a_add(a_string("  "), fn_cli_dim(a_string("SKIP"))), a_string(" ")), name));
-#line 558 "src/cli.a"
+#line 569 "src/cli.a"
                         { AValue __old = skipped; skipped = a_add(skipped, a_int(1)); a_release(__old); }
                     } else {
-#line 560 "src/cli.a"
+#line 571 "src/cli.a"
                         test_files = a_array_push_move(test_files, fn_path_join(test_dir, name));
                     }
                 }
@@ -22719,118 +25628,118 @@ AValue fn_cmd_test(AValue test_dir, AValue opts) {
         }
         a_release(__iter_arr);
     }
-#line 566 "src/cli.a"
+#line 577 "src/cli.a"
     if (a_truthy(a_eq(a_len(test_files), a_int(0)))) {
-#line 567 "src/cli.a"
+#line 578 "src/cli.a"
         a_eprintln(a_add(a_string("no matching test_*.a files found in "), test_dir));
-#line 568 "src/cli.a"
+#line 579 "src/cli.a"
         (exit((int)a_int(1).ival), a_void());
     }
-#line 571 "src/cli.a"
-    { AValue __old = test_files; test_files = a_sort(test_files); a_release(__old); }
-#line 572 "src/cli.a"
-    { AValue __old = passed; passed = a_int(0); a_release(__old); }
-#line 573 "src/cli.a"
-    { AValue __old = failed; failed = a_int(0); a_release(__old); }
-#line 574 "src/cli.a"
-    { AValue __old = timed_out; timed_out = a_int(0); a_release(__old); }
-#line 575 "src/cli.a"
-    { AValue __old = suite_start; suite_start = a_time_now(); a_release(__old); }
-#line 579 "src/cli.a"
-    { AValue __old = a_home; a_home = a_env_get(a_string("A_HOME")); a_release(__old); }
-#line 580 "src/cli.a"
-    { AValue __old = own_a_home; own_a_home = a_bool(0); a_release(__old); }
-#line 581 "src/cli.a"
-    if (a_truthy(a_or(a_neq(a_type_of(a_home), a_string("str")), a_eq(a_len(a_home), a_int(0))))) {
 #line 582 "src/cli.a"
-        { AValue __old = a_home; a_home = a_add(a_string("/tmp/a_test_home_"), a_to_str(a_time_now())); a_release(__old); }
+    { AValue __old = test_files; test_files = a_sort(test_files); a_release(__old); }
 #line 583 "src/cli.a"
-        a_env_set(a_string("A_HOME"), a_home);
+    { AValue __old = passed; passed = a_int(0); a_release(__old); }
 #line 584 "src/cli.a"
+    { AValue __old = failed; failed = a_int(0); a_release(__old); }
+#line 585 "src/cli.a"
+    { AValue __old = timed_out; timed_out = a_int(0); a_release(__old); }
+#line 586 "src/cli.a"
+    { AValue __old = suite_start; suite_start = a_time_now(); a_release(__old); }
+#line 590 "src/cli.a"
+    { AValue __old = a_home; a_home = a_env_get(a_string("A_HOME")); a_release(__old); }
+#line 591 "src/cli.a"
+    { AValue __old = own_a_home; own_a_home = a_bool(0); a_release(__old); }
+#line 592 "src/cli.a"
+    if (a_truthy(a_or(a_neq(a_type_of(a_home), a_string("str")), a_eq(a_len(a_home), a_int(0))))) {
+#line 593 "src/cli.a"
+        { AValue __old = a_home; a_home = a_add(a_string("/tmp/a_test_home_"), a_to_str(a_time_now())); a_release(__old); }
+#line 594 "src/cli.a"
+        a_env_set(a_string("A_HOME"), a_home);
+#line 595 "src/cli.a"
         { AValue __old = own_a_home; own_a_home = a_bool(1); a_release(__old); }
     }
-#line 586 "src/cli.a"
+#line 597 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(a_home)))) {
-#line 586 "src/cli.a"
+#line 597 "src/cli.a"
         a_fs_mkdir(a_home);
     }
-#line 588 "src/cli.a"
+#line 599 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(test_files);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue src = {0}, name = {0}, c_path = {0}, bin_path = {0}, gen = {0}, gcc_code = {0}, t0 = {0}, run_result = {0}, elapsed = {0}, secs = {0};
             src = a_array_get(__iter_arr, a_int(__fi));
-#line 589 "src/cli.a"
+#line 600 "src/cli.a"
             { AValue __old = name; name = fn_path_basename(src); a_release(__old); }
-#line 590 "src/cli.a"
+#line 601 "src/cli.a"
             { AValue __old = c_path; c_path = fn__tmp_path(a_string(".c")); a_release(__old); }
-#line 591 "src/cli.a"
+#line 602 "src/cli.a"
             { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("")); a_release(__old); }
-#line 593 "src/cli.a"
+#line 604 "src/cli.a"
             { AValue __old = gen; gen = fn__try_generate_c(src); a_release(__old); }
-#line 594 "src/cli.a"
+#line 605 "src/cli.a"
             { AValue __old = gcc_code; gcc_code = a_int(1); a_release(__old); }
-#line 595 "src/cli.a"
+#line 606 "src/cli.a"
             if (a_truthy(a_is_err(gen))) {
-#line 596 "src/cli.a"
+#line 607 "src/cli.a"
                 a_println(a_add(a_add(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_red(a_string("FAIL"))), a_string(" ")), name), a_string(" (")), fn__err_message(gen)), a_string(")")));
-#line 597 "src/cli.a"
+#line 608 "src/cli.a"
                 { AValue __old = failed; failed = a_add(failed, a_int(1)); a_release(__old); }
             } else {
-#line 599 "src/cli.a"
+#line 610 "src/cli.a"
                 a_io_write_file(c_path, a_unwrap(gen));
-#line 600 "src/cli.a"
+#line 611 "src/cli.a"
                 { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
-#line 601 "src/cli.a"
+#line 612 "src/cli.a"
                 a_fs_rm(c_path);
-#line 602 "src/cli.a"
+#line 613 "src/cli.a"
                 if (a_truthy(a_neq(gcc_code, a_int(0)))) {
-#line 603 "src/cli.a"
+#line 614 "src/cli.a"
                     a_println(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_red(a_string("FAIL"))), a_string(" ")), name), a_string(" (compile error)")));
-#line 604 "src/cli.a"
+#line 615 "src/cli.a"
                     { AValue __old = failed; failed = a_add(failed, a_int(1)); a_release(__old); }
                 }
             }
-#line 608 "src/cli.a"
+#line 619 "src/cli.a"
             if (a_truthy(a_eq(gcc_code, a_int(0)))) {
-#line 609 "src/cli.a"
+#line 620 "src/cli.a"
                 { AValue __old = t0; t0 = a_time_now(); a_release(__old); }
-#line 610 "src/cli.a"
+#line 621 "src/cli.a"
                 { AValue __old = run_result; run_result = a_exec_timeout(bin_path, timeout_ms); a_release(__old); }
-#line 611 "src/cli.a"
+#line 622 "src/cli.a"
                 { AValue __old = elapsed; elapsed = a_sub(a_time_now(), t0); a_release(__old); }
-#line 612 "src/cli.a"
+#line 623 "src/cli.a"
                 a_fs_rm(bin_path);
-#line 613 "src/cli.a"
+#line 624 "src/cli.a"
                 { AValue __old = secs; secs = a_add(a_add(a_add(a_to_str(a_div(elapsed, a_int(1000))), a_string(".")), a_to_str(a_div(a_mod(elapsed, a_int(1000)), a_int(100)))), a_string("s")); a_release(__old); }
-#line 614 "src/cli.a"
+#line 625 "src/cli.a"
                 if (a_truthy(a_array_get(run_result, a_string("timed_out")))) {
-#line 615 "src/cli.a"
+#line 626 "src/cli.a"
                     a_println(a_add(a_add(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_red(a_string("TIMEOUT"))), a_string(" ")), name), a_string(" (")), secs), a_string(", killed process group)")));
-#line 616 "src/cli.a"
+#line 627 "src/cli.a"
                     fn__print_test_output(run_result);
-#line 617 "src/cli.a"
+#line 628 "src/cli.a"
                     { AValue __old = failed; failed = a_add(failed, a_int(1)); a_release(__old); }
-#line 618 "src/cli.a"
+#line 629 "src/cli.a"
                     { AValue __old = timed_out; timed_out = a_add(timed_out, a_int(1)); a_release(__old); }
                 } else {
-#line 620 "src/cli.a"
+#line 631 "src/cli.a"
                     if (a_truthy(a_eq(a_array_get(run_result, a_string("code")), a_int(0)))) {
-#line 621 "src/cli.a"
+#line 632 "src/cli.a"
                         a_println(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_green(a_string("PASS"))), a_string(" ")), name), fn_cli_dim(a_add(a_string(" "), secs))));
-#line 622 "src/cli.a"
+#line 633 "src/cli.a"
                         if (a_truthy(verbose)) {
-#line 622 "src/cli.a"
+#line 633 "src/cli.a"
                             fn__print_test_output(run_result);
                         }
-#line 623 "src/cli.a"
+#line 634 "src/cli.a"
                         { AValue __old = passed; passed = a_add(passed, a_int(1)); a_release(__old); }
                     } else {
-#line 625 "src/cli.a"
+#line 636 "src/cli.a"
                         a_println(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_red(a_string("FAIL"))), a_string(" ")), name), a_string(" (exit ")), a_to_str(a_array_get(run_result, a_string("code")))), a_string(", ")), secs), a_string(")")));
-#line 626 "src/cli.a"
+#line 637 "src/cli.a"
                         fn__print_test_output(run_result);
-#line 627 "src/cli.a"
+#line 638 "src/cli.a"
                         { AValue __old = failed; failed = a_add(failed, a_int(1)); a_release(__old); }
                     }
                 }
@@ -22848,32 +25757,32 @@ AValue fn_cmd_test(AValue test_dir, AValue opts) {
         }
         a_release(__iter_arr);
     }
-#line 633 "src/cli.a"
+#line 644 "src/cli.a"
     if (a_truthy(own_a_home)) {
-#line 633 "src/cli.a"
+#line 644 "src/cli.a"
         a_exec_timeout(a_add(a_string("rm -rf "), a_home), a_int(10000));
     }
-#line 635 "src/cli.a"
+#line 646 "src/cli.a"
     { AValue __old = total_secs; total_secs = a_div(a_sub(a_time_now(), suite_start), a_int(1000)); a_release(__old); }
-#line 636 "src/cli.a"
+#line 647 "src/cli.a"
     a_println(a_string(""));
-#line 637 "src/cli.a"
+#line 648 "src/cli.a"
     { AValue __old = summary; summary = a_add(a_add(a_add(a_to_str(passed), a_string(" passed, ")), a_to_str(failed)), a_string(" failed")); a_release(__old); }
-#line 638 "src/cli.a"
+#line 649 "src/cli.a"
     if (a_truthy(a_gt(timed_out, a_int(0)))) {
-#line 638 "src/cli.a"
+#line 649 "src/cli.a"
         { AValue __old = summary; summary = a_add(a_add(a_add(summary, a_string(" (")), a_to_str(timed_out)), a_string(" timed out)")); a_release(__old); }
     }
-#line 639 "src/cli.a"
+#line 650 "src/cli.a"
     if (a_truthy(a_gt(skipped, a_int(0)))) {
-#line 639 "src/cli.a"
+#line 650 "src/cli.a"
         { AValue __old = summary; summary = a_add(a_add(a_add(summary, a_string(", ")), a_to_str(skipped)), a_string(" skipped")); a_release(__old); }
     }
-#line 640 "src/cli.a"
+#line 651 "src/cli.a"
     a_println(a_add(a_add(a_add(summary, a_string(" in ")), a_to_str(total_secs)), a_string("s")));
-#line 641 "src/cli.a"
+#line 652 "src/cli.a"
     if (a_truthy(a_gt(failed, a_int(0)))) {
-#line 641 "src/cli.a"
+#line 652 "src/cli.a"
         (exit((int)a_int(1).ival), a_void());
     }
 __fn_cleanup:
@@ -22910,14 +25819,14 @@ __fn_cleanup:
 AValue fn__print_test_output(AValue run_result) {
     AValue __ret = a_void();
     run_result = a_retain(run_result);
-#line 645 "src/cli.a"
+#line 656 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(run_result, a_string("stdout"))), a_int(0)))) {
-#line 645 "src/cli.a"
+#line 656 "src/cli.a"
         a_println(a_str_trim(a_array_get(run_result, a_string("stdout"))));
     }
-#line 646 "src/cli.a"
+#line 657 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(run_result, a_string("stderr"))), a_int(0)))) {
-#line 646 "src/cli.a"
+#line 657 "src/cli.a"
         a_eprintln(a_str_trim(a_array_get(run_result, a_string("stderr"))));
     }
 __fn_cleanup:
@@ -22929,43 +25838,43 @@ AValue fn__parse_test_opts(AValue argv) {
     AValue opts = {0}, i = {0};
     AValue __ret = a_void();
     argv = a_retain(argv);
-#line 650 "src/cli.a"
+#line 661 "src/cli.a"
     { AValue __old = opts; opts = a_map_new(4, "timeout_ms", a_int(60000), "filter", a_string(""), "skip", a_array_new(0), "verbose", a_bool(0)); a_release(__old); }
-#line 651 "src/cli.a"
+#line 662 "src/cli.a"
     { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 652 "src/cli.a"
+#line 663 "src/cli.a"
     while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 653 "src/cli.a"
+#line 664 "src/cli.a"
         if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--timeout")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 654 "src/cli.a"
+#line 665 "src/cli.a"
             { AValue __old = opts; opts = a_map_set(opts, a_string("timeout_ms"), a_mul(a_to_int(a_array_get(argv, a_add(i, a_int(1)))), a_int(1000))); a_release(__old); }
-#line 655 "src/cli.a"
+#line 666 "src/cli.a"
             { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
         } else {
-#line 657 "src/cli.a"
+#line 668 "src/cli.a"
             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--filter")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 658 "src/cli.a"
+#line 669 "src/cli.a"
                 { AValue __old = opts; opts = a_map_set(opts, a_string("filter"), a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
-#line 659 "src/cli.a"
+#line 670 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
             } else
             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--skip")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 661 "src/cli.a"
+#line 672 "src/cli.a"
                 { AValue __old = opts; opts = a_map_set(opts, a_string("skip"), a_str_split(a_array_get(argv, a_add(i, a_int(1))), a_string(","))); a_release(__old); }
-#line 662 "src/cli.a"
+#line 673 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
             } else {
-#line 664 "src/cli.a"
+#line 675 "src/cli.a"
                 if (a_truthy(a_or(a_eq(a_array_get(argv, i), a_string("--verbose")), a_eq(a_array_get(argv, i), a_string("-v"))))) {
-#line 665 "src/cli.a"
+#line 676 "src/cli.a"
                     { AValue __old = opts; opts = a_map_set(opts, a_string("verbose"), a_bool(1)); a_release(__old); }
                 }
-#line 667 "src/cli.a"
+#line 678 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
             }
         }
     }
-#line 671 "src/cli.a"
+#line 682 "src/cli.a"
     __ret = a_retain(opts); goto __fn_cleanup;
 __fn_cleanup:
     a_release(opts);
@@ -22977,16 +25886,16 @@ __fn_cleanup:
 AValue fn_cmd_cache_clean(void) {
     AValue dir = {0};
     AValue __ret = a_void();
-#line 675 "src/cli.a"
+#line 686 "src/cli.a"
     { AValue __old = dir; dir = fn__cache_dir(); a_release(__old); }
-#line 676 "src/cli.a"
+#line 687 "src/cli.a"
     if (a_truthy(a_fs_exists(dir))) {
-#line 677 "src/cli.a"
+#line 688 "src/cli.a"
         a_exec(a_str_concat(a_string("rm -rf "), dir));
-#line 678 "src/cli.a"
+#line 689 "src/cli.a"
         a_eprintln(fn_cli_green(a_string("cache cleared")));
     } else {
-#line 680 "src/cli.a"
+#line 691 "src/cli.a"
         a_eprintln(a_string("no cache to clean"));
     }
 __fn_cleanup:
@@ -23000,41 +25909,41 @@ AValue fn__profile_insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_
     c_code = a_retain(c_code);
     fn_names = a_retain(fn_names);
     fn_hit_map = a_retain(fn_hit_map);
-#line 685 "src/cli.a"
+#line 696 "src/cli.a"
     { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
-#line 686 "src/cli.a"
+#line 697 "src/cli.a"
     { AValue __old = lbr; lbr = a_from_code(a_int(123)); a_release(__old); }
-#line 687 "src/cli.a"
+#line 698 "src/cli.a"
     { AValue __old = lines; lines = a_str_split(c_code, nl); a_release(__old); }
-#line 688 "src/cli.a"
+#line 699 "src/cli.a"
     { AValue __old = new_lines; new_lines = a_array_new(0); a_release(__old); }
-#line 689 "src/cli.a"
+#line 700 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(lines);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue ln = {0}, trimmed = {0}, mangled = {0}, sig_start = {0}, hit_id = {0};
             ln = a_array_get(__iter_arr, a_int(__fi));
-#line 690 "src/cli.a"
+#line 701 "src/cli.a"
             new_lines = a_array_push_move(new_lines, ln);
-#line 691 "src/cli.a"
+#line 702 "src/cli.a"
             { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
-#line 692 "src/cli.a"
+#line 703 "src/cli.a"
             {
                 AValue __iter_arr = a_iterable(fn_names);
                 for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                     AValue fn2 = {0}, mangled = {0}, sig_start = {0}, hit_id = {0};
                     fn2 = a_array_get(__iter_arr, a_int(__fi));
-#line 693 "src/cli.a"
+#line 704 "src/cli.a"
                     { AValue __old = mangled; mangled = a_str_replace(a_str_replace(a_str_replace(fn2, a_string("."), a_string("_")), a_string("-"), a_string("_")), a_string("!"), a_string("_bang")); a_release(__old); }
-#line 694 "src/cli.a"
+#line 705 "src/cli.a"
                     { AValue __old = sig_start; sig_start = a_add(a_add(a_string("AValue fn_"), mangled), a_string("(")); a_release(__old); }
-#line 695 "src/cli.a"
+#line 706 "src/cli.a"
                     if (a_truthy(a_str_starts_with(trimmed, sig_start))) {
-#line 696 "src/cli.a"
+#line 707 "src/cli.a"
                         if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
-#line 697 "src/cli.a"
+#line 708 "src/cli.a"
                             { AValue __old = hit_id; hit_id = a_array_get(fn_hit_map, fn2); a_release(__old); }
-#line 698 "src/cli.a"
+#line 709 "src/cli.a"
                             new_lines = a_array_push_move(new_lines, a_add(a_add(a_string("    a_profile_hit("), a_to_str(hit_id)), a_string(");")));
                         }
                     }
@@ -23053,7 +25962,7 @@ AValue fn__profile_insert_fn_hits(AValue c_code, AValue fn_names, AValue fn_hit_
         }
         a_release(__iter_arr);
     }
-#line 703 "src/cli.a"
+#line 714 "src/cli.a"
     __ret = a_str_join(new_lines, nl); goto __fn_cleanup;
 __fn_cleanup:
     a_release(nl);
@@ -23078,64 +25987,64 @@ AValue fn__profile_insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whil
     n_whiles = a_retain(n_whiles);
     n_fors = a_retain(n_fors);
     hit_base = a_retain(hit_base);
-#line 707 "src/cli.a"
+#line 718 "src/cli.a"
     { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
-#line 708 "src/cli.a"
+#line 719 "src/cli.a"
     { AValue __old = lbr; lbr = a_from_code(a_int(123)); a_release(__old); }
-#line 709 "src/cli.a"
+#line 720 "src/cli.a"
     { AValue __old = src_lines; src_lines = a_str_split(c_code, nl); a_release(__old); }
-#line 710 "src/cli.a"
+#line 721 "src/cli.a"
     { AValue __old = new_lines; new_lines = a_array_new(0); a_release(__old); }
-#line 711 "src/cli.a"
+#line 722 "src/cli.a"
     { AValue __old = idx_if; idx_if = a_int(0); a_release(__old); }
-#line 712 "src/cli.a"
+#line 723 "src/cli.a"
     { AValue __old = idx_wh; idx_wh = a_int(0); a_release(__old); }
-#line 713 "src/cli.a"
+#line 724 "src/cli.a"
     { AValue __old = idx_fo; idx_fo = a_int(0); a_release(__old); }
-#line 714 "src/cli.a"
+#line 725 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(src_lines);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue ln = {0}, trimmed = {0}, cid = {0};
             ln = a_array_get(__iter_arr, a_int(__fi));
-#line 715 "src/cli.a"
+#line 726 "src/cli.a"
             new_lines = a_array_push_move(new_lines, ln);
-#line 716 "src/cli.a"
+#line 727 "src/cli.a"
             { AValue __old = trimmed; trimmed = a_str_trim(ln); a_release(__old); }
-#line 717 "src/cli.a"
+#line 728 "src/cli.a"
             if (a_truthy(a_str_starts_with(trimmed, a_string("if (a_truthy(")))) {
-#line 718 "src/cli.a"
+#line 729 "src/cli.a"
                 if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
-#line 719 "src/cli.a"
+#line 730 "src/cli.a"
                     if (a_truthy(a_lt(idx_if, n_ifs))) {
-#line 720 "src/cli.a"
+#line 731 "src/cli.a"
                         { AValue __old = cid; cid = a_add(hit_base, idx_if); a_release(__old); }
-#line 721 "src/cli.a"
+#line 732 "src/cli.a"
                         new_lines = a_array_push_move(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");")));
-#line 722 "src/cli.a"
+#line 733 "src/cli.a"
                         { AValue __old = idx_if; idx_if = a_add(idx_if, a_int(1)); a_release(__old); }
                     }
                 }
             }
-#line 726 "src/cli.a"
+#line 737 "src/cli.a"
             if (a_truthy(a_str_starts_with(trimmed, a_string("while (a_truthy(")))) {
-#line 727 "src/cli.a"
+#line 738 "src/cli.a"
                 if (a_truthy(a_str_ends_with(trimmed, a_add(a_string(") "), lbr)))) {
-#line 728 "src/cli.a"
+#line 739 "src/cli.a"
                     { AValue __old = cid; cid = a_add(a_add(hit_base, n_ifs), idx_wh); a_release(__old); }
-#line 729 "src/cli.a"
+#line 740 "src/cli.a"
                     new_lines = a_array_push_move(new_lines, a_add(a_add(a_string("        a_profile_hit("), a_to_str(cid)), a_string(");")));
-#line 730 "src/cli.a"
+#line 741 "src/cli.a"
                     { AValue __old = idx_wh; idx_wh = a_add(idx_wh, a_int(1)); a_release(__old); }
                 }
             }
-#line 733 "src/cli.a"
+#line 744 "src/cli.a"
             if (a_truthy(a_str_starts_with(trimmed, a_string("for (int __fi")))) {
-#line 734 "src/cli.a"
+#line 745 "src/cli.a"
                 { AValue __old = cid; cid = a_add(a_add(a_add(hit_base, n_ifs), n_whiles), idx_fo); a_release(__old); }
-#line 735 "src/cli.a"
+#line 746 "src/cli.a"
                 new_lines = a_array_push_move(new_lines, a_add(a_add(a_string("            a_profile_hit("), a_to_str(cid)), a_string(");")));
-#line 736 "src/cli.a"
+#line 747 "src/cli.a"
                 { AValue __old = idx_fo; idx_fo = a_add(idx_fo, a_int(1)); a_release(__old); }
             }
             a_release(ln);
@@ -23144,7 +26053,7 @@ AValue fn__profile_insert_branch_hits(AValue c_code, AValue n_ifs, AValue n_whil
         }
         a_release(__iter_arr);
     }
-#line 739 "src/cli.a"
+#line 750 "src/cli.a"
     __ret = a_str_join(new_lines, nl); goto __fn_cleanup;
 __fn_cleanup:
     a_release(nl);
@@ -23169,52 +26078,52 @@ AValue fn__profile_count_branches(AValue stmts, AValue counts) {
     AValue __ret = a_void();
     stmts = a_retain(stmts);
     counts = a_retain(counts);
-#line 743 "src/cli.a"
+#line 754 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(stmts);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue st = {0}, tag = {0}, then_stmts = {0}, else_br = {0};
             st = a_array_get(__iter_arr, a_int(__fi));
-#line 744 "src/cli.a"
+#line 755 "src/cli.a"
             { AValue __old = tag; tag = a_array_get(st, a_string("tag")); a_release(__old); }
-#line 745 "src/cli.a"
+#line 756 "src/cli.a"
             if (a_truthy(a_eq(tag, a_string("If")))) {
-#line 746 "src/cli.a"
+#line 757 "src/cli.a"
                 { AValue __old = counts; counts = a_map_set(counts, a_string("ifs"), a_add(a_array_get(counts, a_string("ifs")), a_int(1))); a_release(__old); }
-#line 747 "src/cli.a"
+#line 758 "src/cli.a"
                 { AValue __old = then_stmts; then_stmts = a_array_get(a_array_get(st, a_string("then")), a_string("stmts")); a_release(__old); }
-#line 748 "src/cli.a"
+#line 759 "src/cli.a"
                 { AValue __old = counts; counts = fn__profile_count_branches(then_stmts, counts); a_release(__old); }
-#line 749 "src/cli.a"
+#line 760 "src/cli.a"
                 { AValue __old = else_br; else_br = a_array_get(st, a_string("else")); a_release(__old); }
-#line 750 "src/cli.a"
+#line 761 "src/cli.a"
                 if (a_truthy(a_neq(a_type_of(else_br), a_string("void")))) {
-#line 751 "src/cli.a"
+#line 762 "src/cli.a"
                     if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseBlock")))) {
-#line 752 "src/cli.a"
+#line 763 "src/cli.a"
                         { AValue __old = counts; counts = a_map_set(counts, a_string("elses"), a_add(a_array_get(counts, a_string("elses")), a_int(1))); a_release(__old); }
-#line 753 "src/cli.a"
+#line 764 "src/cli.a"
                         { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(else_br, a_string("block")), a_string("stmts")), counts); a_release(__old); }
                     }
-#line 755 "src/cli.a"
+#line 766 "src/cli.a"
                     if (a_truthy(a_eq(a_array_get(else_br, a_string("tag")), a_string("ElseIf")))) {
-#line 756 "src/cli.a"
+#line 767 "src/cli.a"
                         { AValue __old = counts; counts = fn__profile_count_branches(a_array_new(1, a_array_get(else_br, a_string("stmt"))), counts); a_release(__old); }
                     }
                 }
             }
-#line 760 "src/cli.a"
+#line 771 "src/cli.a"
             if (a_truthy(a_eq(tag, a_string("While")))) {
-#line 761 "src/cli.a"
+#line 772 "src/cli.a"
                 { AValue __old = counts; counts = a_map_set(counts, a_string("whiles"), a_add(a_array_get(counts, a_string("whiles")), a_int(1))); a_release(__old); }
-#line 762 "src/cli.a"
+#line 773 "src/cli.a"
                 { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
             }
-#line 764 "src/cli.a"
+#line 775 "src/cli.a"
             if (a_truthy(a_or(a_eq(tag, a_string("For")), a_eq(tag, a_string("ForDestructure"))))) {
-#line 765 "src/cli.a"
+#line 776 "src/cli.a"
                 { AValue __old = counts; counts = a_map_set(counts, a_string("fors"), a_add(a_array_get(counts, a_string("fors")), a_int(1))); a_release(__old); }
-#line 766 "src/cli.a"
+#line 777 "src/cli.a"
                 { AValue __old = counts; counts = fn__profile_count_branches(a_array_get(a_array_get(st, a_string("body")), a_string("stmts")), counts); a_release(__old); }
             }
             a_release(st);
@@ -23224,7 +26133,7 @@ AValue fn__profile_count_branches(AValue stmts, AValue counts) {
         }
         a_release(__iter_arr);
     }
-#line 769 "src/cli.a"
+#line 780 "src/cli.a"
     __ret = a_retain(counts); goto __fn_cleanup;
 __fn_cleanup:
     a_release(tag);
@@ -23240,60 +26149,60 @@ AValue fn_cmd_profile(AValue source_path, AValue profile_out) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     profile_out = a_retain(profile_out);
-#line 773 "src/cli.a"
+#line 784 "src/cli.a"
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 774 "src/cli.a"
+#line 785 "src/cli.a"
     { AValue __old = prof_out; prof_out = a_retain(profile_out); a_release(__old); }
-#line 775 "src/cli.a"
+#line 786 "src/cli.a"
     if (a_truthy(a_eq(a_len(prof_out), a_int(0)))) {
-#line 776 "src/cli.a"
+#line 787 "src/cli.a"
         { AValue __old = prof_out; prof_out = a_string("profile.json"); a_release(__old); }
     }
-#line 779 "src/cli.a"
+#line 790 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 780 "src/cli.a"
+#line 791 "src/cli.a"
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
-#line 781 "src/cli.a"
+#line 792 "src/cli.a"
         fn__die(a_string("profiler: could not read source file"));
     }
-#line 783 "src/cli.a"
+#line 794 "src/cli.a"
     { AValue __old = prog; prog = fn__parse_source(source_path); a_release(__old); }
-#line 784 "src/cli.a"
+#line 795 "src/cli.a"
     { AValue __old = items; items = a_array_get(prog, a_string("items")); a_release(__old); }
-#line 786 "src/cli.a"
+#line 797 "src/cli.a"
     { AValue __old = fn_names; fn_names = a_array_new(0); a_release(__old); }
-#line 787 "src/cli.a"
+#line 798 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item = {0};
             item = a_array_get(__iter_arr, a_int(__fi));
-#line 788 "src/cli.a"
+#line 799 "src/cli.a"
             if (a_truthy(a_eq(a_array_get(item, a_string("tag")), a_string("FnDecl")))) {
-#line 789 "src/cli.a"
+#line 800 "src/cli.a"
                 fn_names = a_array_push_move(fn_names, a_array_get(item, a_string("name")));
             }
             a_release(item);
         }
         a_release(__iter_arr);
     }
-#line 793 "src/cli.a"
+#line 804 "src/cli.a"
     { AValue __old = branch_counts; branch_counts = a_map_new(4, "ifs", a_int(0), "elses", a_int(0), "whiles", a_int(0), "fors", a_int(0)); a_release(__old); }
-#line 794 "src/cli.a"
+#line 805 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(items);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue item2 = {0}, body = {0};
             item2 = a_array_get(__iter_arr, a_int(__fi));
-#line 795 "src/cli.a"
+#line 806 "src/cli.a"
             if (a_truthy(a_eq(a_array_get(item2, a_string("tag")), a_string("FnDecl")))) {
-#line 796 "src/cli.a"
+#line 807 "src/cli.a"
                 { AValue __old = body; body = a_array_get(item2, a_string("body")); a_release(__old); }
-#line 797 "src/cli.a"
+#line 808 "src/cli.a"
                 if (a_truthy(a_eq(a_type_of(body), a_string("map")))) {
-#line 798 "src/cli.a"
+#line 809 "src/cli.a"
                     if (a_truthy(a_map_has(body, a_string("stmts")))) {
-#line 799 "src/cli.a"
+#line 810 "src/cli.a"
                         { AValue __old = branch_counts; branch_counts = fn__profile_count_branches(a_array_get(body, a_string("stmts")), branch_counts); a_release(__old); }
                     }
                 }
@@ -23303,139 +26212,139 @@ AValue fn_cmd_profile(AValue source_path, AValue profile_out) {
         }
         a_release(__iter_arr);
     }
-#line 805 "src/cli.a"
+#line 816 "src/cli.a"
     { AValue __old = base_c; base_c = fn__generate_c(source_path); a_release(__old); }
-#line 806 "src/cli.a"
+#line 817 "src/cli.a"
     { AValue __old = nl; nl = a_from_code(a_int(10)); a_release(__old); }
-#line 807 "src/cli.a"
+#line 818 "src/cli.a"
     { AValue __old = q; q = a_from_code(a_int(34)); a_release(__old); }
-#line 808 "src/cli.a"
+#line 819 "src/cli.a"
     { AValue __old = counter_id; counter_id = a_int(0); a_release(__old); }
-#line 809 "src/cli.a"
+#line 820 "src/cli.a"
     { AValue __old = reg_lines; reg_lines = a_string(""); a_release(__old); }
-#line 810 "src/cli.a"
+#line 821 "src/cli.a"
     { AValue __old = fn_hit_map; fn_hit_map = a_map_new(0); a_release(__old); }
-#line 811 "src/cli.a"
+#line 822 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(fn_names);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue fname = {0};
             fname = a_array_get(__iter_arr, a_int(__fi));
-#line 812 "src/cli.a"
+#line 823 "src/cli.a"
             { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("fn:")), fname), q), a_string(");")), nl); a_release(__old); }
-#line 813 "src/cli.a"
+#line 824 "src/cli.a"
             { AValue __old = fn_hit_map; fn_hit_map = a_map_set(fn_hit_map, fname, counter_id); a_release(__old); }
-#line 814 "src/cli.a"
+#line 825 "src/cli.a"
             { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
             a_release(fname);
         }
         a_release(__iter_arr);
     }
-#line 817 "src/cli.a"
+#line 828 "src/cli.a"
     { AValue __old = c_code; c_code = fn__profile_insert_fn_hits(base_c, fn_names, fn_hit_map); a_release(__old); }
-#line 819 "src/cli.a"
-    { AValue __old = n_ifs; n_ifs = a_array_get(branch_counts, a_string("ifs")); a_release(__old); }
-#line 820 "src/cli.a"
-    { AValue __old = n_whiles; n_whiles = a_array_get(branch_counts, a_string("whiles")); a_release(__old); }
-#line 821 "src/cli.a"
-    { AValue __old = n_fors; n_fors = a_array_get(branch_counts, a_string("fors")); a_release(__old); }
-#line 823 "src/cli.a"
-    { AValue __old = bi; bi = a_int(0); a_release(__old); }
-#line 824 "src/cli.a"
-    while (a_truthy(a_lt(bi, n_ifs))) {
-#line 825 "src/cli.a"
-        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("if:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
-#line 826 "src/cli.a"
-        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
-#line 827 "src/cli.a"
-        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
-    }
-#line 829 "src/cli.a"
-    { AValue __old = bi; bi = a_int(0); a_release(__old); }
 #line 830 "src/cli.a"
-    while (a_truthy(a_lt(bi, n_whiles))) {
+    { AValue __old = n_ifs; n_ifs = a_array_get(branch_counts, a_string("ifs")); a_release(__old); }
 #line 831 "src/cli.a"
-        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("while:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
+    { AValue __old = n_whiles; n_whiles = a_array_get(branch_counts, a_string("whiles")); a_release(__old); }
 #line 832 "src/cli.a"
-        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
-#line 833 "src/cli.a"
-        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
-    }
-#line 835 "src/cli.a"
+    { AValue __old = n_fors; n_fors = a_array_get(branch_counts, a_string("fors")); a_release(__old); }
+#line 834 "src/cli.a"
     { AValue __old = bi; bi = a_int(0); a_release(__old); }
+#line 835 "src/cli.a"
+    while (a_truthy(a_lt(bi, n_ifs))) {
 #line 836 "src/cli.a"
-    while (a_truthy(a_lt(bi, n_fors))) {
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("if:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
 #line 837 "src/cli.a"
-        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("for:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
-#line 838 "src/cli.a"
         { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
-#line 839 "src/cli.a"
+#line 838 "src/cli.a"
         { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
     }
+#line 840 "src/cli.a"
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
+#line 841 "src/cli.a"
+    while (a_truthy(a_lt(bi, n_whiles))) {
 #line 842 "src/cli.a"
-    { AValue __old = hit_base; hit_base = a_len(fn_names); a_release(__old); }
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("while:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
 #line 843 "src/cli.a"
-    { AValue __old = c_code; c_code = fn__profile_insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base); a_release(__old); }
-#line 845 "src/cli.a"
-    { AValue __old = old_main; old_main = a_string("g_argc = argc; g_argv = argv;"); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
+#line 844 "src/cli.a"
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
 #line 846 "src/cli.a"
-    { AValue __old = new_main; new_main = a_add(a_add(a_add(a_add(a_string("g_argc = argc; g_argv = argv;"), nl), a_string("    a_profile_init();")), nl), reg_lines); a_release(__old); }
+    { AValue __old = bi; bi = a_int(0); a_release(__old); }
 #line 847 "src/cli.a"
-    { AValue __old = c_code; c_code = a_str_replace(c_code, old_main, new_main); a_release(__old); }
+    while (a_truthy(a_lt(bi, n_fors))) {
+#line 848 "src/cli.a"
+        { AValue __old = reg_lines; reg_lines = a_add(a_add(a_add(a_add(a_add(a_add(a_add(reg_lines, a_string("    a_profile_register(")), q), a_string("for:")), a_to_str(bi)), q), a_string(");")), nl); a_release(__old); }
 #line 849 "src/cli.a"
-    { AValue __old = old_end; old_end = a_add(a_add(a_string("fn_main();"), nl), a_string("    return 0;")); a_release(__old); }
+        { AValue __old = counter_id; counter_id = a_add(counter_id, a_int(1)); a_release(__old); }
 #line 850 "src/cli.a"
-    { AValue __old = new_end; new_end = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("fn_main();"), nl), a_string("    a_profile_dump_json(a_string(")), q), prof_out), q), a_string("));")), nl), a_string("    return 0;")); a_release(__old); }
-#line 851 "src/cli.a"
-    { AValue __old = c_code; c_code = a_str_replace(c_code, old_end, new_end); a_release(__old); }
+        { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
+    }
 #line 853 "src/cli.a"
-    { AValue __old = c_path; c_path = fn__tmp_path(a_string("_prof.c")); a_release(__old); }
+    { AValue __old = hit_base; hit_base = a_len(fn_names); a_release(__old); }
 #line 854 "src/cli.a"
-    a_io_write_file(c_path, c_code);
-#line 855 "src/cli.a"
-    { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_prof_bin")); a_release(__old); }
+    { AValue __old = c_code; c_code = fn__profile_insert_branch_hits(c_code, n_ifs, n_whiles, n_fors, hit_base); a_release(__old); }
 #line 856 "src/cli.a"
-    fn__ensure_runtime_objs(runtime_dir);
+    { AValue __old = old_main; old_main = a_string("g_argc = argc; g_argv = argv;"); a_release(__old); }
 #line 857 "src/cli.a"
-    { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
+    { AValue __old = new_main; new_main = a_add(a_add(a_add(a_add(a_string("g_argc = argc; g_argv = argv;"), nl), a_string("    a_profile_init();")), nl), reg_lines); a_release(__old); }
 #line 858 "src/cli.a"
-    a_fs_rm(c_path);
-#line 859 "src/cli.a"
-    if (a_truthy(a_neq(gcc_code, a_int(0)))) {
+    { AValue __old = c_code; c_code = a_str_replace(c_code, old_main, new_main); a_release(__old); }
 #line 860 "src/cli.a"
+    { AValue __old = old_end; old_end = a_add(a_add(a_string("fn_main();"), nl), a_string("    return 0;")); a_release(__old); }
+#line 861 "src/cli.a"
+    { AValue __old = new_end; new_end = a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_add(a_string("fn_main();"), nl), a_string("    a_profile_dump_json(a_string(")), q), prof_out), q), a_string("));")), nl), a_string("    return 0;")); a_release(__old); }
+#line 862 "src/cli.a"
+    { AValue __old = c_code; c_code = a_str_replace(c_code, old_end, new_end); a_release(__old); }
+#line 864 "src/cli.a"
+    { AValue __old = c_path; c_path = fn__tmp_path(a_string("_prof.c")); a_release(__old); }
+#line 865 "src/cli.a"
+    a_io_write_file(c_path, c_code);
+#line 866 "src/cli.a"
+    { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_prof_bin")); a_release(__old); }
+#line 867 "src/cli.a"
+    fn__ensure_runtime_objs(runtime_dir);
+#line 868 "src/cli.a"
+    { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
+#line 869 "src/cli.a"
+    a_fs_rm(c_path);
+#line 870 "src/cli.a"
+    if (a_truthy(a_neq(gcc_code, a_int(0)))) {
+#line 871 "src/cli.a"
         fn__die(a_string("profiler: gcc compilation failed"));
     }
-#line 863 "src/cli.a"
-    a_eprintln(a_string("running instrumented binary..."));
-#line 864 "src/cli.a"
-    a_exec(bin_path);
-#line 865 "src/cli.a"
-    a_fs_rm(bin_path);
-#line 867 "src/cli.a"
-    if (a_truthy(a_fs_exists(prof_out))) {
-#line 868 "src/cli.a"
-        a_eprintln(fn_cli_green(a_add(a_string("profile written to "), prof_out)));
-#line 869 "src/cli.a"
-        { AValue __old = report; report = fn_optimizer_analyze_profile(prof_out); a_release(__old); }
-#line 870 "src/cli.a"
-        if (a_truthy(a_not(a_map_has(report, a_string("error"))))) {
-#line 871 "src/cli.a"
-            a_eprintln(a_add(a_string("  total instrumentation points: "), a_to_str(a_array_get(report, a_string("total_points")))));
-#line 872 "src/cli.a"
-            a_eprintln(a_add(a_string("  total hits: "), a_to_str(a_array_get(report, a_string("total_hits")))));
-#line 873 "src/cli.a"
-            { AValue __old = hf; hf = a_array_get(report, a_string("hot_functions")); a_release(__old); }
 #line 874 "src/cli.a"
-            if (a_truthy(a_gt(a_len(hf), a_int(0)))) {
+    a_eprintln(a_string("running instrumented binary..."));
 #line 875 "src/cli.a"
-                a_eprintln(a_string("  hot functions:"));
+    a_exec(bin_path);
 #line 876 "src/cli.a"
+    a_fs_rm(bin_path);
+#line 878 "src/cli.a"
+    if (a_truthy(a_fs_exists(prof_out))) {
+#line 879 "src/cli.a"
+        a_eprintln(fn_cli_green(a_add(a_string("profile written to "), prof_out)));
+#line 880 "src/cli.a"
+        { AValue __old = report; report = fn_optimizer_analyze_profile(prof_out); a_release(__old); }
+#line 881 "src/cli.a"
+        if (a_truthy(a_not(a_map_has(report, a_string("error"))))) {
+#line 882 "src/cli.a"
+            a_eprintln(a_add(a_string("  total instrumentation points: "), a_to_str(a_array_get(report, a_string("total_points")))));
+#line 883 "src/cli.a"
+            a_eprintln(a_add(a_string("  total hits: "), a_to_str(a_array_get(report, a_string("total_hits")))));
+#line 884 "src/cli.a"
+            { AValue __old = hf; hf = a_array_get(report, a_string("hot_functions")); a_release(__old); }
+#line 885 "src/cli.a"
+            if (a_truthy(a_gt(a_len(hf), a_int(0)))) {
+#line 886 "src/cli.a"
+                a_eprintln(a_string("  hot functions:"));
+#line 887 "src/cli.a"
                 {
                     AValue __iter_arr = a_iterable(hf);
                     for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
                         AValue hfn = {0};
                         hfn = a_array_get(__iter_arr, a_int(__fi));
-#line 877 "src/cli.a"
+#line 888 "src/cli.a"
                         a_eprintln(a_add(a_add(a_add(a_add(a_add(a_add(a_string("    "), a_array_get(hfn, a_string("name"))), a_string(": ")), a_to_str(a_array_get(hfn, a_string("count")))), a_string(" calls (")), a_to_str(a_array_get(hfn, a_string("hot_ratio")))), a_string("% of max)")));
                         a_release(hfn);
                     }
@@ -23444,7 +26353,7 @@ AValue fn_cmd_profile(AValue source_path, AValue profile_out) {
             }
         }
     } else {
-#line 882 "src/cli.a"
+#line 893 "src/cli.a"
         a_eprintln(fn_cli_red(a_string("profile file not generated")));
     }
 __fn_cleanup:
@@ -23487,16 +26396,16 @@ AValue fn_cmd_gentests(AValue source_path, AValue out_path) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     out_path = a_retain(out_path);
-#line 887 "src/cli.a"
+#line 898 "src/cli.a"
     { AValue __old = tests_str; tests_str = fn_testgen_gen_tests_for_file(source_path); a_release(__old); }
-#line 888 "src/cli.a"
+#line 899 "src/cli.a"
     if (a_truthy(a_gt(a_len(out_path), a_int(0)))) {
-#line 889 "src/cli.a"
+#line 900 "src/cli.a"
         a_io_write_file(out_path, tests_str);
-#line 890 "src/cli.a"
+#line 901 "src/cli.a"
         a_eprintln(fn_cli_green(a_add(a_string("tests written to "), out_path)));
     } else {
-#line 892 "src/cli.a"
+#line 903 "src/cli.a"
         a_print(tests_str);
     }
 __fn_cleanup:
@@ -23511,54 +26420,54 @@ AValue fn_cmd_optimize_report(AValue source_path, AValue profile_path) {
     AValue __ret = a_void();
     source_path = a_retain(source_path);
     profile_path = a_retain(profile_path);
-#line 897 "src/cli.a"
+#line 908 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 898 "src/cli.a"
+#line 909 "src/cli.a"
     { AValue __old = report; report = fn_optimizer_analyze_profile(profile_path); a_release(__old); }
-#line 899 "src/cli.a"
+#line 910 "src/cli.a"
     if (a_truthy(a_map_has(report, a_string("error")))) {
-#line 900 "src/cli.a"
+#line 911 "src/cli.a"
         fn__die(a_add(a_string("optimizer: "), a_array_get(report, a_string("error"))));
     }
-#line 903 "src/cli.a"
+#line 914 "src/cli.a"
     { AValue __old = suggs; suggs = fn_optimizer_suggest(source, report); a_release(__old); }
-#line 904 "src/cli.a"
+#line 915 "src/cli.a"
     a_eprintln(a_string("=== Optimization Report ==="));
-#line 905 "src/cli.a"
+#line 916 "src/cli.a"
     a_eprintln(a_string(""));
-#line 906 "src/cli.a"
+#line 917 "src/cli.a"
     a_eprintln(a_add(a_string("Total instrumentation points: "), a_to_str(a_array_get(report, a_string("total_points")))));
-#line 907 "src/cli.a"
+#line 918 "src/cli.a"
     a_eprintln(a_add(a_string("Total hits: "), a_to_str(a_array_get(report, a_string("total_hits")))));
-#line 908 "src/cli.a"
+#line 919 "src/cli.a"
     a_eprintln(a_string(""));
-#line 910 "src/cli.a"
+#line 921 "src/cli.a"
     { AValue __old = hf; hf = a_array_get(report, a_string("hot_functions")); a_release(__old); }
-#line 911 "src/cli.a"
+#line 922 "src/cli.a"
     a_eprintln(a_add(a_add(a_string("Hot Functions ("), a_to_str(a_len(hf))), a_string("):")));
-#line 912 "src/cli.a"
+#line 923 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(hf);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 913 "src/cli.a"
+#line 924 "src/cli.a"
             a_eprintln(a_add(a_add(a_add(a_add(a_add(a_add(a_string("  "), a_array_get(f, a_string("name"))), a_string(": ")), a_to_str(a_array_get(f, a_string("count")))), a_string(" calls (")), a_to_str(a_array_get(f, a_string("hot_ratio")))), a_string("% of max)")));
             a_release(f);
         }
         a_release(__iter_arr);
     }
-#line 915 "src/cli.a"
+#line 926 "src/cli.a"
     a_eprintln(a_string(""));
-#line 917 "src/cli.a"
+#line 928 "src/cli.a"
     a_eprintln(a_add(a_add(a_string("Suggestions ("), a_to_str(a_len(suggs))), a_string("):")));
-#line 918 "src/cli.a"
+#line 929 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(suggs);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue sg = {0};
             sg = a_array_get(__iter_arr, a_int(__fi));
-#line 919 "src/cli.a"
+#line 930 "src/cli.a"
             a_eprintln(a_add(a_add(a_add(a_add(a_add(a_string("  ["), a_array_get(sg, a_string("priority"))), a_string("] ")), a_array_get(sg, a_string("type"))), a_string(" -- ")), a_array_get(sg, a_string("reason"))));
             a_release(sg);
         }
@@ -23579,15 +26488,15 @@ AValue fn_cmd_eval(AValue expr, AValue extra_args) {
     AValue __ret = a_void();
     expr = a_retain(expr);
     extra_args = a_retain(extra_args);
-#line 924 "src/cli.a"
+#line 935 "src/cli.a"
     { AValue __old = wrapped; wrapped = a_str_concat(a_string("fn main() {\n  println("), a_str_concat(expr, a_string(")\n}"))); a_release(__old); }
-#line 925 "src/cli.a"
+#line 936 "src/cli.a"
     { AValue __old = tmp; tmp = fn__tmp_path(a_string("_eval.a")); a_release(__old); }
-#line 926 "src/cli.a"
+#line 937 "src/cli.a"
     a_io_write_file(tmp, wrapped);
-#line 927 "src/cli.a"
+#line 938 "src/cli.a"
     fn_cmd_run(tmp, extra_args);
-#line 928 "src/cli.a"
+#line 939 "src/cli.a"
     a_fs_rm(tmp);
 __fn_cleanup:
     a_release(wrapped);
@@ -23600,16 +26509,16 @@ __fn_cleanup:
 AValue fn_cmd_lsp(void) {
     AValue lsp_source = {0};
     AValue __ret = a_void();
-#line 932 "src/cli.a"
+#line 943 "src/cli.a"
     { AValue __old = lsp_source; lsp_source = a_string("src/lsp.a"); a_release(__old); }
-#line 933 "src/cli.a"
+#line 944 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(lsp_source)))) {
-#line 934 "src/cli.a"
+#line 945 "src/cli.a"
         fn__die(a_string("cannot find src/lsp.a -- run from the project root"));
     }
-#line 936 "src/cli.a"
+#line 947 "src/cli.a"
     fn_cmd_build(lsp_source, a_string("a-lsp"));
-#line 937 "src/cli.a"
+#line 948 "src/cli.a"
     a_eprintln(a_string("configure your editor to run ./a-lsp as the language server for *.a files"));
 __fn_cleanup:
     a_release(lsp_source);
@@ -23620,24 +26529,24 @@ AValue fn__parse_source(AValue source_path) {
     AValue source = {0}, ast = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 941 "src/cli.a"
+#line 952 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 942 "src/cli.a"
+#line 953 "src/cli.a"
     if (a_truthy(a_or(a_eq(a_type_of(source), a_string("void")), a_eq(a_len(source), a_int(0))))) {
-#line 943 "src/cli.a"
+#line 954 "src/cli.a"
         fn__die(a_add(a_string("cannot read file: "), source_path));
     }
-#line 945 "src/cli.a"
+#line 956 "src/cli.a"
     { AValue __old = ast; ast = fn_parser_parse(source); a_release(__old); }
-#line 946 "src/cli.a"
+#line 957 "src/cli.a"
     if (a_truthy(a_and(a_eq(a_type_of(ast), a_string("map")), a_map_has(ast, a_string("tag"))))) {
-#line 947 "src/cli.a"
+#line 958 "src/cli.a"
         if (a_truthy(a_eq(a_array_get(ast, a_string("tag")), a_string("ParseError")))) {
-#line 948 "src/cli.a"
+#line 959 "src/cli.a"
             fn__die(fn__format_parse_error(source_path, ast));
         }
     }
-#line 951 "src/cli.a"
+#line 962 "src/cli.a"
     __ret = a_retain(ast); goto __fn_cleanup;
 __fn_cleanup:
     a_release(source);
@@ -23650,11 +26559,11 @@ AValue fn__fmt_file(AValue file_path) {
     AValue ast = {0}, formatted = {0};
     AValue __ret = a_void();
     file_path = a_retain(file_path);
-#line 955 "src/cli.a"
+#line 966 "src/cli.a"
     { AValue __old = ast; ast = fn__parse_source(file_path); a_release(__old); }
-#line 956 "src/cli.a"
+#line 967 "src/cli.a"
     { AValue __old = formatted; formatted = fn_emitter_emit(ast); a_release(__old); }
-#line 957 "src/cli.a"
+#line 968 "src/cli.a"
     a_io_write_file(file_path, formatted);
 __fn_cleanup:
     a_release(ast);
@@ -23667,19 +26576,19 @@ AValue fn__is_dir(AValue p) {
     AValue result = {0};
     AValue __ret = a_void();
     p = a_retain(p);
-#line 961 "src/cli.a"
+#line 972 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(p)))) {
-#line 961 "src/cli.a"
+#line 972 "src/cli.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 962 "src/cli.a"
+#line 973 "src/cli.a"
     if (a_truthy(a_str_ends_with(p, a_string(".a")))) {
-#line 962 "src/cli.a"
+#line 973 "src/cli.a"
         __ret = a_bool(0); goto __fn_cleanup;
     }
-#line 963 "src/cli.a"
+#line 974 "src/cli.a"
     { AValue __old = result; result = a_exec(a_add(a_add(a_string("test -d "), p), a_string(" && echo yes || echo no"))); a_release(__old); }
-#line 964 "src/cli.a"
+#line 975 "src/cli.a"
     __ret = a_eq(a_str_trim(a_array_get(result, a_string("stdout"))), a_string("yes")); goto __fn_cleanup;
 __fn_cleanup:
     a_release(result);
@@ -23691,28 +26600,28 @@ AValue fn__fmt_dir(AValue target) {
     AValue entries = {0}, i = {0}, name = {0}, full = {0};
     AValue __ret = a_void();
     target = a_retain(target);
-#line 968 "src/cli.a"
+#line 979 "src/cli.a"
     { AValue __old = entries; entries = a_fs_ls(target); a_release(__old); }
-#line 969 "src/cli.a"
+#line 980 "src/cli.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 970 "src/cli.a"
+#line 981 "src/cli.a"
     while (a_truthy(a_lt(i, a_len(entries)))) {
-#line 971 "src/cli.a"
+#line 982 "src/cli.a"
         { AValue __old = name; name = a_map_get(a_array_get(entries, i), a_string("name")); a_release(__old); }
-#line 972 "src/cli.a"
+#line 983 "src/cli.a"
         { AValue __old = full; full = fn_path_join(target, name); a_release(__old); }
-#line 973 "src/cli.a"
+#line 984 "src/cli.a"
         if (a_truthy(a_map_get(a_array_get(entries, i), a_string("is_dir")))) {
-#line 974 "src/cli.a"
+#line 985 "src/cli.a"
             fn__fmt_dir(full);
         } else {
-#line 976 "src/cli.a"
+#line 987 "src/cli.a"
             if (a_truthy(a_str_ends_with(name, a_string(".a")))) {
-#line 977 "src/cli.a"
+#line 988 "src/cli.a"
                 fn__fmt_file(full);
             }
         }
-#line 980 "src/cli.a"
+#line 991 "src/cli.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
 __fn_cleanup:
@@ -23727,23 +26636,23 @@ __fn_cleanup:
 AValue fn_cmd_fmt(AValue target) {
     AValue __ret = a_void();
     target = a_retain(target);
-#line 985 "src/cli.a"
+#line 996 "src/cli.a"
     if (a_truthy(fn__is_dir(target))) {
-#line 986 "src/cli.a"
+#line 997 "src/cli.a"
         fn__fmt_dir(target);
-#line 987 "src/cli.a"
+#line 998 "src/cli.a"
         a_println(a_add(a_add(fn_cli_green(a_string("formatted")), a_string(" ")), target));
-#line 988 "src/cli.a"
+#line 999 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 990 "src/cli.a"
+#line 1001 "src/cli.a"
     if (a_truthy(a_and(a_str_ends_with(target, a_string(".a")), a_fs_exists(target)))) {
-#line 991 "src/cli.a"
+#line 1002 "src/cli.a"
         fn__fmt_file(target);
-#line 992 "src/cli.a"
+#line 1003 "src/cli.a"
         a_println(a_add(a_add(fn_cli_green(a_string("formatted")), a_string(" ")), target));
     } else {
-#line 994 "src/cli.a"
+#line 1005 "src/cli.a"
         fn__die(a_add(a_string("expected a .a file or directory: "), target));
     }
 __fn_cleanup:
@@ -23755,9 +26664,9 @@ AValue fn_cmd_ast(AValue source_path) {
     AValue ast = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 999 "src/cli.a"
+#line 1010 "src/cli.a"
     { AValue __old = ast; ast = fn__parse_source(source_path); a_release(__old); }
-#line 1000 "src/cli.a"
+#line 1011 "src/cli.a"
     a_println(a_json_pretty(ast));
 __fn_cleanup:
     a_release(ast);
@@ -23765,77 +26674,172 @@ __fn_cleanup:
     return __ret;
 }
 
-AValue fn_cmd_check(AValue source_path) {
-    AValue ast = {0}, diagnostics = {0}, errors = {0}, warnings = {0}, sev = {0}, colored = {0}, plain = {0};
+AValue fn__collect_a_files(AValue target, AValue acc) {
+    AValue out = {0}, name = {0}, full = {0};
     AValue __ret = a_void();
-    source_path = a_retain(source_path);
-#line 1004 "src/cli.a"
-    { AValue __old = ast; ast = fn__parse_source(source_path); a_release(__old); }
-#line 1005 "src/cli.a"
-    { AValue __old = diagnostics; diagnostics = fn_checker_check(ast); a_release(__old); }
-#line 1006 "src/cli.a"
-    if (a_truthy(a_eq(a_len(diagnostics), a_int(0)))) {
-#line 1007 "src/cli.a"
-        a_println(fn_cli_green(a_string("no issues found")));
-#line 1008 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
+    target = a_retain(target);
+    acc = a_retain(acc);
+#line 1015 "src/cli.a"
+    if (a_truthy(a_not(fn__is_dir(target)))) {
+#line 1015 "src/cli.a"
+        __ret = a_array_push(acc, target); goto __fn_cleanup;
     }
-#line 1010 "src/cli.a"
-    { AValue __old = errors; errors = a_int(0); a_release(__old); }
-#line 1011 "src/cli.a"
-    { AValue __old = warnings; warnings = a_int(0); a_release(__old); }
-#line 1012 "src/cli.a"
-    {
-        AValue __iter_arr = a_iterable(diagnostics);
-        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
-            AValue d = {0}, sev = {0}, colored = {0}, plain = {0};
-            d = a_array_get(__iter_arr, a_int(__fi));
-#line 1013 "src/cli.a"
-            { AValue __old = sev; sev = a_map_get(d, a_string("severity")); a_release(__old); }
-#line 1014 "src/cli.a"
-            { AValue __old = colored; colored = fn_cli_yellow(sev); a_release(__old); }
-#line 1015 "src/cli.a"
-            if (a_truthy(a_eq(sev, a_string("error")))) {
-#line 1015 "src/cli.a"
-                { AValue __old = colored; colored = fn_cli_red(sev); a_release(__old); }
-            }
 #line 1016 "src/cli.a"
-            { AValue __old = plain; plain = fn_checker_format_diag(source_path, d); a_release(__old); }
+    { AValue __old = out; out = a_retain(acc); a_release(__old); }
 #line 1017 "src/cli.a"
-            a_eprintln(a_str_replace(plain, a_add(a_add(a_string(": "), sev), a_string(": ")), a_add(a_add(a_string(": "), colored), a_string(": "))));
+    {
+        AValue __iter_arr = a_iterable(a_fs_ls(target));
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue e = {0}, name = {0}, full = {0};
+            e = a_array_get(__iter_arr, a_int(__fi));
 #line 1018 "src/cli.a"
-            if (a_truthy(a_eq(sev, a_string("error")))) {
-#line 1018 "src/cli.a"
-                { AValue __old = errors; errors = a_add(errors, a_int(1)); a_release(__old); }
-            } else {
-#line 1018 "src/cli.a"
-                { AValue __old = warnings; warnings = a_add(warnings, a_int(1)); a_release(__old); }
+            { AValue __old = name; name = a_map_get(e, a_string("name")); a_release(__old); }
+#line 1019 "src/cli.a"
+            { AValue __old = full; full = fn_path_join(target, name); a_release(__old); }
+#line 1020 "src/cli.a"
+            if (a_truthy(a_map_get(e, a_string("is_dir")))) {
+#line 1021 "src/cli.a"
+                { AValue __old = out; out = fn__collect_a_files(full, out); a_release(__old); }
+            } else
+            if (a_truthy(a_str_ends_with(name, a_string(".a")))) {
+#line 1023 "src/cli.a"
+                out = a_array_push_move(out, full);
             }
-            a_release(d);
+            a_release(e);
+            a_release(name);
+            a_release(full);
+        }
+        a_release(__iter_arr);
+    }
+#line 1026 "src/cli.a"
+    __ret = a_retain(out); goto __fn_cleanup;
+__fn_cleanup:
+    a_release(out);
+    a_release(name);
+    a_release(full);
+    a_release(target);
+    a_release(acc);
+    return __ret;
+}
+
+AValue fn_cmd_check(AValue targets) {
+    AValue files = {0}, errors = {0}, warnings = {0}, source = {0}, ast = {0}, diags = {0}, sev = {0}, colored = {0}, plain = {0};
+    AValue __ret = a_void();
+    targets = a_retain(targets);
+#line 1032 "src/cli.a"
+    { AValue __old = files; files = a_array_new(0); a_release(__old); }
+#line 1033 "src/cli.a"
+    {
+        AValue __iter_arr = a_iterable(targets);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue t = {0};
+            t = a_array_get(__iter_arr, a_int(__fi));
+#line 1033 "src/cli.a"
+            { AValue __old = files; files = fn__collect_a_files(t, files); a_release(__old); }
+            a_release(t);
+        }
+        a_release(__iter_arr);
+    }
+#line 1034 "src/cli.a"
+    { AValue __old = errors; errors = a_int(0); a_release(__old); }
+#line 1035 "src/cli.a"
+    { AValue __old = warnings; warnings = a_int(0); a_release(__old); }
+#line 1036 "src/cli.a"
+    {
+        AValue __iter_arr = a_iterable(files);
+        for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+            AValue source_path = {0}, source = {0}, ast = {0}, diags = {0}, sev = {0}, colored = {0}, plain = {0};
+            source_path = a_array_get(__iter_arr, a_int(__fi));
+#line 1037 "src/cli.a"
+            { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
+#line 1038 "src/cli.a"
+            if (a_truthy(a_eq(a_type_of(source), a_string("void")))) {
+#line 1038 "src/cli.a"
+                fn__die(a_add(a_string("cannot read file: "), source_path));
+            }
+#line 1039 "src/cli.a"
+            { AValue __old = ast; ast = fn_parser_parse(source); a_release(__old); }
+#line 1040 "src/cli.a"
+            { AValue __old = diags; diags = a_array_new(0); a_release(__old); }
+#line 1041 "src/cli.a"
+            if (a_truthy(a_and(a_eq(a_type_of(ast), a_string("map")), a_eq(a_array_get(ast, a_string("tag")), a_string("ParseError"))))) {
+#line 1042 "src/cli.a"
+                { AValue __old = diags; diags = a_array_new(1, a_map_new(4, "severity", a_string("error"), "line", a_array_get(ast, a_string("line")), "col", a_array_get(ast, a_string("col")), "msg", a_array_get(ast, a_string("msg")))); a_release(__old); }
+            } else {
+#line 1044 "src/cli.a"
+                { AValue __old = diags; diags = fn_checker_check(ast); a_release(__old); }
+            }
+#line 1046 "src/cli.a"
+            {
+                AValue __iter_arr = a_iterable(diags);
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue d = {0}, sev = {0}, colored = {0}, plain = {0};
+                    d = a_array_get(__iter_arr, a_int(__fi));
+#line 1047 "src/cli.a"
+                    { AValue __old = sev; sev = a_map_get(d, a_string("severity")); a_release(__old); }
+#line 1048 "src/cli.a"
+                    { AValue __old = colored; colored = fn_cli_yellow(sev); a_release(__old); }
+#line 1049 "src/cli.a"
+                    if (a_truthy(a_eq(sev, a_string("error")))) {
+#line 1049 "src/cli.a"
+                        { AValue __old = colored; colored = fn_cli_red(sev); a_release(__old); }
+                    }
+#line 1050 "src/cli.a"
+                    { AValue __old = plain; plain = fn_checker_format_diag(source_path, d); a_release(__old); }
+#line 1051 "src/cli.a"
+                    a_eprintln(a_str_replace(plain, a_add(a_string(": "), sev), a_add(a_string(": "), colored)));
+#line 1052 "src/cli.a"
+                    if (a_truthy(a_eq(sev, a_string("error")))) {
+#line 1052 "src/cli.a"
+                        { AValue __old = errors; errors = a_add(errors, a_int(1)); a_release(__old); }
+                    } else {
+#line 1052 "src/cli.a"
+                        { AValue __old = warnings; warnings = a_add(warnings, a_int(1)); a_release(__old); }
+                    }
+                    a_release(d);
+                    a_release(sev);
+                    a_release(colored);
+                    a_release(plain);
+                }
+                a_release(__iter_arr);
+            }
+            a_release(source_path);
+            a_release(source);
+            a_release(ast);
+            a_release(diags);
             a_release(sev);
             a_release(colored);
             a_release(plain);
         }
         a_release(__iter_arr);
     }
-#line 1020 "src/cli.a"
+#line 1055 "src/cli.a"
+    if (a_truthy(a_and(a_eq(errors, a_int(0)), a_eq(warnings, a_int(0))))) {
+#line 1056 "src/cli.a"
+        a_println(a_add(a_add(a_add(fn_cli_green(a_string("no issues found")), a_string(" (")), a_to_str(a_len(files))), a_string(" file(s))")));
+#line 1057 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1059 "src/cli.a"
     a_println(a_string(""));
-#line 1021 "src/cli.a"
-    a_println(a_add(a_add(a_add(a_to_str(errors), a_string(" error(s), ")), a_to_str(warnings)), a_string(" warning(s)")));
-#line 1022 "src/cli.a"
+#line 1060 "src/cli.a"
+    a_println(a_add(a_add(a_add(a_add(a_add(a_to_str(errors), a_string(" error(s), ")), a_to_str(warnings)), a_string(" warning(s) in ")), a_to_str(a_len(files))), a_string(" file(s)")));
+#line 1061 "src/cli.a"
     if (a_truthy(a_gt(errors, a_int(0)))) {
-#line 1022 "src/cli.a"
+#line 1061 "src/cli.a"
         (exit((int)a_int(1).ival), a_void());
     }
 __fn_cleanup:
-    a_release(ast);
-    a_release(diagnostics);
+    a_release(files);
     a_release(errors);
     a_release(warnings);
+    a_release(source);
+    a_release(ast);
+    a_release(diags);
     a_release(sev);
     a_release(colored);
     a_release(plain);
-    a_release(source_path);
+    a_release(targets);
     return __ret;
 }
 
@@ -23845,40 +26849,40 @@ AValue fn__repl_build_source(AValue fns, AValue bindings, AValue expr) {
     fns = a_retain(fns);
     bindings = a_retain(bindings);
     expr = a_retain(expr);
-#line 1026 "src/cli.a"
+#line 1065 "src/cli.a"
     { AValue __old = lb; lb = a_from_code(a_int(123)); a_release(__old); }
-#line 1027 "src/cli.a"
+#line 1066 "src/cli.a"
     { AValue __old = rb; rb = a_from_code(a_int(125)); a_release(__old); }
-#line 1028 "src/cli.a"
+#line 1067 "src/cli.a"
     { AValue __old = src; src = a_string(""); a_release(__old); }
-#line 1029 "src/cli.a"
+#line 1068 "src/cli.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1030 "src/cli.a"
+#line 1069 "src/cli.a"
     while (a_truthy(a_lt(i, a_len(fns)))) {
-#line 1031 "src/cli.a"
+#line 1070 "src/cli.a"
         { AValue __old = src; src = a_add(a_add(src, a_array_get(fns, i)), a_string("\n")); a_release(__old); }
-#line 1032 "src/cli.a"
+#line 1071 "src/cli.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 1034 "src/cli.a"
+#line 1073 "src/cli.a"
     { AValue __old = src; src = a_add(a_add(a_add(src, a_string("fn main() ")), lb), a_string("\n")); a_release(__old); }
-#line 1035 "src/cli.a"
+#line 1074 "src/cli.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1036 "src/cli.a"
+#line 1075 "src/cli.a"
     while (a_truthy(a_lt(i, a_len(bindings)))) {
-#line 1037 "src/cli.a"
+#line 1076 "src/cli.a"
         { AValue __old = src; src = a_add(a_add(a_add(src, a_string("  ")), a_array_get(bindings, i)), a_string("\n")); a_release(__old); }
-#line 1038 "src/cli.a"
+#line 1077 "src/cli.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 1040 "src/cli.a"
+#line 1079 "src/cli.a"
     if (a_truthy(a_gt(a_len(expr), a_int(0)))) {
-#line 1041 "src/cli.a"
+#line 1080 "src/cli.a"
         { AValue __old = src; src = a_add(a_add(a_add(src, a_string("  ")), expr), a_string("\n")); a_release(__old); }
     }
-#line 1043 "src/cli.a"
+#line 1082 "src/cli.a"
     { AValue __old = src; src = a_add(a_add(src, rb), a_string("\n")); a_release(__old); }
-#line 1044 "src/cli.a"
+#line 1083 "src/cli.a"
     __ret = a_retain(src); goto __fn_cleanup;
 __fn_cleanup:
     a_release(lb);
@@ -23894,186 +26898,186 @@ __fn_cleanup:
 AValue fn_cmd_repl(void) {
     AValue runtime_dir = {0}, bindings = {0}, fns = {0}, line_buf = {0}, brace_depth = {0}, line = {0}, trimmed = {0}, bi = {0}, chars = {0}, ci = {0}, ch = {0}, input = {0}, src = {0}, tmp = {0}, c_path = {0}, bin_path = {0}, gcc_code = {0}, expr_line = {0}, result = {0};
     AValue __ret = a_void();
-#line 1048 "src/cli.a"
+#line 1087 "src/cli.a"
     { AValue __old = runtime_dir; runtime_dir = fn__find_runtime_dir(); a_release(__old); }
-#line 1049 "src/cli.a"
+#line 1088 "src/cli.a"
     { AValue __old = bindings; bindings = a_array_new(0); a_release(__old); }
-#line 1050 "src/cli.a"
+#line 1089 "src/cli.a"
     { AValue __old = fns; fns = a_array_new(0); a_release(__old); }
-#line 1051 "src/cli.a"
+#line 1090 "src/cli.a"
     { AValue __old = line_buf; line_buf = a_string(""); a_release(__old); }
-#line 1052 "src/cli.a"
+#line 1091 "src/cli.a"
     { AValue __old = brace_depth; brace_depth = a_int(0); a_release(__old); }
-#line 1053 "src/cli.a"
+#line 1092 "src/cli.a"
     a_println(a_string("a repl -- type :quit to exit, :clear to reset"));
-#line 1054 "src/cli.a"
+#line 1093 "src/cli.a"
     while (a_truthy(a_bool(1))) {
-#line 1055 "src/cli.a"
+#line 1094 "src/cli.a"
         if (a_truthy(a_gt(brace_depth, a_int(0)))) {
-#line 1056 "src/cli.a"
+#line 1095 "src/cli.a"
             a_print(a_string(".. "));
         } else {
-#line 1058 "src/cli.a"
+#line 1097 "src/cli.a"
             a_print(a_string("a> "));
         }
-#line 1060 "src/cli.a"
+#line 1099 "src/cli.a"
         a_io_flush();
-#line 1061 "src/cli.a"
+#line 1100 "src/cli.a"
         { AValue __old = line; line = a_io_read_line(); a_release(__old); }
-#line 1062 "src/cli.a"
+#line 1101 "src/cli.a"
         if (a_truthy(a_eq(a_type_of(line), a_string("void")))) {
-#line 1062 "src/cli.a"
+#line 1101 "src/cli.a"
             break;
         }
-#line 1063 "src/cli.a"
+#line 1102 "src/cli.a"
         { AValue __old = trimmed; trimmed = a_str_trim(line); a_release(__old); }
-#line 1065 "src/cli.a"
+#line 1104 "src/cli.a"
         if (a_truthy(a_eq(brace_depth, a_int(0)))) {
-#line 1066 "src/cli.a"
+#line 1105 "src/cli.a"
             if (a_truthy(a_or(a_eq(trimmed, a_string(":quit")), a_eq(trimmed, a_string(":q"))))) {
-#line 1066 "src/cli.a"
+#line 1105 "src/cli.a"
                 break;
             }
-#line 1067 "src/cli.a"
+#line 1106 "src/cli.a"
             if (a_truthy(a_eq(trimmed, a_string(":clear")))) {
-#line 1068 "src/cli.a"
+#line 1107 "src/cli.a"
                 { AValue __old = bindings; bindings = a_array_new(0); a_release(__old); }
-#line 1069 "src/cli.a"
+#line 1108 "src/cli.a"
                 { AValue __old = fns; fns = a_array_new(0); a_release(__old); }
-#line 1070 "src/cli.a"
+#line 1109 "src/cli.a"
                 a_println(a_string("state cleared"));
-#line 1071 "src/cli.a"
+#line 1110 "src/cli.a"
                 continue;
             }
-#line 1073 "src/cli.a"
+#line 1112 "src/cli.a"
             if (a_truthy(a_eq(trimmed, a_string(":bindings")))) {
-#line 1074 "src/cli.a"
+#line 1113 "src/cli.a"
                 { AValue __old = bi; bi = a_int(0); a_release(__old); }
-#line 1075 "src/cli.a"
+#line 1114 "src/cli.a"
                 while (a_truthy(a_lt(bi, a_len(bindings)))) {
-#line 1076 "src/cli.a"
+#line 1115 "src/cli.a"
                     a_println(a_add(a_string("  "), a_array_get(bindings, bi)));
-#line 1077 "src/cli.a"
+#line 1116 "src/cli.a"
                     { AValue __old = bi; bi = a_add(bi, a_int(1)); a_release(__old); }
                 }
-#line 1079 "src/cli.a"
-                continue;
-            }
-#line 1081 "src/cli.a"
-            if (a_truthy(a_eq(a_len(trimmed), a_int(0)))) {
-#line 1081 "src/cli.a"
-                continue;
-            }
-        }
-#line 1084 "src/cli.a"
-        { AValue __old = line_buf; line_buf = a_add(a_add(line_buf, line), a_string("\n")); a_release(__old); }
-#line 1085 "src/cli.a"
-        { AValue __old = chars; chars = a_str_chars(trimmed); a_release(__old); }
-#line 1086 "src/cli.a"
-        { AValue __old = ci; ci = a_int(0); a_release(__old); }
-#line 1087 "src/cli.a"
-        while (a_truthy(a_lt(ci, a_len(chars)))) {
-#line 1088 "src/cli.a"
-            { AValue __old = ch; ch = a_array_get(chars, ci); a_release(__old); }
-#line 1089 "src/cli.a"
-            if (a_truthy(a_eq(ch, a_from_code(a_int(123))))) {
-#line 1089 "src/cli.a"
-                { AValue __old = brace_depth; brace_depth = a_add(brace_depth, a_int(1)); a_release(__old); }
-            }
-#line 1090 "src/cli.a"
-            if (a_truthy(a_eq(ch, a_from_code(a_int(125))))) {
-#line 1090 "src/cli.a"
-                { AValue __old = brace_depth; brace_depth = a_sub(brace_depth, a_int(1)); a_release(__old); }
-            }
-#line 1091 "src/cli.a"
-            { AValue __old = ci; ci = a_add(ci, a_int(1)); a_release(__old); }
-        }
-#line 1094 "src/cli.a"
-        if (a_truthy(a_gt(brace_depth, a_int(0)))) {
-#line 1094 "src/cli.a"
-            continue;
-        }
-#line 1096 "src/cli.a"
-        { AValue __old = input; input = a_str_trim(line_buf); a_release(__old); }
-#line 1097 "src/cli.a"
-        { AValue __old = line_buf; line_buf = a_string(""); a_release(__old); }
-#line 1099 "src/cli.a"
-        if (a_truthy(a_str_starts_with(input, a_string("fn ")))) {
-#line 1100 "src/cli.a"
-            fns = a_array_push_move(fns, input);
-#line 1101 "src/cli.a"
-            continue;
-        }
-#line 1104 "src/cli.a"
-        if (a_truthy(a_str_starts_with(input, a_string("let ")))) {
-#line 1105 "src/cli.a"
-            { AValue __old = src; src = fn__repl_build_source(fns, a_array_push(bindings, input), a_string("")); a_release(__old); }
-#line 1106 "src/cli.a"
-            { AValue __old = tmp; tmp = fn__tmp_path(a_string("_repl.a")); a_release(__old); }
-#line 1107 "src/cli.a"
-            a_io_write_file(tmp, src);
-#line 1108 "src/cli.a"
-            { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
-#line 1109 "src/cli.a"
-            { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
-#line 1110 "src/cli.a"
-            fn__codegen_subprocess(tmp, c_path);
-#line 1111 "src/cli.a"
-            { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
-#line 1112 "src/cli.a"
-            a_fs_rm(tmp);
-#line 1113 "src/cli.a"
-            a_fs_rm(c_path);
-#line 1114 "src/cli.a"
-            if (a_truthy(a_neq(gcc_code, a_int(0)))) {
-#line 1115 "src/cli.a"
-                a_eprintln(a_add(fn_cli_red(a_string("error: ")), a_string("invalid binding")));
-            } else {
-#line 1117 "src/cli.a"
-                a_fs_rm(bin_path);
 #line 1118 "src/cli.a"
-                bindings = a_array_push_move(bindings, input);
+                continue;
             }
 #line 1120 "src/cli.a"
-            continue;
+            if (a_truthy(a_eq(a_len(trimmed), a_int(0)))) {
+#line 1120 "src/cli.a"
+                continue;
+            }
         }
 #line 1123 "src/cli.a"
-        { AValue __old = expr_line; expr_line = a_add(a_add(a_string("println(to_str("), input), a_string("))")); a_release(__old); }
+        { AValue __old = line_buf; line_buf = a_add(a_add(line_buf, line), a_string("\n")); a_release(__old); }
 #line 1124 "src/cli.a"
-        { AValue __old = src; src = fn__repl_build_source(fns, bindings, expr_line); a_release(__old); }
+        { AValue __old = chars; chars = a_str_chars(trimmed); a_release(__old); }
 #line 1125 "src/cli.a"
-        { AValue __old = tmp; tmp = fn__tmp_path(a_string("_repl.a")); a_release(__old); }
+        { AValue __old = ci; ci = a_int(0); a_release(__old); }
 #line 1126 "src/cli.a"
-        a_io_write_file(tmp, src);
+        while (a_truthy(a_lt(ci, a_len(chars)))) {
 #line 1127 "src/cli.a"
-        { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
+            { AValue __old = ch; ch = a_array_get(chars, ci); a_release(__old); }
 #line 1128 "src/cli.a"
-        { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
+            if (a_truthy(a_eq(ch, a_from_code(a_int(123))))) {
+#line 1128 "src/cli.a"
+                { AValue __old = brace_depth; brace_depth = a_add(brace_depth, a_int(1)); a_release(__old); }
+            }
 #line 1129 "src/cli.a"
-        fn__codegen_subprocess(tmp, c_path);
+            if (a_truthy(a_eq(ch, a_from_code(a_int(125))))) {
+#line 1129 "src/cli.a"
+                { AValue __old = brace_depth; brace_depth = a_sub(brace_depth, a_int(1)); a_release(__old); }
+            }
 #line 1130 "src/cli.a"
-        { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
-#line 1131 "src/cli.a"
-        a_fs_rm(tmp);
-#line 1132 "src/cli.a"
-        a_fs_rm(c_path);
+            { AValue __old = ci; ci = a_add(ci, a_int(1)); a_release(__old); }
+        }
 #line 1133 "src/cli.a"
+        if (a_truthy(a_gt(brace_depth, a_int(0)))) {
+#line 1133 "src/cli.a"
+            continue;
+        }
+#line 1135 "src/cli.a"
+        { AValue __old = input; input = a_str_trim(line_buf); a_release(__old); }
+#line 1136 "src/cli.a"
+        { AValue __old = line_buf; line_buf = a_string(""); a_release(__old); }
+#line 1138 "src/cli.a"
+        if (a_truthy(a_str_starts_with(input, a_string("fn ")))) {
+#line 1139 "src/cli.a"
+            fns = a_array_push_move(fns, input);
+#line 1140 "src/cli.a"
+            continue;
+        }
+#line 1143 "src/cli.a"
+        if (a_truthy(a_str_starts_with(input, a_string("let ")))) {
+#line 1144 "src/cli.a"
+            { AValue __old = src; src = fn__repl_build_source(fns, a_array_push(bindings, input), a_string("")); a_release(__old); }
+#line 1145 "src/cli.a"
+            { AValue __old = tmp; tmp = fn__tmp_path(a_string("_repl.a")); a_release(__old); }
+#line 1146 "src/cli.a"
+            a_io_write_file(tmp, src);
+#line 1147 "src/cli.a"
+            { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
+#line 1148 "src/cli.a"
+            { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
+#line 1149 "src/cli.a"
+            fn__codegen_subprocess(tmp, c_path);
+#line 1150 "src/cli.a"
+            { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
+#line 1151 "src/cli.a"
+            a_fs_rm(tmp);
+#line 1152 "src/cli.a"
+            a_fs_rm(c_path);
+#line 1153 "src/cli.a"
+            if (a_truthy(a_neq(gcc_code, a_int(0)))) {
+#line 1154 "src/cli.a"
+                a_eprintln(a_add(fn_cli_red(a_string("error: ")), a_string("invalid binding")));
+            } else {
+#line 1156 "src/cli.a"
+                a_fs_rm(bin_path);
+#line 1157 "src/cli.a"
+                bindings = a_array_push_move(bindings, input);
+            }
+#line 1159 "src/cli.a"
+            continue;
+        }
+#line 1162 "src/cli.a"
+        { AValue __old = expr_line; expr_line = a_add(a_add(a_string("println(to_str("), input), a_string("))")); a_release(__old); }
+#line 1163 "src/cli.a"
+        { AValue __old = src; src = fn__repl_build_source(fns, bindings, expr_line); a_release(__old); }
+#line 1164 "src/cli.a"
+        { AValue __old = tmp; tmp = fn__tmp_path(a_string("_repl.a")); a_release(__old); }
+#line 1165 "src/cli.a"
+        a_io_write_file(tmp, src);
+#line 1166 "src/cli.a"
+        { AValue __old = c_path; c_path = fn__tmp_path(a_string("_repl.c")); a_release(__old); }
+#line 1167 "src/cli.a"
+        { AValue __old = bin_path; bin_path = fn__tmp_path(a_string("_repl")); a_release(__old); }
+#line 1168 "src/cli.a"
+        fn__codegen_subprocess(tmp, c_path);
+#line 1169 "src/cli.a"
+        { AValue __old = gcc_code; gcc_code = fn__gcc_try(c_path, bin_path, runtime_dir); a_release(__old); }
+#line 1170 "src/cli.a"
+        a_fs_rm(tmp);
+#line 1171 "src/cli.a"
+        a_fs_rm(c_path);
+#line 1172 "src/cli.a"
         if (a_truthy(a_neq(gcc_code, a_int(0)))) {
-#line 1134 "src/cli.a"
+#line 1173 "src/cli.a"
             a_eprintln(a_add(fn_cli_red(a_string("error: ")), a_string("cannot evaluate expression")));
         } else {
-#line 1136 "src/cli.a"
+#line 1175 "src/cli.a"
             { AValue __old = result; result = a_exec(bin_path); a_release(__old); }
-#line 1137 "src/cli.a"
+#line 1176 "src/cli.a"
             a_fs_rm(bin_path);
-#line 1138 "src/cli.a"
+#line 1177 "src/cli.a"
             if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-#line 1138 "src/cli.a"
+#line 1177 "src/cli.a"
                 a_print(a_array_get(result, a_string("stdout")));
             }
-#line 1139 "src/cli.a"
+#line 1178 "src/cli.a"
             if (a_truthy(a_neq(a_array_get(result, a_string("code")), a_int(0)))) {
-#line 1140 "src/cli.a"
+#line 1179 "src/cli.a"
                 a_eprintln(a_add(a_add(a_add(fn_cli_red(a_string("runtime error")), a_string(" (exit ")), a_to_str(a_array_get(result, a_string("code")))), a_string(")")));
             }
         }
@@ -24104,11 +27108,11 @@ __fn_cleanup:
 AValue fn_cmd_pkg_init(void) {
     AValue dir = {0};
     AValue __ret = a_void();
-#line 1147 "src/cli.a"
+#line 1186 "src/cli.a"
     { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
-#line 1148 "src/cli.a"
+#line 1187 "src/cli.a"
     fn_pkg_init(dir);
-#line 1149 "src/cli.a"
+#line 1188 "src/cli.a"
     a_println(a_add(a_string("created pkg.toml in "), dir));
 __fn_cleanup:
     a_release(dir);
@@ -24120,9 +27124,9 @@ AValue fn_cmd_pkg_add(AValue name, AValue source) {
     AValue __ret = a_void();
     name = a_retain(name);
     source = a_retain(source);
-#line 1153 "src/cli.a"
+#line 1192 "src/cli.a"
     { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
-#line 1154 "src/cli.a"
+#line 1193 "src/cli.a"
     fn_pkg_add_dep(dir, name, source);
 __fn_cleanup:
     a_release(dir);
@@ -24134,11 +27138,11 @@ __fn_cleanup:
 AValue fn_cmd_pkg_install(void) {
     AValue dir = {0}, result = {0};
     AValue __ret = a_void();
-#line 1158 "src/cli.a"
+#line 1197 "src/cli.a"
     { AValue __old = dir; dir = a_fs_cwd(); a_release(__old); }
-#line 1159 "src/cli.a"
+#line 1198 "src/cli.a"
     { AValue __old = result; result = fn_pkg_install(dir); a_release(__old); }
-#line 1160 "src/cli.a"
+#line 1199 "src/cli.a"
     a_println(a_add(a_add(a_string("done ("), a_to_str(a_map_get(result, a_string("installed")))), a_string(" packages installed)")));
 __fn_cleanup:
     a_release(dir);
@@ -24150,36 +27154,36 @@ AValue fn__collect_watch_files(AValue source_path) {
     AValue files = {0}, source = {0}, lines = {0}, trimmed = {0}, mod_path = {0}, parts = {0}, file = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 1164 "src/cli.a"
+#line 1203 "src/cli.a"
     { AValue __old = files; files = a_array_new(1, source_path); a_release(__old); }
-#line 1165 "src/cli.a"
+#line 1204 "src/cli.a"
     { AValue __old = source; source = a_io_read_file(source_path); a_release(__old); }
-#line 1166 "src/cli.a"
+#line 1205 "src/cli.a"
     if (a_truthy(a_eq(a_type_of(source), a_string("void")))) {
-#line 1166 "src/cli.a"
+#line 1205 "src/cli.a"
         __ret = a_retain(files); goto __fn_cleanup;
     }
-#line 1167 "src/cli.a"
+#line 1206 "src/cli.a"
     { AValue __old = lines; lines = a_str_lines(source); a_release(__old); }
-#line 1168 "src/cli.a"
+#line 1207 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(lines);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue line = {0}, trimmed = {0}, mod_path = {0}, parts = {0}, file = {0};
             line = a_array_get(__iter_arr, a_int(__fi));
-#line 1169 "src/cli.a"
+#line 1208 "src/cli.a"
             { AValue __old = trimmed; trimmed = a_str_trim(line); a_release(__old); }
-#line 1170 "src/cli.a"
+#line 1209 "src/cli.a"
             if (a_truthy(a_str_starts_with(trimmed, a_string("use ")))) {
-#line 1171 "src/cli.a"
+#line 1210 "src/cli.a"
                 { AValue __old = mod_path; mod_path = a_str_trim(a_str_slice(trimmed, a_int(4), a_len(trimmed))); a_release(__old); }
-#line 1172 "src/cli.a"
+#line 1211 "src/cli.a"
                 { AValue __old = parts; parts = a_str_split(mod_path, a_string(".")); a_release(__old); }
-#line 1173 "src/cli.a"
+#line 1212 "src/cli.a"
                 { AValue __old = file; file = a_add(a_str_join(parts, a_string("/")), a_string(".a")); a_release(__old); }
-#line 1174 "src/cli.a"
+#line 1213 "src/cli.a"
                 if (a_truthy(a_fs_exists(file))) {
-#line 1175 "src/cli.a"
+#line 1214 "src/cli.a"
                     files = a_array_push_move(files, file);
                 }
             }
@@ -24191,7 +27195,7 @@ AValue fn__collect_watch_files(AValue source_path) {
         }
         a_release(__iter_arr);
     }
-#line 1179 "src/cli.a"
+#line 1218 "src/cli.a"
     __ret = a_retain(files); goto __fn_cleanup;
 __fn_cleanup:
     a_release(files);
@@ -24209,22 +27213,22 @@ AValue fn__get_mtimes(AValue files) {
     AValue mtimes = {0}, s = {0};
     AValue __ret = a_void();
     files = a_retain(files);
-#line 1183 "src/cli.a"
+#line 1222 "src/cli.a"
     { AValue __old = mtimes; mtimes = a_array_new(0); a_release(__old); }
-#line 1184 "src/cli.a"
+#line 1223 "src/cli.a"
     {
         AValue __iter_arr = a_iterable(files);
         for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
             AValue f = {0}, s = {0};
             f = a_array_get(__iter_arr, a_int(__fi));
-#line 1185 "src/cli.a"
+#line 1224 "src/cli.a"
             { AValue __old = s; s = a_fs_stat(f); a_release(__old); }
-#line 1186 "src/cli.a"
+#line 1225 "src/cli.a"
             if (a_truthy(a_eq(a_type_of(s), a_string("map")))) {
-#line 1187 "src/cli.a"
+#line 1226 "src/cli.a"
                 mtimes = a_array_push_move(mtimes, a_array_get(s, a_string("mtime")));
             } else {
-#line 1189 "src/cli.a"
+#line 1228 "src/cli.a"
                 mtimes = a_array_push_move(mtimes, a_int(0));
             }
             a_release(f);
@@ -24232,7 +27236,7 @@ AValue fn__get_mtimes(AValue files) {
         }
         a_release(__iter_arr);
     }
-#line 1192 "src/cli.a"
+#line 1231 "src/cli.a"
     __ret = a_retain(mtimes); goto __fn_cleanup;
 __fn_cleanup:
     a_release(mtimes);
@@ -24246,24 +27250,24 @@ AValue fn__mtimes_changed(AValue old_mt, AValue new_mt) {
     AValue __ret = a_void();
     old_mt = a_retain(old_mt);
     new_mt = a_retain(new_mt);
-#line 1196 "src/cli.a"
+#line 1235 "src/cli.a"
     if (a_truthy(a_neq(a_len(old_mt), a_len(new_mt)))) {
-#line 1196 "src/cli.a"
+#line 1235 "src/cli.a"
         __ret = a_bool(1); goto __fn_cleanup;
     }
-#line 1197 "src/cli.a"
+#line 1236 "src/cli.a"
     { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1198 "src/cli.a"
+#line 1237 "src/cli.a"
     while (a_truthy(a_lt(i, a_len(old_mt)))) {
-#line 1199 "src/cli.a"
+#line 1238 "src/cli.a"
         if (a_truthy(a_neq(a_array_get(old_mt, i), a_array_get(new_mt, i)))) {
-#line 1199 "src/cli.a"
+#line 1238 "src/cli.a"
             __ret = a_bool(1); goto __fn_cleanup;
         }
-#line 1200 "src/cli.a"
+#line 1239 "src/cli.a"
         { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
     }
-#line 1202 "src/cli.a"
+#line 1241 "src/cli.a"
     __ret = a_bool(0); goto __fn_cleanup;
 __fn_cleanup:
     a_release(i);
@@ -24276,62 +27280,62 @@ AValue fn_cmd_watch(AValue source_path) {
     AValue self = {0}, files = {0}, mtimes = {0}, r = {0}, new_files = {0}, new_mtimes = {0}, result = {0};
     AValue __ret = a_void();
     source_path = a_retain(source_path);
-#line 1206 "src/cli.a"
+#line 1245 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(source_path)))) {
-#line 1207 "src/cli.a"
+#line 1246 "src/cli.a"
         fn__die(a_add(a_string("watch: file not found: "), source_path));
     }
-#line 1209 "src/cli.a"
+#line 1248 "src/cli.a"
     { AValue __old = self; self = a_argv0(); a_release(__old); }
-#line 1210 "src/cli.a"
+#line 1249 "src/cli.a"
     { AValue __old = files; files = fn__collect_watch_files(source_path); a_release(__old); }
-#line 1211 "src/cli.a"
+#line 1250 "src/cli.a"
     { AValue __old = mtimes; mtimes = fn__get_mtimes(files); a_release(__old); }
-#line 1213 "src/cli.a"
+#line 1252 "src/cli.a"
     a_eprintln(fn_cli_dim(a_add(a_add(a_string("[watch] watching "), a_to_str(a_len(files))), a_string(" file(s), press Ctrl+C to stop"))));
-#line 1215 "src/cli.a"
+#line 1254 "src/cli.a"
     { AValue __old = r; r = a_exec(a_add(a_add(self, a_string(" run ")), source_path)); a_release(__old); }
-#line 1216 "src/cli.a"
+#line 1255 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stdout"))), a_int(0)))) {
-#line 1216 "src/cli.a"
+#line 1255 "src/cli.a"
         a_print(a_array_get(r, a_string("stdout")));
     }
-#line 1217 "src/cli.a"
+#line 1256 "src/cli.a"
     if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stderr"))), a_int(0)))) {
-#line 1217 "src/cli.a"
+#line 1256 "src/cli.a"
         a_eprintln(a_array_get(r, a_string("stderr")));
     }
-#line 1218 "src/cli.a"
+#line 1257 "src/cli.a"
     a_io_flush();
-#line 1221 "src/cli.a"
+#line 1260 "src/cli.a"
     while (a_truthy(a_bool(1))) {
-#line 1222 "src/cli.a"
+#line 1261 "src/cli.a"
         a_time_sleep(a_int(500));
-#line 1223 "src/cli.a"
+#line 1262 "src/cli.a"
         { AValue __old = new_files; new_files = fn__collect_watch_files(source_path); a_release(__old); }
-#line 1224 "src/cli.a"
+#line 1263 "src/cli.a"
         { AValue __old = new_mtimes; new_mtimes = fn__get_mtimes(new_files); a_release(__old); }
-#line 1226 "src/cli.a"
+#line 1265 "src/cli.a"
         if (a_truthy(a_or(fn__mtimes_changed(mtimes, new_mtimes), a_neq(a_len(new_files), a_len(files))))) {
-#line 1227 "src/cli.a"
+#line 1266 "src/cli.a"
             a_eprintln(fn_cli_dim(a_string("[watch] change detected, restarting...")));
-#line 1228 "src/cli.a"
+#line 1267 "src/cli.a"
             { AValue __old = files; files = a_retain(new_files); a_release(__old); }
-#line 1229 "src/cli.a"
+#line 1268 "src/cli.a"
             { AValue __old = mtimes; mtimes = fn__get_mtimes(files); a_release(__old); }
-#line 1230 "src/cli.a"
+#line 1269 "src/cli.a"
             { AValue __old = result; result = a_exec(a_add(a_add(self, a_string(" run ")), source_path)); a_release(__old); }
-#line 1231 "src/cli.a"
+#line 1270 "src/cli.a"
             if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-#line 1231 "src/cli.a"
+#line 1270 "src/cli.a"
                 a_print(a_array_get(result, a_string("stdout")));
             }
-#line 1232 "src/cli.a"
+#line 1271 "src/cli.a"
             if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
-#line 1232 "src/cli.a"
+#line 1271 "src/cli.a"
                 a_eprintln(a_array_get(result, a_string("stderr")));
             }
-#line 1233 "src/cli.a"
+#line 1272 "src/cli.a"
             a_io_flush();
         }
     }
@@ -24352,34 +27356,34 @@ AValue fn_cmd_spawn(AValue source, AValue agent_name) {
     AValue __ret = a_void();
     source = a_retain(source);
     agent_name = a_retain(agent_name);
-#line 1239 "src/cli.a"
+#line 1278 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(source)))) {
-#line 1240 "src/cli.a"
+#line 1279 "src/cli.a"
         fn__die(a_add(a_string("spawn: file not found: "), source));
     }
-#line 1242 "src/cli.a"
+#line 1281 "src/cli.a"
     { AValue __old = self; self = a_argv0(); a_release(__old); }
-#line 1243 "src/cli.a"
+#line 1282 "src/cli.a"
     { AValue __old = bin_name; bin_name = a_add(a_string(".a_cache/agent_"), agent_name); a_release(__old); }
-#line 1244 "src/cli.a"
+#line 1283 "src/cli.a"
     { AValue __old = build_result; build_result = a_exec(a_add(a_add(a_add(a_add(self, a_string(" build ")), source), a_string(" -o ")), bin_name)); a_release(__old); }
-#line 1245 "src/cli.a"
+#line 1284 "src/cli.a"
     if (a_truthy(a_neq(a_array_get(build_result, a_string("code")), a_int(0)))) {
-#line 1246 "src/cli.a"
+#line 1285 "src/cli.a"
         a_eprintln(a_array_get(build_result, a_string("stderr")));
-#line 1247 "src/cli.a"
+#line 1286 "src/cli.a"
         fn__die(a_string("spawn: build failed"));
     }
-#line 1251 "src/cli.a"
+#line 1290 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(a_string("/tmp/a_agents"))))) {
-#line 1252 "src/cli.a"
+#line 1291 "src/cli.a"
         a_fs_mkdir(a_string("/tmp/a_agents"));
     }
-#line 1256 "src/cli.a"
+#line 1295 "src/cli.a"
     { AValue __old = run_cmd; run_cmd = a_add(a_add(a_add(a_add(a_string("A_AGENT_NAME="), agent_name), a_string(" ")), bin_name), a_string(" &")); a_release(__old); }
-#line 1257 "src/cli.a"
+#line 1296 "src/cli.a"
     a_exec(run_cmd);
-#line 1259 "src/cli.a"
+#line 1298 "src/cli.a"
     a_eprintln(a_add(a_add(a_add(a_add(fn_cli_green(a_string("[spawn]")), a_string(" launched agent ")), fn_cli_bold(agent_name)), a_string(" from ")), source));
 __fn_cleanup:
     a_release(self);
@@ -24395,7 +27399,7 @@ AValue fn__agent_log(AValue name, AValue msg) {
     AValue __ret = a_void();
     name = a_retain(name);
     msg = a_retain(msg);
-#line 1263 "src/cli.a"
+#line 1302 "src/cli.a"
     a_eprintln(a_add(a_add(a_add(a_add(fn_cli_dim(a_string("[agent]")), a_string(" ")), fn_cli_bold(name)), a_string(" ")), msg));
 __fn_cleanup:
     a_release(name);
@@ -24411,144 +27415,144 @@ AValue fn_cmd_agent(AValue source, AValue agent_name, AValue health_port, AValue
     health_port = a_retain(health_port);
     max_restarts = a_retain(max_restarts);
     no_restart = a_retain(no_restart);
-#line 1267 "src/cli.a"
+#line 1306 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(source)))) {
-#line 1268 "src/cli.a"
+#line 1307 "src/cli.a"
         fn__die(a_add(a_string("agent: file not found: "), source));
     }
-#line 1270 "src/cli.a"
+#line 1309 "src/cli.a"
     { AValue __old = self; self = a_argv0(); a_release(__old); }
-#line 1273 "src/cli.a"
+#line 1312 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(a_string(".a_cache"))))) {
-#line 1273 "src/cli.a"
+#line 1312 "src/cli.a"
         a_fs_mkdir(a_string(".a_cache"));
     }
-#line 1274 "src/cli.a"
+#line 1313 "src/cli.a"
     if (a_truthy(a_not(a_fs_exists(a_string("/tmp/a_agents"))))) {
-#line 1274 "src/cli.a"
+#line 1313 "src/cli.a"
         a_fs_mkdir(a_string("/tmp/a_agents"));
     }
-#line 1277 "src/cli.a"
+#line 1316 "src/cli.a"
     { AValue __old = bin; bin = a_add(a_string(".a_cache/agent_"), agent_name); a_release(__old); }
-#line 1278 "src/cli.a"
+#line 1317 "src/cli.a"
     { AValue __old = build_r; build_r = a_exec(a_add(a_add(a_add(a_add(self, a_string(" build ")), source), a_string(" -o ")), bin)); a_release(__old); }
-#line 1279 "src/cli.a"
+#line 1318 "src/cli.a"
     if (a_truthy(a_neq(a_array_get(build_r, a_string("code")), a_int(0)))) {
-#line 1280 "src/cli.a"
+#line 1319 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(build_r, a_string("stderr"))), a_int(0)))) {
-#line 1280 "src/cli.a"
+#line 1319 "src/cli.a"
             a_eprintln(a_array_get(build_r, a_string("stderr")));
         }
-#line 1281 "src/cli.a"
+#line 1320 "src/cli.a"
         fn__die(a_string("agent: build failed"));
     }
-#line 1285 "src/cli.a"
+#line 1324 "src/cli.a"
     { AValue __old = pid_file; pid_file = a_add(a_add(a_string("/tmp/a_agents/"), agent_name), a_string(".pid")); a_release(__old); }
-#line 1286 "src/cli.a"
+#line 1325 "src/cli.a"
     a_io_write_file(pid_file, a_to_str(a_reflect_pid()));
-#line 1288 "src/cli.a"
+#line 1327 "src/cli.a"
     fn__agent_log(agent_name, a_add(a_add(a_string("supervisor started (pid "), a_to_str(a_reflect_pid())), a_string(")")));
-#line 1290 "src/cli.a"
+#line 1329 "src/cli.a"
     { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
-#line 1291 "src/cli.a"
+#line 1330 "src/cli.a"
     { AValue __old = running; running = a_bool(1); a_release(__old); }
-#line 1293 "src/cli.a"
+#line 1332 "src/cli.a"
     while (a_truthy(running)) {
-#line 1294 "src/cli.a"
+#line 1333 "src/cli.a"
         { AValue __old = start_time; start_time = a_time_now(); a_release(__old); }
-#line 1295 "src/cli.a"
+#line 1334 "src/cli.a"
         fn__agent_log(agent_name, a_string("starting agent process"));
-#line 1297 "src/cli.a"
+#line 1336 "src/cli.a"
         { AValue __old = env_prefix; env_prefix = a_add(a_add(a_add(a_string("A_AGENT_NAME="), agent_name), a_string(" A_COMPILER=")), self); a_release(__old); }
-#line 1298 "src/cli.a"
+#line 1337 "src/cli.a"
         if (a_truthy(a_gt(health_port, a_int(0)))) {
-#line 1299 "src/cli.a"
+#line 1338 "src/cli.a"
             { AValue __old = env_prefix; env_prefix = a_add(a_add(env_prefix, a_string(" A_AGENT_PORT=")), a_to_str(health_port)); a_release(__old); }
         }
-#line 1302 "src/cli.a"
+#line 1341 "src/cli.a"
         { AValue __old = result; result = a_exec(a_add(a_add(env_prefix, a_string(" ")), bin)); a_release(__old); }
-#line 1305 "src/cli.a"
+#line 1344 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stdout"))), a_int(0)))) {
-#line 1305 "src/cli.a"
+#line 1344 "src/cli.a"
             a_print(a_array_get(result, a_string("stdout")));
         }
-#line 1306 "src/cli.a"
+#line 1345 "src/cli.a"
         if (a_truthy(a_gt(a_len(a_array_get(result, a_string("stderr"))), a_int(0)))) {
-#line 1306 "src/cli.a"
+#line 1345 "src/cli.a"
             a_eprintln(a_array_get(result, a_string("stderr")));
         }
-#line 1308 "src/cli.a"
+#line 1347 "src/cli.a"
         { AValue __old = code; code = a_array_get(result, a_string("code")); a_release(__old); }
-#line 1309 "src/cli.a"
+#line 1348 "src/cli.a"
         { AValue __old = uptime; uptime = a_sub(a_time_now(), start_time); a_release(__old); }
-#line 1311 "src/cli.a"
+#line 1350 "src/cli.a"
         if (a_truthy(a_eq(code, a_int(42)))) {
-#line 1313 "src/cli.a"
+#line 1352 "src/cli.a"
             fn__agent_log(agent_name, a_string("update requested, rebuilding..."));
-#line 1314 "src/cli.a"
+#line 1353 "src/cli.a"
             { AValue __old = rebuild; rebuild = a_exec(a_add(a_add(a_add(a_add(self, a_string(" build ")), source), a_string(" -o ")), bin)); a_release(__old); }
-#line 1315 "src/cli.a"
+#line 1354 "src/cli.a"
             if (a_truthy(a_neq(a_array_get(rebuild, a_string("code")), a_int(0)))) {
-#line 1316 "src/cli.a"
+#line 1355 "src/cli.a"
                 fn__agent_log(agent_name, a_string("rebuild failed, restarting with old binary"));
             } else {
-#line 1318 "src/cli.a"
+#line 1357 "src/cli.a"
                 fn__agent_log(agent_name, a_string("rebuild succeeded"));
             }
-#line 1320 "src/cli.a"
+#line 1359 "src/cli.a"
             { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
         } else
         if (a_truthy(a_or(a_eq(code, a_int(0)), no_restart))) {
-#line 1322 "src/cli.a"
+#line 1361 "src/cli.a"
             fn__agent_log(agent_name, a_add(a_add(a_string("exited (code "), a_to_str(code)), a_string("), stopping")));
-#line 1323 "src/cli.a"
+#line 1362 "src/cli.a"
             { AValue __old = running; running = a_bool(0); a_release(__old); }
         } else {
-#line 1325 "src/cli.a"
+#line 1364 "src/cli.a"
             fn__agent_log(agent_name, a_add(a_add(a_add(a_add(a_string("crashed (exit "), a_to_str(code)), a_string(", uptime ")), a_to_str(a_div(uptime, a_int(1000)))), a_string("s)")));
-#line 1328 "src/cli.a"
+#line 1367 "src/cli.a"
             if (a_truthy(a_gt(uptime, a_int(60000)))) {
-#line 1329 "src/cli.a"
+#line 1368 "src/cli.a"
                 { AValue __old = restarts; restarts = a_int(0); a_release(__old); }
             }
-#line 1332 "src/cli.a"
+#line 1371 "src/cli.a"
             { AValue __old = restarts; restarts = a_add(restarts, a_int(1)); a_release(__old); }
-#line 1333 "src/cli.a"
+#line 1372 "src/cli.a"
             if (a_truthy(a_and(a_gt(max_restarts, a_int(0)), a_gteq(restarts, max_restarts)))) {
-#line 1334 "src/cli.a"
+#line 1373 "src/cli.a"
                 fn__agent_log(agent_name, a_add(a_add(a_string("max restarts ("), a_to_str(max_restarts)), a_string(") reached, giving up")));
-#line 1335 "src/cli.a"
+#line 1374 "src/cli.a"
                 { AValue __old = running; running = a_bool(0); a_release(__old); }
             } else {
-#line 1338 "src/cli.a"
+#line 1377 "src/cli.a"
                 { AValue __old = backoff; backoff = a_int(1000); a_release(__old); }
-#line 1339 "src/cli.a"
+#line 1378 "src/cli.a"
                 { AValue __old = e; e = a_int(0); a_release(__old); }
-#line 1340 "src/cli.a"
+#line 1379 "src/cli.a"
                 while (a_truthy(a_lt(e, a_sub(restarts, a_int(1))))) {
-#line 1341 "src/cli.a"
+#line 1380 "src/cli.a"
                     { AValue __old = backoff; backoff = a_mul(backoff, a_int(2)); a_release(__old); }
-#line 1342 "src/cli.a"
+#line 1381 "src/cli.a"
                     { AValue __old = e; e = a_add(e, a_int(1)); a_release(__old); }
                 }
-#line 1344 "src/cli.a"
+#line 1383 "src/cli.a"
                 if (a_truthy(a_gt(backoff, a_int(30000)))) {
-#line 1344 "src/cli.a"
+#line 1383 "src/cli.a"
                     { AValue __old = backoff; backoff = a_int(30000); a_release(__old); }
                 }
-#line 1345 "src/cli.a"
+#line 1384 "src/cli.a"
                 fn__agent_log(agent_name, a_add(a_add(a_add(a_add(a_string("restarting in "), a_to_str(a_div(backoff, a_int(1000)))), a_string("s (attempt ")), a_to_str(restarts)), a_string(")")));
-#line 1346 "src/cli.a"
+#line 1385 "src/cli.a"
                 a_time_sleep(backoff);
             }
         }
     }
-#line 1352 "src/cli.a"
+#line 1391 "src/cli.a"
     if (a_truthy(a_fs_exists(pid_file))) {
-#line 1352 "src/cli.a"
+#line 1391 "src/cli.a"
         a_fs_rm(pid_file);
     }
-#line 1353 "src/cli.a"
+#line 1392 "src/cli.a"
     fn__agent_log(agent_name, a_string("supervisor stopped"));
 __fn_cleanup:
     a_release(self);
@@ -24577,143 +27581,143 @@ AValue fn_cmd_plugin(AValue argv) {
     AValue sub = {0}, source = {0}, result = {0}, repo = {0}, info = {0}, plugins = {0}, i = {0}, p = {0}, r = {0};
     AValue __ret = a_void();
     argv = a_retain(argv);
-#line 1357 "src/cli.a"
+#line 1396 "src/cli.a"
     if (a_truthy(a_lt(a_len(argv), a_int(1)))) {
-#line 1357 "src/cli.a"
+#line 1396 "src/cli.a"
         fn__die(a_string("usage: a plugin <install|list|remove|init|run>"));
     }
-#line 1358 "src/cli.a"
+#line 1397 "src/cli.a"
     { AValue __old = sub; sub = a_array_get(argv, a_int(0)); a_release(__old); }
-#line 1360 "src/cli.a"
+#line 1399 "src/cli.a"
     if (a_truthy(a_eq(sub, a_string("install")))) {
-#line 1361 "src/cli.a"
+#line 1400 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1361 "src/cli.a"
+#line 1400 "src/cli.a"
             fn__die(a_string("usage: a plugin install <dir|git:user/repo>"));
         }
-#line 1362 "src/cli.a"
+#line 1401 "src/cli.a"
         { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1363 "src/cli.a"
+#line 1402 "src/cli.a"
         { AValue __old = result; result = a_err(a_string("unknown")); a_release(__old); }
-#line 1364 "src/cli.a"
+#line 1403 "src/cli.a"
         if (a_truthy(a_or(a_str_starts_with(source, a_string("git:")), a_str_starts_with(source, a_string("github:"))))) {
-#line 1365 "src/cli.a"
+#line 1404 "src/cli.a"
             { AValue __old = repo; repo = a_str_replace(a_str_replace(source, a_string("git:"), a_string("")), a_string("github:"), a_string("")); a_release(__old); }
-#line 1366 "src/cli.a"
+#line 1405 "src/cli.a"
             { AValue __old = result; result = fn_plugin_install_git(repo); a_release(__old); }
         } else {
-#line 1368 "src/cli.a"
+#line 1407 "src/cli.a"
             { AValue __old = result; result = fn_plugin_install(source); a_release(__old); }
         }
-#line 1370 "src/cli.a"
+#line 1409 "src/cli.a"
         if (a_truthy(a_is_ok(result))) {
-#line 1371 "src/cli.a"
+#line 1410 "src/cli.a"
             { AValue __old = info; info = a_unwrap(result); a_release(__old); }
-#line 1372 "src/cli.a"
+#line 1411 "src/cli.a"
             a_eprintln(a_add(a_add(a_add(a_add(fn_cli_green(a_string("[plugin]")), a_string(" installed ")), fn_cli_bold(a_array_get(info, a_string("name")))), a_string(" v")), a_array_get(info, a_string("version"))));
         } else {
-#line 1374 "src/cli.a"
+#line 1413 "src/cli.a"
             fn__die(a_unwrap_or(result, a_string("install failed")));
         }
-#line 1376 "src/cli.a"
+#line 1415 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1379 "src/cli.a"
+#line 1418 "src/cli.a"
     if (a_truthy(a_eq(sub, a_string("list")))) {
-#line 1380 "src/cli.a"
+#line 1419 "src/cli.a"
         { AValue __old = plugins; plugins = fn_plugin_list(); a_release(__old); }
-#line 1381 "src/cli.a"
+#line 1420 "src/cli.a"
         if (a_truthy(a_eq(a_len(plugins), a_int(0)))) {
-#line 1382 "src/cli.a"
+#line 1421 "src/cli.a"
             a_eprintln(a_string("no plugins installed"));
-#line 1383 "src/cli.a"
+#line 1422 "src/cli.a"
             __ret = a_void(); goto __fn_cleanup;
         }
-#line 1385 "src/cli.a"
+#line 1424 "src/cli.a"
         { AValue __old = i; i = a_int(0); a_release(__old); }
-#line 1386 "src/cli.a"
+#line 1425 "src/cli.a"
         while (a_truthy(a_lt(i, a_len(plugins)))) {
-#line 1387 "src/cli.a"
+#line 1426 "src/cli.a"
             { AValue __old = p; p = a_array_get(plugins, i); a_release(__old); }
-#line 1388 "src/cli.a"
+#line 1427 "src/cli.a"
             a_eprintln(a_add(a_add(a_add(a_add(a_add(a_string("  "), fn_cli_bold(a_array_get(p, a_string("name")))), a_string(" v")), a_array_get(p, a_string("version"))), a_string("  ")), fn_cli_dim(a_array_get(p, a_string("dir")))));
-#line 1389 "src/cli.a"
+#line 1428 "src/cli.a"
             { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
         }
-#line 1391 "src/cli.a"
+#line 1430 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1394 "src/cli.a"
+#line 1433 "src/cli.a"
     if (a_truthy(a_eq(sub, a_string("remove")))) {
-#line 1395 "src/cli.a"
+#line 1434 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1395 "src/cli.a"
+#line 1434 "src/cli.a"
             fn__die(a_string("usage: a plugin remove <name>"));
         }
-#line 1396 "src/cli.a"
+#line 1435 "src/cli.a"
         { AValue __old = result; result = fn_plugin_remove(a_array_get(argv, a_int(1))); a_release(__old); }
-#line 1397 "src/cli.a"
+#line 1436 "src/cli.a"
         if (a_truthy(a_is_ok(result))) {
-#line 1398 "src/cli.a"
+#line 1437 "src/cli.a"
             a_eprintln(a_add(a_add(fn_cli_green(a_string("[plugin]")), a_string(" removed ")), fn_cli_bold(a_array_get(argv, a_int(1)))));
         } else {
-#line 1400 "src/cli.a"
+#line 1439 "src/cli.a"
             fn__die(a_unwrap_or(result, a_string("remove failed")));
         }
-#line 1402 "src/cli.a"
+#line 1441 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1405 "src/cli.a"
+#line 1444 "src/cli.a"
     if (a_truthy(a_eq(sub, a_string("init")))) {
-#line 1406 "src/cli.a"
+#line 1445 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(3)))) {
-#line 1406 "src/cli.a"
+#line 1445 "src/cli.a"
             fn__die(a_string("usage: a plugin init <dir> <name>"));
         }
-#line 1407 "src/cli.a"
+#line 1446 "src/cli.a"
         { AValue __old = result; result = fn_plugin_init(a_array_get(argv, a_int(1)), a_array_get(argv, a_int(2))); a_release(__old); }
-#line 1408 "src/cli.a"
+#line 1447 "src/cli.a"
         if (a_truthy(a_is_ok(result))) {
-#line 1409 "src/cli.a"
+#line 1448 "src/cli.a"
             a_eprintln(a_add(a_add(fn_cli_green(a_string("[plugin]")), a_string(" created plugin scaffold at ")), a_array_get(argv, a_int(1))));
         } else {
-#line 1411 "src/cli.a"
+#line 1450 "src/cli.a"
             fn__die(a_string("plugin init failed"));
         }
-#line 1413 "src/cli.a"
+#line 1452 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1416 "src/cli.a"
+#line 1455 "src/cli.a"
     if (a_truthy(a_eq(sub, a_string("run")))) {
-#line 1417 "src/cli.a"
+#line 1456 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1417 "src/cli.a"
+#line 1456 "src/cli.a"
             fn__die(a_string("usage: a plugin run <name>"));
         }
-#line 1418 "src/cli.a"
+#line 1457 "src/cli.a"
         { AValue __old = result; result = fn_plugin_run(a_array_get(argv, a_int(1))); a_release(__old); }
-#line 1419 "src/cli.a"
+#line 1458 "src/cli.a"
         if (a_truthy(a_is_ok(result))) {
-#line 1420 "src/cli.a"
+#line 1459 "src/cli.a"
             { AValue __old = r; r = a_unwrap(result); a_release(__old); }
-#line 1421 "src/cli.a"
+#line 1460 "src/cli.a"
             if (a_truthy(a_gt(a_len(a_array_get(r, a_string("stdout"))), a_int(0)))) {
-#line 1421 "src/cli.a"
+#line 1460 "src/cli.a"
                 a_print(a_array_get(r, a_string("stdout")));
             }
-#line 1422 "src/cli.a"
+#line 1461 "src/cli.a"
             if (a_truthy(a_neq(a_array_get(r, a_string("code")), a_int(0)))) {
-#line 1422 "src/cli.a"
+#line 1461 "src/cli.a"
                 (exit((int)a_array_get(r, a_string("code")).ival), a_void());
             }
         } else {
-#line 1424 "src/cli.a"
+#line 1463 "src/cli.a"
             fn__die(a_unwrap_or(result, a_string("plugin run failed")));
         }
-#line 1426 "src/cli.a"
+#line 1465 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1429 "src/cli.a"
+#line 1468 "src/cli.a"
     fn__die(a_string("usage: a plugin <install|list|remove|init|run>"));
 __fn_cleanup:
     a_release(sub);
@@ -24731,563 +27735,598 @@ __fn_cleanup:
 
 AValue fn__usage(void) {
     AValue __ret = a_void();
-#line 1433 "src/cli.a"
+#line 1472 "src/cli.a"
     a_eprintln(a_add(a_add(a_string("a "), fn__version()), a_string(" -- the a language native toolchain")));
-#line 1434 "src/cli.a"
+#line 1473 "src/cli.a"
     a_eprintln(a_string(""));
-#line 1435 "src/cli.a"
+#line 1474 "src/cli.a"
     a_eprintln(a_string("usage:"));
-#line 1436 "src/cli.a"
+#line 1475 "src/cli.a"
     a_eprintln(a_string("  a run <file.a> [args...]    compile and run (cached)"));
-#line 1437 "src/cli.a"
+#line 1476 "src/cli.a"
     a_eprintln(a_string("  a build <file.a> [-o out]   compile to native binary"));
-#line 1438 "src/cli.a"
+#line 1477 "src/cli.a"
     a_eprintln(a_string("  a build <file.a> --target T cross-compile (wasm32-wasi, linux-x86_64, ...)"));
-#line 1439 "src/cli.a"
+#line 1478 "src/cli.a"
     a_eprintln(a_string("  a targets                  list available cross-compilation targets"));
-#line 1440 "src/cli.a"
+#line 1479 "src/cli.a"
     a_eprintln(a_string("  a eval <expr>              evaluate an expression"));
-#line 1441 "src/cli.a"
+#line 1480 "src/cli.a"
     a_eprintln(a_string("  a repl                     interactive read-eval-print loop"));
-#line 1442 "src/cli.a"
+#line 1481 "src/cli.a"
     a_eprintln(a_string("  a cc <file.a>              emit C to stdout"));
-#line 1443 "src/cli.a"
+#line 1482 "src/cli.a"
     a_eprintln(a_string("  a wat <file.a>             emit WebAssembly Text Format to stdout"));
-#line 1444 "src/cli.a"
+#line 1483 "src/cli.a"
     a_eprintln(a_string("  a fmt <file.a|dir/>        format source code"));
-#line 1445 "src/cli.a"
+#line 1484 "src/cli.a"
     a_eprintln(a_string("  a ast <file.a>             dump parsed AST as JSON"));
-#line 1446 "src/cli.a"
-    a_eprintln(a_string("  a check <file.a>           type-check source file"));
-#line 1447 "src/cli.a"
+#line 1485 "src/cli.a"
+    a_eprintln(a_string("  a check <path...>          check files/dirs (errors carry codes like E0007)"));
+#line 1486 "src/cli.a"
+    a_eprintln(a_string("  a explain [CODE]           explain a diagnostic code, or list them all"));
+#line 1487 "src/cli.a"
     a_eprintln(a_string("  a test <dir/> [--timeout S] [--filter SUBSTR] [-v]  run test_*.a files (default timeout 60s)"));
-#line 1448 "src/cli.a"
+#line 1488 "src/cli.a"
     a_eprintln(a_string("  a lsp                      start language server (JSON-RPC over stdio)"));
-#line 1449 "src/cli.a"
+#line 1489 "src/cli.a"
     a_eprintln(a_string("  a watch <file.a>           recompile and run on file change"));
-#line 1450 "src/cli.a"
+#line 1490 "src/cli.a"
     a_eprintln(a_string("  a agent <file.a> [opts]     deploy supervised long-running agent"));
-#line 1451 "src/cli.a"
+#line 1491 "src/cli.a"
     a_eprintln(a_string("     --name N                  agent name (default: filename)"));
-#line 1452 "src/cli.a"
+#line 1492 "src/cli.a"
     a_eprintln(a_string("     --max-restarts N          max restart attempts (default: 10, 0=unlimited)"));
-#line 1453 "src/cli.a"
+#line 1493 "src/cli.a"
     a_eprintln(a_string("     --no-restart              run once, exit on child exit"));
-#line 1454 "src/cli.a"
+#line 1494 "src/cli.a"
     a_eprintln(a_string("  a spawn <file.a> --name N  launch named agent process (background)"));
-#line 1455 "src/cli.a"
+#line 1495 "src/cli.a"
     a_eprintln(a_string("  a plugin install <dir>     install a plugin from directory"));
-#line 1456 "src/cli.a"
+#line 1496 "src/cli.a"
     a_eprintln(a_string("  a plugin list              list installed plugins"));
-#line 1457 "src/cli.a"
+#line 1497 "src/cli.a"
     a_eprintln(a_string("  a plugin remove <name>     uninstall a plugin"));
-#line 1458 "src/cli.a"
+#line 1498 "src/cli.a"
     a_eprintln(a_string("  a plugin init <dir> <name> scaffold a new plugin"));
-#line 1459 "src/cli.a"
+#line 1499 "src/cli.a"
     a_eprintln(a_string("  a plugin run <name>        run an installed plugin"));
-#line 1460 "src/cli.a"
+#line 1500 "src/cli.a"
     a_eprintln(a_string("  a profile <file.a> [-o p]   profile-guided: instrument, run, dump JSON"));
-#line 1461 "src/cli.a"
+#line 1501 "src/cli.a"
     a_eprintln(a_string("  a gentests <file.a> [-o f]  auto-generate tests from source analysis"));
-#line 1462 "src/cli.a"
+#line 1502 "src/cli.a"
     a_eprintln(a_string("  a optimize <file.a> <prof>  optimization report from profile data"));
-#line 1463 "src/cli.a"
+#line 1503 "src/cli.a"
     a_eprintln(a_string("  a cache clean              clear the compilation cache"));
-#line 1464 "src/cli.a"
+#line 1504 "src/cli.a"
     a_eprintln(a_string("  a pkg init                 create pkg.toml in current directory"));
-#line 1465 "src/cli.a"
+#line 1505 "src/cli.a"
     a_eprintln(a_string("  a pkg add <name> <source>  add a dependency"));
-#line 1466 "src/cli.a"
+#line 1506 "src/cli.a"
     a_eprintln(a_string("  a pkg install              install all dependencies"));
-#line 1467 "src/cli.a"
+#line 1507 "src/cli.a"
     a_eprintln(a_string(""));
-#line 1468 "src/cli.a"
+#line 1508 "src/cli.a"
     a_eprintln(a_string("  a run and a build expect c_runtime/ in the current directory."));
-#line 1469 "src/cli.a"
+#line 1509 "src/cli.a"
     a_eprintln(a_string("  shebang: #!/usr/bin/env a run"));
 __fn_cleanup:
     return __ret;
 }
 
 AValue fn_main(void) {
-    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, plugin_argv = {0}, agent_name = {0}, health_port = {0}, max_restarts = {0}, no_restart = {0}, prof_out = {0}, test_out = {0};
+    AValue argv = {0}, subcmd = {0}, cc_out = {0}, wat_out = {0}, source = {0}, out = {0}, tgt = {0}, i = {0}, ext = {0}, extra = {0}, text = {0}, plugin_argv = {0}, agent_name = {0}, health_port = {0}, max_restarts = {0}, no_restart = {0}, prof_out = {0}, test_out = {0};
     AValue __ret = a_void();
-#line 1473 "src/cli.a"
+#line 1513 "src/cli.a"
     { AValue __old = argv; argv = a_args(); a_release(__old); }
-#line 1474 "src/cli.a"
+#line 1514 "src/cli.a"
     if (a_truthy(a_eq(a_len(argv), a_int(0)))) {
-#line 1475 "src/cli.a"
+#line 1515 "src/cli.a"
         fn__usage();
-#line 1476 "src/cli.a"
+#line 1516 "src/cli.a"
         (exit((int)a_int(1).ival), a_void());
     }
-#line 1479 "src/cli.a"
+#line 1519 "src/cli.a"
     { AValue __old = subcmd; subcmd = a_array_get(argv, a_int(0)); a_release(__old); }
-#line 1481 "src/cli.a"
+#line 1521 "src/cli.a"
     if (a_truthy(a_or(a_eq(subcmd, a_string("--version")), a_eq(subcmd, a_string("version"))))) {
-#line 1482 "src/cli.a"
+#line 1522 "src/cli.a"
         a_println(a_add(a_string("a "), fn__version()));
-#line 1483 "src/cli.a"
+#line 1523 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1486 "src/cli.a"
+#line 1526 "src/cli.a"
     if (a_truthy(a_eq(subcmd, a_string("cc")))) {
-#line 1487 "src/cli.a"
+#line 1527 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1487 "src/cli.a"
+#line 1527 "src/cli.a"
             fn__die(a_string("cc requires a source file"));
         }
-#line 1488 "src/cli.a"
+#line 1528 "src/cli.a"
         { AValue __old = cc_out; cc_out = a_string(""); a_release(__old); }
-#line 1489 "src/cli.a"
+#line 1529 "src/cli.a"
         if (a_truthy(a_and(a_gteq(a_len(argv), a_int(4)), a_eq(a_array_get(argv, a_int(2)), a_string("-o"))))) {
-#line 1490 "src/cli.a"
+#line 1530 "src/cli.a"
             { AValue __old = cc_out; cc_out = a_array_get(argv, a_int(3)); a_release(__old); }
         }
-#line 1492 "src/cli.a"
+#line 1532 "src/cli.a"
         fn_cmd_cc(a_array_get(argv, a_int(1)), cc_out);
-#line 1493 "src/cli.a"
+#line 1533 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1496 "src/cli.a"
+#line 1536 "src/cli.a"
     if (a_truthy(a_eq(subcmd, a_string("wat")))) {
-#line 1497 "src/cli.a"
+#line 1537 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1497 "src/cli.a"
+#line 1537 "src/cli.a"
             fn__die(a_string("wat requires a source file"));
         }
-#line 1498 "src/cli.a"
+#line 1538 "src/cli.a"
         { AValue __old = wat_out; wat_out = a_string(""); a_release(__old); }
-#line 1499 "src/cli.a"
+#line 1539 "src/cli.a"
         if (a_truthy(a_and(a_gteq(a_len(argv), a_int(4)), a_eq(a_array_get(argv, a_int(2)), a_string("-o"))))) {
-#line 1500 "src/cli.a"
+#line 1540 "src/cli.a"
             { AValue __old = wat_out; wat_out = a_array_get(argv, a_int(3)); a_release(__old); }
         }
-#line 1502 "src/cli.a"
+#line 1542 "src/cli.a"
         fn_cmd_wat(a_array_get(argv, a_int(1)), wat_out);
-#line 1503 "src/cli.a"
+#line 1543 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1506 "src/cli.a"
+#line 1546 "src/cli.a"
     if (a_truthy(a_eq(subcmd, a_string("build")))) {
-#line 1507 "src/cli.a"
+#line 1547 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1507 "src/cli.a"
+#line 1547 "src/cli.a"
             fn__die(a_string("build requires a source file"));
         }
-#line 1508 "src/cli.a"
+#line 1548 "src/cli.a"
         { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1509 "src/cli.a"
+#line 1549 "src/cli.a"
         { AValue __old = out; out = fn_path_stem(source); a_release(__old); }
-#line 1510 "src/cli.a"
+#line 1550 "src/cli.a"
         { AValue __old = tgt; tgt = a_string(""); a_release(__old); }
-#line 1511 "src/cli.a"
+#line 1551 "src/cli.a"
         { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1512 "src/cli.a"
+#line 1552 "src/cli.a"
         while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1513 "src/cli.a"
+#line 1553 "src/cli.a"
             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("-o")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1514 "src/cli.a"
+#line 1554 "src/cli.a"
                 { AValue __old = out; out = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1515 "src/cli.a"
+#line 1555 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
             } else {
-#line 1517 "src/cli.a"
+#line 1557 "src/cli.a"
                 if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--target")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1518 "src/cli.a"
+#line 1558 "src/cli.a"
                     { AValue __old = tgt; tgt = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1519 "src/cli.a"
+#line 1559 "src/cli.a"
                     { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
                 } else {
-#line 1521 "src/cli.a"
+#line 1561 "src/cli.a"
                     { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
                 }
             }
         }
-#line 1525 "src/cli.a"
+#line 1565 "src/cli.a"
         if (a_truthy(a_gt(a_len(tgt), a_int(0)))) {
-#line 1526 "src/cli.a"
+#line 1566 "src/cli.a"
             { AValue __old = ext; ext = fn__target_ext(tgt); a_release(__old); }
-#line 1527 "src/cli.a"
+#line 1567 "src/cli.a"
             if (a_truthy(a_and(a_gt(a_len(ext), a_int(0)), a_not(a_str_ends_with(out, ext))))) {
-#line 1528 "src/cli.a"
+#line 1568 "src/cli.a"
                 { AValue __old = out; out = a_add(out, ext); a_release(__old); }
             }
-#line 1530 "src/cli.a"
+#line 1570 "src/cli.a"
             fn_cmd_build_target(source, out, tgt);
         } else {
-#line 1532 "src/cli.a"
+#line 1572 "src/cli.a"
             fn_cmd_build(source, out);
         }
-#line 1534 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1537 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("targets")))) {
-#line 1538 "src/cli.a"
-        fn_cmd_targets();
-#line 1539 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1542 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("run")))) {
-#line 1543 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1543 "src/cli.a"
-            fn__die(a_string("run requires a source file"));
-        }
-#line 1544 "src/cli.a"
-        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1545 "src/cli.a"
-        { AValue __old = extra; extra = a_array_new(0); a_release(__old); }
-#line 1546 "src/cli.a"
-        if (a_truthy(a_gt(a_len(argv), a_int(2)))) {
-#line 1547 "src/cli.a"
-            { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1548 "src/cli.a"
-            while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1549 "src/cli.a"
-                extra = a_array_push_move(extra, a_array_get(argv, i));
-#line 1550 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
-            }
-        }
-#line 1553 "src/cli.a"
-        fn_cmd_run(source, extra);
-#line 1554 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1557 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("test")))) {
-#line 1558 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1558 "src/cli.a"
-            fn__die(a_string("test requires a directory"));
-        }
-#line 1559 "src/cli.a"
-        fn_cmd_test(a_array_get(argv, a_int(1)), fn__parse_test_opts(argv));
-#line 1560 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1563 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("eval")))) {
-#line 1564 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1564 "src/cli.a"
-            fn__die(a_string("eval requires an expression"));
-        }
-#line 1565 "src/cli.a"
-        { AValue __old = extra; extra = a_array_new(0); a_release(__old); }
-#line 1566 "src/cli.a"
-        if (a_truthy(a_gt(a_len(argv), a_int(2)))) {
-#line 1567 "src/cli.a"
-            { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1568 "src/cli.a"
-            while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1569 "src/cli.a"
-                extra = a_array_push_move(extra, a_array_get(argv, i));
-#line 1570 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
-            }
-        }
-#line 1573 "src/cli.a"
-        fn_cmd_eval(a_array_get(argv, a_int(1)), extra);
 #line 1574 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
 #line 1577 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("fmt")))) {
+    if (a_truthy(a_eq(subcmd, a_string("targets")))) {
 #line 1578 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1578 "src/cli.a"
-            fn__die(a_string("fmt requires a file or directory"));
-        }
+        fn_cmd_targets();
 #line 1579 "src/cli.a"
-        fn_cmd_fmt(a_array_get(argv, a_int(1)));
-#line 1580 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
+#line 1582 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("run")))) {
 #line 1583 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("ast")))) {
-#line 1584 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1584 "src/cli.a"
-            fn__die(a_string("ast requires a source file"));
+#line 1583 "src/cli.a"
+            fn__die(a_string("run requires a source file"));
         }
+#line 1584 "src/cli.a"
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
 #line 1585 "src/cli.a"
-        fn_cmd_ast(a_array_get(argv, a_int(1)));
+        { AValue __old = extra; extra = a_array_new(0); a_release(__old); }
 #line 1586 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
+        if (a_truthy(a_gt(a_len(argv), a_int(2)))) {
+#line 1587 "src/cli.a"
+            { AValue __old = i; i = a_int(2); a_release(__old); }
+#line 1588 "src/cli.a"
+            while (a_truthy(a_lt(i, a_len(argv)))) {
 #line 1589 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("check")))) {
+                extra = a_array_push_move(extra, a_array_get(argv, i));
 #line 1590 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1590 "src/cli.a"
-            fn__die(a_string("check requires a source file"));
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
         }
-#line 1591 "src/cli.a"
-        fn_cmd_check(a_array_get(argv, a_int(1)));
-#line 1592 "src/cli.a"
+#line 1593 "src/cli.a"
+        fn_cmd_run(source, extra);
+#line 1594 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1595 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("repl")))) {
-#line 1596 "src/cli.a"
-        fn_cmd_repl();
 #line 1597 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1600 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("plugin")))) {
-#line 1601 "src/cli.a"
-        { AValue __old = plugin_argv; plugin_argv = a_array_new(0); a_release(__old); }
-#line 1602 "src/cli.a"
-        { AValue __old = i; i = a_int(1); a_release(__old); }
-#line 1603 "src/cli.a"
-        while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1604 "src/cli.a"
-            plugin_argv = a_array_push_move(plugin_argv, a_array_get(argv, i));
-#line 1605 "src/cli.a"
-            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
-        }
-#line 1607 "src/cli.a"
-        fn_cmd_plugin(plugin_argv);
-#line 1608 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1611 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("pkg")))) {
-#line 1612 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("test")))) {
+#line 1598 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1612 "src/cli.a"
-            fn__die(a_string("usage: a pkg <init|add|install>"));
+#line 1598 "src/cli.a"
+            fn__die(a_string("test requires a directory"));
+        }
+#line 1599 "src/cli.a"
+        fn_cmd_test(a_array_get(argv, a_int(1)), fn__parse_test_opts(argv));
+#line 1600 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1603 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("eval")))) {
+#line 1604 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1604 "src/cli.a"
+            fn__die(a_string("eval requires an expression"));
+        }
+#line 1605 "src/cli.a"
+        { AValue __old = extra; extra = a_array_new(0); a_release(__old); }
+#line 1606 "src/cli.a"
+        if (a_truthy(a_gt(a_len(argv), a_int(2)))) {
+#line 1607 "src/cli.a"
+            { AValue __old = i; i = a_int(2); a_release(__old); }
+#line 1608 "src/cli.a"
+            while (a_truthy(a_lt(i, a_len(argv)))) {
+#line 1609 "src/cli.a"
+                extra = a_array_push_move(extra, a_array_get(argv, i));
+#line 1610 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
         }
 #line 1613 "src/cli.a"
-        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("init")))) {
+        fn_cmd_eval(a_array_get(argv, a_int(1)), extra);
 #line 1614 "src/cli.a"
-            fn_cmd_pkg_init();
-#line 1615 "src/cli.a"
-            __ret = a_void(); goto __fn_cleanup;
-        }
+        __ret = a_void(); goto __fn_cleanup;
+    }
 #line 1617 "src/cli.a"
-        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("add")))) {
+    if (a_truthy(a_eq(subcmd, a_string("fmt")))) {
 #line 1618 "src/cli.a"
-            if (a_truthy(a_lt(a_len(argv), a_int(4)))) {
-#line 1618 "src/cli.a"
-                fn__die(a_string("usage: a pkg add <name> <source>"));
-            }
-#line 1619 "src/cli.a"
-            fn_cmd_pkg_add(a_array_get(argv, a_int(2)), a_array_get(argv, a_int(3)));
-#line 1620 "src/cli.a"
-            __ret = a_void(); goto __fn_cleanup;
-        }
-#line 1622 "src/cli.a"
-        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("install")))) {
-#line 1623 "src/cli.a"
-            fn_cmd_pkg_install();
-#line 1624 "src/cli.a"
-            __ret = a_void(); goto __fn_cleanup;
-        }
-#line 1626 "src/cli.a"
-        fn__die(a_string("usage: a pkg <init|add|install>"));
-#line 1627 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1630 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("cache")))) {
-#line 1631 "src/cli.a"
-        if (a_truthy(a_and(a_gteq(a_len(argv), a_int(2)), a_eq(a_array_get(argv, a_int(1)), a_string("clean"))))) {
-#line 1632 "src/cli.a"
-            fn_cmd_cache_clean();
-#line 1633 "src/cli.a"
-            __ret = a_void(); goto __fn_cleanup;
-        }
-#line 1635 "src/cli.a"
-        fn__die(a_string("usage: a cache clean"));
-#line 1636 "src/cli.a"
-        __ret = a_void(); goto __fn_cleanup;
-    }
-#line 1639 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("watch")))) {
-#line 1640 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1640 "src/cli.a"
-            fn__die(a_string("watch requires a source file"));
+#line 1618 "src/cli.a"
+            fn__die(a_string("fmt requires a file or directory"));
+        }
+#line 1619 "src/cli.a"
+        fn_cmd_fmt(a_array_get(argv, a_int(1)));
+#line 1620 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1623 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("ast")))) {
+#line 1624 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1624 "src/cli.a"
+            fn__die(a_string("ast requires a source file"));
+        }
+#line 1625 "src/cli.a"
+        fn_cmd_ast(a_array_get(argv, a_int(1)));
+#line 1626 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1629 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("check")))) {
+#line 1630 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1630 "src/cli.a"
+            fn__die(a_string("check requires a source file or directory"));
+        }
+#line 1631 "src/cli.a"
+        fn_cmd_check(a_array_slice(argv, a_int(1), a_len(argv)));
+#line 1632 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1635 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("explain")))) {
+#line 1636 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1637 "src/cli.a"
+            a_println(a_string("diagnostic codes (a explain CODE for details):"));
+#line 1638 "src/cli.a"
+            {
+                AValue __iter_arr = a_iterable(fn_diag_codes_all_codes());
+                for (int __fi = 0; __fi < a_ilen(__iter_arr); __fi++) {
+                    AValue c = {0};
+                    c = a_array_get(__iter_arr, a_int(__fi));
+#line 1638 "src/cli.a"
+                    a_println(a_add(a_add(a_add(a_string("  "), c), a_string("  ")), a_array_get(a_array_get(fn_diag_codes_catalog(), c), a_string("title"))));
+                    a_release(c);
+                }
+                a_release(__iter_arr);
+            }
+#line 1639 "src/cli.a"
+            __ret = a_void(); goto __fn_cleanup;
         }
 #line 1641 "src/cli.a"
-        fn_cmd_watch(a_array_get(argv, a_int(1)));
+        { AValue __old = text; text = fn_diag_codes_explain(a_array_get(argv, a_int(1))); a_release(__old); }
 #line 1642 "src/cli.a"
+        if (a_truthy(a_eq(text, a_string("")))) {
+#line 1642 "src/cli.a"
+            fn__die(a_add(a_add(a_string("unknown diagnostic code: "), a_array_get(argv, a_int(1))), a_string(" (run `a explain` to list them)")));
+        }
+#line 1643 "src/cli.a"
+        a_print(text);
+#line 1644 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1645 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("agent")))) {
-#line 1646 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1646 "src/cli.a"
-            fn__die(a_string("agent requires a source file"));
-        }
 #line 1647 "src/cli.a"
-        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+    if (a_truthy(a_eq(subcmd, a_string("repl")))) {
 #line 1648 "src/cli.a"
-        { AValue __old = agent_name; agent_name = fn_path_stem(source); a_release(__old); }
+        fn_cmd_repl();
 #line 1649 "src/cli.a"
-        { AValue __old = health_port; health_port = a_int(0); a_release(__old); }
-#line 1650 "src/cli.a"
-        { AValue __old = max_restarts; max_restarts = a_int(10); a_release(__old); }
-#line 1651 "src/cli.a"
-        { AValue __old = no_restart; no_restart = a_bool(0); a_release(__old); }
-#line 1652 "src/cli.a"
-        { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1653 "src/cli.a"
-        while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1654 "src/cli.a"
-            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--name")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1655 "src/cli.a"
-                { AValue __old = agent_name; agent_name = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1656 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
-            } else
-            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--health-port")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1658 "src/cli.a"
-                { AValue __old = health_port; health_port = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
-#line 1659 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
-            } else
-            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--max-restarts")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1661 "src/cli.a"
-                { AValue __old = max_restarts; max_restarts = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
-#line 1662 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
-            } else
-            if (a_truthy(a_eq(a_array_get(argv, i), a_string("--no-restart")))) {
-#line 1664 "src/cli.a"
-                { AValue __old = no_restart; no_restart = a_bool(1); a_release(__old); }
-#line 1665 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
-            } else {
-#line 1667 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
-            }
-        }
-#line 1670 "src/cli.a"
-        fn_cmd_agent(source, agent_name, health_port, max_restarts, no_restart);
-#line 1671 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1674 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("spawn")))) {
-#line 1675 "src/cli.a"
-        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1675 "src/cli.a"
-            fn__die(a_string("spawn requires a source file"));
-        }
-#line 1676 "src/cli.a"
-        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1677 "src/cli.a"
-        { AValue __old = agent_name; agent_name = fn_path_stem(source); a_release(__old); }
-#line 1678 "src/cli.a"
-        { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1679 "src/cli.a"
+#line 1652 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("plugin")))) {
+#line 1653 "src/cli.a"
+        { AValue __old = plugin_argv; plugin_argv = a_array_new(0); a_release(__old); }
+#line 1654 "src/cli.a"
+        { AValue __old = i; i = a_int(1); a_release(__old); }
+#line 1655 "src/cli.a"
         while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1680 "src/cli.a"
-            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--name")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1681 "src/cli.a"
-                { AValue __old = agent_name; agent_name = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1682 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
-            } else {
-#line 1684 "src/cli.a"
-                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+#line 1656 "src/cli.a"
+            plugin_argv = a_array_push_move(plugin_argv, a_array_get(argv, i));
+#line 1657 "src/cli.a"
+            { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+        }
+#line 1659 "src/cli.a"
+        fn_cmd_plugin(plugin_argv);
+#line 1660 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1663 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("pkg")))) {
+#line 1664 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1664 "src/cli.a"
+            fn__die(a_string("usage: a pkg <init|add|install>"));
+        }
+#line 1665 "src/cli.a"
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("init")))) {
+#line 1666 "src/cli.a"
+            fn_cmd_pkg_init();
+#line 1667 "src/cli.a"
+            __ret = a_void(); goto __fn_cleanup;
+        }
+#line 1669 "src/cli.a"
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("add")))) {
+#line 1670 "src/cli.a"
+            if (a_truthy(a_lt(a_len(argv), a_int(4)))) {
+#line 1670 "src/cli.a"
+                fn__die(a_string("usage: a pkg add <name> <source>"));
             }
+#line 1671 "src/cli.a"
+            fn_cmd_pkg_add(a_array_get(argv, a_int(2)), a_array_get(argv, a_int(3)));
+#line 1672 "src/cli.a"
+            __ret = a_void(); goto __fn_cleanup;
+        }
+#line 1674 "src/cli.a"
+        if (a_truthy(a_eq(a_array_get(argv, a_int(1)), a_string("install")))) {
+#line 1675 "src/cli.a"
+            fn_cmd_pkg_install();
+#line 1676 "src/cli.a"
+            __ret = a_void(); goto __fn_cleanup;
+        }
+#line 1678 "src/cli.a"
+        fn__die(a_string("usage: a pkg <init|add|install>"));
+#line 1679 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1682 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("cache")))) {
+#line 1683 "src/cli.a"
+        if (a_truthy(a_and(a_gteq(a_len(argv), a_int(2)), a_eq(a_array_get(argv, a_int(1)), a_string("clean"))))) {
+#line 1684 "src/cli.a"
+            fn_cmd_cache_clean();
+#line 1685 "src/cli.a"
+            __ret = a_void(); goto __fn_cleanup;
         }
 #line 1687 "src/cli.a"
-        fn_cmd_spawn(source, agent_name);
+        fn__die(a_string("usage: a cache clean"));
 #line 1688 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
 #line 1691 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("lsp")))) {
+    if (a_truthy(a_eq(subcmd, a_string("watch")))) {
 #line 1692 "src/cli.a"
-        fn_cmd_lsp();
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1692 "src/cli.a"
+            fn__die(a_string("watch requires a source file"));
+        }
 #line 1693 "src/cli.a"
+        fn_cmd_watch(a_array_get(argv, a_int(1)));
+#line 1694 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1696 "src/cli.a"
-    if (a_truthy(a_eq(subcmd, a_string("profile")))) {
 #line 1697 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("agent")))) {
+#line 1698 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
 #line 1698 "src/cli.a"
+            fn__die(a_string("agent requires a source file"));
+        }
+#line 1699 "src/cli.a"
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+#line 1700 "src/cli.a"
+        { AValue __old = agent_name; agent_name = fn_path_stem(source); a_release(__old); }
+#line 1701 "src/cli.a"
+        { AValue __old = health_port; health_port = a_int(0); a_release(__old); }
+#line 1702 "src/cli.a"
+        { AValue __old = max_restarts; max_restarts = a_int(10); a_release(__old); }
+#line 1703 "src/cli.a"
+        { AValue __old = no_restart; no_restart = a_bool(0); a_release(__old); }
+#line 1704 "src/cli.a"
+        { AValue __old = i; i = a_int(2); a_release(__old); }
+#line 1705 "src/cli.a"
+        while (a_truthy(a_lt(i, a_len(argv)))) {
+#line 1706 "src/cli.a"
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--name")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+#line 1707 "src/cli.a"
+                { AValue __old = agent_name; agent_name = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
+#line 1708 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--health-port")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+#line 1710 "src/cli.a"
+                { AValue __old = health_port; health_port = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
+#line 1711 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--max-restarts")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+#line 1713 "src/cli.a"
+                { AValue __old = max_restarts; max_restarts = a_to_int(a_array_get(argv, a_add(i, a_int(1)))); a_release(__old); }
+#line 1714 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else
+            if (a_truthy(a_eq(a_array_get(argv, i), a_string("--no-restart")))) {
+#line 1716 "src/cli.a"
+                { AValue __old = no_restart; no_restart = a_bool(1); a_release(__old); }
+#line 1717 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            } else {
+#line 1719 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+#line 1722 "src/cli.a"
+        fn_cmd_agent(source, agent_name, health_port, max_restarts, no_restart);
+#line 1723 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1726 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("spawn")))) {
+#line 1727 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1727 "src/cli.a"
+            fn__die(a_string("spawn requires a source file"));
+        }
+#line 1728 "src/cli.a"
+        { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
+#line 1729 "src/cli.a"
+        { AValue __old = agent_name; agent_name = fn_path_stem(source); a_release(__old); }
+#line 1730 "src/cli.a"
+        { AValue __old = i; i = a_int(2); a_release(__old); }
+#line 1731 "src/cli.a"
+        while (a_truthy(a_lt(i, a_len(argv)))) {
+#line 1732 "src/cli.a"
+            if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("--name")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
+#line 1733 "src/cli.a"
+                { AValue __old = agent_name; agent_name = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
+#line 1734 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
+            } else {
+#line 1736 "src/cli.a"
+                { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
+            }
+        }
+#line 1739 "src/cli.a"
+        fn_cmd_spawn(source, agent_name);
+#line 1740 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1743 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("lsp")))) {
+#line 1744 "src/cli.a"
+        fn_cmd_lsp();
+#line 1745 "src/cli.a"
+        __ret = a_void(); goto __fn_cleanup;
+    }
+#line 1748 "src/cli.a"
+    if (a_truthy(a_eq(subcmd, a_string("profile")))) {
+#line 1749 "src/cli.a"
+        if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
+#line 1750 "src/cli.a"
             fn__die(a_string("profile requires a source file"));
         }
-#line 1700 "src/cli.a"
+#line 1752 "src/cli.a"
         { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1701 "src/cli.a"
+#line 1753 "src/cli.a"
         { AValue __old = prof_out; prof_out = a_string(""); a_release(__old); }
-#line 1702 "src/cli.a"
+#line 1754 "src/cli.a"
         { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1703 "src/cli.a"
+#line 1755 "src/cli.a"
         while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1704 "src/cli.a"
+#line 1756 "src/cli.a"
             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("-o")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1705 "src/cli.a"
+#line 1757 "src/cli.a"
                 { AValue __old = prof_out; prof_out = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1706 "src/cli.a"
+#line 1758 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
             } else {
-#line 1708 "src/cli.a"
+#line 1760 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
             }
         }
-#line 1711 "src/cli.a"
+#line 1763 "src/cli.a"
         fn_cmd_profile(source, prof_out);
-#line 1712 "src/cli.a"
+#line 1764 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1715 "src/cli.a"
+#line 1767 "src/cli.a"
     if (a_truthy(a_eq(subcmd, a_string("gentests")))) {
-#line 1716 "src/cli.a"
+#line 1768 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(2)))) {
-#line 1717 "src/cli.a"
+#line 1769 "src/cli.a"
             fn__die(a_string("gentests requires a source file"));
         }
-#line 1719 "src/cli.a"
+#line 1771 "src/cli.a"
         { AValue __old = source; source = a_array_get(argv, a_int(1)); a_release(__old); }
-#line 1720 "src/cli.a"
+#line 1772 "src/cli.a"
         { AValue __old = test_out; test_out = a_string(""); a_release(__old); }
-#line 1721 "src/cli.a"
+#line 1773 "src/cli.a"
         { AValue __old = i; i = a_int(2); a_release(__old); }
-#line 1722 "src/cli.a"
+#line 1774 "src/cli.a"
         while (a_truthy(a_lt(i, a_len(argv)))) {
-#line 1723 "src/cli.a"
+#line 1775 "src/cli.a"
             if (a_truthy(a_and(a_eq(a_array_get(argv, i), a_string("-o")), a_lt(a_add(i, a_int(1)), a_len(argv))))) {
-#line 1724 "src/cli.a"
+#line 1776 "src/cli.a"
                 { AValue __old = test_out; test_out = a_array_get(argv, a_add(i, a_int(1))); a_release(__old); }
-#line 1725 "src/cli.a"
+#line 1777 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(2)); a_release(__old); }
             } else {
-#line 1727 "src/cli.a"
+#line 1779 "src/cli.a"
                 { AValue __old = i; i = a_add(i, a_int(1)); a_release(__old); }
             }
         }
-#line 1730 "src/cli.a"
+#line 1782 "src/cli.a"
         fn_cmd_gentests(source, test_out);
-#line 1731 "src/cli.a"
+#line 1783 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1734 "src/cli.a"
+#line 1786 "src/cli.a"
     if (a_truthy(a_eq(subcmd, a_string("optimize")))) {
-#line 1735 "src/cli.a"
+#line 1787 "src/cli.a"
         if (a_truthy(a_lt(a_len(argv), a_int(3)))) {
-#line 1736 "src/cli.a"
+#line 1788 "src/cli.a"
             fn__die(a_string("optimize requires a source file and profile path"));
         }
-#line 1738 "src/cli.a"
+#line 1790 "src/cli.a"
         fn_cmd_optimize_report(a_array_get(argv, a_int(1)), a_array_get(argv, a_int(2)));
-#line 1739 "src/cli.a"
+#line 1791 "src/cli.a"
         __ret = a_void(); goto __fn_cleanup;
     }
-#line 1742 "src/cli.a"
+#line 1794 "src/cli.a"
     fn__die(a_str_concat(a_string("unknown command: "), subcmd));
 __fn_cleanup:
     a_release(argv);
@@ -25300,6 +28339,7 @@ __fn_cleanup:
     a_release(i);
     a_release(ext);
     a_release(extra);
+    a_release(text);
     a_release(plugin_argv);
     a_release(agent_name);
     a_release(health_port);
@@ -25312,6 +28352,5 @@ __fn_cleanup:
 
 int main(int argc, char** argv) {
     g_argc = argc; g_argv = argv;
-    fn_main();
-    return 0;
+    return a_main_exit_code(fn_main());
 }

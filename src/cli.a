@@ -3,6 +3,7 @@ use std.compiler.wasmgen
 use std.compiler.parser
 use std.compiler.emitter
 use std.compiler.checker
+use std.compiler.diag_codes
 use std.compiler.profiler
 use std.compiler.optimizer
 use std.testgen
@@ -80,6 +81,16 @@ fn _try_generate_c(source_path) {
     }
   }
   prog_ast = map.set(prog_ast, "file", source_path)
+  ; The checker runs before codegen: an undefined name or a non-exhaustive
+  ; match is a diagnostic at an `a` source line, never a C compiler error.
+  ; A_NO_CHECK=1 bypasses it (escape hatch for a checker bug).
+  if env.get("A_NO_CHECK") != "1" {
+    let mut errs = []
+    for d in checker.check(prog_ast) {
+      if d["severity"] == "error" { errs = push(errs, checker.format_diag(source_path, d)) }
+    }
+    if len(errs) > 0 { ret Err(str.join(errs, "\n")) }
+  }
   let bm = cgen._builtin_map()
   ret Ok(cgen.emit_program(prog_ast, bm))
 }
@@ -1000,25 +1011,53 @@ fn cmd_ast(source_path: str) {
   println(json.pretty(ast))
 }
 
-fn cmd_check(source_path: str) {
-  let ast = _parse_source(source_path)
-  let diagnostics = checker.check(ast)
-  if len(diagnostics) == 0 {
-    println(cli.green("no issues found"))
-    ret
+fn _collect_a_files(target: str, acc: [str]) -> [str] {
+  if !_is_dir(target) { ret push(acc, target) }
+  let mut out = acc
+  for e in fs.ls(target) {
+    let name = map.get(e, "name")
+    let full = path.join(target, name)
+    if map.get(e, "is_dir") {
+      out = _collect_a_files(full, out)
+    } else if str.ends_with(name, ".a") {
+      out = push(out, full)
+    }
   }
+  ret out
+}
+
+; `a check FILE|DIR ...` -- every path is checked; directories recurse.
+; Exit status is 1 if any file has an error.
+fn cmd_check(targets: [str]) {
+  let mut files = []
+  for t in targets { files = _collect_a_files(t, files) }
   let mut errors = 0
   let mut warnings = 0
-  for d in diagnostics {
-    let sev = map.get(d, "severity")
-    let mut colored = cli.yellow(sev)
-    if sev == "error" { colored = cli.red(sev) }
-    let plain = checker.format_diag(source_path, d)
-    eprintln(str.replace(plain, ": " + sev + ": ", ": " + colored + ": "))
-    if sev == "error" { errors = errors + 1 } else { warnings = warnings + 1 }
+  for source_path in files {
+    let source = io.read_file(source_path)
+    if type_of(source) == "void" { _die("cannot read file: " + source_path) }
+    let ast = parser.parse(source)
+    let mut diags = []
+    if type_of(ast) == "map" && ast["tag"] == "ParseError" {
+      diags = [#{"severity": "error", "line": ast["line"], "col": ast["col"], "msg": ast["msg"]}]
+    } else {
+      diags = checker.check(ast)
+    }
+    for d in diags {
+      let sev = map.get(d, "severity")
+      let mut colored = cli.yellow(sev)
+      if sev == "error" { colored = cli.red(sev) }
+      let plain = checker.format_diag(source_path, d)
+      eprintln(str.replace(plain, ": " + sev, ": " + colored))
+      if sev == "error" { errors = errors + 1 } else { warnings = warnings + 1 }
+    }
+  }
+  if errors == 0 && warnings == 0 {
+    println(cli.green("no issues found") + " (" + to_str(len(files)) + " file(s))")
+    ret
   }
   println("")
-  println(to_str(errors) + " error(s), " + to_str(warnings) + " warning(s)")
+  println(to_str(errors) + " error(s), " + to_str(warnings) + " warning(s) in " + to_str(len(files)) + " file(s)")
   if errors > 0 { exit(1) }
 }
 
@@ -1443,7 +1482,8 @@ fn _usage() {
   eprintln("  a wat <file.a>             emit WebAssembly Text Format to stdout")
   eprintln("  a fmt <file.a|dir/>        format source code")
   eprintln("  a ast <file.a>             dump parsed AST as JSON")
-  eprintln("  a check <file.a>           type-check source file")
+  eprintln("  a check <path...>          check files/dirs (errors carry codes like E0007)")
+  eprintln("  a explain [CODE]           explain a diagnostic code, or list them all")
   eprintln("  a test <dir/> [--timeout S] [--filter SUBSTR] [-v]  run test_*.a files (default timeout 60s)")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a watch <file.a>           recompile and run on file change")
@@ -1587,8 +1627,20 @@ fn main() {
   }
 
   if subcmd == "check" {
-    if len(argv) < 2 { _die("check requires a source file") }
-    cmd_check(argv[1])
+    if len(argv) < 2 { _die("check requires a source file or directory") }
+    cmd_check(slice(argv, 1, len(argv)))
+    ret
+  }
+
+  if subcmd == "explain" {
+    if len(argv) < 2 {
+      println("diagnostic codes (a explain CODE for details):")
+      for c in diag_codes.all_codes() { println("  " + c + "  " + diag_codes.catalog()[c]["title"]) }
+      ret
+    }
+    let text = diag_codes.explain(argv[1])
+    if text == "" { _die("unknown diagnostic code: " + argv[1] + " (run `a explain` to list them)") }
+    print(text)
     ret
   }
 

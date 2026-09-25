@@ -121,7 +121,10 @@ fn main() -> void
 
       if do_exec {
         println("=== Executing ===")
-        __bridge_exec__(prog)
+        ; The bytecode VM is gone; run the source natively instead.
+        let r = exec_timeout("./a run " + path, 0)
+        print(r["stdout"])
+        print(r["stderr"])
       }
     }
   }

@@ -1,0 +1,95 @@
+; std/compiler/types.a and std/compiler/builtin_sigs.a: the signature table
+; must name exactly the builtins cgen knows, with the arities the runtime has,
+; and every signature must parse. Plus the gradual compatibility rules.
+
+use std.testing
+use std.compiler.types
+use std.compiler.cgen
+use std.compiler.builtin_arity
+use std.compiler.builtin_sigs
+
+fn main() {
+  let sigs = builtin_sigs.sigs()
+  let bm = cgen._builtin_map()
+  let ar = builtin_arity.table()
+  let mins = builtin_sigs.min_arity()
+
+  ; --- every cgen builtin has a signature and vice versa ("exit" is a special form) ---
+  let mut missing = []
+  for name in map.keys(bm) {
+    if !map.has(sigs, name) { missing = push(missing, name) }
+  }
+  if len(missing) > 0 { println("no signature for: " + str.join(missing, ", ")) }
+  testing.assert_int_eq(len(missing), 0)
+  let mut extra = []
+  for name in map.keys(sigs) {
+    if !map.has(bm, name) && name != "exit" { extra = push(extra, name) }
+  }
+  if len(extra) > 0 { println("signature without builtin: " + str.join(extra, ", ")) }
+  testing.assert_int_eq(len(extra), 0)
+  println("PASS: signature table covers the builtin table exactly")
+
+  ; --- every signature parses to a fn type whose arity matches the runtime ---
+  let mut bad = []
+  for name in map.keys(sigs) {
+    let t = types.parse_sig(sigs[name])
+    if t["k"] != "fn" { bad = push(bad, name + " (unparseable: " + sigs[name] + ")") }
+    else if map.has(ar, name) && len(t["params"]) != ar[name] {
+      bad = push(bad, name + " (sig " + to_str(len(t["params"])) + ", runtime " + to_str(ar[name]) + ")")
+    }
+  }
+  if len(bad) > 0 { println("bad signatures: " + str.join(bad, "; ")) }
+  testing.assert_int_eq(len(bad), 0)
+  for name in map.keys(mins) {
+    testing.assert_true(map.has(sigs, name))
+    testing.assert_true(mins[name] < len(types.parse_sig(sigs[name])["params"]))
+  }
+  println("PASS: signatures parse and agree with runtime arity")
+
+  ; --- annotation normalisation ---
+  testing.assert_eq(types.show(types.parse_sig("i64")), "int")
+  testing.assert_eq(types.show(types.parse_sig("f64")), "float")
+  testing.assert_eq(types.show(types.parse_sig("[str]")), "[str]")
+  testing.assert_eq(types.show(types.parse_sig("map")), "map")
+  testing.assert_eq(types.show(types.parse_sig("#\{str: int\}")), "#\{str: int\}")
+  testing.assert_eq(types.show(types.parse_sig("Result<int, str>")), "Result<int, str>")
+  testing.assert_eq(types.show(types.parse_sig("fn(int, T) -> [T]")), "fn(int, T) -> [T]")
+  testing.assert_eq(types.show(types.parse_sig("Shape")), "Shape")
+  println("PASS: normalisation and show")
+
+  ; --- gradual compatibility ---
+  let int_t = types.t_prim("int")
+  let float_t = types.t_prim("float")
+  let str_t = types.t_prim("str")
+  testing.assert_true(types.assignable(int_t, float_t))
+  testing.assert_false(types.assignable(float_t, int_t))
+  testing.assert_false(types.assignable(str_t, int_t))
+  testing.assert_true(types.assignable(types.t_any(), int_t))
+  testing.assert_true(types.assignable(int_t, types.t_any()))
+  testing.assert_true(types.assignable(types.t_result(str_t, str_t), int_t))
+  testing.assert_true(types.assignable(types.t_array(int_t), types.t_array(float_t)))
+  testing.assert_false(types.assignable(types.t_array(str_t), types.t_array(int_t)))
+  testing.assert_true(types.assignable(types.t_array(types.t_any()), types.t_array(int_t)))
+  testing.assert_true(types.assignable(types.t_named("Shape"), types.t_named("Shape")))
+  testing.assert_false(types.assignable(types.t_named("Shape"), types.t_named("Tree")))
+  testing.assert_eq(types.show(types.join(int_t, float_t)), "float")
+  testing.assert_eq(types.show(types.join(int_t, str_t)), "any")
+  println("PASS: assignable and join")
+
+  ; --- unification of builtin signatures ---
+  let push_t = types.parse_sig("fn([T], T) -> [T]")
+  let b = types.unify(push_t["params"][0], types.t_array(int_t), #{})
+  testing.assert_eq(types.show(types.subst(push_t["ret"], b)), "[int]")
+  ; a conflicting second occurrence keeps the first binding (the caller reports it)
+  let b2 = types.unify(push_t["params"][1], str_t, b)
+  testing.assert_eq(types.show(b2["T"]), "int")
+  ; a dynamic actual makes every variable in the pattern dynamic
+  let set_t = types.parse_sig("fn(#\{K: V\}, K, V) -> #\{K: V\}")
+  let b4 = types.unify(set_t["params"][2], int_t, types.unify(set_t["params"][0], types.t_any(), #{}))
+  testing.assert_eq(types.show(types.subst(set_t["ret"], b4)), "map")
+  let map_t = types.parse_sig("fn([T], fn(T) -> U) -> [U]")
+  let b3 = types.unify(map_t["params"][1], types.t_fn([types.t_any()], str_t), types.unify(map_t["params"][0], types.t_array(int_t), #{}))
+  testing.assert_eq(types.show(types.subst(map_t["ret"], b3)), "[str]")
+  testing.assert_eq(types.show(types.subst(types.t_var("Z"), #{})), "any")
+  println("PASS: unify and subst")
+}

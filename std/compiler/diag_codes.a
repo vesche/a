@@ -1,0 +1,90 @@
+; Diagnostic codes for the checker.
+;
+; Every diagnostic the checker emits carries a stable code (E0001.., W0001..).
+; The code appears in the message (`error[E0007]: ...`) so an agent can look
+; it up without pattern-matching English: `a explain E0007` prints the entry
+; below. Codes are never reused; retire one by keeping its entry and noting
+; that it is no longer emitted.
+
+fn catalog() -> map {
+  ret #{
+    "E0001": #{
+      "title": "undefined variable",
+      "text": "A name was used that is not a parameter, a `let` binding, a function, a variant constructor or a builtin in scope.\n\nCommon causes: a typo, a variable declared inside an inner block (`if`, `for`, `match`) and used after it, or a module function called without its `mod.` prefix.",
+      "example": "fn main() \{\n  let total = 1\n  println(totl)   ; E0001: undefined variable: totl\n\}"
+    },
+    "E0002": #{
+      "title": "undefined function",
+      "text": "A call names a function that does not exist, either in this file or in the `use`d module you qualified it with (`math.nope`).\n\nRun `a doc std.math` (or read `std/*.a`) to see what a module exports.",
+      "example": "use std.math\nfn main() \{\n  println(math.nope(1))   ; E0002: undefined function: math.nope\n\}"
+    },
+    "E0003": #{
+      "title": "unknown builtin",
+      "text": "A qualified name uses a builtin namespace (`str.`, `map.`, `fs.`, ...) but that namespace has no such function. The full list is in std/compiler/builtin_sigs.a and REFERENCE.md.",
+      "example": "fn main() \{\n  println(str.length(\"x\"))   ; E0003: unknown builtin: str.length (it is len)\n\}"
+    },
+    "E0004": #{
+      "title": "wrong number of arguments",
+      "text": "A call passes more or fewer arguments than the callee accepts. Builtins with optional trailing arguments report a range (`expects 1 to 2 argument(s)`). With the pipe operator `x |> f(a)` the left operand counts as the first argument.",
+      "example": "fn add(a: int, b: int) -> int \{ ret a + b \}\nfn main() \{\n  println(add(1))   ; E0004: add expects 2 argument(s), got 1\n\}"
+    },
+    "E0005": #{
+      "title": "non-exhaustive match",
+      "text": "A `match` on a sum type does not cover every variant and has no catch-all arm. Arms with a guard (`X(v) if v > 0 => ...`) do not count as covering their variant. Add the missing arms or a final `_ => ...` arm.",
+      "example": "ty Shape = Circle(float) | Square(float)\nfn area(s: Shape) -> float \{\n  match s \{\n    Circle(r) => \{ ret 3.14 * r * r \}\n  \}   ; E0005: non-exhaustive match on Shape: missing Square\n\}"
+    },
+    "E0006": #{
+      "title": "`?` outside a Result-returning function",
+      "text": "The `?` operator returns early with the `Err` when its operand is one. That is only meaningful in a function that returns `Result` (or has no declared return type). In a function declared `-> int` (or any other non-Result type) use `match` or `unwrap_or` instead.",
+      "example": "fn n() -> int \{\n  let v = parse_int(\"4\")?   ; E0006\n  ret v\n\}\n; fix: fn n() -> Result<int, str> \{ ... \}  or  match parse_int(\"4\") \{ ... \}"
+    },
+    "E0007": #{
+      "title": "type mismatch",
+      "text": "Two *known* types disagree: a `let x: T = ...` initialiser, an argument against the parameter type, a `ret` value against the declared return type, an assignment to an annotated `let mut`, or a map key against the map's key type.\n\nTyping is gradual: `any` and unannotated values are compatible with everything, `int` widens to `float`, `num` accepts both, and sized integers (`i64`, `u8`, ...) are all `int`. A `Result` is compatible with everything because unwrapping is dynamic. So this error only fires when both sides are concrete and incompatible -- fix the value, or loosen the annotation to `any` if the value really is dynamic.",
+      "example": "fn greet(name: str) -> str \{ ret \"hi \" + name \}\nfn main() \{\n  let n: int = \"five\"        ; E0007: let n: int: expected int, got str\n  println(greet(3))          ; E0007: argument 1 of greet: expected str, got int\n\}"
+    },
+    "E0008": #{
+      "title": "`ret` with a value in a `-> void` function",
+      "text": "A function declared `-> void` returns a value. Either drop the value (`ret`) or declare the return type.",
+      "example": "fn log(m: str) -> void \{\n  println(m)\n  ret 1   ; E0008\n\}"
+    },
+    "E0009": #{
+      "title": "unknown record field",
+      "text": "A value of a record type (`ty P = \{x: int, y: int\}`) is accessed with a field the type does not declare, via `p.z` or `p[\"z\"]`. The message lists the declared fields. Records are maps at runtime, so the access would return void instead of failing -- the checker catches it early.",
+      "example": "ty Point = \{x: int, y: int\}\nfn main() \{\n  let p: Point = #\{\"x\": 1, \"y\": 2\}\n  println(p.z)   ; E0009: unknown field z on Point (fields: x, y)\n\}"
+    },
+    "E0010": #{
+      "title": "operator applied to incompatible types",
+      "text": "An operator's operands have known types it does not accept: `+ - * / %` need two numbers (or `+` on two strings), `< <= > >=` need two numbers or two strings, unary `-` needs a number, and indexing needs an array, map or string. At runtime these would silently produce `void`; the checker reports them instead.",
+      "example": "fn main() \{\n  let s = \"a\" + 1      ; E0010: cannot apply + to str and int\n  let k = 5\n  println(k[0])        ; E0010: cannot index a value of type int\n\}"
+    },
+    "W0001": #{
+      "title": "unused variable",
+      "text": "A `let` binding is never read. Prefix the name with `_` to silence the warning when the binding is intentional (destructuring, a value kept for its side effects).",
+      "example": "fn main() \{\n  let unused = compute()   ; W0001: unused variable: unused\n\}"
+    },
+    "W0002": #{
+      "title": "unreachable code",
+      "text": "A statement follows `ret` in the same block, so it can never run.",
+      "example": "fn f() -> int \{\n  ret 1\n  println(\"never\")   ; W0002\n\}"
+    },
+    "W0003": #{
+      "title": "function shadows a builtin",
+      "text": "A top-level function has the same name as a builtin (`map`, `filter`, `push`, `to_str`, ...). Unqualified calls always resolve to the builtin, so the function can only be reached with a module prefix. Rename it to avoid confusion.",
+      "example": "fn map(xs) \{ ... \}   ; W0003: function map shadows a builtin"
+    }
+  }
+}
+
+; Human-readable explanation for `a explain CODE`; "" if the code is unknown.
+fn explain(code: str) -> str {
+  let c = catalog()
+  let k = str.upper(code)
+  if !map.has(c, k) { ret "" }
+  let e = c[k]
+  ret k + ": " + e["title"] + "\n\n" + e["text"] + "\n\nExample:\n\n" + e["example"] + "\n"
+}
+
+fn all_codes() -> [str] {
+  ret sort(map.keys(catalog()))
+}

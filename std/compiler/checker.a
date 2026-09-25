@@ -9,11 +9,18 @@
 ; know a builtin the code generator does not (and vice versa). Arities come
 ; from std/compiler/builtin_arity.a, generated from the C runtime prototypes.
 ;
+; Types are gradual (std/compiler/types.a): every binding has a type, `any`
+; unless annotated or inferred from a literal/call. Only a mismatch between two
+; *known* types is an error, so unannotated code never fails to check. Builtin
+; signatures come from std/compiler/builtin_sigs.a.
+;
 ; Diagnostics: #{"severity": "error"|"warning", "line": int, "col": int, "msg": str}
 
 use std.compiler.cgen
 use std.compiler.parser
 use std.compiler.builtin_arity
+use std.compiler.builtin_sigs
+use std.compiler.types
 
 ; Names that are keywords-as-values rather than variables.
 fn _literal_names() -> map {
@@ -44,7 +51,51 @@ fn _new_state(builtins: map, arity: map) -> map {
     if dot > 0 { namespaces = map.set(namespaces, str.slice(k, 0, dot), true) }
   }
   ret #{"scopes": [], "diags": [], "arity": arity, "builtins": builtins,
-        "namespaces": namespaces, "line": 0, "col": 0}
+        "namespaces": namespaces, "modules": #{}, "line": 0, "col": 0,
+        "variants": #{}, "sums": #{},
+        "fn_ret": "any", "fn_ret_ty": types.t_any(), "in_try": 0,
+        "ty": types.t_any(), "sigs": _parse_sigs(), "typedefs": #{}}
+}
+
+; An annotation as a checker type, with records and aliases resolved.
+fn _ann(st: map, t) -> map { ret types.resolve(types.from_ast(t), st["typedefs"]) }
+
+; Registers `ty Name = {..}` (record) and `ty Name = T where ..` (alias) so
+; annotations naming them resolve. Sum types stay nominal (`named`).
+fn _declare_typedef(st: map, item) -> map {
+  let body = item["body"]
+  if type_of(body) != "map" { ret st }
+  if body["tag"] == "TypeRecord" {
+    let mut fields = #{}
+    for f in body["fields"] {
+      if type_of(f) == "map" && map.has(f, "name") { fields = map.set(fields, f["name"], _ann(st, f["type"])) }
+    }
+    ret map.set(st, "typedefs", map.set(st["typedefs"], item["name"], types.t_record(item["name"], fields)))
+  }
+  if body["tag"] == "TypeAlias" {
+    ret map.set(st, "typedefs", map.set(st["typedefs"], item["name"], _ann(st, body["type"])))
+  }
+  ret st
+}
+
+fn _parse_sigs() -> map {
+  let raw = builtin_sigs.sigs()
+  let mut out = #{}
+  for name in map.keys(raw) { out = map.set(out, name, types.parse_sig(raw[name])) }
+  ret out
+}
+
+; The type of the expression most recently walked.
+fn _set_ty(st: map, t) -> map { ret map.set(st, "ty", t) }
+fn _ty(st: map) -> map { ret st["ty"] }
+
+fn _type_mismatch(st: map, what: str, expected, got) -> map {
+  let mut why = ""
+  if type_of(expected) == "map" && type_of(got) == "map" && expected["k"] == "record" && got["k"] == "record" && got["name"] == "" {
+    let d = types.record_diff(got, expected)
+    if d != "" { why = " (" + d + ")" }
+  }
+  ret _diag(st, "error", "E0007", what + ": expected " + types.show(expected) + ", got " + types.show(got) + why)
 }
 
 fn _pos(st: map, node) -> map {
@@ -57,13 +108,13 @@ fn _pos(st: map, node) -> map {
   ret st
 }
 
-fn _diag(st: map, severity: str, msg: str) -> map {
-  let d = #{"severity": severity, "line": st["line"], "col": st["col"], "msg": msg}
-  ret map.set(st, "diags", push(st["diags"], d))
+; Every diagnostic carries a stable code; see std/compiler/diag_codes.a.
+fn _diag(st: map, severity: str, code: str, msg: str) -> map {
+  ret _diag_at(st, severity, code, st["line"], st["col"], msg)
 }
 
-fn _diag_at(st: map, severity: str, line: int, col: int, msg: str) -> map {
-  let d = #{"severity": severity, "line": line, "col": col, "msg": msg}
+fn _diag_at(st: map, severity: str, code: str, line: int, col: int, msg: str) -> map {
+  let d = #{"severity": severity, "code": code, "line": line, "col": col, "msg": msg}
   ret map.set(st, "diags", push(st["diags"], d))
 }
 
@@ -80,17 +131,22 @@ fn _pop_scope(st: map) -> map {
   for name in map.keys(inner) {
     let e = inner[name]
     if e["kind"] == "let" && !e["used"] && !str.starts_with(name, "_") {
-      s = _diag_at(s, "warning", e["line"], e["col"], "unused variable: " + name)
+      s = _diag_at(s, "warning", "W0001", e["line"], e["col"], "unused variable: " + name)
     }
   }
   ret map.set(s, "scopes", slice(s["scopes"], 0, n - 1))
 }
 
 fn _declare(st: map, name: str, kind: str, arity: int) -> map {
+  ret _declare_typed(st, name, kind, arity, types.t_any(), false)
+}
+
+; `annotated` bindings keep their type on assignment; inferred ones widen.
+fn _declare_typed(st: map, name: str, kind: str, arity: int, t: map, annotated: bool) -> map {
   if name == "" || name == "_" { ret st }
   let scopes = st["scopes"]
   let n = len(scopes)
-  let entry = #{"line": st["line"], "col": st["col"], "used": false, "kind": kind, "arity": arity}
+  let entry = #{"line": st["line"], "col": st["col"], "used": false, "kind": kind, "arity": arity, "ty": t, "annotated": annotated}
   let mut scopes2 = scopes
   scopes2[n - 1] = map.set(scopes[n - 1], name, entry)
   ret map.set(st, "scopes", scopes2)
@@ -111,6 +167,13 @@ fn _lookup(st: map, name: str) -> map {
   let i = _resolve(st, name)
   if i < 0 { ret #{} }
   ret st["scopes"][i][name]
+}
+
+fn _set_entry_ty(st: map, idx: int, name: str, t: map) -> map {
+  let scopes = st["scopes"]
+  let mut scopes2 = scopes
+  scopes2[idx] = map.set(scopes[idx], name, map.set(scopes[idx][name], "ty", t))
+  ret map.set(st, "scopes", scopes2)
 }
 
 fn _mark_used(st: map, idx: int, name: str) -> map {
@@ -139,17 +202,65 @@ fn _is_builtin_namespace(st: map, ns: str) -> bool {
 ; Resolve a bare identifier used as a value or callee.
 fn _use_name(st: map, name: str) -> map {
   let idx = _resolve(st, name)
-  if idx >= 0 { ret _mark_used(st, idx, name) }
-  if _is_builtin(st, name) { ret st }
-  if map.has(_literal_names(), name) { ret st }
-  ret _diag(st, "error", "undefined variable: " + name)
+  if idx >= 0 {
+    let e = st["scopes"][idx][name]
+    let mut t = types.t_any()
+    if map.has(e, "ty") { t = e["ty"] }
+    ; a nullary variant used as a value has its sum type
+    if e["kind"] == "fn" && map.has(st["variants"], name) && e["arity"] == 0 { t = types.t_named(st["variants"][name]) }
+    ret _set_ty(_mark_used(st, idx, name), t)
+  }
+  if _is_builtin(st, name) { ret _set_ty(st, types.t_any()) }
+  if map.has(_literal_names(), name) {
+    if name == "true" || name == "false" { ret _set_ty(st, types.t_prim("bool")) }
+    ret _set_ty(st, types.t_any())
+  }
+  ret _set_ty(_diag(st, "error", "E0001", "undefined variable: " + name), types.t_any())
+}
+
+; The fn type of a declared function: annotated params and return type.
+fn _fn_sig(st: map, item) -> map {
+  let mut ps = []
+  for p in item["params"] {
+    if type_of(p) == "map" && map.has(p, "type") { ps = push(ps, _ann(st, p["type"])) }
+    else { ps = push(ps, types.t_any()) }
+  }
+  let mut rt = types.t_any()
+  if map.has(item, "ret_type") { rt = _ann(st, item["ret_type"]) }
+  ret types.t_fn(ps, rt)
+}
+
+; Checks call arguments against a fn type, binding type variables, and
+; returns [state, return type].
+fn _check_call_types(st: map, display: str, sig, arg_tys: [map]) -> [any] {
+  if type_of(sig) != "map" || sig["k"] != "fn" { ret [st, types.t_any()] }
+  let mut s = st
+  let params = sig["params"]
+  let mut b = #{}
+  let mut i = 0
+  while i < len(arg_tys) && i < len(params) {
+    b = types.unify(params[i], arg_tys[i], b)
+    i = i + 1
+  }
+  i = 0
+  while i < len(arg_tys) && i < len(params) {
+    let want = types.subst(params[i], b)
+    if !types.assignable(arg_tys[i], want) {
+      s = _type_mismatch(s, "argument " + to_str(i + 1) + " of " + display, want, arg_tys[i])
+    }
+    i = i + 1
+  }
+  ret [s, types.subst(sig["ret"], b)]
 }
 
 fn _check_arity(st: map, display: str, expected: int, got: int) -> map {
-  if expected >= 0 && expected != got {
-    ret _diag(st, "error", display + " expects " + to_str(expected) + " argument(s), got " + to_str(got))
+  if expected < 0 || expected == got { ret st }
+  let mins = cgen._builtin_min_arity()
+  if map.has(mins, display) {
+    if got >= mins[display] && got <= expected { ret st }
+    ret _diag(st, "error", "E0004", display + " expects " + to_str(mins[display]) + " to " + to_str(expected) + " argument(s), got " + to_str(got))
   }
-  ret st
+  ret _diag(st, "error", "E0004", display + " expects " + to_str(expected) + " argument(s), got " + to_str(got))
 }
 
 ; ---------------------------------------------------------------------------
@@ -161,6 +272,7 @@ fn _declare_pattern(st: map, pat, kind: str) -> map {
   let mut s = _pos(st, pat)
   let tag = pat["tag"]
   if tag == "PatIdent" {
+    if _is_nullary_variant(s, pat["name"]) { ret s }
     ret _declare(s, pat["name"], kind, -1)
   }
   if tag == "PatRest" {
@@ -205,7 +317,7 @@ fn _walk_stmts(st: map, stmts) -> map {
   for stmt in stmts {
     if terminated && !dead_reported {
       s = _pos(s, stmt)
-      s = _diag(s, "warning", "unreachable code")
+      s = _diag(s, "warning", "W0002", "unreachable code")
       dead_reported = true
     }
     s = _walk_stmt(s, stmt)
@@ -237,8 +349,44 @@ fn _walk_else(st: map, node) -> map {
   ret _walk_block(st, node)
 }
 
+; A match over a user sum type must name every variant or end in a
+; catch-all. Result matches are not checked (yet): `match r { Err(e) => .. }`
+; with fall-through is idiomatic in the existing code.
+fn _check_exhaustive(st: map, arms) -> map {
+  let mut covered = #{}
+  let mut sum_type = ""
+  let mut mixed = false
+  for arm in arms {
+    let pat = arm["pattern"]
+    if type_of(pat) != "map" { ret st }
+    let guarded = map.has(arm, "guard") && type_of(arm["guard"]) == "map" && arm["guard"]["tag"] != "Void"
+    let ptag = pat["tag"]
+    if ptag == "PatWildcard" { if !guarded { ret st } else { continue } }
+    let mut vname = ""
+    if ptag == "PatConstructor" { vname = pat["name"] }
+    if ptag == "PatIdent" {
+      if _is_nullary_variant(st, pat["name"]) { vname = pat["name"] }
+      else if !guarded { ret st }
+      else { continue }
+    }
+    if vname == "" { ret st }
+    if !map.has(st["variants"], vname) { ret st }
+    let t = st["variants"][vname]
+    if sum_type == "" { sum_type = t }
+    else if sum_type != t { mixed = true }
+    if !guarded { covered = map.set(covered, vname, true) }
+  }
+  if sum_type == "" || mixed { ret st }
+  let mut missing = []
+  for v in st["sums"][sum_type] {
+    if !map.has(covered, v) { missing = push(missing, v) }
+  }
+  if len(missing) == 0 { ret st }
+  ret _diag(st, "error", "E0005", "non-exhaustive match on " + sum_type + ": missing " + str.join(missing, ", "))
+}
+
 fn _walk_arms(st: map, arms) -> map {
-  let mut s = st
+  let mut s = _check_exhaustive(st, arms)
   for arm in arms {
     s = _pos(s, arm)
     s = _push_scope(s)
@@ -257,14 +405,24 @@ fn _walk_stmt(st: map, node) -> map {
 
   if tag == "Let" {
     s = _walk_expr(s, node["value"])
+    let vt = _ty(s)
     s = _pos(s, node)
-    ret _declare(s, node["name"], "let", -1)
+    let mut dt = types.t_any()
+    if map.has(node, "type") { dt = _ann(s, node["type"]) }
+    if !types.is_any(dt) {
+      if !types.assignable(vt, dt) { s = _type_mismatch(s, "let " + node["name"] + ": " + types.show(dt), dt, vt) }
+      ret _declare_typed(s, node["name"], "let", -1, dt, true)
+    }
+    ret _declare_typed(s, node["name"], "let", -1, vt, false)
   }
   if tag == "LetDestructure" {
     s = _walk_expr(s, node["value"])
+    let vt = _ty(s)
+    let mut et = types.t_any()
+    if vt["k"] == "array" { et = vt["elem"] }
     s = _pos(s, node)
     for b in node["bindings"] {
-      if type_of(b) == "str" { s = _declare(s, b, "let", -1) }
+      if type_of(b) == "str" { s = _declare_typed(s, b, "let", -1, et, false) }
       else { s = _declare_pattern(s, b, "let") }
     }
     if map.has(node, "rest") && type_of(node["rest"]) == "str" {
@@ -274,15 +432,39 @@ fn _walk_stmt(st: map, node) -> map {
   }
   if tag == "Assign" {
     let target = node["target"]
+    s = _walk_expr(s, node["value"])
+    let vt = _ty(s)
+    s = _pos(s, node)
     if type_of(target) == "map" && target["tag"] == "Ident" {
-      s = _use_name(s, target["name"])
-    } else {
-      s = _walk_expr(s, target)
+      let name = target["name"]
+      s = _use_name(s, name)
+      let idx = _resolve(s, name)
+      if idx >= 0 {
+        let e = s["scopes"][idx][name]
+        if e["annotated"] {
+          if !types.assignable(vt, e["ty"]) { s = _type_mismatch(s, name + " is " + types.show(e["ty"]), e["ty"], vt) }
+        } else {
+          ; an unannotated `let mut` may change type: widen rather than complain
+          s = _set_entry_ty(s, idx, name, types.join(e["ty"], vt))
+        }
+      }
+      ret s
     }
-    ret _walk_expr(s, node["value"])
+    ret _walk_expr(s, target)
   }
   if tag == "Return" {
-    if map.has(node, "expr") { ret _walk_expr(s, node["expr"]) }
+    if map.has(node, "expr") && type_of(node["expr"]) == "map" && node["expr"]["tag"] != "Void" {
+      s = _walk_expr(s, node["expr"])
+      let rt = s["fn_ret_ty"]
+      let vt = _ty(s)
+      s = _pos(s, node)
+      if rt["k"] == "void" && vt["k"] != "void" && vt["k"] != "any" && vt["k"] != "result" {
+        s = _diag(s, "error", "E0008", "ret with a value in a function declared -> void")
+      } else if !types.assignable(vt, rt) {
+        s = _type_mismatch(s, "ret in a function declared -> " + types.show(rt), rt, vt)
+      }
+      ret s
+    }
     ret s
   }
   if tag == "ExprStmt" { ret _walk_expr(s, node["expr"]) }
@@ -298,9 +480,14 @@ fn _walk_stmt(st: map, node) -> map {
   }
   if tag == "For" {
     s = _walk_expr(s, node["iter"])
+    let it = _ty(s)
+    let mut et = types.t_any()
+    if it["k"] == "array" { et = it["elem"] }
+    if it["k"] == "str" { et = types.t_prim("str") }
+    if it["k"] == "map" { et = it["key"] }
     s = _pos(s, node)
     s = _push_scope(s)
-    s = _declare(s, node["var"], "loopvar", -1)
+    s = _declare_typed(s, node["var"], "loopvar", -1, et, false)
     s = _walk_body(s, node["body"])
     ret _pop_scope(s)
   }
@@ -330,20 +517,25 @@ fn _walk_call(st: map, node) -> map {
   let args = node["args"]
   let nargs = len(args)
   let mut handled = false
+  let mut sig = types.t_any()
+  let mut display = ""
 
   if type_of(func) == "map" && func["tag"] == "Ident" {
     let name = func["name"]
+    display = name
     let idx = _resolve(s, name)
     if _is_builtin(s, name) {
       ; same rule as cgen: a bare call to a builtin name is the builtin,
       ; whatever else is in scope
       if map.has(s["arity"], name) { s = _check_arity(s, name, s["arity"][name], nargs) }
+      if map.has(s["sigs"], name) { sig = s["sigs"][name] }
     } else if idx >= 0 {
       s = _mark_used(s, idx, name)
       let e = _lookup(s, name)
       if e["kind"] == "fn" || e["kind"] == "imported" { s = _check_arity(s, name, e["arity"], nargs) }
+      if map.has(e, "ty") { sig = e["ty"] }
     } else {
-      s = _diag(s, "error", "undefined function: " + name)
+      s = _diag(s, "error", "E0002", "undefined function: " + name)
     }
     handled = true
   }
@@ -352,36 +544,81 @@ fn _walk_call(st: map, node) -> map {
     let base = func["expr"]
     if type_of(base) == "map" && base["tag"] == "Ident" {
       let full = base["name"] + "." + func["field"]
+      display = full
       let idx = _resolve(s, base["name"])
       if idx >= 0 {
         s = _mark_used(s, idx, base["name"])
+        if _is_builtin(s, full) {
+          ; a module may share a builtin namespace (std.reflect vs reflect.*); the builtin wins
+          if map.has(s["arity"], full) { s = _check_arity(s, full, s["arity"][full], nargs) }
+          if map.has(s["sigs"], full) { sig = s["sigs"][full] }
+        } else if map.has(s["modules"], base["name"]) {
+          let fns = s["modules"][base["name"]]
+          if map.has(fns, func["field"]) {
+            s = _check_arity(s, full, fns[func["field"]]["arity"], nargs)
+            sig = fns[func["field"]]["ty"]
+          } else {
+            s = _diag(s, "error", "E0002", "undefined function: " + full)
+          }
+        }
       } else if _is_builtin(s, full) {
         if map.has(s["arity"], full) { s = _check_arity(s, full, s["arity"][full], nargs) }
+        if map.has(s["sigs"], full) { sig = s["sigs"][full] }
       } else if _is_builtin_namespace(s, base["name"]) {
-        s = _diag(s, "error", "unknown builtin: " + full)
+        s = _diag(s, "error", "E0003", "unknown builtin: " + full)
       } else {
-        s = _diag(s, "error", "undefined variable: " + base["name"])
+        s = _diag(s, "error", "E0001", "undefined variable: " + base["name"])
       }
       handled = true
     }
   }
 
-  if !handled { s = _walk_expr(s, func) }
-  for a in args { s = _walk_expr(s, a) }
-  ret s
+  if !handled {
+    s = _walk_expr(s, func)
+    sig = _ty(s)
+    display = "closure"
+  }
+  let mut arg_tys = []
+  for a in args {
+    s = _walk_expr(s, a)
+    arg_tys = push(arg_tys, _ty(s))
+  }
+  s = _pos(s, node)
+  let r = _check_call_types(s, display, sig, arg_tys)
+  ret _set_ty(r[0], r[1])
 }
 
 fn _walk_field_access(st: map, node) -> map {
   let base = node["expr"]
+  let mut s = st
+  let mut bt = types.t_any()
   if type_of(base) == "map" && base["tag"] == "Ident" {
     let name = base["name"]
-    let idx = _resolve(st, name)
-    if idx >= 0 { ret _mark_used(st, idx, name) }
-    if _is_builtin_namespace(st, name) { ret st }
-    if map.has(_literal_names(), name) { ret st }
-    ret _diag(st, "error", "undefined variable: " + name)
+    let idx = _resolve(s, name)
+    if idx >= 0 {
+      s = _use_name(s, name)
+      bt = _ty(s)
+    } else if _is_builtin_namespace(s, name) || map.has(_literal_names(), name) {
+      ret _set_ty(s, types.t_any())
+    } else {
+      ret _set_ty(_diag(s, "error", "E0001", "undefined variable: " + name), types.t_any())
+    }
+  } else {
+    s = _walk_expr(s, base)
+    bt = _ty(s)
   }
-  ret _walk_expr(st, base)
+  ret _record_field(s, bt, node["field"])
+}
+
+; Type of `.field` / ["field"] on a value of type bt; unknown record fields are errors.
+fn _record_field(st: map, bt, field: str) -> map {
+  if type_of(bt) == "map" && bt["k"] == "record" {
+    if map.has(bt["fields"], field) { ret _set_ty(st, bt["fields"][field]) }
+    ; a literal shape may have grown through map.set: unknown fields are dynamic
+    if bt["name"] == "" { ret _set_ty(st, types.t_any()) }
+    ret _set_ty(_diag(st, "error", "E0009", "unknown field " + field + " on " + bt["name"] + " (fields: " + str.join(map.keys(bt["fields"]), ", ") + ")"), types.t_any())
+  }
+  ret _set_ty(st, types.t_any())
 }
 
 ; Visit every map/array child. Used for node kinds this file does not name.
@@ -416,47 +653,200 @@ fn _walk_expr(st: map, node) -> map {
   if tag == "FieldAccess" { ret _walk_field_access(s, node) }
   if tag == "BinOp" {
     s = _walk_expr(s, node["left"])
-    ret _walk_expr(s, node["right"])
+    let lt = _ty(s)
+    s = _walk_expr(s, node["right"])
+    let rt = _ty(s)
+    s = _pos(s, node)
+    ret _binop_type(s, node["op"], lt, rt)
   }
-  if tag == "UnaryOp" || tag == "Try" || tag == "Spread" || tag == "InterpExpr" {
-    ret _walk_expr(s, node["expr"])
+  if tag == "Try" {
+    if s["fn_ret"] == "other" && s["in_try"] == 0 {
+      s = _diag(s, "error", "E0006", "`?` in a function declared -> " + s["fn_ret_str"] + ": only a function returning Result (or one with no return type) can propagate an Err")
+    }
+    s = _walk_expr(s, node["expr"])
+    let t = _ty(s)
+    if t["k"] == "result" { ret _set_ty(s, t["ok"]) }
+    ret _set_ty(s, types.t_any())
+  }
+  if tag == "UnaryOp" {
+    s = _walk_expr(s, node["expr"])
+    let t = _ty(s)
+    if node["op"] == "!" { ret _set_ty(s, types.t_prim("bool")) }
+    if node["op"] == "-" {
+      if !types.is_any(t) && !types.is_numeric(t) && t["k"] != "result" { s = _diag(s, "error", "E0010", "unary - on a " + types.show(t)) }
+      ret _set_ty(s, t)
+    }
+    ret _set_ty(s, types.t_any())
+  }
+  if tag == "Spread" || tag == "InterpExpr" {
+    ret _set_ty(_walk_expr(s, node["expr"]), types.t_any())
   }
   if tag == "Index" {
     s = _walk_expr(s, node["expr"])
-    ret _walk_expr(s, node["index"])
+    let bt = _ty(s)
+    s = _walk_expr(s, node["index"])
+    let it = _ty(s)
+    s = _pos(s, node)
+    if bt["k"] == "array" {
+      if !types.assignable(it, types.t_prim("int")) { s = _type_mismatch(s, "array index", types.t_prim("int"), it) }
+      ret _set_ty(s, bt["elem"])
+    }
+    if bt["k"] == "map" {
+      if !types.assignable(it, bt["key"]) { s = _type_mismatch(s, "map key", bt["key"], it) }
+      ret _set_ty(s, bt["val"])
+    }
+    if bt["k"] == "record" {
+      let ix = node["index"]
+      if type_of(ix) == "map" && ix["tag"] == "String" { ret _record_field(s, bt, ix["value"]) }
+      ret _set_ty(s, types.t_any())
+    }
+    if bt["k"] == "str" { ret _set_ty(s, types.t_prim("str")) }
+    if bt["k"] == "int" || bt["k"] == "float" || bt["k"] == "bool" || bt["k"] == "void" || bt["k"] == "fn" {
+      s = _diag(s, "error", "E0010", "cannot index a value of type " + types.show(bt))
+    }
+    ret _set_ty(s, types.t_any())
   }
   if tag == "Pipe" {
+    ; `x |> f(a)` is `f(x, a)`: count the piped value for arity.
+    let right = node["right"]
+    if type_of(right) == "map" && right["tag"] == "Call" {
+      let call = map.set(right, "args", concat_arr([node["left"]], right["args"]))
+      ret _walk_expr(s, call)
+    }
     s = _walk_expr(s, node["left"])
-    ret _walk_expr(s, node["right"])
+    s = _walk_expr(s, node["right"])
+    ret _set_ty(s, types.t_any())
   }
-  if tag == "TryBlock" || tag == "BlockExpr" { ret _walk_block(s, node["block"]) }
-  if tag == "IfExpr" || tag == "MatchExpr" { ret _walk_stmt(s, node) }
-  if tag == "Array" { ret _walk_expr(s, node["elems"]) }
+  if tag == "TryBlock" {
+    s = map.set(s, "in_try", s["in_try"] + 1)
+    s = _walk_block(s, node["block"])
+    s = map.set(s, "in_try", s["in_try"] - 1)
+    ret _set_ty(s, types.t_result(types.t_any(), types.t_any()))
+  }
+  if tag == "BlockExpr" { ret _set_ty(_walk_block(s, node["block"]), types.t_any()) }
+  if tag == "IfExpr" || tag == "MatchExpr" { ret _set_ty(_walk_stmt(s, node), types.t_any()) }
+  if tag == "Array" {
+    let mut et = types.t_any()
+    let mut first = true
+    for e in node["elems"] {
+      s = _walk_expr(s, e)
+      if first { et = _ty(s) } else { et = types.join(et, _ty(s)) }
+      first = false
+    }
+    ret _set_ty(s, types.t_array(et))
+  }
   if tag == "Record" {
     for f in node["fields"] { s = _walk_expr(s, f["value"]) }
-    ret s
+    ret _set_ty(s, types.t_map(types.t_prim("str"), types.t_any()))
   }
   if tag == "MapLiteral" {
+    ; a literal with only string-literal keys is an anonymous record (its shape
+    ; is checked against record annotations); anything else is a plain map
+    let mut kt = types.t_any()
+    let mut fields = #{}
+    let mut shaped = len(node["entries"]) > 0
+    let mut first = true
     for e in node["entries"] {
-      if type_of(e["key"]) == "map" { s = _walk_expr(s, e["key"]) }
+      let mut k = types.t_prim("str")
+      let key = e["key"]
+      if type_of(key) == "map" {
+        if key["tag"] == "String" {
+          s = _walk_expr(s, e["value"])
+          fields = map.set(fields, key["value"], _ty(s))
+          if first { kt = k } else { kt = types.join(kt, k) }
+          first = false
+          continue
+        }
+        s = _walk_expr(s, key)
+        k = _ty(s)
+      } else if type_of(key) == "str" {
+        s = _walk_expr(s, e["value"])
+        fields = map.set(fields, key, _ty(s))
+        if first { kt = k } else { kt = types.join(kt, k) }
+        first = false
+        continue
+      }
+      shaped = false
       s = _walk_expr(s, e["value"])
+      if first { kt = k } else { kt = types.join(kt, k) }
+      first = false
     }
-    ret s
+    if shaped { ret _set_ty(s, types.t_record("", fields)) }
+    ret _set_ty(s, types.t_map(kt, types.t_any()))
   }
-  if tag == "Interpolation" { ret _walk_expr(s, node["parts"]) }
+  if tag == "Interpolation" { ret _set_ty(_walk_expr(s, node["parts"]), types.t_prim("str")) }
   if tag == "Lambda" {
+    let outer_ret = s["fn_ret"]
+    let outer_ret_ty = s["fn_ret_ty"]
+    s = map.set(s, "fn_ret", "any")
+    s = map.set(s, "fn_ret_ty", types.t_any())
     s = _push_scope(s)
+    let mut pts = []
     for p in node["params"] {
-      if type_of(p) == "str" { s = _declare(s, p, "param", -1) }
-      else if type_of(p) == "map" { s = _declare(s, p["name"], "param", -1) }
+      if type_of(p) == "str" { s = _declare(s, p, "param", -1)
+        pts = push(pts, types.t_any()) }
+      else if type_of(p) == "map" {
+        let pt = _ann(s, p["type"])
+        s = _declare_typed(s, p["name"], "param", -1, pt, !types.is_any(pt))
+        pts = push(pts, pt)
+      }
     }
-    s = _walk_body(s, node["body"])
-    ret _pop_scope(s)
+    let body = node["body"]
+    let mut rt = types.t_any()
+    if type_of(body) == "map" && body["tag"] != "Block" {
+      s = _walk_expr(s, body)
+      rt = _ty(s)
+    } else {
+      s = _walk_body(s, body)
+    }
+    s = _pop_scope(s)
+    s = map.set(s, "fn_ret", outer_ret)
+    s = map.set(s, "fn_ret_ty", outer_ret_ty)
+    ret _set_ty(s, types.t_fn(pts, rt))
   }
-  if tag == "Int" || tag == "Float" || tag == "String" || tag == "Bool" || tag == "Void" || tag == "InterpLit" {
-    ret s
+  if tag == "Int" { ret _set_ty(s, types.t_prim("int")) }
+  if tag == "Float" { ret _set_ty(s, types.t_prim("float")) }
+  if tag == "String" || tag == "InterpLit" { ret _set_ty(s, types.t_prim("str")) }
+  if tag == "Bool" { ret _set_ty(s, types.t_prim("bool")) }
+  if tag == "Void" { ret _set_ty(s, types.t_prim("void")) }
+  ret _set_ty(_walk_children(s, node), types.t_any())
+}
+
+; Result type of `l op r`, with an error when both sides are known and the
+; runtime would produce void (e.g. "a" + 1).
+fn _binop_type(st: map, op: str, lt, rt) -> map {
+  let mut s = st
+  let bool_t = types.t_prim("bool")
+  if op == "&&" || op == "||" { ret _set_ty(s, bool_t) }
+  if op == "==" || op == "!=" { ret _set_ty(s, bool_t) }
+  let lk = lt["k"]
+  let rk = rt["k"]
+  let known = !types.is_any(lt) && !types.is_any(rt) && lk != "result" && rk != "result" && lk != "var" && rk != "var"
+  if op == "<" || op == ">" || op == "<=" || op == ">=" {
+    if known {
+      let both_num = types.is_numeric(lt) && types.is_numeric(rt)
+      let both_str = lk == "str" && rk == "str"
+      if !both_num && !both_str { s = _diag(s, "error", "E0010", "cannot compare " + types.show(lt) + " " + op + " " + types.show(rt)) }
+    }
+    ret _set_ty(s, bool_t)
   }
-  ret _walk_children(s, node)
+  if op == "+" || op == "-" || op == "*" || op == "/" || op == "%" {
+    if types.is_numeric(lt) && types.is_numeric(rt) {
+      if lk == "int" && rk == "int" { ret _set_ty(s, types.t_prim("int")) }
+      if lk == "num" || rk == "num" { ret _set_ty(s, types.t_prim("num")) }
+      ret _set_ty(s, types.t_prim("float"))
+    }
+    if op == "+" && lk == "str" && rk == "str" { ret _set_ty(s, types.t_prim("str")) }
+    if known {
+      s = _diag(s, "error", "E0010", "cannot apply " + op + " to " + types.show(lt) + " and " + types.show(rt) + " (the result would be void at runtime)")
+      ret _set_ty(s, types.t_any())
+    }
+    ; one side unknown: a str on either side of + means the result is str
+    if op == "+" && (lk == "str" || rk == "str") { ret _set_ty(s, types.t_prim("str")) }
+    if types.is_numeric(lt) { ret _set_ty(s, types.t_any()) }
+    ret _set_ty(s, types.t_any())
+  }
+  ret _set_ty(s, types.t_any())
 }
 
 ; ---------------------------------------------------------------------------
@@ -473,6 +863,45 @@ fn _module_short_name(path) -> str {
   ret path[len(path) - 1]
 }
 
+; Records `ty T = A(x) | B | ...`: variants[A] = T, sums[T] = [A, B, ...].
+; `Circle(r)` names an untyped field; `Circle(float)` / `Circle(Point)` types it.
+; A lowercase name that is not a known type is a field name, not a type.
+fn _variant_field_ty(st: map, f) -> map {
+  let t = _ann(st, f)
+  if t["k"] == "named" && !map.has(st["typedefs"], t["name"]) {
+    let c = str.slice(t["name"], 0, 1)
+    if c == str.lower(c) { ret types.t_any() }
+  }
+  ret t
+}
+
+fn _declare_sum_type(st: map, item) -> map {
+  let body = item["body"]
+  if type_of(body) != "map" || body["tag"] != "TypeSum" { ret st }
+  let mut s = st
+  let mut names = []
+  for v in body["variants"] {
+    if type_of(v) != "map" { continue }
+    names = push(names, v["name"])
+    s = map.set(s, "variants", map.set(s["variants"], v["name"], item["name"]))
+    ; constructors are callable by bare name, with fixed arity and typed fields
+    let mut fts = []
+    for f in v["fields"] {
+      if type_of(f) == "map" && map.has(f, "tag") && str.starts_with(f["tag"], "Ty") { fts = push(fts, _variant_field_ty(s, f)) }
+      else if type_of(f) == "map" && map.has(f, "type") { fts = push(fts, _ann(s, f["type"])) }
+      else { fts = push(fts, types.t_any()) }
+    }
+    s = _declare_typed(s, v["name"], "fn", len(v["fields"]), types.t_fn(fts, types.t_named(item["name"])), true)
+  }
+  ret map.set(s, "sums", map.set(s["sums"], item["name"], names))
+}
+
+fn _is_nullary_variant(st: map, name: str) -> bool {
+  if !map.has(st["variants"], name) { ret false }
+  let e = _lookup(st, name)
+  ret map.has(e, "arity") && e["arity"] == 0
+}
+
 fn _declare_top_level(st: map, item) -> map {
   if type_of(item) != "map" { ret st }
   let mut s = _pos(st, item)
@@ -481,42 +910,60 @@ fn _declare_top_level(st: map, item) -> map {
     if _is_builtin(s, item["name"]) {
       ; cgen resolves bare calls to the builtin first, so this function can
       ; only be reached as `module.name(...)` from another module.
-      s = _diag(s, "warning", "function " + item["name"] + " shadows a builtin; unqualified calls resolve to the builtin")
+      s = _diag(s, "warning", "W0003", "function " + item["name"] + " shadows a builtin; unqualified calls resolve to the builtin")
     }
-    ret _declare(s, item["name"], "fn", len(item["params"]))
+    ret _declare_typed(s, item["name"], "fn", len(item["params"]), _fn_sig(s, item), true)
   }
   if tag == "UseDecl" {
-    s = _declare(s, _module_short_name(item["path"]), "module", -1)
+    let short = _module_short_name(item["path"])
+    s = _declare(s, short, "module", -1)
     ; `use m` also makes every function of m callable unqualified (cgen's
-    ; import aliases), so declare them too.
+    ; import aliases), so declare them too, and remember m's function table
+    ; so `m.f(...)` can be checked for existence and arity.
     let file = cgen._use_path_to_file(item["path"])
     let src = io.read_file(file)
     if type_of(src) == "str" && len(src) > 0 {
       let mod_ast = parser.parse(src)
       if type_of(mod_ast) == "map" && mod_ast["tag"] == "Program" {
+        let mut fns = #{}
         for mi in mod_ast["items"] {
           if type_of(mi) == "map" && mi["tag"] == "FnDecl" {
-            s = _declare(s, mi["name"], "imported", len(mi["params"]))
+            s = _declare_typed(s, mi["name"], "imported", len(mi["params"]), _fn_sig(s, mi), true)
+            fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
+          }
+          if type_of(mi) == "map" && mi["tag"] == "ExternFn" {
+            fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
+          }
+          if type_of(mi) == "map" && mi["tag"] == "TypeDecl" {
+            s = _declare_typedef(s, mi)
+            s = _declare_sum_type(s, mi)
           }
         }
+        s = map.set(s, "modules", map.set(s["modules"], short, fns))
       }
     }
     ret s
   }
   if tag == "TypeDecl" {
     s = _declare(s, item["name"], "type", -1)
-    let body = item["body"]
-    if type_of(body) == "map" && body["tag"] == "TypeSum" {
-      ; variant constructors are callable by bare name, with fixed arity
-      for v in body["variants"] {
-        if type_of(v) == "map" { s = _declare(s, v["name"], "fn", len(v["fields"])) }
-      }
-    }
-    ret s
+    s = _declare_typedef(s, item)
+    ret _declare_sum_type(s, item)
   }
   if tag == "ModDecl" {
+    ; an inline mod behaves like a `use`d module: `m.f(...)` and bare `f(...)`
     s = _declare(s, item["name"], "module", -1)
-    ret s
+    let mut fns = #{}
+    for mi in item["items"] {
+      if type_of(mi) == "map" && mi["tag"] == "FnDecl" {
+        s = _declare_typed(s, mi["name"], "imported", len(mi["params"]), _fn_sig(s, mi), true)
+        fns = map.set(fns, mi["name"], #{"arity": len(mi["params"]), "ty": _fn_sig(s, mi)})
+      }
+      if type_of(mi) == "map" && mi["tag"] == "TypeDecl" {
+        s = _declare_typedef(s, mi)
+        s = _declare_sum_type(s, mi)
+      }
+    }
+    ret map.set(s, "modules", map.set(s["modules"], item["name"], fns))
   }
   if tag == "Let" {
     ret _declare(s, item["name"], "global", -1)
@@ -524,16 +971,47 @@ fn _declare_top_level(st: map, item) -> map {
   ret s
 }
 
+; What `?` may do in this function: "result" (propagate), "any" (unannotated
+; or -> any: allowed, value flows out as-is), "other" (a compile error).
+fn _ret_kind(rt) -> str {
+  if type_of(rt) != "map" { ret "any" }
+  let tag = rt["tag"]
+  if tag == "TyInfer" { ret "any" }
+  if tag == "TyPrim" && rt["name"] == "any" { ret "any" }
+  if tag == "TyNamed" && rt["name"] == "any" { ret "any" }
+  if tag == "TyNamed" && rt["name"] == "Result" { ret "result" }
+  ret "other"
+}
+
+fn _ty_str(rt) -> str {
+  if type_of(rt) != "map" { ret "?" }
+  if map.has(rt, "name") { ret rt["name"] }
+  if rt["tag"] == "TyArray" { ret "[" + _ty_str(rt["elem"]) + "]" }
+  if rt["tag"] == "TyMap" { ret "map" }
+  if rt["tag"] == "TyFn" { ret "fn" }
+  ret "type"
+}
+
 fn _check_fn(st: map, fn_node) -> map {
   let mut s = _pos(st, fn_node)
+  s = map.set(s, "fn_ret", _ret_kind(fn_node["ret_type"]))
+  s = map.set(s, "fn_ret_str", _ty_str(fn_node["ret_type"]))
+  s = map.set(s, "fn_ret_ty", _ann(s, fn_node["ret_type"]))
   s = _push_scope(s)
   for p in fn_node["params"] {
     if type_of(p) == "str" { s = _declare(s, p, "param", -1) }
-    else if type_of(p) == "map" { s = _declare(s, p["name"], "param", -1) }
+    else if type_of(p) == "map" {
+      let pt = _ann(s, p["type"])
+      s = _declare_typed(s, p["name"], "param", -1, pt, !types.is_any(pt))
+    }
   }
   s = _walk_expr(s, fn_node["pre"])
   s = _walk_body(s, fn_node["body"])
+  ; In `post { ... }` the name `ret` stands for the returned value.
+  s = _push_scope(s)
+  s = _declare(s, "ret", "param", -1)
   s = _walk_expr(s, fn_node["post"])
+  s = _pop_scope(s)
   ret _pop_scope(s)
 }
 
@@ -576,5 +1054,7 @@ fn format_diag(file: str, d: map) -> str {
   if d["line"] > 0 {
     loc = file + ":" + to_str(d["line"]) + ":" + to_str(d["col"])
   }
-  ret loc + ": " + d["severity"] + ": " + d["msg"]
+  let mut sev = d["severity"]
+  if map.has(d, "code") { sev = sev + "[" + d["code"] + "]" }
+  ret loc + ": " + sev + ": " + d["msg"]
 }

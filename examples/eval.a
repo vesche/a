@@ -40,17 +40,17 @@ use std.lexer
 ; parser state: returns [node, new_position]
 ; node is a heterogeneous array, position is an integer
 
-fn p_ok(node: [str], pos: i64) -> [str] {
+fn p_ok(node: any, pos: i64) -> any {
   ret [node, pos]
 }
-fn p_node(r: [str]) -> [str] { ret r[0] }
-fn p_pos(r: [str]) -> i64 { ret r[1] }
+fn p_node(r: any) -> any { ret r[0] }
+fn p_pos(r: any) -> i64 { ret r[1] }
 
 ; --- Expression parsing (precedence climbing) ---
 
-fn p_expr(toks: [str], p: i64) -> [str] { ret p_or(toks, p) }
+fn p_expr(toks: any, p: i64) -> any { ret p_or(toks, p) }
 
-fn p_or(toks: [str], p: i64) -> [str] {
+fn p_or(toks: any, p: i64) -> any {
   let mut r = p_and(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -63,7 +63,7 @@ fn p_or(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_and(toks: [str], p: i64) -> [str] {
+fn p_and(toks: any, p: i64) -> any {
   let mut r = p_eq(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -76,7 +76,7 @@ fn p_and(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_eq(toks: [str], p: i64) -> [str] {
+fn p_eq(toks: any, p: i64) -> any {
   let mut r = p_cmp(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -90,7 +90,7 @@ fn p_eq(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_cmp(toks: [str], p: i64) -> [str] {
+fn p_cmp(toks: any, p: i64) -> any {
   let mut r = p_add(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -104,7 +104,7 @@ fn p_cmp(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_add(toks: [str], p: i64) -> [str] {
+fn p_add(toks: any, p: i64) -> any {
   let mut r = p_mul(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -118,7 +118,7 @@ fn p_add(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_mul(toks: [str], p: i64) -> [str] {
+fn p_mul(toks: any, p: i64) -> any {
   let mut r = p_unary(toks, p)
   let mut pos = p_pos(r)
   let mut left = p_node(r)
@@ -132,7 +132,7 @@ fn p_mul(toks: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_unary(toks: [str], p: i64) -> [str] {
+fn p_unary(toks: any, p: i64) -> any {
   let k = lexer.tk(toks, p)
   if k == "Minus" {
     let r = p_unary(toks, p + 1)
@@ -145,7 +145,7 @@ fn p_unary(toks: [str], p: i64) -> [str] {
   ret p_postfix(toks, p)
 }
 
-fn p_postfix(toks: [str], p: i64) -> [str] {
+fn p_postfix(toks: any, p: i64) -> any {
   let mut r = p_primary(toks, p)
   let mut pos = p_pos(r)
   let mut expr = p_node(r)
@@ -200,7 +200,7 @@ fn p_postfix(toks: [str], p: i64) -> [str] {
   ret p_ok(expr, pos)
 }
 
-fn p_primary(toks: [str], p: i64) -> [str] {
+fn p_primary(toks: any, p: i64) -> any {
   let k = lexer.tk(toks, p)
   let v = lexer.tv(toks, p)
   if k == "Int" { ret p_ok(["int", v], p + 1) }
@@ -241,7 +241,7 @@ fn p_primary(toks: [str], p: i64) -> [str] {
 
 ; --- Statement parsing ---
 
-fn p_block(toks: [str], p: i64) -> [str] {
+fn p_block(toks: any, p: i64) -> any {
   let mut pos = lexer.skip_nl(toks, p)
   let mut stmts = []
   while lexer.tk(toks, pos) != "RBrace" {
@@ -255,7 +255,7 @@ fn p_block(toks: [str], p: i64) -> [str] {
   ret p_ok(stmts, pos)
 }
 
-fn p_stmt(toks: [str], p: i64) -> [str] {
+fn p_stmt(toks: any, p: i64) -> any {
   let k = lexer.tk(toks, p)
 
   if k == "KwLet" { ret p_let(toks, p) }
@@ -311,7 +311,7 @@ fn p_stmt(toks: [str], p: i64) -> [str] {
   ret p_ok(["expr", p_node(r)], lexer.skip_nl(toks, pos))
 }
 
-fn p_let(toks: [str], p: i64) -> [str] {
+fn p_let(toks: any, p: i64) -> any {
   let mut pos = p + 1
   if lexer.tk(toks, pos) == "KwMut" { pos = pos + 1 }
   let name = lexer.tv(toks, pos)
@@ -327,7 +327,7 @@ fn p_let(toks: [str], p: i64) -> [str] {
   ret p_ok(["let", name, p_node(val_r)], lexer.skip_nl(toks, p_pos(val_r)))
 }
 
-fn p_if(toks: [str], p: i64) -> [str] {
+fn p_if(toks: any, p: i64) -> any {
   let cond_r = p_expr(toks, p + 1)
   let mut pos = lexer.skip_nl(toks, p_pos(cond_r))
   pos = pos + 1
@@ -351,7 +351,7 @@ fn p_if(toks: [str], p: i64) -> [str] {
 
 ; --- Top-level parsing ---
 
-fn p_fn_decl(toks: [str], p: i64) -> [str] {
+fn p_fn_decl(toks: any, p: i64) -> any {
   let mut pos = p + 1
   let name = lexer.tv(toks, pos)
   pos = pos + 2
@@ -405,7 +405,7 @@ fn p_fn_decl(toks: [str], p: i64) -> [str] {
   ret p_ok(["fn", name, params, p_node(body_r)], pos)
 }
 
-fn p_program(toks: [str], p: i64) -> [str] {
+fn p_program(toks: any, p: i64) -> any {
   let mut pos = lexer.skip_nl(toks, p)
   let mut decls = []
   while lexer.tk(toks, pos) != "Eof" {
@@ -450,9 +450,9 @@ fn p_program(toks: [str], p: i64) -> [str] {
 
 ; environment: flat array [name, value, name, value, ...]
 
-fn env_new() -> [str] { ret [] }
+fn env_new() -> any { ret [] }
 
-fn env_get(env: [str], name: str) -> [str] {
+fn env_get(env: any, name: str) -> any {
   let mut i = len(env) - 2
   while i >= 0 {
     if env[i] == name { ret env[i + 1] }
@@ -461,11 +461,11 @@ fn env_get(env: [str], name: str) -> [str] {
   ret "__undefined__"
 }
 
-fn env_set(env: [str], name: str, val: [str]) -> [str] {
+fn env_set(env: any, name: str, val: any) -> any {
   ret push(push(env, name), val)
 }
 
-fn env_update(env: [str], name: str, val: [str]) -> [str] {
+fn env_update(env: any, name: str, val: any) -> any {
   let mut i = len(env) - 2
   while i >= 0 {
     if env[i] == name {
@@ -489,7 +489,7 @@ fn env_update(env: [str], name: str, val: [str]) -> [str] {
 }
 
 ; function table: flat array [name, fn_node, name, fn_node, ...]
-fn fns_get(fns: [str], name: str) -> [str] {
+fn fns_get(fns: any, name: str) -> any {
   let mut i = 0
   while i < len(fns) {
     if fns[i] == name { ret fns[i + 1] }
@@ -499,7 +499,7 @@ fn fns_get(fns: [str], name: str) -> [str] {
 }
 
 ; sentinel values for control flow
-fn is_return(v: [str]) -> bool {
+fn is_return(v: any) -> bool {
   if type_of(v) == "array" {
     if len(v) == 2 {
       if v[0] == "__return__" { ret true }
@@ -507,15 +507,15 @@ fn is_return(v: [str]) -> bool {
   }
   ret false
 }
-fn return_val(v: [str]) -> [str] { ret v[1] }
+fn return_val(v: any) -> any { ret v[1] }
 
-fn is_break(v: [str]) -> bool {
+fn is_break(v: any) -> bool {
   if type_of(v) == "str" {
     ret v == "__break__"
   }
   ret false
 }
-fn is_continue(v: [str]) -> bool {
+fn is_continue(v: any) -> bool {
   if type_of(v) == "str" {
     ret v == "__continue__"
   }
@@ -523,7 +523,7 @@ fn is_continue(v: [str]) -> bool {
 }
 
 ; --- Truthiness ---
-fn is_truthy(v: [str]) -> bool {
+fn is_truthy(v: any) -> bool {
   if type_of(v) == "bool" { ret v }
   if type_of(v) == "int" { ret v != 0 }
   if type_of(v) == "str" { ret v != "" }
@@ -532,7 +532,7 @@ fn is_truthy(v: [str]) -> bool {
 }
 
 ; --- String conversion ---
-fn val_str(v: [str]) -> str {
+fn val_str(v: any) -> str {
   if type_of(v) == "int" { ret to_str(v) }
   if type_of(v) == "float" { ret to_str(v) }
   if type_of(v) == "str" { ret v }
@@ -548,7 +548,7 @@ fn val_str(v: [str]) -> str {
 }
 
 ; --- String interpolation ---
-fn interp_str(raw: str, env: [str], fns: [str]) -> str {
+fn interp_str(raw: str, env: any, fns: any) -> str {
   let lbrace = from_code(123)
   let rbrace = from_code(125)
   let bslash = from_code(92)
@@ -619,7 +619,7 @@ fn interp_str(raw: str, env: [str], fns: [str]) -> str {
   ret result
 }
 
-fn eval_interp_expr(expr_str: str, env: [str], fns: [str]) -> [str] {
+fn eval_interp_expr(expr_str: str, env: any, fns: any) -> any {
   if str.contains(expr_str, "[") {
     let idx_pos = str.find(expr_str, "[")
     let name = str.slice(expr_str, 0, idx_pos)
@@ -641,7 +641,7 @@ fn eval_interp_expr(expr_str: str, env: [str], fns: [str]) -> [str] {
 }
 
 ; --- Eval expression ---
-fn eval_expr(node: [str], env: [str], fns: [str]) -> [str] {
+fn eval_expr(node: any, env: any, fns: any) -> any {
   let kind = node[0]
 
   if kind == "int" { ret int(node[1]) }
@@ -741,7 +741,7 @@ fn eval_expr(node: [str], env: [str], fns: [str]) -> [str] {
 }
 
 ; --- Eval builtin/function call ---
-fn eval_call(name: str, args: [str], fns: [str], env: [str]) -> [str] {
+fn eval_call(name: str, args: any, fns: any, env: any) -> any {
   ; builtins
   if name == "println" {
     println(val_str(args[0]))
@@ -767,8 +767,8 @@ fn eval_call(name: str, args: [str], fns: [str], env: [str]) -> [str] {
   if name == "sort" { ret sort(args[0]) }
   if name == "reverse_arr" { ret reverse_arr(args[0]) }
   if name == "contains" { ret contains(args[0], args[1]) }
-  if name == "abs" { ret abs(args[0]) }
-  if name == "sqrt" { ret sqrt(args[0]) }
+  if name == "abs" { ret math.abs(args[0]) }
+  if name == "sqrt" { ret math.sqrt(args[0]) }
   if name == "slice" {
     if len(args) >= 3 { ret slice(args[0], args[1], args[2]) }
     ret slice(args[0], args[1], len(args[0]))
@@ -831,7 +831,7 @@ fn eval_call(name: str, args: [str], fns: [str], env: [str]) -> [str] {
 }
 
 ; --- Eval statement ---
-fn eval_stmt(stmt: [str], env: [str], fns: [str]) -> [str] {
+fn eval_stmt(stmt: any, env: any, fns: any) -> any {
   let kind = stmt[0]
 
   if kind == "let" {
@@ -931,7 +931,7 @@ fn eval_stmt(stmt: [str], env: [str], fns: [str]) -> [str] {
   ret ["__env__", env]
 }
 
-fn eval_block_with_env(stmts: [str], env: [str], fns: [str]) -> [str] {
+fn eval_block_with_env(stmts: any, env: any, fns: any) -> any {
   let mut cur_env = env
   for stmt in stmts {
     let result = eval_stmt(stmt, cur_env, fns)
@@ -949,7 +949,7 @@ fn eval_block_with_env(stmts: [str], env: [str], fns: [str]) -> [str] {
   ret ["__env__", cur_env]
 }
 
-fn eval_block(stmts: [str], env: [str], fns: [str]) -> [str] {
+fn eval_block(stmts: any, env: any, fns: any) -> any {
   let r = eval_block_with_env(stmts, env, fns)
   if is_return(r) { ret r }
   ret 0
@@ -959,7 +959,7 @@ fn eval_block(stmts: [str], env: [str], fns: [str]) -> [str] {
 ; MODULE LOADING
 ; ============================================================
 
-fn load_module(mod_path: str, src_dir: str, fns: [str]) -> [str] {
+fn load_module(mod_path: str, src_dir: str, fns: any) -> any {
   let parts = str.split(mod_path, ".")
   let mod_name = parts[len(parts) - 1]
   let file_path = str.concat(str.replace(mod_path, ".", "/"), ".a")

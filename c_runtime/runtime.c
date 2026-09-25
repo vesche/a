@@ -242,6 +242,7 @@ AValue a_neg(AValue a) {
 
 /* --- Comparison --- */
 
+static int map_find(AMap* m, const char* key);
 static int val_eq(AValue a, AValue b) {
     if (a.tag != b.tag) {
         if ((a.tag == TAG_INT || a.tag == TAG_FLOAT) && (b.tag == TAG_INT || b.tag == TAG_FLOAT)) {
@@ -257,6 +258,28 @@ static int val_eq(AValue a, AValue b) {
         case TAG_BOOL: return a.bval == b.bval;
         case TAG_VOID: return 1;
         case TAG_STRING: return a.sval->len == b.sval->len && memcmp(a.sval->data, b.sval->data, a.sval->len) == 0;
+        /* Containers compare structurally: this is what makes `Circle(1.0) ==
+         * Circle(1.0)` and `[1, 2] == [1, 2]` true. Maps ignore key order. */
+        case TAG_ARRAY: {
+            if (a.aval == b.aval) return 1;
+            if (a.aval->len != b.aval->len) return 0;
+            for (int i = 0; i < a.aval->len; i++)
+                if (!val_eq(a.aval->items[i], b.aval->items[i])) return 0;
+            return 1;
+        }
+        case TAG_MAP: {
+            if (a.mval == b.mval) return 1;
+            if (a.mval->len != b.mval->len) return 0;
+            for (int i = 0; i < a.mval->len; i++) {
+                int j = map_find(b.mval, a.mval->keys[i]);
+                if (j < 0 || !val_eq(a.mval->vals[i], b.mval->vals[j])) return 0;
+            }
+            return 1;
+        }
+        case TAG_RESULT:
+            return a.rval.is_ok == b.rval.is_ok && val_eq(*a.rval.inner, *b.rval.inner);
+        case TAG_CLOSURE: return a.cval == b.cval;
+        case TAG_PTR: return a.pval == b.pval;
         default: return 0;
     }
 }
@@ -288,6 +311,7 @@ AValue a_or(AValue a, AValue b) { return a_truthy(a) ? a : b; }
 
 /* --- Strings --- */
 
+static int variant_to_buf(AValue v, char* buf, int cap);
 static void val_to_buf(AValue v, char* buf, int cap) {
     switch (v.tag) {
         case TAG_INT: snprintf(buf, cap, "%lld", (long long)v.ival); break;
@@ -308,6 +332,7 @@ static void val_to_buf(AValue v, char* buf, int cap) {
             break;
         }
         case TAG_MAP: {
+            if (v.mval->len == 2 && variant_to_buf(v, buf, cap)) break;
             int pos = 0;
             pos += snprintf(buf + pos, cap - pos, "#{");
             for (int i = 0; i < v.mval->len && pos < cap - 10; i++) {
@@ -330,6 +355,57 @@ static void val_to_buf(AValue v, char* buf, int cap) {
         case TAG_PTR: snprintf(buf, cap, "<ptr:%p>", v.pval); break;
         default: snprintf(buf, cap, "<value>"); break;
     }
+}
+
+/* --- Sum-type variants ---
+ * `ty Shape = Circle(float) | Empty` values are maps shaped
+ * #{"$tag": "Circle", "$args": [2.0]}. Only the checker knows the type; the
+ * runtime needs just these three operations. */
+AValue a_variant_new(const char* tag, int n, ...) {
+    AArray* arr = malloc(sizeof(AArray));
+    arr->rc = 1; arr->len = n; arr->cap = n > 0 ? n : 1;
+    arr->items = malloc(sizeof(AValue) * arr->cap);
+    va_list ap;
+    va_start(ap, n);
+    for (int i = 0; i < n; i++) arr->items[i] = a_retain(va_arg(ap, AValue));
+    va_end(ap);
+    AValue args = (AValue){.tag = TAG_ARRAY, .aval = arr};
+    AValue tagv = a_string(tag);
+    AValue out = a_map_new(2, "$tag", tagv, "$args", args);
+    a_release(tagv);
+    a_release(args);
+    return out;
+}
+
+int a_is_variant(AValue v, const char* tag) {
+    if (v.tag != TAG_MAP) return 0;
+    AValue t = a_map_get_borrow(v, "$tag");
+    return t.tag == TAG_STRING && strcmp(t.sval->data, tag) == 0;
+}
+
+/* Borrowed: the i-th constructor argument, or void. */
+AValue a_variant_arg(AValue v, int i) {
+    if (v.tag != TAG_MAP) return a_void();
+    AValue args = a_map_get_borrow(v, "$args");
+    if (args.tag != TAG_ARRAY || i < 0 || i >= args.aval->len) return a_void();
+    return args.aval->items[i];
+}
+
+static int variant_to_buf(AValue v, char* buf, int cap) {
+    AValue t = a_map_get_borrow(v, "$tag");
+    AValue args = a_map_get_borrow(v, "$args");
+    if (t.tag != TAG_STRING || args.tag != TAG_ARRAY) return 0;
+    int pos = snprintf(buf, cap, "%s", t.sval->data);
+    if (args.aval->len == 0) return 1;
+    pos += snprintf(buf + pos, cap - pos, "(");
+    for (int i = 0; i < args.aval->len && pos < cap - 5; i++) {
+        if (i > 0) pos += snprintf(buf + pos, cap - pos, ", ");
+        char tmp[256];
+        val_to_buf(args.aval->items[i], tmp, 256);
+        pos += snprintf(buf + pos, cap - pos, "%s", tmp);
+    }
+    snprintf(buf + pos, cap - pos, ")");
+    return 1;
 }
 
 AValue a_to_str(AValue v) {
@@ -1580,7 +1656,20 @@ AValue a_unwrap(AValue v) {
         a_eprintln(*v.rval.inner);
         a_exit_fatal(1);
     }
-    return v;
+    return a_retain(v);
+}
+
+/* Called by the generated C main(): an Err that propagated out of fn main
+ * (via `?` or `ret Err(..)`) is the program's failure. */
+int a_main_exit_code(AValue r) {
+    if (a_is_err_raw(r)) {
+        fprintf(stderr, "error: ");
+        a_eprintln(*r.rval.inner);
+        a_release(r);
+        return 1;
+    }
+    a_release(r);
+    return 0;
 }
 
 AValue a_try_unwrap(AValue v) {

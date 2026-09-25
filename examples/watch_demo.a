@@ -7,7 +7,8 @@
 
 fn main() {
   let argv = args()
-  let dir = if len(argv) > 0 { argv[0] } else { "." }
+  let mut dir = "."
+  if len(argv) > 0 { dir = argv[0] }
 
   if !fs.exists(dir) {
     eprintln("error: path does not exist: " + dir)

@@ -1,0 +1,234 @@
+; std/compiler/builtin_sigs.a -- The one table describing every builtin.
+;
+; `sigs()` maps a builtin name to its signature written in `a`'s own type
+; syntax, e.g. "fn(str, str) -> [str]". Single-letter uppercase names (T, U,
+; K, V) are type variables bound per call. `num` means int or float.
+; `any` is the gradual type: it accepts and produces anything.
+;
+; `min_arity()` lists builtins whose trailing parameters are optional; the
+; runtime treats a void argument there as "not given" and cgen pads the call.
+;
+; Names must match cgen._builtin_map(); arities must match the C prototypes
+; (std/compiler/builtin_arity.a, generated from runtime.h). Both are checked
+; by tests/native/test_type_module.a so the three can never drift apart again.
+
+fn sigs() -> map {
+  ret #{
+    ; --- results ---
+    "Ok": "fn(T) -> Result<T, any>",
+    "Err": "fn(E) -> Result<any, E>",
+    "is_ok": "fn(any) -> bool",
+    "is_err": "fn(any) -> bool",
+    "unwrap": "fn(Result<T, any>) -> T",
+    "unwrap_or": "fn(Result<T, any>, T) -> T",
+    "expect": "fn(Result<T, any>, str) -> T",
+
+    ; --- core ---
+    "len": "fn(any) -> int",
+    "to_str": "fn(any) -> str",
+    "type_of": "fn(any) -> str",
+    "int": "fn(any) -> int",
+    "float": "fn(any) -> float",
+    "print": "fn(any) -> void",
+    "println": "fn(any) -> void",
+    "eprintln": "fn(any) -> void",
+    "fail": "fn(any) -> void",
+    "args": "fn() -> [str]",
+    "argv0": "fn() -> str",
+    "embedded_file": "fn(str) -> str",
+    "char_code": "fn(str) -> int",
+    "from_code": "fn(int) -> str",
+    "exit": "fn(int) -> void",
+    "is_alnum": "fn(str) -> bool",
+    "is_alpha": "fn(str) -> bool",
+    "is_digit": "fn(str) -> bool",
+
+    ; --- arrays and higher-order functions ---
+    "push": "fn([T], T) -> [T]",
+    "concat_arr": "fn([T], [T]) -> [T]",
+    "contains": "fn([T], T) -> bool",
+    "slice": "fn([T], int, int) -> [T]",
+    "take": "fn([T], int) -> [T]",
+    "drop": "fn([T], int) -> [T]",
+    "chunk": "fn([T], int) -> [[T]]",
+    "reverse_arr": "fn([T]) -> [T]",
+    "sort": "fn([T]) -> [T]",
+    "sort_by": "fn([T], fn(T, T) -> int) -> [T]",
+    "unique": "fn([T]) -> [T]",
+    "zip": "fn([T], [U]) -> [[any]]",
+    "enumerate": "fn([T]) -> [[any]]",
+    "map": "fn([T], fn(T) -> U) -> [U]",
+    "filter": "fn([T], fn(T) -> bool) -> [T]",
+    "reduce": "fn([T], U, fn(U, T) -> U) -> U",
+    "each": "fn([T], fn(T) -> any) -> void",
+    "all": "fn([T], fn(T) -> bool) -> bool",
+    "any": "fn([T], fn(T) -> bool) -> bool",
+    "find": "fn([T], fn(T) -> bool) -> Result<T, str>",
+    "flat_map": "fn([T], fn(T) -> [U]) -> [U]",
+    "min_by": "fn([T], fn(T) -> any) -> Result<T, str>",
+    "max_by": "fn([T], fn(T) -> any) -> Result<T, str>",
+    "parallel_map": "fn([T], fn(T) -> U) -> [U]",
+    "parallel_each": "fn([T], fn(T) -> any) -> void",
+
+    ; --- strings ---
+    "str.concat": "fn(str, str) -> str",
+    "str.contains": "fn(str, str) -> bool",
+    "str.count": "fn(str, str) -> int",
+    "str.ends_with": "fn(str, str) -> bool",
+    "str.starts_with": "fn(str, str) -> bool",
+    "str.find": "fn(str, str) -> int",
+    "str.join": "fn([str], str) -> str",
+    "str.split": "fn(str, str) -> [str]",
+    "str.lines": "fn(str) -> [str]",
+    "str.chars": "fn(str) -> [str]",
+    "str.lower": "fn(str) -> str",
+    "str.upper": "fn(str) -> str",
+    "str.trim": "fn(str) -> str",
+    "str.replace": "fn(str, str, str) -> str",
+    "str.slice": "fn(str, int, int) -> str",
+
+    ; --- maps ---
+    "map.get": "fn(#\{K: V\}, K) -> V",
+    "map.has": "fn(#\{K: V\}, K) -> bool",
+    "map.set": "fn(#\{K: V\}, K, V) -> #\{K: V\}",
+    "map.delete": "fn(#\{K: V\}, K) -> #\{K: V\}",
+    "map.keys": "fn(#\{K: V\}) -> [K]",
+    "map.values": "fn(#\{K: V\}) -> [V]",
+    "map.entries": "fn(#\{K: V\}) -> [[any]]",
+    "map.from_entries": "fn([[any]]) -> map",
+    "map.merge": "fn(map, map) -> map",
+
+    ; --- math ---
+    "math.abs": "fn(num) -> num",
+    "math.sqrt": "fn(num) -> float",
+    "math.pow": "fn(num, num) -> num",
+    "math.min": "fn(num, num) -> num",
+    "math.max": "fn(num, num) -> num",
+    "math.floor": "fn(num) -> int",
+    "math.ceil": "fn(num) -> int",
+    "math.round": "fn(num) -> int",
+
+    ; --- json, hashing, ids, compression ---
+    "json.parse": "fn(str) -> any",
+    "json.stringify": "fn(any) -> str",
+    "json.pretty": "fn(any) -> str",
+    "hash.md5": "fn(str) -> str",
+    "hash.sha256": "fn(str) -> str",
+    "uuid.v4": "fn() -> str",
+    "compress.gzip": "fn(str) -> str",
+    "compress.gunzip": "fn(str) -> str",
+    "compress.deflate": "fn(str) -> str",
+    "compress.inflate": "fn(str) -> str",
+
+    ; --- io, fs, env, time ---
+    "io.read_file": "fn(str) -> str",
+    "io.write_file": "fn(str, str) -> void",
+    "io.read_line": "fn() -> str",
+    "io.read_stdin": "fn() -> str",
+    "io.read_bytes": "fn(int) -> str",
+    "io.flush": "fn() -> void",
+    "fs.exists": "fn(str) -> bool",
+    "fs.is_dir": "fn(str) -> bool",
+    "fs.is_file": "fn(str) -> bool",
+    "fs.ls": "fn(str) -> [map]",
+    "fs.mkdir": "fn(str) -> void",
+    "fs.rm": "fn(str) -> void",
+    "fs.cp": "fn(str, str) -> void",
+    "fs.mv": "fn(str, str) -> void",
+    "fs.abs": "fn(str) -> str",
+    "fs.cwd": "fn() -> str",
+    "fs.stat": "fn(str) -> map",
+    "fs.watch": "fn(str, fn(map) -> any) -> void",
+    "env.get": "fn(str) -> any",
+    "env.set": "fn(str, str) -> void",
+    "env.all": "fn() -> map",
+    "time.now": "fn() -> int",
+    "time.sleep": "fn(int) -> void",
+
+    ; --- processes ---
+    "exec": "fn(str) -> map",
+    "exec_timeout": "fn(str, int) -> map",
+    "proc.spawn": "fn(str) -> any",
+    "proc.write": "fn(any, str) -> void",
+    "proc.read_line": "fn(any) -> str",
+    "proc.wait": "fn(any) -> int",
+    "proc.kill": "fn(any) -> void",
+    "proc.is_running": "fn(any) -> bool",
+    "signal.on": "fn(str, fn() -> any) -> void",
+
+    ; --- concurrency ---
+    "spawn": "fn(fn() -> T) -> any",
+    "await": "fn(any) -> Result<any, any>",
+    "await_all": "fn([any]) -> [Result<any, any>]",
+    "timeout": "fn(int, fn() -> T) -> Result<T, str>",
+    "async.http_get": "fn(str, map) -> any",
+    "async.http_post": "fn(str, any, map) -> any",
+    "async.http_put": "fn(str, any, map) -> any",
+    "async.http_patch": "fn(str, any, map) -> any",
+    "async.http_delete": "fn(str, map) -> any",
+    "async.await": "fn(any) -> map",
+    "async.gather": "fn([any]) -> [Result<any, any>]",
+
+    ; --- network ---
+    "http.get": "fn(str, map) -> map",
+    "http.post": "fn(str, any, map) -> map",
+    "http.put": "fn(str, any, map) -> map",
+    "http.patch": "fn(str, any, map) -> map",
+    "http.delete": "fn(str, map) -> map",
+    "http.serve": "fn(int, fn(map) -> any) -> void",
+    "http.serve_static": "fn(int, str) -> void",
+    "http.stream": "fn(str, str, map) -> any",
+    "http.stream_read": "fn(any) -> any",
+    "http.stream_close": "fn(any) -> void",
+    "ws.connect": "fn(str) -> any",
+    "ws.send": "fn(any, str) -> void",
+    "ws.recv": "fn(any) -> str",
+    "ws.close": "fn(any) -> void",
+
+    ; --- database ---
+    "db.open": "fn(str) -> any",
+    "db.exec": "fn(any, str) -> void",
+    "db.query": "fn(any, str, [any]) -> [map]",
+    "db.close": "fn(any) -> void",
+
+    ; --- images ---
+    "image.load": "fn(str) -> any",
+    "image.decode": "fn(str) -> any",
+    "image.encode": "fn(any, str) -> str",
+    "image.save": "fn(any, str) -> void",
+    "image.width": "fn(any) -> int",
+    "image.height": "fn(any) -> int",
+    "image.pixels": "fn(any) -> [int]",
+    "image.resize": "fn(any, int, int) -> any",
+
+    ; --- local models ---
+    "local_llm.load": "fn(str) -> any",
+    "local_llm.unload": "fn(any) -> void",
+    "local_llm.info": "fn(any) -> map",
+    "local_llm.generate": "fn(any, str, map) -> str",
+    "local_llm.embed": "fn(any, str) -> [float]",
+    "local_llm.tokenize": "fn(any, str) -> [int]",
+    "local_llm.detokenize": "fn(any, [int]) -> str",
+    "local_llm.vocab_size": "fn(any) -> int",
+
+    ; --- introspection ---
+    "reflect.uptime_ms": "fn() -> int",
+    "reflect.memory_usage": "fn() -> int",
+    "reflect.pid": "fn() -> int",
+    "profile.reset": "fn() -> void",
+    "profile.dump": "fn(str) -> void",
+    "profile.get_counters": "fn() -> map",
+    "ptr.null": "fn() -> ptr",
+    "ptr.is_null": "fn(ptr) -> bool"
+  }
+}
+
+; Builtins whose trailing parameters are optional. Value = minimum arity;
+; the maximum is the signature's parameter count.
+fn min_arity() -> map {
+  ret #{
+    "slice": 2, "db.query": 2,
+    "http.get": 1, "http.delete": 1, "http.post": 1, "http.put": 1, "http.patch": 1,
+    "async.http_get": 1, "async.http_delete": 1, "async.http_post": 1, "async.http_put": 1, "async.http_patch": 1
+  }
+}

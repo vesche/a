@@ -1,0 +1,40 @@
+; Records are maps with known fields. At runtime they are plain maps; the
+; checker verifies literal shapes, field names and field types statically.
+
+use std.testing
+
+ty Point = {x: int, y: float}
+ty Line = {from: Point, to: Point, label: str}
+
+fn origin() -> Point { ret #{"x": 0, "y": 0.0} }
+
+fn shift(p: Point, dx: int) -> Point { ret map.set(p, "x", p.x + dx) }
+
+fn length2(l: Line) -> float {
+  let dx = l.to.x - l.from.x
+  let dy = l.to.y - l.from.y
+  ret dx * dx + dy * dy
+}
+
+fn main() {
+  let p: Point = #{"x": 1, "y": 2.5}
+  let q = shift(p, 4)
+  testing.assert_eq(q.x, 5)
+  testing.assert_eq(q["y"], 2.5)
+  testing.assert_eq(origin().x, 0)
+  ; structural equality, field order does not matter
+  testing.assert_eq(q == #{"y": 2.5, "x": 5}, true)
+  ; a record is a map
+  testing.assert_eq(sort(map.keys(q)), ["x", "y"])
+  println("PASS: record construction and access")
+
+  let l: Line = #{"from": origin(), "to": #{"x": 3, "y": 4.0}, "label": "hyp"}
+  testing.assert_eq(length2(l), 25.0)
+  testing.assert_eq(l.label, "hyp")
+  println("PASS: nested records")
+
+  ; records flow through generic builtins like any map
+  let pts = map([1, 2, 3], fn(i) => #{"x": i, "y": 0.0})
+  testing.assert_eq(len(filter(pts, fn(pt) => pt["x"] > 1)), 2)
+  println("PASS: records in collections")
+}

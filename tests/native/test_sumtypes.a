@@ -1,0 +1,130 @@
+; Sum types compile natively and `?` propagates an Err to the caller.
+; This is the runtime half of the v2.3 work; the static half is in test_checker.a.
+
+use std.testing
+
+ty Shape = Circle(float) | Rect(float, float) | Empty
+
+fn area(s: Shape) -> float {
+  match s {
+    Circle(r) => { ret 3.14159 * r * r }
+    Rect(w, h) => { ret w * h }
+    Empty => { ret 0.0 }
+  }
+}
+
+fn describe(s: Shape) -> str {
+  match s {
+    Circle(r) if r > 1.0 => { ret "big circle" }
+    Circle(r) => { ret "small circle" }
+    Rect(w, h) if w == h => { ret "square" }
+    Rect(w, h) => { ret "rect" }
+    Empty => { ret "empty" }
+  }
+}
+
+ty Tree = Leaf(int) | Node(Tree, Tree)
+
+fn sum(t: Tree) -> int {
+  match t {
+    Leaf(n) => { ret n }
+    Node(l, r) => { ret sum(l) + sum(r) }
+  }
+}
+
+fn parse_num(s: str) -> Result<int, str> {
+  if s == "bad" { ret Err("bad input") }
+  ret Ok(int(s))
+}
+
+fn double(s: str) -> Result<int, str> {
+  let n = parse_num(s)?
+  ret Ok(n * 2)
+}
+
+fn add_all(xs: [str]) -> Result<int, str> {
+  let mut total = 0
+  for x in xs {
+    total = total + parse_num(x)?
+  }
+  ret Ok(total)
+}
+
+fn untyped_propagates(s: str) {
+  let n = parse_num(s)?
+  ret n + 1
+}
+
+fn main() {
+  ; --- construction, matching, payload binding ---
+  testing.assert_float_eq(area(Circle(2.0)), 12.56636, 0.0001)
+  testing.assert_float_eq(area(Rect(2.0, 3.0)), 6.0, 0.0001)
+  testing.assert_float_eq(area(Empty), 0.0, 0.0001)
+  println("PASS: sum type construction and match")
+
+  ; --- guards fall through to the next arm ---
+  testing.assert_eq(describe(Circle(2.0)), "big circle")
+  testing.assert_eq(describe(Circle(0.5)), "small circle")
+  testing.assert_eq(describe(Rect(2.0, 2.0)), "square")
+  testing.assert_eq(describe(Rect(2.0, 3.0)), "rect")
+  testing.assert_eq(describe(Empty), "empty")
+  println("PASS: guarded arms")
+
+  ; --- recursive payloads ---
+  testing.assert_int_eq(sum(Node(Node(Leaf(1), Leaf(2)), Leaf(3))), 6)
+  println("PASS: recursive sum type")
+
+  ; --- printing and equality ---
+  testing.assert_eq(to_str(Circle(2.0)), "Circle(2)")
+  testing.assert_eq(to_str(Rect(1.0, 2.0)), "Rect(1, 2)")
+  testing.assert_eq(to_str(Empty), "Empty")
+  testing.assert_true(Circle(1.0) == Circle(1.0))
+  testing.assert_false(Circle(1.0) == Rect(1.0, 1.0))
+  testing.assert_false(Empty == Circle(1.0))
+  testing.assert_true(Node(Leaf(1), Leaf(2)) == Node(Leaf(1), Leaf(2)))
+  testing.assert_true([1, 2] == [1, 2])
+  testing.assert_false([1, 2] == [2, 1])
+  testing.assert_true(#{"a": 1, "b": 2} == #{"b": 2, "a": 1})
+  testing.assert_true(Ok(1) == Ok(1))
+  testing.assert_false(Ok(1) == Err(1))
+  println("PASS: to_str and structural equality")
+
+  ; --- variants are first-class values ---
+  let shapes = [Circle(1.0), Rect(2.0, 2.0), Empty]
+  let names = map(shapes, fn(s) => describe(s))
+  testing.assert_eq(str.join(names, ","), "small circle,square,empty")
+  println("PASS: variants in arrays and lambdas")
+
+  ; --- ? propagates Err, unwraps Ok ---
+  testing.assert_eq(to_str(double("3")), "Ok(6)")
+  testing.assert_eq(to_str(double("bad")), "Err(bad input)")
+  testing.assert_eq(to_str(add_all(["1", "2", "3"])), "Ok(6)")
+  testing.assert_eq(to_str(add_all(["1", "bad", "3"])), "Err(bad input)")
+  testing.assert_eq(to_str(untyped_propagates("4")), "5")
+  testing.assert_eq(to_str(untyped_propagates("bad")), "Err(bad input)")
+  println("PASS: ? propagation")
+
+  ; --- try {} still catches ? locally ---
+  let caught = try {
+    let n = parse_num("bad")?
+    n
+  }
+  testing.assert_eq(to_str(caught), "Err(bad input)")
+  let fine = try {
+    let n = parse_num("7")?
+    n
+  }
+  testing.assert_eq(to_str(fine), "Ok(7)")
+  println("PASS: try block scoping")
+
+  interp_and_optional_args()
+}
+
+fn interp_and_optional_args() {
+  ; runtime half of the lexer fix: a string nested inside an interpolation
+  let r = #{"model": "m1", "n": 3}
+  testing.assert_eq("model: {r["model"]} tokens: {r["n"]}in", "model: m1 tokens: 3in")
+  ; optional trailing argument is padded with void by the compiler
+  testing.assert_eq(to_str(slice([1, 2, 3, 4], 2)), "[3, 4]")
+  println("PASS: nested interpolation and optional args")
+}

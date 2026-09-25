@@ -1,0 +1,305 @@
+; std/compiler/types.a -- Gradual type representation for the checker.
+;
+; A type is a map with a "k" (kind):
+;   #{"k": "any"}                                 the gradual type
+;   #{"k": "int"|"float"|"bool"|"str"|"void"|"ptr"|"bytes"}
+;   #{"k": "num"}                                 int or float (builtin math)
+;   #{"k": "array", "elem": T}
+;   #{"k": "map", "key": T, "val": T}
+;   #{"k": "fn", "params": [T], "ret": T}
+;   #{"k": "result", "ok": T, "err": T}
+;   #{"k": "named", "name": "Shape"}              user sum types
+;   #{"k": "record", "name": "P", "fields": #{f: T}}  a map with known fields
+;     (name "" is the anonymous shape of a `#{"f": v}` literal with literal keys)
+;   #{"k": "var", "name": "T"}                    type variable in a builtin signature
+;
+; Rules that keep existing code compiling (gradual typing):
+;   - `any` is compatible with everything in both directions.
+;   - A Result is compatible with every type: any function may return Err.
+;   - int widens to float; `num` accepts and produces either.
+;   - Sized annotations (i8..u64, f32/f64) mean int/float: that is what the
+;     runtime has. `map` and `array` without arguments mean #{any: any}, [any].
+
+use std.compiler.lexer
+use std.compiler.parser
+
+fn t_any() -> map { ret #{"k": "any"} }
+fn t_prim(name: str) -> map { ret #{"k": name} }
+fn t_array(elem: map) -> map { ret #{"k": "array", "elem": elem} }
+fn t_map(key: map, val: map) -> map { ret #{"k": "map", "key": key, "val": val} }
+fn t_fn(params: [map], ret_ty: map) -> map { ret #{"k": "fn", "params": params, "ret": ret_ty} }
+fn t_result(ok: map, err: map) -> map { ret #{"k": "result", "ok": ok, "err": err} }
+fn t_named(name: str) -> map { ret #{"k": "named", "name": name} }
+fn t_record(name: str, fields: map) -> map { ret #{"k": "record", "name": name, "fields": fields} }
+fn t_var(name: str) -> map { ret #{"k": "var", "name": name} }
+
+fn is_any(t) -> bool { ret type_of(t) != "map" || t["k"] == "any" }
+fn is_numeric(t: map) -> bool { ret t["k"] == "int" || t["k"] == "float" || t["k"] == "num" }
+
+fn _is_tvar_name(name: str) -> bool {
+  if len(name) != 1 { ret false }
+  ret str.upper(name) == name && is_alpha(name)
+}
+
+; Converts a parser type node (TyPrim, TyNamed, ...) to a checker type.
+; Absent or unparseable annotations are `any`.
+fn from_ast(t) -> map {
+  if type_of(t) != "map" { ret t_any() }
+  let tag = t["tag"]
+  if tag == "TyInfer" { ret t_any() }
+  if tag == "TyPrim" {
+    let n = t["name"]
+    if n == "i8" || n == "i16" || n == "i32" || n == "i64" || n == "u8" || n == "u16" || n == "u32" || n == "u64" { ret t_prim("int") }
+    if n == "f32" || n == "f64" { ret t_prim("float") }
+    ret t_prim(n)
+  }
+  if tag == "TyNamed" {
+    let n = t["name"]
+    let args = t["args"]
+    if n == "int" || n == "float" || n == "bool" || n == "str" || n == "void" || n == "num" || n == "ptr" { ret t_prim(n) }
+    if n == "any" { ret t_any() }
+    if n == "map" { ret t_map(t_any(), t_any()) }
+    if n == "array" { ret t_array(t_any()) }
+    if n == "Result" {
+      if type_of(args) == "array" && len(args) == 2 { ret t_result(from_ast(args[0]), from_ast(args[1])) }
+      ret t_result(t_any(), t_any())
+    }
+    if _is_tvar_name(n) { ret t_var(n) }
+    ret t_named(n)
+  }
+  if tag == "TyArray" { ret t_array(from_ast(t["elem"])) }
+  if tag == "TyMap" { ret t_map(from_ast(t["key"]), from_ast(t["val"])) }
+  if tag == "TyFn" {
+    let mut ps = []
+    for p in t["params"] { ps = push(ps, from_ast(p)) }
+    ret t_fn(ps, from_ast(t["ret"]))
+  }
+  if tag == "TyTuple" { ret t_array(t_any()) }
+  if tag == "TyRecord" { ret t_map(t_prim("str"), t_any()) }
+  ret t_any()
+}
+
+; Parses a signature string such as "fn(str, [T]) -> map".
+fn parse_sig(sig: str) -> map {
+  let toks = lexer.lex_pos(sig)
+  let r = parser.parse_type_expr(toks, 0)
+  if type_of(r) != "array" { ret t_any() }
+  ret from_ast(r[0])
+}
+
+fn show(t) -> str {
+  if type_of(t) != "map" { ret "any" }
+  let k = t["k"]
+  if k == "array" { ret "[" + show(t["elem"]) + "]" }
+  if k == "map" {
+    if is_any(t["key"]) && is_any(t["val"]) { ret "map" }
+    ret "#\{" + show(t["key"]) + ": " + show(t["val"]) + "\}"
+  }
+  if k == "fn" {
+    let mut ps = []
+    for p in t["params"] { ps = push(ps, show(p)) }
+    ret "fn(" + str.join(ps, ", ") + ") -> " + show(t["ret"])
+  }
+  if k == "result" {
+    if is_any(t["ok"]) && is_any(t["err"]) { ret "Result" }
+    ret "Result<" + show(t["ok"]) + ", " + show(t["err"]) + ">"
+  }
+  if k == "record" {
+    if t["name"] != "" { ret t["name"] }
+    let mut fs = []
+    for f in sort(map.keys(t["fields"])) { fs = push(fs, f + ": " + show(t["fields"][f])) }
+    ret "\{" + str.join(fs, ", ") + "\}"
+  }
+  if k == "named" || k == "var" { ret t["name"] }
+  ret k
+}
+
+; Replaces named types that are aliases or records (typedefs: name -> type).
+fn resolve(t, typedefs: map) -> map {
+  if type_of(t) != "map" { ret t_any() }
+  let k = t["k"]
+  if k == "named" {
+    if map.has(typedefs, t["name"]) { ret typedefs[t["name"]] }
+    ret t
+  }
+  if k == "array" { ret t_array(resolve(t["elem"], typedefs)) }
+  if k == "map" { ret t_map(resolve(t["key"], typedefs), resolve(t["val"], typedefs)) }
+  if k == "result" { ret t_result(resolve(t["ok"], typedefs), resolve(t["err"], typedefs)) }
+  if k == "fn" {
+    let mut ps = []
+    for p in t["params"] { ps = push(ps, resolve(p, typedefs)) }
+    ret t_fn(ps, resolve(t["ret"], typedefs))
+  }
+  ret t
+}
+
+; Can a value of type `from` be used where `to` is expected?
+fn assignable(from, to) -> bool {
+  if is_any(from) || is_any(to) { ret true }
+  let fk = from["k"]
+  let tk = to["k"]
+  if fk == "var" || tk == "var" { ret true }
+  if fk == "result" || tk == "result" { ret true }
+  if fk == "num" { ret tk == "num" || tk == "int" || tk == "float" }
+  if tk == "num" { ret fk == "int" || fk == "float" }
+  if fk == "int" && tk == "float" { ret true }
+  ; a record is a map with known fields: either may stand in for the other
+  if fk == "record" && tk == "map" {
+    if !assignable(t_prim("str"), to["key"]) { ret false }
+    for f in map.keys(from["fields"]) {
+      if !assignable(from["fields"][f], to["val"]) { ret false }
+    }
+    ret true
+  }
+  if fk == "map" && tk == "record" { ret true }
+  if fk != tk { ret false }
+  if fk == "record" {
+    ; two named records are nominal; a literal shape is checked field by field
+    if from["name"] != "" && to["name"] != "" { ret from["name"] == to["name"] }
+    ret record_diff(from, to) == ""
+  }
+  if fk == "array" { ret assignable(from["elem"], to["elem"]) }
+  if fk == "map" { ret assignable(from["key"], to["key"]) && assignable(from["val"], to["val"]) }
+  if fk == "fn" {
+    if len(from["params"]) != len(to["params"]) { ret false }
+    let mut i = 0
+    while i < len(from["params"]) {
+      if !assignable(to["params"][i], from["params"][i]) { ret false }
+      i = i + 1
+    }
+    ret assignable(from["ret"], to["ret"])
+  }
+  if fk == "named" { ret from["name"] == to["name"] }
+  ret true
+}
+
+; Why a value of record type `from` cannot be used as record `to`; "" if it can.
+; Every field `to` declares must be present with a compatible type, and a
+; named `to` accepts no fields it does not declare.
+fn record_diff(from, to) -> str {
+  let ff = from["fields"]
+  let tf = to["fields"]
+  for f in sort(map.keys(tf)) {
+    if !map.has(ff, f) { ret "missing field " + f }
+    if !assignable(ff[f], tf[f]) { ret "field " + f + ": expected " + show(tf[f]) + ", got " + show(ff[f]) }
+  }
+  if to["name"] != "" {
+    for f in sort(map.keys(ff)) {
+      if !map.has(tf, f) { ret "unknown field " + f + " (fields: " + str.join(sort(map.keys(tf)), ", ") + ")" }
+    }
+  }
+  ret ""
+}
+
+fn _is_maplike(t) -> bool { ret t["k"] == "map" || t["k"] == "record" }
+
+; The common type of two branches / elements.
+fn join(a, b) -> map {
+  if is_any(a) || is_any(b) { ret t_any() }
+  if _is_maplike(a) && _is_maplike(b) {
+    if a["k"] == "record" && b["k"] == "record" && a["name"] != "" && a["name"] == b["name"] { ret a }
+    if a["k"] == "map" && b["k"] == "map" && assignable(a, b) && assignable(b, a) { ret a }
+    ; different shapes: fall back to a plain string-keyed map
+    ret t_map(t_prim("str"), t_any())
+  }
+  if assignable(a, b) && assignable(b, a) { ret a }
+  if is_numeric(a) && is_numeric(b) { ret t_prim("float") }
+  if a["k"] == "array" && b["k"] == "array" { ret t_array(join(a["elem"], b["elem"])) }
+  ret t_any()
+}
+
+; Binds type variables in `pattern` from `actual`. Returns the bindings map.
+; A variable seen twice with incompatible types keeps its first binding, so
+; the caller reports the second occurrence as a mismatch.
+fn unify(pattern, actual, bindings: map) -> map {
+  if type_of(pattern) != "map" || type_of(actual) != "map" { ret bindings }
+  let pk = pattern["k"]
+  if pk == "var" {
+    let n = pattern["name"]
+    if map.has(bindings, n) {
+      let cur = bindings[n]
+      if assignable(actual, cur) { ret bindings }
+      if assignable(cur, actual) { ret map.set(bindings, n, actual) }
+      ; conflict: keep the first binding so the caller reports the mismatch
+      ret bindings
+    }
+    ret map.set(bindings, n, actual)
+  }
+  ; a dynamic (or differently shaped) actual leaves every variable in the
+  ; pattern dynamic too -- otherwise a later argument would pin it down
+  if actual["k"] == "any" || pk != actual["k"] { ret _bind_unbound_any(pattern, bindings) }
+  let mut b = bindings
+  if pk == "array" { ret unify(pattern["elem"], actual["elem"], b) }
+  if pk == "map" {
+    b = unify(pattern["key"], actual["key"], b)
+    ret unify(pattern["val"], actual["val"], b)
+  }
+  if pk == "result" {
+    b = unify(pattern["ok"], actual["ok"], b)
+    ret unify(pattern["err"], actual["err"], b)
+  }
+  if pk == "fn" {
+    let n = len(pattern["params"])
+    if n == len(actual["params"]) {
+      let mut i = 0
+      while i < n {
+        b = unify(pattern["params"][i], actual["params"][i], b)
+        i = i + 1
+      }
+    }
+    ret unify(pattern["ret"], actual["ret"], b)
+  }
+  ret b
+}
+
+fn _bind_unbound_any(t, bindings: map) -> map {
+  if type_of(t) != "map" { ret bindings }
+  let k = t["k"]
+  if k == "var" {
+    if map.has(bindings, t["name"]) { ret bindings }
+    ret map.set(bindings, t["name"], t_any())
+  }
+  let mut b = bindings
+  if k == "array" { ret _bind_unbound_any(t["elem"], b) }
+  if k == "map" { ret _bind_unbound_any(t["val"], _bind_unbound_any(t["key"], b)) }
+  if k == "result" { ret _bind_unbound_any(t["err"], _bind_unbound_any(t["ok"], b)) }
+  if k == "fn" {
+    for p in t["params"] { b = _bind_unbound_any(p, b) }
+    ret _bind_unbound_any(t["ret"], b)
+  }
+  ret b
+}
+
+; Replaces bound type variables; unbound ones become `any`.
+fn subst(t, bindings: map) -> map {
+  if type_of(t) != "map" { ret t_any() }
+  let k = t["k"]
+  if k == "var" {
+    if map.has(bindings, t["name"]) { ret bindings[t["name"]] }
+    ret t_any()
+  }
+  if k == "array" { ret t_array(subst(t["elem"], bindings)) }
+  if k == "map" { ret t_map(subst(t["key"], bindings), subst(t["val"], bindings)) }
+  if k == "result" { ret t_result(subst(t["ok"], bindings), subst(t["err"], bindings)) }
+  if k == "fn" {
+    let mut ps = []
+    for p in t["params"] { ps = push(ps, subst(p, bindings)) }
+    ret t_fn(ps, subst(t["ret"], bindings))
+  }
+  ret t
+}
+
+; Does the type mention any type variable?
+fn has_vars(t) -> bool {
+  if type_of(t) != "map" { ret false }
+  let k = t["k"]
+  if k == "var" { ret true }
+  if k == "array" { ret has_vars(t["elem"]) }
+  if k == "map" { ret has_vars(t["key"]) || has_vars(t["val"]) }
+  if k == "result" { ret has_vars(t["ok"]) || has_vars(t["err"]) }
+  if k == "fn" {
+    for p in t["params"] { if has_vars(p) { ret true } }
+    ret has_vars(t["ret"])
+  }
+  ret false
+}

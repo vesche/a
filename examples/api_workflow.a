@@ -2,7 +2,7 @@ mod api_workflow {
   ty HttpResp = {status: i64, body: str, headers: #{str: str}}
 
   fn fetch_repos(username: str) -> HttpResp effects [io] {
-    let url: str = str.concat("https://api.github.com/users/", username, "/repos?per_page=5&sort=updated")
+    let url: str = "https://api.github.com/users/" + username + "/repos?per_page=5&sort=updated"
     let headers: #{str: str} = #{"User-Agent": "a-lang/0.4", "Accept": "application/json"}
     ret http.get(url, headers)
   }

@@ -7,13 +7,13 @@ use std.lexer
 ;   int/str/bool/array literals, binops, unops, calls, index,
 ;   string interpolation, println, to_str, len, push, int
 
-fn p_ok(n: [str], p: i64) -> [str] { ret [n, p] }
-fn p_n(r: [str]) -> [str] { ret r[0] }
-fn p_p(r: [str]) -> i64 { ret r[1] }
+fn p_ok(n: any, p: i64) -> any { ret [n, p] }
+fn p_n(r: any) -> any { ret r[0] }
+fn p_p(r: any) -> i64 { ret r[1] }
 
-fn p_expr(t: [str], p: i64) -> [str] { ret p_or(t, p) }
+fn p_expr(t: any, p: i64) -> any { ret p_or(t, p) }
 
-fn p_or(t: [str], p: i64) -> [str] {
+fn p_or(t: any, p: i64) -> any {
   let mut r = p_and(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -26,7 +26,7 @@ fn p_or(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_and(t: [str], p: i64) -> [str] {
+fn p_and(t: any, p: i64) -> any {
   let mut r = p_eq(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -39,7 +39,7 @@ fn p_and(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_eq(t: [str], p: i64) -> [str] {
+fn p_eq(t: any, p: i64) -> any {
   let mut r = p_cmp(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -53,7 +53,7 @@ fn p_eq(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_cmp(t: [str], p: i64) -> [str] {
+fn p_cmp(t: any, p: i64) -> any {
   let mut r = p_add(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -67,7 +67,7 @@ fn p_cmp(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_add(t: [str], p: i64) -> [str] {
+fn p_add(t: any, p: i64) -> any {
   let mut r = p_mul(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -81,7 +81,7 @@ fn p_add(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_mul(t: [str], p: i64) -> [str] {
+fn p_mul(t: any, p: i64) -> any {
   let mut r = p_un(t, p)
   let mut pos = p_p(r)
   let mut left = p_n(r)
@@ -95,7 +95,7 @@ fn p_mul(t: [str], p: i64) -> [str] {
   ret p_ok(left, pos)
 }
 
-fn p_un(t: [str], p: i64) -> [str] {
+fn p_un(t: any, p: i64) -> any {
   if tk(t, p) == "Minus" {
     let r = p_un(t, p + 1)
     ret p_ok(["un", "-", p_n(r)], p_p(r))
@@ -107,7 +107,7 @@ fn p_un(t: [str], p: i64) -> [str] {
   ret p_post(t, p)
 }
 
-fn p_post(t: [str], p: i64) -> [str] {
+fn p_post(t: any, p: i64) -> any {
   let mut r = p_prim(t, p)
   let mut pos = p_p(r)
   let mut e = p_n(r)
@@ -168,7 +168,7 @@ fn p_post(t: [str], p: i64) -> [str] {
   ret p_ok(e, pos)
 }
 
-fn p_prim(t: [str], p: i64) -> [str] {
+fn p_prim(t: any, p: i64) -> any {
   let k = tk(t, p)
   let v = tv(t, p)
   if k == "Int" { ret p_ok(["int", v], p + 1) }
@@ -199,7 +199,7 @@ fn p_prim(t: [str], p: i64) -> [str] {
   ret p_ok(["id", v], p + 1)
 }
 
-fn p_block(t: [str], p: i64) -> [str] {
+fn p_block(t: any, p: i64) -> any {
   let mut pos = skip_nl(t, p)
   let mut ss = []
   while tk(t, pos) != "RBrace" {
@@ -213,7 +213,7 @@ fn p_block(t: [str], p: i64) -> [str] {
   ret p_ok(ss, pos)
 }
 
-fn p_stmt(t: [str], p: i64) -> [str] {
+fn p_stmt(t: any, p: i64) -> any {
   let k = tk(t, p)
   if k == "KwLet" {
     let mut pos = p + 1
@@ -288,7 +288,7 @@ fn p_stmt(t: [str], p: i64) -> [str] {
   ret p_ok(["ex", p_n(r)], skip_nl(t, pos))
 }
 
-fn p_fn(t: [str], p: i64) -> [str] {
+fn p_fn(t: any, p: i64) -> any {
   let mut pos = p + 1
   let name = tv(t, pos)
   pos = pos + 2
@@ -333,7 +333,7 @@ fn p_fn(t: [str], p: i64) -> [str] {
   ret p_ok(["fn", name, params, p_n(br)], pos)
 }
 
-fn p_prog(t: [str], p: i64) -> [str] {
+fn p_prog(t: any, p: i64) -> any {
   let mut pos = skip_nl(t, p)
   let mut ds = []
   while tk(t, pos) != "Eof" {
@@ -354,7 +354,7 @@ fn p_prog(t: [str], p: i64) -> [str] {
 
 ; --- evaluator ---
 
-fn eg(env: [str], name: str) -> [str] {
+fn eg(env: any, name: str) -> any {
   let mut i = len(env) - 2
   while i >= 0 {
     if env[i] == name { ret env[i + 1] }
@@ -363,11 +363,11 @@ fn eg(env: [str], name: str) -> [str] {
   ret "__undef__"
 }
 
-fn es(env: [str], name: str, val: [str]) -> [str] {
+fn es(env: any, name: str, val: any) -> any {
   ret push(push(env, name), val)
 }
 
-fn eu(env: [str], name: str, val: [str]) -> [str] {
+fn eu(env: any, name: str, val: any) -> any {
   let mut i = len(env) - 2
   while i >= 0 {
     if env[i] == name {
@@ -390,7 +390,7 @@ fn eu(env: [str], name: str, val: [str]) -> [str] {
   ret push(push(env, name), val)
 }
 
-fn fg(fns: [str], name: str) -> [str] {
+fn fg(fns: any, name: str) -> any {
   let mut i = 0
   while i < len(fns) {
     if fns[i] == name { ret fns[i + 1] }
@@ -399,7 +399,7 @@ fn fg(fns: [str], name: str) -> [str] {
   ret []
 }
 
-fn vs(v: [str]) -> str {
+fn vs(v: any) -> str {
   if type_of(v) == "int" { ret to_str(v) }
   if type_of(v) == "str" { ret v }
   if type_of(v) == "bool" { ret to_str(v) }
@@ -411,14 +411,14 @@ fn vs(v: [str]) -> str {
   ret to_str(v)
 }
 
-fn truthy(v: [str]) -> bool {
+fn truthy(v: any) -> bool {
   if type_of(v) == "bool" { ret v }
   if type_of(v) == "int" { ret v != 0 }
   if type_of(v) == "str" { ret v != "" }
   ret true
 }
 
-fn ev(node: [str], env: [str], fns: [str]) -> [str] {
+fn ev(node: any, env: any, fns: any) -> any {
   let k = node[0]
   if k == "int" { ret int(node[1]) }
   if k == "str" { ret node[1] }
@@ -488,7 +488,7 @@ fn ev(node: [str], env: [str], fns: [str]) -> [str] {
   ret 0
 }
 
-fn ecall(name: str, args: [str], fns: [str], env: [str]) -> [str] {
+fn ecall(name: str, args: any, fns: any, env: any) -> any {
   if name == "println" {
     println(vs(args[0]))
     ret 0
@@ -552,7 +552,7 @@ fn ecall(name: str, args: [str], fns: [str], env: [str]) -> [str] {
   ret 0
 }
 
-fn estmt(s: [str], env: [str], fns: [str]) -> [str] {
+fn estmt(s: any, env: any, fns: any) -> any {
   let k = s[0]
   if k == "let" {
     let val = ev(s[2], env, fns)
@@ -638,7 +638,7 @@ fn estmt(s: [str], env: [str], fns: [str]) -> [str] {
   ret ["__e__", env]
 }
 
-fn eblk_env(stmts: [str], env: [str], fns: [str]) -> [str] {
+fn eblk_env(stmts: any, env: any, fns: any) -> any {
   let mut ce = env
   for s in stmts {
     let result = estmt(s, ce, fns)

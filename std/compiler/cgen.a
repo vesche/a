@@ -3,10 +3,39 @@
 ; Supports `use` module inlining, closures/lambdas, HOFs, pipes.
 ; Usage: a run std/compiler/cgen.a -- input.a > output.c
 
+use std.compiler.builtin_sigs
 use std.compiler.parser
 use std.compiler.ast
 
 ; Builtin name -> C function name mapping
+; Optional trailing builtin arguments come from std/compiler/builtin_sigs.a.
+fn _builtin_min_arity() -> map { ret builtin_sigs.min_arity() }
+
+; Number of parameters in a signature string such as "fn(str, [T]) -> map".
+fn _sig_param_count(sig: str) -> int {
+  let inner = str.slice(sig, str.find(sig, "(") + 1, len(sig))
+  let mut depth = 0
+  let mut count = 0
+  let mut seen = false
+  for c in str.chars(inner) {
+    if c == "(" || c == "[" || c == "<" || c == "\{" { depth = depth + 1 }
+    else if c == ")" || c == "]" || c == ">" || c == "\}" {
+      if depth == 0 { break }
+      depth = depth - 1
+    }
+    else if c == "," && depth == 0 { count = count + 1 }
+    else if c != " " { seen = true }
+  }
+  if !seen { ret 0 }
+  ret count + 1
+}
+
+fn _builtin_full_arity(name: str) -> int {
+  let sigs = builtin_sigs.sigs()
+  if map.has(sigs, name) { ret _sig_param_count(sigs[name]) }
+  ret -1
+}
+
 fn _builtin_map() -> map {
   let m = #{
     "println": "a_println", "print": "a_print", "eprintln": "a_eprintln",
@@ -406,6 +435,16 @@ fn _collect_idents_in_stmt(s) -> [str] {
   ret []
 }
 
+; Returns ctx with `names` added to the variables a lambda may capture.
+fn _with_enclosing(ctx, names: [str]) -> map {
+  let mut enc = []
+  if type_of(ctx["enclosing_vars"]) == "array" { enc = ctx["enclosing_vars"] }
+  for n in names {
+    if n != "" && n != "_" && !contains(enc, n) { enc = push(enc, n) }
+  }
+  ret map.set(ctx, "enclosing_vars", enc)
+}
+
 fn _compute_captures(lambda_node, enclosing_vars, bm) -> [str] {
   let mut bound = []
   for p in lambda_node["params"] { bound = push(bound, p["name"]) }
@@ -458,6 +497,7 @@ fn emit_expr(node, bm, ctx, li) {
     let name = node["name"]
     if name == "true" { ret _R("a_bool(1)", li) }
     if name == "false" { ret _R("a_bool(0)", li) }
+    if _variant_arity(ctx, name) == 0 { ret _R("a_variant_new(\"" + name + "\", 0)", li) }
     ret _R(_mangle(name), li)
   }
 
@@ -546,7 +586,22 @@ fn emit_expr(node, bm, ctx, li) {
 
     if map.has(bm, fname) {
       let cfn = bm[fname]
+      let mins = _builtin_min_arity()
+      if map.has(mins, fname) && len(arg_codes) >= mins[fname] {
+        let full = _builtin_full_arity(fname)
+        while len(arg_codes) < full { arg_codes = push(arg_codes, "a_void()") }
+      }
       ret _RL(str.concat(cfn, str.concat("(", str.concat(str.join(arg_codes, ", "), ")"))), li, lifted)
+    }
+
+    let var_arity = _variant_arity(ctx, fname)
+    if var_arity >= 0 {
+      if var_arity != len(arg_codes) {
+        _compile_error(node, ctx, fname + " takes " + to_str(var_arity) + " argument(s), got " + to_str(len(arg_codes)))
+      }
+      let mut vargs = ["\"" + fname + "\"", to_str(len(arg_codes))]
+      vargs = concat_arr(vargs, arg_codes)
+      ret _RL("a_variant_new(" + str.join(vargs, ", ") + ")", li, lifted)
     }
 
     ; Check if this is a closure call (variable, not a known function)
@@ -837,9 +892,20 @@ fn emit_expr(node, bm, ctx, li) {
   }
 
   ; --- Try: expr? or try expr ---
+  ; --- expr? : Ok(v) yields v; Err returns the Err from the enclosing
+  ; function (inside a `try { }` block it is caught there instead).
   if tag == "Try" {
     let er = emit_expr(node["expr"], bm, ctx, li)
-    ret _RL(str.concat("a_try_unwrap(", str.concat(er[0], ")")), er[1], er[2])
+    let use_goto = type_of(ctx["goto_cleanup"]) == "bool" && ctx["goto_cleanup"]
+    let cleanup_vars = ctx["cleanup_vars"]
+    let mut on_err = "return __t;"
+    if use_goto {
+      on_err = "__ret = __t; goto __fn_cleanup;"
+    } else if type_of(cleanup_vars) == "array" && len(cleanup_vars) > 0 {
+      on_err = "\{" + _emit_cleanup(cleanup_vars, 0) + " return __t; \}"
+    }
+    let code = "(\{ AValue __t = " + er[0] + "; if (a_is_err_raw(__t)) \{ if (a_try_depth > 0) a_try_unwrap(__t); " + on_err + " \} AValue __v = a_unwrap(__t); a_release(__t); __v; \})"
+    ret _RL(code, er[1], er[2])
   }
 
   ; --- TryBlock: try { block } ---
@@ -956,7 +1022,11 @@ fn _resolve_call_name(func) -> str {
 fn _emit_pat_cond(pat, target, bm, ctx, li) {
   let tag = pat["tag"]
   if tag == "PatWildcard" { ret _R("1", li) }
-  if tag == "PatIdent" { ret _R("1", li) }
+  if tag == "PatIdent" {
+    ; a bare nullary constructor (`Empty => ...`) is a test, not a binding
+    if _variant_arity(ctx, pat["name"]) == 0 { ret _R("a_is_variant(" + target + ", \"" + pat["name"] + "\")", li) }
+    ret _R("1", li)
+  }
 
   if tag == "PatLiteral" {
     let val = pat["value"]
@@ -966,9 +1036,32 @@ fn _emit_pat_cond(pat, target, bm, ctx, li) {
 
   if tag == "PatConstructor" {
     let name = pat["name"]
-    if name == "Ok" { ret _R(str.concat("a_is_ok_raw(", str.concat(target, ")")), li) }
-    if name == "Err" { ret _R(str.concat("a_is_err_raw(", str.concat(target, ")")), li) }
-    ret _R("0 /* unknown constructor */", li)
+    let args = pat["args"]
+    if name == "Ok" || name == "Err" {
+      let mut cond = "a_is_err_raw(" + target + ")"
+      if name == "Ok" { cond = "a_is_ok_raw(" + target + ")" }
+      if len(args) > 0 && args[0]["tag"] != "PatIdent" && args[0]["tag"] != "PatWildcard" {
+        let sc = _emit_pat_cond(args[0], "a_unwrap_unsafe(" + target + ")", bm, ctx, li)
+        ret _RL(cond + " && " + sc[0], sc[1], sc[2])
+      }
+      ret _R(cond, li)
+    }
+    if _variant_arity(ctx, name) < 0 {
+      _compile_error(pat, ctx, "unknown constructor " + name + " in pattern")
+    }
+    let mut cond = "a_is_variant(" + target + ", \"" + name + "\")"
+    let mut lifted = []
+    let mut i = 0
+    for a in args {
+      if a["tag"] != "PatIdent" && a["tag"] != "PatWildcard" {
+        let sc = _emit_pat_cond(a, "a_variant_arg(" + target + ", " + to_str(i) + ")", bm, ctx, li)
+        li = sc[1]
+        lifted = concat_arr(lifted, sc[2])
+        cond = cond + " && " + sc[0]
+      }
+      i = i + 1
+    }
+    ret _RL(cond, li, lifted)
   }
 
   if tag == "PatArray" {
@@ -1034,6 +1127,7 @@ fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
   if tag == "PatWildcard" { ret _R("", li) }
 
   if tag == "PatIdent" {
+    if _variant_arity(ctx, pat["name"]) == 0 { ret _R("", li) }
     ; Pattern targets are borrowed views into the matched value (result inner,
     ; array slot, map slot). The binding is a function-scoped local released in
     ; the cleanup epilogue, so it must own its reference.
@@ -1053,6 +1147,14 @@ fn _emit_pat_bind(pat, target, depth, bm, ctx, li) {
       let br = _emit_pat_bind(inner, inner_expr, depth, bm, ctx, li)
       code = br[0]
       li = br[1]
+      ret _R(code, li)
+    }
+    let mut i = 0
+    for a in args {
+      let br = _emit_pat_bind(a, "a_variant_arg(" + target + ", " + to_str(i) + ")", depth, bm, ctx, li)
+      if len(br[0]) > 0 { code = code + br[0] + "\n" }
+      li = br[1]
+      i = i + 1
     }
     ret _R(code, li)
   }
@@ -1498,9 +1600,11 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
     for v in for_decls { init_parts = push(init_parts, str.concat(v, " = \{0\}")) }
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat("AValue ", str.concat(str.join(init_parts, ", "), ";")))))
     out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(var_name, " = a_array_get(__iter_arr, a_int(__fi));"))))
+    ; the loop variable is capturable by lambdas in the body
+    let body_ctx = _with_enclosing(ctx, [node["var"]])
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
-      let sr = emit_stmt(s, depth + 2, bm, ctx, li)
+      let sr = emit_stmt(s, depth + 2, bm, body_ctx, li)
       out = str.concat(out, str.concat("\n", sr[0]))
       li = sr[1]
       lifted = concat_arr(lifted, sr[2])
@@ -1535,9 +1639,10 @@ fn _emit_stmt(node, depth: int, bm, ctx, li) {
       out = str.concat(out, str.concat("\n", str.concat(_indent(depth + 2), str.concat(_mangle(b), str.concat(" = a_array_get(__elem, a_int(", str.concat(to_str(bi), "));"))))))
       bi = bi + 1
     }
+    let body_ctx = _with_enclosing(ctx, bindings)
     let body_stmts = node["body"]["stmts"]
     for s in body_stmts {
-      let sr = emit_stmt(s, depth + 2, bm, ctx, li)
+      let sr = emit_stmt(s, depth + 2, bm, body_ctx, li)
       out = str.concat(out, str.concat("\n", sr[0]))
       li = sr[1]
       lifted = concat_arr(lifted, sr[2])
@@ -1755,6 +1860,27 @@ fn _collect_fn_names(items) -> [str] {
   ret names
 }
 
+;  Sum-type constructors declared by `ty T = A(x) | B(x, y) | C`: name -> arity.
+fn _collect_variants(items) -> map {
+  let mut out = #{}
+  for item in items {
+    if item["tag"] != "TypeDecl" { continue }
+    let body = item["body"]
+    if type_of(body) != "map" || body["tag"] != "TypeSum" { continue }
+    for v in body["variants"] {
+      if type_of(v) == "map" { out = map.set(out, v["name"], len(v["fields"])) }
+    }
+  }
+  ret out
+}
+
+fn _variant_arity(ctx, name) -> int {
+  if type_of(ctx) != "map" || !map.has(ctx, "variants") { ret -1 }
+  let vs = ctx["variants"]
+  if !map.has(vs, name) { ret -1 }
+  ret vs[name]
+}
+
 fn _load_module(path_arr, bm, loaded, li) -> map {
   let use_key = str.join(path_arr, ".")
   if contains(loaded, use_key) {
@@ -1800,7 +1926,8 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
   }
 
   let fn_names = _collect_fn_names(items)
-  let ctx = #{"prefix": short, "fns": fn_names, "file": file_path}
+  let variants = _collect_variants(items)
+  let ctx = #{"prefix": short, "fns": fn_names, "file": file_path, "variants": variants}
   let mut aliases = #{}
 
   for item in items {
@@ -1815,7 +1942,7 @@ fn _load_module(path_arr, bm, loaded, li) -> map {
     }
   }
 
-  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li, "aliases": aliases}
+  ret #{"fwd": all_fwd, "fns": all_fns, "loaded": loaded, "li": li, "aliases": aliases, "variants": variants}
 }
 
 ; --- FFI type mapping ---
@@ -1936,6 +2063,11 @@ fn _emit_extern_fn(node) -> [str] {
 
 ; --- Program emission ---
 
+fn main_file_of(prog_ast) -> str {
+  if map.has(prog_ast, "file") { ret prog_ast["file"] }
+  ret ""
+}
+
 fn emit_program(prog_ast, bm) -> str {
   let items = prog_ast["items"]
 
@@ -1944,6 +2076,7 @@ fn emit_program(prog_ast, bm) -> str {
   let mut loaded = []
   let mut li = 0
   let mut import_aliases = #{}
+  let mut all_variants = _collect_variants(items)
 
   for item in items {
     if item["tag"] == "UseDecl" {
@@ -1955,6 +2088,32 @@ fn emit_program(prog_ast, bm) -> str {
       let al = result["aliases"]
       if type_of(al) == "map" {
         for [k, v] in al { import_aliases = map.set(import_aliases, k, v) }
+      }
+      let mv = result["variants"]
+      if type_of(mv) == "map" {
+        for [k, v] in mv { all_variants = map.set(all_variants, k, v) }
+      }
+    }
+  }
+
+  ; Inline `mod m { ... }` blocks: their functions are emitted as m_f (like a
+  ; `use`d module) and reachable both as `m.f(...)` and unqualified `f(...)`.
+  for item in items {
+    if item["tag"] == "ModDecl" {
+      let mitems = item["items"]
+      let mv = _collect_variants(mitems)
+      for [k, v] in mv { all_variants = map.set(all_variants, k, v) }
+      let mctx = #{"prefix": item["name"], "fns": _collect_fn_names(mitems), "import_aliases": import_aliases, "file": main_file_of(prog_ast), "variants": all_variants}
+      for mi in mitems {
+        if mi["tag"] == "FnDecl" {
+          let full_name = _prefixed_name(mi["name"], mctx)
+          all_fwd = push(all_fwd, _emit_fwd_decl(full_name, mi["params"]))
+          let fr = emit_fn(mi, bm, mctx, li)
+          li = fr[1]
+          for lf in fr[2] { all_fns = push(all_fns, lf) }
+          all_fns = push(all_fns, fr[0])
+          import_aliases = map.set(import_aliases, mi["name"], full_name)
+        }
       }
     }
   }
@@ -1975,9 +2134,8 @@ fn emit_program(prog_ast, bm) -> str {
     }
   }
 
-  let mut main_file = ""
-  if map.has(prog_ast, "file") { main_file = prog_ast["file"] }
-  let main_ctx = #{"prefix": "", "fns": main_fn_names, "import_aliases": import_aliases, "file": main_file}
+  let main_file = main_file_of(prog_ast)
+  let main_ctx = #{"prefix": "", "fns": main_fn_names, "import_aliases": import_aliases, "file": main_file, "variants": all_variants}
 
   for item in items {
     if item["tag"] == "FnDecl" {
@@ -2020,10 +2178,17 @@ fn emit_program(prog_ast, bm) -> str {
 
   for f in all_fns { out = str.concat(out, str.concat(f, "\n")) }
 
+  let mut entry = ""
+  if contains(_collect_fn_names(items), "main") { entry = "fn_main" }
+  else if map.has(import_aliases, "main") { entry = str.concat("fn_", _mangle(import_aliases["main"])) }
+  if entry == "" {
+    let mut where_ = main_file
+    if len(where_) == 0 { where_ = "<program>" }
+    fail(str.concat(where_, ": error: no `fn main` found -- a program needs a main function (use `a build` only on programs, not library modules)"))
+  }
   out = str.concat(out, "int main(int argc, char** argv) \{\n")
   out = str.concat(out, "    g_argc = argc; g_argv = argv;\n")
-  out = str.concat(out, "    fn_main();\n")
-  out = str.concat(out, "    return 0;\n")
+  out = str.concat(out, str.concat("    return a_main_exit_code(", str.concat(entry, "());\n")))
   out = str.concat(out, "\}\n")
 
   ret out

@@ -54,12 +54,7 @@ jobs:
 
       # The static checker must be clean on everything we ship.
       - name: Static check (a check)
-        run: |
-          rc=0
-          for f in src/*.a std/*.a std/compiler/*.a scripts/*.a tests/native/*.a; do
-            ./a check "$f" > /tmp/check.out 2>&1 || { echo "== $f"; cat /tmp/check.out; rc=1; }
-          done
-          exit $rc
+        run: ./a check src std scripts tests/native examples
 
       # The same runner developers use. Every test binary runs in its own
       # process group with a deadline, so a hanging test is a TIMEOUT line,

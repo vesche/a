@@ -8,7 +8,7 @@ fn run_tool(name, args) {
   if name == "list_files" {
     let dir = args["directory"]
     let files = fs.ls(dir)
-    ret str.join(files, "\n")
+    ret str.join(map(files, fn(f) => f["name"]), "\n")
   }
   if name == "read_file" {
     ret io.read_file(args["path"])
