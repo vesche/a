@@ -5,6 +5,8 @@ use std.compiler.emitter
 use std.compiler.checker
 use std.compiler.diag_codes
 use std.compiler.effect_check
+use std.compiler.describe
+use std.compiler.docgen
 use std.compiler.profiler
 use std.compiler.optimizer
 use std.testgen
@@ -13,7 +15,7 @@ use std.cli
 use std.pkg
 use std.plugin
 
-fn _version() -> str { ret "2.1.1" }
+fn _version() -> str { ret "2.4.1" }
 
 fn _die(msg) {
   ; Messages already in `file:line:col: error: ...` form are printed as-is.
@@ -1675,6 +1677,11 @@ fn _usage() {
   eprintln("  a check --json <path...>   same, one JSON object per diagnostic")
   eprintln("  a check --effects <path...> print the inferred effects of every function")
   eprintln("  a explain [CODE]           explain a diagnostic code, or list them all")
+  eprintln("  a describe                 language summary for an agent (~prompt)")
+  eprintln("  a describe --json          same facts as one JSON object")
+  eprintln("  a doc                      print generated REFERENCE.md sections")
+  eprintln("  a doc --write              replace sections 12 and 13 in REFERENCE.md")
+  eprintln("  a doc --check              fail if those sections are stale")
   eprintln("  a test <dir/> [--timeout S] [--filter SUBSTR] [-v]  run test_*.a files (default timeout 60s)")
   eprintln("  a lsp                      start language server (JSON-RPC over stdio)")
   eprintln("  a watch <file.a>           recompile and run on file change")
@@ -1833,6 +1840,46 @@ fn main() {
     }
     if len(targets) == 0 { _die("check requires a source file or directory") }
     if show_effects { cmd_effects(targets) } else { cmd_check(targets, as_json) }
+    ret
+  }
+
+  if subcmd == "doc" {
+    let mut mode = "print"
+    let mut i = 1
+    while i < len(argv) {
+      if argv[i] == "--write" { mode = "write" }
+      else if argv[i] == "--check" { mode = "check" }
+      else { _die("unknown flag: " + argv[i] + " (a doc [--write|--check])") }
+      i = i + 1
+    }
+    let existing = io.read_file("REFERENCE.md")
+    if type_of(existing) != "str" { _die("cannot read REFERENCE.md (run from the repo root)") }
+    let next = docgen.splice(existing)
+    if mode == "check" {
+      if next != existing {
+        _die("REFERENCE.md builtin/stdlib sections are stale. Run: a doc --write")
+      }
+      println("REFERENCE.md is up to date")
+      ret
+    }
+    if mode == "write" {
+      io.write_file("REFERENCE.md", next)
+      println("wrote REFERENCE.md")
+      ret
+    }
+    print(docgen.generated())
+    ret
+  }
+
+  if subcmd == "describe" {
+    let mut as_json = false
+    let mut i = 1
+    while i < len(argv) {
+      if argv[i] == "--json" { as_json = true }
+      i = i + 1
+    }
+    if as_json { print(describe.as_json(_version())) }
+    else { print(describe.prompt(_version())) }
     ret
   }
 

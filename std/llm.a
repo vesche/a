@@ -456,6 +456,7 @@ fn stream(provider, model, messages, on_chunk, opts) {
     if done == 1 { break }
   }
   http.stream_close(h)
+  ret Ok(1)
 }
 
 ; --- Convenience ---

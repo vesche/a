@@ -12,7 +12,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 | | count |
 |---|---|
 | builtins implemented | 178 |
-| ... documented | 170 |
+| ... documented | 178 |
 | ... exercised by a native test | 143 |
 | documented but NOT implemented | 0 |
 
@@ -192,14 +192,14 @@ is a documentation bug, listed at the bottom so it cannot hide.
 
 | builtin | documented | tested |
 |---|---|---|
-| `local_llm.detokenize` | - | yes |
-| `local_llm.embed` | - | yes |
-| `local_llm.generate` | - | yes |
-| `local_llm.info` | - | yes |
-| `local_llm.load` | - | yes |
-| `local_llm.tokenize` | - | yes |
-| `local_llm.unload` | - | yes |
-| `local_llm.vocab_size` | - | yes |
+| `local_llm.detokenize` | yes | yes |
+| `local_llm.embed` | yes | yes |
+| `local_llm.generate` | yes | yes |
+| `local_llm.info` | yes | yes |
+| `local_llm.load` | yes | yes |
+| `local_llm.tokenize` | yes | yes |
+| `local_llm.unload` | yes | yes |
+| `local_llm.vocab_size` | yes | yes |
 
 ### map
 
@@ -321,20 +321,20 @@ is a documentation bug, listed at the bottom so it cannot hide.
 | `std.channel` | yes | yes |
 | `std.cli` | yes | yes |
 | `std.codegen` | yes | yes |
-| `std.collections` | - | - |
+| `std.collections` | yes | - |
 | `std.config` | yes | yes |
 | `std.cron` | yes | yes |
 | `std.csv` | yes | - |
 | `std.datetime` | yes | - |
 | `std.diff` | yes | yes |
 | `std.encoding` | yes | - |
-| `std.fs_tx` | - | yes |
-| `std.git` | - | yes |
+| `std.fs_tx` | yes | yes |
+| `std.git` | yes | yes |
 | `std.hash` | yes | - |
 | `std.html` | yes | - |
-| `std.index` | - | yes |
+| `std.index` | yes | yes |
 | `std.kv` | yes | yes |
-| `std.lexer` | - | - |
+| `std.lexer` | yes | - |
 | `std.llm` | yes | - |
 | `std.local_llm` | yes | yes |
 | `std.log` | yes | - |
@@ -362,7 +362,7 @@ is a documentation bug, listed at the bottom so it cannot hide.
 | `std.toml` | yes | - |
 | `std.trace` | yes | yes |
 | `std.url` | yes | - |
-| `std.uuid` | - | yes |
+| `std.uuid` | yes | yes |
 | `std.vector` | yes | yes |
 | `std.yaml` | yes | - |
 
@@ -372,14 +372,7 @@ None.
 
 ## Implemented but undocumented
 
-- `local_llm.detokenize`
-- `local_llm.embed`
-- `local_llm.generate`
-- `local_llm.info`
-- `local_llm.load`
-- `local_llm.tokenize`
-- `local_llm.unload`
-- `local_llm.vocab_size`
+None.
 
 ## Implemented but untested
 

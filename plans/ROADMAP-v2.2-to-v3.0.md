@@ -443,6 +443,14 @@ A review of the tree after v2.3–v2.5, written for an agent that has to live in
 
 **Not started this session:** `#strict` / zero-`any` compiler migration; `a describe` / `a doc`; `proc.run(argv)` (quoting is the stopgap); `from_code(123)` corpus cleanup; `--jobs`.
 
+**Progress log -- `a describe` and `a doc` (done)**
+
+`a describe` prints the rules, every builtin signature with its effects, and the module index. `--json` is the same facts as one object. The agent calls the compiler instead of keeping a hand-copied cheat sheet.
+
+`a doc` regenerates REFERENCE.md sections 12 and 13 from `builtin_sigs` and the `fn` declarations in `std/`. Sections 1–11 and the closing example stay handwritten. `a doc --check` fails CI when those sections drift. Stdlib tables list signatures only: a function with no `effects` annotation is not labeled pure.
+
+**Still open for v2.5:** `a fmt`, `proc.run(argv)`, clearing `from_code(123)` from `std/` and `src/`, coverage, `--jobs`.
+
 **Exit criteria**
 
 - `a fmt` over the entire repo is a no-op after one pass and the suite still passes.

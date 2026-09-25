@@ -820,1111 +820,1230 @@ stack trace and exits 1 (see Runtime Failures under Diagnostics).
 
 ## 12. Builtin Functions Reference
 
-### I/O
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `print(val)` | any -> void | Print without newline |
-| `println(val)` | any -> void | Print with newline |
-| `eprintln(val)` | any -> void | Print to stderr |
-| `io.read_file(path)` | str -> str | Read file contents (or Err) |
-| `io.write_file(path, data)` | str, str -> void | Write file (or Err) |
-| `io.read_line()` | -> str | Read one line from stdin |
-| `io.read_stdin()` | -> str | Read all of stdin |
-
-### Conversion
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `to_str(val)` | any -> str | Convert any value to string |
-| `type_of(val)` | any -> str | Returns `"int"`, `"float"`, `"str"`, `"bool"`, `"void"`, `"array"`, `"map"`, `"fn"`, `"result"` |
-| `int(val)` | str/float/bool -> i64 | Parse or coerce to integer |
-| `float(val)` | str/int -> f64 | Parse or coerce to float |
-
-### Math
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `len(val)` | str/array/map -> i64 | Length of string (chars), array, or map |
-| `math.sqrt(n)` | float -> float | Square root |
-| `math.abs(n)` | int/float -> int/float | Absolute value |
-| `math.floor(n)` | float -> i64 | Floor to integer |
-| `math.ceil(n)` | float -> i64 | Ceiling to integer |
-| `math.round(n)` | float -> i64 | Round to nearest integer |
-| `math.pow(base, exp)` | num, num -> num | Exponentiation |
-| `math.min(a, b)` | num, num -> num | Smaller of two numbers |
-| `math.max(a, b)` | num, num -> num | Larger of two numbers |
-
-### Array Operations
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `push(arr, val)` | [T], T -> [T] | Append element (returns new array) |
-| `slice(arr, start, end?)` | [T], i64, i64? -> [T] | Sub-array from start to end |
-| `sort(arr)` | [T] -> [T] | Sort (int/float/str) |
-| `reverse_arr(arr)` | [T] -> [T] | Reverse |
-| `contains(arr, val)` | [T], T -> bool | Membership test |
-| `concat_arr(a, b)` | [T], [T] -> [T] | Concatenate two arrays |
-
-### Higher-Order Array Functions
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `map(arr, f)` | [T], fn(T)->U -> [U] | Transform each element |
-| `filter(arr, f)` | [T], fn(T)->bool -> [T] | Keep elements where f is true |
-| `reduce(arr, init, f)` | [T], U, fn(U,T)->U -> U | Fold left |
-| `each(arr, f)` | [T], fn(T)->void -> void | Side-effect on each element |
-| `sort_by(arr, f)` | [T], fn(T,T)->i64 -> [T] | Sort with comparator |
-| `find(arr, f)` | [T], fn(T)->bool -> Result | First match (Ok) or Err |
-| `any(arr, f)` | [T], fn(T)->bool -> bool | True if any element matches |
-| `all(arr, f)` | [T], fn(T)->bool -> bool | True if all elements match |
-| `flat_map(arr, f)` | [T], fn(T)->[U] -> [U] | Map then flatten one level |
-| `min_by(arr, f)` | [T], fn(T)->K -> Result | Min by key function |
-| `max_by(arr, f)` | [T], fn(T)->K -> Result | Max by key function |
-| `zip(a, b)` | [T], [U] -> [[T,U]] | Pair elements by index |
-| `enumerate(arr)` | [T] -> [[i64,T]] | Pair each element with its index |
-| `take(arr, n)` | [T], i64 -> [T] | First n elements |
-| `drop(arr, n)` | [T], i64 -> [T] | All but first n elements |
-| `chunk(arr, size)` | [T], i64 -> [[T]] | Split into chunks of size |
-| `unique(arr)` | [T] -> [T] | Remove duplicates (first occurrence) |
-
-### Map Operations
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `map.get(m, key)` | map, str -> any | Get value (or void if missing) |
-| `map.set(m, key, val)` | map, str, any -> map | Set key (returns new map) |
-| `map.keys(m)` | map -> [str] | All keys |
-| `map.values(m)` | map -> [any] | All values |
-| `map.has(m, key)` | map, str -> bool | Key exists |
-| `map.delete(m, key)` | map, str -> map | Remove key (returns new map) |
-| `map.merge(a, b)` | map, map -> map | Merge (b overwrites a) |
-| `map.entries(m)` | map -> [[str, any]] | Key-value pairs |
-| `map.from_entries(arr)` | [[str, any]] -> map | Build map from pairs |
-
-### String Operations
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `str.concat(a, b, ...)` | str... -> str | Concatenate strings |
-| `str.split(s, delim)` | str, str -> [str] | Split on delimiter |
-| `str.contains(s, sub)` | str, str -> bool | Substring test |
-| `str.starts_with(s, pre)` | str, str -> bool | Prefix test |
-| `str.ends_with(s, suf)` | str, str -> bool | Suffix test |
-| `str.replace(s, from, to)` | str, str, str -> str | Replace all occurrences |
-| `str.trim(s)` | str -> str | Strip leading/trailing whitespace |
-| `str.upper(s)` | str -> str | Uppercase |
-| `str.lower(s)` | str -> str | Lowercase |
-| `str.join(arr, sep)` | [str], str -> str | Join array with separator |
-| `str.chars(s)` | str -> [str] | Split into single characters |
-| `str.slice(s, start, end)` | str, i64, i64 -> str | Substring by char indices |
-| `str.lines(s)` | str -> [str] | Split on newlines |
-| `str.find(s, sub)` | str, str -> i64 | Index of substring (-1 if not found) |
-| `str.count(s, sub)` | str, str -> i64 | Count occurrences |
-
-### Regex
-
-There are no `regex.*` builtins in the native compiler. Use `std.re` (section 13),
-a regex engine written in `a`.
-
-### JSON
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `json.parse(s)` | str -> any | Parse JSON string to value |
-| `json.stringify(val)` | any -> str | Serialize to compact JSON |
-| `json.pretty(val)` | any -> str | Serialize to pretty-printed JSON |
-
-### HTTP
-
-All HTTP functions return a record: `{status: i64, body: str, headers: #{str: str}}`.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `http.get(url, headers?)` | str, map? -> record | GET request |
-| `http.post(url, body?, headers?)` | str, any?, map? -> record | POST request |
-| `http.put(url, body?, headers?)` | str, any?, map? -> record | PUT request |
-| `http.patch(url, body?, headers?)` | str, any?, map? -> record | PATCH request |
-| `http.delete(url, headers?)` | str, map? -> record | DELETE request |
-
-```a
-let resp = http.get("https://api.example.com/data", #{"Accept": "application/json"})
-if resp.status == 200 {
-  let data = json.parse(resp.body)
-}
-```
-
-### Filesystem
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `fs.exists(path)` | str -> bool | Path exists |
-| `fs.is_dir(path)` | str -> bool | Is directory |
-| `fs.is_file(path)` | str -> bool | Is file |
-| `fs.ls(path)` | str -> [{name, is_dir}] | List directory entries |
-| `fs.mkdir(path)` | str -> void | Create directory |
-| `fs.rm(path)` | str -> void | Remove file or directory |
-| `fs.mv(from, to)` | str, str -> void | Move/rename |
-| `fs.cp(from, to)` | str, str -> void | Copy |
-| `fs.cwd()` | -> str | Current working directory |
-| `fs.abs(path)` | str -> str | Absolute path |
-| `fs.stat(path)` | str -> map | `#{"size", "is_dir", "is_file", "mtime"}` or Err |
-| `fs.watch(path, f)` | str, fn(map) -> void | Blocks, calling `f(#{"path", "event"})` on each change until `f` returns an `Err` |
-
-### Environment
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `env.get(name)` | str -> str/void | Get environment variable |
-| `env.set(name, val)` | str, str -> void | Set environment variable |
-| `env.all()` | -> map | All environment variables |
-
-### Shell
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `exec(cmd)` | str -> {stdout, stderr, code, timed_out} | Run shell command; the same as `exec_timeout(cmd, 0)`: both streams captured, own process group, no deadline. |
-| `exec_timeout(cmd, ms)` | str, i64 -> {stdout, stderr, code, timed_out} | Run shell command in its own process group with a deadline (`ms <= 0` = none). Captures both streams. On deadline: SIGTERM to the group, SIGKILL 2s later, `timed_out: true`, `code: -1`. When the shell exits, any descendants still alive in the group are killed. Prefer this over `exec` for anything that might hang or start background processes. |
-
-```a
-let result = exec("ls -la")
-println(result.stdout)
-
-let r = exec_timeout("./slow_tool --flag", 30000)
-if r.timed_out { println("gave up after 30s") }
-if result.code != 0 {
-  eprintln(result.stderr)
-}
-```
-
-### Character Functions
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `char_code(s)` | str -> i64 | Code point of first character |
-| `from_code(n)` | i64 -> str | Character from code point |
-| `is_alpha(s)` | str -> bool | All characters are alphabetic |
-| `is_digit(s)` | str -> bool | All characters are digits |
-| `is_alnum(s)` | str -> bool | All characters are alphanumeric |
-
-### Result Helpers
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `Ok(val)` | any -> Result | Construct success result |
-| `Err(msg)` | any -> Result | Construct error result |
-| `is_ok(val)` | any -> bool | True if Ok result |
-| `is_err(val)` | any -> bool | True if Err result |
-| `unwrap(result)` | Result -> any | Extract Ok value; on Err a runtime failure (`try` catches it as the Err) |
-| `unwrap_or(result, default)` | Result, any -> any | Extract Ok or use default |
-| `expect(result, msg)` | Result, str -> any | Extract Ok; on Err a runtime failure with `msg` (`try` catches it as `Err(msg)`) |
-
-### Runtime
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `args()` | -> [str] | Program command-line arguments |
-| `argv0()` | -> str | Path of the running executable |
-| `embedded_file(name)` | str -> str | Contents of a file embedded at build time |
-| `exit(code?)` | i64? -> never | Terminate with exit code (default 0) |
-| `fail(msg?)` | str? -> never | Runtime failure: caught by an enclosing `try { }` as `Err(msg)`, otherwise prints `runtime error: msg` plus a stack trace and exits 1 |
-
-There is no `eval`: an `a` program is compiled to C ahead of time. To run
-code at runtime, write it to a file and use `exec_timeout("a run file.a", ms)`.
-
-### Concurrency
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `spawn(fn)` | fn -> task | Start function in a new OS thread, returns TaskHandle |
-| `await(handle)` | task -> Result | Block until task completes, returns Ok(value) or Err(msg) |
-| `await_all(handles)` | [task] -> [Result] | Wait for all tasks, returns array of Results |
-| `parallel_map(arr, fn)` | [T], fn -> [U] | Map function over array concurrently |
-| `parallel_each(arr, fn)` | [T], fn -> void | Execute function for each element concurrently |
-| `timeout(ms, fn)` | i64, fn -> Result | Run function with millisecond deadline |
-
-Each spawned task runs in an isolated VM -- no shared mutable state.
-Closures capture values by copy, so captured variables are safe to use concurrently.
-
-```a
-; Fetch multiple URLs in parallel
-let urls = ["https://api.a.com", "https://api.b.com", "https://api.c.com"]
-let responses = parallel_map(urls, fn(url) => http.get(url))
-
-; Spawn individual tasks for fine-grained control
-let h1 = spawn(fn() => expensive_computation())
-let h2 = spawn(fn() => io.read_file("large.txt"))
-let r1 = await(h1)   ; Ok(result) or Err(message)
-let r2 = await(h2)
-
-; Run with a timeout
-let r = timeout(5000, fn() => slow_network_call())
-if is_err(r) { println("timed out!") }
-```
-
-### Time
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `time.now()` | -> i64 | Current Unix epoch milliseconds |
-| `time.sleep(ms)` | i64 -> void | Sleep for `ms` milliseconds |
-
-### Hashing
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `hash.sha256(s)` | str -> str | SHA-256 hash as lowercase hex string |
-| `hash.md5(s)` | str -> str | MD5 hash as lowercase hex string |
-
-### HTTP Server
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `http.serve(port, handler)` | i64, fn -> void | Start HTTP server; handler receives `{method, path, headers, body}`, returns `{status, headers, body}`. Returns when the handler's response map contains `"stop": true` (the response is still sent) or on SIGINT/SIGTERM. |
-| `http.serve_static(port, dir)` | i64, str -> void | Serve static files from directory |
-
-### HTTP Streaming
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `http.stream(url, body, headers)` | str, str, map -> handle | Open streaming HTTP connection |
-| `http.stream_read(h)` | handle -> str/void | Read next line (void at EOF) |
-| `http.stream_close(h)` | handle -> void | Close stream |
-
-### WebSocket
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `ws.connect(url)` | str -> handle | Connect to ws:// or wss:// server (RFC 6455) |
-| `ws.send(h, msg)` | handle, str -> void | Send text message |
-| `ws.recv(h)` | handle -> str | Receive next message (blocks) |
-| `ws.close(h)` | handle -> void | Close connection |
-
-### Async I/O
-
-Non-blocking HTTP via `poll()`-based event loop, up to 256 concurrent requests.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `async.http_get(url, headers?)` | str, map? -> handle | Start async GET |
-| `async.http_post(url, body?, headers?)` | str, any?, map? -> handle | Start async POST |
-| `async.http_put(url, body?, headers?)` | str, any?, map? -> handle | Start async PUT |
-| `async.http_patch(url, body?, headers?)` | str, any?, map? -> handle | Start async PATCH |
-| `async.http_delete(url, headers?)` | str, map? -> handle | Start async DELETE |
-| `async.await(handle)` | handle -> {status, body, headers} | Wait for single request |
-| `async.gather(handles)` | [handle] -> [Result] | Wait for all requests |
-
-```a
-let h1 = async.http_get("https://api.a.com/data")
-let h2 = async.http_get("https://api.b.com/data")
-let results = async.gather([h1, h2])
-```
-
-### Database
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `db.open(path)` | str -> handle | Open SQLite database (or `":memory:"`) |
-| `db.exec(db, sql)` | handle, str -> void | Execute SQL statement |
-| `db.query(db, sql, params?)` | handle, str, [any]? -> [map] | Query with `?` binding, returns rows |
-| `db.close(db)` | handle -> void | Close database |
-
-### Subprocess
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `proc.spawn(cmd)` | str -> handle | Start subprocess (via `/bin/sh -c`) with bidirectional pipes. The child is a process-group leader and dies with the parent (Linux). |
-| `proc.exec(path, args)` | str, [str] -> Err | Replace this process with the program at `path` (`execv`: no shell, arguments passed as given). Returns only on failure. This is how `a run` hands over to the compiled program. |
-| `proc.write(h, data)` | handle, str -> void | Write to subprocess stdin |
-| `proc.read_line(h)` | handle -> str | Read line from subprocess stdout |
-| `proc.kill(h)` | handle -> void | SIGTERM the subprocess and its whole process group; SIGKILL after 2s if still alive |
-| `proc.wait(h)` | handle -> i64 | Wait for exit, return exit code |
-| `proc.is_running(h)` | handle -> bool | Check if still running |
-
-### Compression
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `compress.deflate(data)` | str -> str | Raw deflate compression |
-| `compress.inflate(data)` | str -> str | Raw deflate decompression |
-| `compress.gzip(data)` | str -> str | Gzip compression |
-| `compress.gunzip(data)` | str -> str | Gzip decompression |
-
-### UUID
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `uuid.v4()` | -> str | Cryptographic random UUID v4 via `/dev/urandom` |
-
-### Signals
-
-Register handlers for OS signals (native CLI only).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `signal.on(name, handler)` | str, fn -> void | Register handler for `SIGINT`, `SIGTERM`, `SIGHUP`, `SIGUSR1`, `SIGUSR2` |
-
-### Image
-
-Native image processing via bundled stb_image (native CLI only).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `image.load(path)` | str -> handle | Load PNG/JPEG/BMP/GIF from file |
-| `image.decode(bytes)` | str -> handle | Decode from in-memory bytes |
-| `image.encode(img, fmt)` | handle, str -> str | Encode to `"png"`, `"bmp"`, or `"jpeg"` |
-| `image.save(img, path)` | handle, str -> void | Save to file (format from extension) |
-| `image.width(img)` | handle -> i64 | Image width in pixels |
-| `image.height(img)` | handle -> i64 | Image height in pixels |
-| `image.resize(img, w, h)` | handle, i64, i64 -> handle | Bilinear resize |
-| `image.pixels(img)` | handle -> [i64] | Pixels as packed RGBA ints (`r << 24 | g << 16 | b << 8 | a`), row-major |
-
-### Reflection
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `reflect.memory_usage()` | -> i64 | RSS in bytes (via mach/procfs) |
-| `reflect.uptime_ms()` | -> i64 | Process uptime in milliseconds |
-| `reflect.pid()` | -> i64 | Process ID |
-
-### Profiling
-
-Counters are only present in binaries built with `a profile`.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `profile.get_counters()` | -> map | Current instrumentation counters |
-| `profile.reset()` | -> void | Zero all counters |
-| `profile.dump(path)` | str -> void | Write counters as JSON |
-
-### Pointers (FFI)
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `ptr.null()` | -> ptr | Null pointer for `extern fn` calls |
-| `ptr.is_null(p)` | ptr -> bool | Null check |
-
-### Stdin
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `io.read_stdin()` | -> str | Read all of stdin |
-| `io.read_line()` | -> str | Read one line from stdin |
-| `io.read_bytes(n)` | i64 -> str | Read n bytes from stdin |
-| `io.flush()` | -> void | Flush stdout |
+Generated by `a doc` from `std/compiler/builtin_sigs.a`. Do not edit by hand.
+A builtin with no effect list is pure. `effects [pure]` on your function rejects every name in the Effects column.
+
+### core
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `Err(...)` | `fn(E) -> Result<any, E>` | pure |
+| `Ok(...)` | `fn(T) -> Result<T, any>` | pure |
+| `all(...)` | `fn([T], fn(T) -> bool) -> bool` | pure |
+| `any(...)` | `fn([T], fn(T) -> bool) -> bool` | pure |
+| `args(...)` | `fn() -> [str]` | pure |
+| `argv0(...)` | `fn() -> str` | pure |
+| `await(...)` | `fn(any) -> Result<any, any>` | spawn |
+| `await_all(...)` | `fn([any]) -> [Result<any, any>]` | spawn |
+| `char_code(...)` | `fn(str) -> int` | pure |
+| `chunk(...)` | `fn([T], int) -> [[T]]` | pure |
+| `concat_arr(...)` | `fn([T], [T]) -> [T]` | pure |
+| `contains(...)` | `fn([T], T) -> bool` | pure |
+| `drop(...)` | `fn([T], int) -> [T]` | pure |
+| `each(...)` | `fn([T], fn(T) -> any) -> void` | pure |
+| `embedded_file(...)` | `fn(str) -> str` | pure |
+| `enumerate(...)` | `fn([T]) -> [[any]]` | pure |
+| `eprintln(...)` | `fn(any) -> void` | io |
+| `exec(...)` | `fn(str) -> map` | exec |
+| `exec_timeout(...)` | `fn(str, int) -> map` | exec |
+| `exit(...)` | `fn(int) -> void` | io |
+| `expect(...)` | `fn(Result<T, any>, str) -> T` | pure |
+| `fail(...)` | `fn(any) -> void` | pure |
+| `filter(...)` | `fn([T], fn(T) -> bool) -> [T]` | pure |
+| `find(...)` | `fn([T], fn(T) -> bool) -> Result<T, str>` | pure |
+| `flat_map(...)` | `fn([T], fn(T) -> [U]) -> [U]` | pure |
+| `float(...)` | `fn(any) -> float` | pure |
+| `from_code(...)` | `fn(int) -> str` | pure |
+| `int(...)` | `fn(any) -> int` | pure |
+| `is_alnum(...)` | `fn(str) -> bool` | pure |
+| `is_alpha(...)` | `fn(str) -> bool` | pure |
+| `is_digit(...)` | `fn(str) -> bool` | pure |
+| `is_err(...)` | `fn(any) -> bool` | pure |
+| `is_ok(...)` | `fn(any) -> bool` | pure |
+| `len(...)` | `fn(any) -> int` | pure |
+| `map(...)` | `fn([T], fn(T) -> U) -> [U]` | pure |
+| `max_by(...)` | `fn([T], fn(T) -> any) -> Result<T, str>` | pure |
+| `min_by(...)` | `fn([T], fn(T) -> any) -> Result<T, str>` | pure |
+| `parallel_each(...)` | `fn([T], fn(T) -> any) -> void` | spawn |
+| `parallel_map(...)` | `fn([T], fn(T) -> U) -> [U]` | spawn |
+| `print(...)` | `fn(any) -> void` | io |
+| `println(...)` | `fn(any) -> void` | io |
+| `push(...)` | `fn([T], T) -> [T]` | pure |
+| `reduce(...)` | `fn([T], U, fn(U, T) -> U) -> U` | pure |
+| `reverse_arr(...)` | `fn([T]) -> [T]` | pure |
+| `slice(...)` | `fn([T], int, int) -> [T]` | pure |
+| `sort(...)` | `fn([T]) -> [T]` | pure |
+| `sort_by(...)` | `fn([T], fn(T, T) -> int) -> [T]` | pure |
+| `spawn(...)` | `fn(fn() -> T) -> any` | spawn |
+| `take(...)` | `fn([T], int) -> [T]` | pure |
+| `timeout(...)` | `fn(int, fn() -> T) -> Result<T, str>` | spawn |
+| `to_str(...)` | `fn(any) -> str` | pure |
+| `type_of(...)` | `fn(any) -> str` | pure |
+| `unique(...)` | `fn([T]) -> [T]` | pure |
+| `unwrap(...)` | `fn(Result<T, any>) -> T` | pure |
+| `unwrap_or(...)` | `fn(Result<T, any>, T) -> T` | pure |
+| `zip(...)` | `fn([T], [U]) -> [[any]]` | pure |
+
+### async
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `async.await(...)` | `fn(any) -> map` | spawn |
+| `async.gather(...)` | `fn([any]) -> [Result<any, any>]` | spawn |
+| `async.http_delete(...)` | `fn(str, map) -> any` | net |
+| `async.http_get(...)` | `fn(str, map) -> any` | net |
+| `async.http_patch(...)` | `fn(str, any, map) -> any` | net |
+| `async.http_post(...)` | `fn(str, any, map) -> any` | net |
+| `async.http_put(...)` | `fn(str, any, map) -> any` | net |
+
+### compress
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `compress.deflate(...)` | `fn(str) -> str` | pure |
+| `compress.gunzip(...)` | `fn(str) -> str` | pure |
+| `compress.gzip(...)` | `fn(str) -> str` | pure |
+| `compress.inflate(...)` | `fn(str) -> str` | pure |
+
+### db
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `db.close(...)` | `fn(any) -> void` | db |
+| `db.exec(...)` | `fn(any, str) -> void` | db |
+| `db.open(...)` | `fn(str) -> any` | db |
+| `db.query(...)` | `fn(any, str, [any]) -> [map]` | db |
+
+### env
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `env.all(...)` | `fn() -> map` | env |
+| `env.get(...)` | `fn(str) -> any` | env |
+| `env.set(...)` | `fn(str, str) -> void` | env |
+
+### fs
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `fs.abs(...)` | `fn(str) -> str` | fs_read |
+| `fs.cp(...)` | `fn(str, str) -> void` | fs_write |
+| `fs.cwd(...)` | `fn() -> str` | fs_read |
+| `fs.exists(...)` | `fn(str) -> bool` | fs_read |
+| `fs.is_dir(...)` | `fn(str) -> bool` | fs_read |
+| `fs.is_file(...)` | `fn(str) -> bool` | fs_read |
+| `fs.ls(...)` | `fn(str) -> [map]` | fs_read |
+| `fs.mkdir(...)` | `fn(str) -> void` | fs_write |
+| `fs.mv(...)` | `fn(str, str) -> void` | fs_write |
+| `fs.rm(...)` | `fn(str) -> void` | fs_write |
+| `fs.stat(...)` | `fn(str) -> map` | fs_read |
+| `fs.watch(...)` | `fn(str, fn(map) -> any) -> void` | fs_read |
+
+### hash
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `hash.md5(...)` | `fn(str) -> str` | pure |
+| `hash.sha256(...)` | `fn(str) -> str` | pure |
+
+### http
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `http.delete(...)` | `fn(str, map) -> map` | net |
+| `http.get(...)` | `fn(str, map) -> map` | net |
+| `http.patch(...)` | `fn(str, any, map) -> map` | net |
+| `http.post(...)` | `fn(str, any, map) -> map` | net |
+| `http.put(...)` | `fn(str, any, map) -> map` | net |
+| `http.serve(...)` | `fn(int, fn(map) -> any) -> void` | net |
+| `http.serve_static(...)` | `fn(int, str) -> void` | net |
+| `http.stream(...)` | `fn(str, str, map) -> any` | net |
+| `http.stream_close(...)` | `fn(any) -> void` | net |
+| `http.stream_read(...)` | `fn(any) -> any` | net |
+
+### image
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `image.decode(...)` | `fn(str) -> any` | pure |
+| `image.encode(...)` | `fn(any, str) -> str` | pure |
+| `image.height(...)` | `fn(any) -> int` | pure |
+| `image.load(...)` | `fn(str) -> any` | fs_read |
+| `image.pixels(...)` | `fn(any) -> [int]` | pure |
+| `image.resize(...)` | `fn(any, int, int) -> any` | pure |
+| `image.save(...)` | `fn(any, str) -> void` | fs_write |
+| `image.width(...)` | `fn(any) -> int` | pure |
+
+### io
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `io.flush(...)` | `fn() -> void` | io |
+| `io.read_bytes(...)` | `fn(int) -> str` | fs_read |
+| `io.read_file(...)` | `fn(str) -> str` | fs_read |
+| `io.read_line(...)` | `fn() -> str` | io |
+| `io.read_stdin(...)` | `fn() -> str` | io |
+| `io.write_file(...)` | `fn(str, str) -> void` | fs_write |
+
+### json
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `json.parse(...)` | `fn(str) -> any` | pure |
+| `json.pretty(...)` | `fn(any) -> str` | pure |
+| `json.stringify(...)` | `fn(any) -> str` | pure |
+
+### local_llm
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `local_llm.detokenize(...)` | `fn(any, [int]) -> str` | pure |
+| `local_llm.embed(...)` | `fn(any, str) -> [float]` | pure |
+| `local_llm.generate(...)` | `fn(any, str, map) -> str` | pure |
+| `local_llm.info(...)` | `fn(any) -> map` | pure |
+| `local_llm.load(...)` | `fn(str) -> any` | fs_read |
+| `local_llm.tokenize(...)` | `fn(any, str) -> [int]` | pure |
+| `local_llm.unload(...)` | `fn(any) -> void` | pure |
+| `local_llm.vocab_size(...)` | `fn(any) -> int` | pure |
+
+### map
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `map.delete(...)` | `fn(#{K: V}, K) -> #{K: V}` | pure |
+| `map.entries(...)` | `fn(#{K: V}) -> [[any]]` | pure |
+| `map.from_entries(...)` | `fn([[any]]) -> map` | pure |
+| `map.get(...)` | `fn(#{K: V}, K) -> V` | pure |
+| `map.has(...)` | `fn(#{K: V}, K) -> bool` | pure |
+| `map.keys(...)` | `fn(#{K: V}) -> [K]` | pure |
+| `map.merge(...)` | `fn(map, map) -> map` | pure |
+| `map.set(...)` | `fn(#{K: V}, K, V) -> #{K: V}` | pure |
+| `map.values(...)` | `fn(#{K: V}) -> [V]` | pure |
+
+### math
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `math.abs(...)` | `fn(num) -> num` | pure |
+| `math.ceil(...)` | `fn(num) -> int` | pure |
+| `math.floor(...)` | `fn(num) -> int` | pure |
+| `math.max(...)` | `fn(num, num) -> num` | pure |
+| `math.min(...)` | `fn(num, num) -> num` | pure |
+| `math.pow(...)` | `fn(num, num) -> num` | pure |
+| `math.round(...)` | `fn(num) -> int` | pure |
+| `math.sqrt(...)` | `fn(num) -> float` | pure |
+
+### proc
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `proc.exec(...)` | `fn(str, [str]) -> Result` | exec |
+| `proc.is_running(...)` | `fn(any) -> bool` | exec |
+| `proc.kill(...)` | `fn(any) -> void` | exec |
+| `proc.read_line(...)` | `fn(any) -> str` | exec |
+| `proc.spawn(...)` | `fn(str) -> any` | exec |
+| `proc.wait(...)` | `fn(any) -> int` | exec |
+| `proc.write(...)` | `fn(any, str) -> void` | exec |
+
+### profile
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `profile.dump(...)` | `fn(str) -> void` | fs_write |
+| `profile.get_counters(...)` | `fn() -> map` | pure |
+| `profile.reset(...)` | `fn() -> void` | pure |
+
+### ptr
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `ptr.is_null(...)` | `fn(ptr) -> bool` | ffi |
+| `ptr.null(...)` | `fn() -> ptr` | ffi |
+
+### reflect
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `reflect.memory_usage(...)` | `fn() -> int` | env |
+| `reflect.pid(...)` | `fn() -> int` | env |
+| `reflect.uptime_ms(...)` | `fn() -> int` | time |
+
+### signal
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `signal.on(...)` | `fn(str, fn() -> any) -> void` | spawn |
+
+### str
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `str.chars(...)` | `fn(str) -> [str]` | pure |
+| `str.concat(...)` | `fn(str, str) -> str` | pure |
+| `str.contains(...)` | `fn(str, str) -> bool` | pure |
+| `str.count(...)` | `fn(str, str) -> int` | pure |
+| `str.ends_with(...)` | `fn(str, str) -> bool` | pure |
+| `str.find(...)` | `fn(str, str) -> int` | pure |
+| `str.join(...)` | `fn([str], str) -> str` | pure |
+| `str.lines(...)` | `fn(str) -> [str]` | pure |
+| `str.lower(...)` | `fn(str) -> str` | pure |
+| `str.replace(...)` | `fn(str, str, str) -> str` | pure |
+| `str.slice(...)` | `fn(str, int, int) -> str` | pure |
+| `str.split(...)` | `fn(str, str) -> [str]` | pure |
+| `str.starts_with(...)` | `fn(str, str) -> bool` | pure |
+| `str.trim(...)` | `fn(str) -> str` | pure |
+| `str.upper(...)` | `fn(str) -> str` | pure |
+
+### time
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `time.now(...)` | `fn() -> int` | time |
+| `time.sleep(...)` | `fn(int) -> void` | time |
+
+### uuid
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `uuid.v4(...)` | `fn() -> str` | rand |
+
+### ws
+
+| Function | Signature | Effects |
+|----------|-----------|----------|
+| `ws.close(...)` | `fn(any) -> void` | net |
+| `ws.connect(...)` | `fn(str) -> any` | net |
+| `ws.recv(...)` | `fn(any) -> str` | net |
+| `ws.send(...)` | `fn(any, str) -> void` | net |
 
 ---
 
 ## 13. Standard Library
 
-Import with `use std.<module>`.
-
-### std.math
-
-```a
-use std.math
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `max(a, b)` | i64, i64 -> i64 | Maximum |
-| `min(a, b)` | i64, i64 -> i64 | Minimum |
-| `clamp(val, lo, hi)` | i64, i64, i64 -> i64 | Clamp to range |
-| `fmax(a, b)` | f64, f64 -> f64 | Float maximum |
-| `fmin(a, b)` | f64, f64 -> f64 | Float minimum |
-| `pow(base, exp)` | i64, i64 -> i64 | Integer exponentiation |
-| `sum(arr)` | [i64] -> i64 | Sum of array |
-| `range(start, end)` | i64, i64 -> [i64] | Range `[start, end)` |
-
-### std.strings
-
-```a
-use std.strings
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `repeat(s, n)` | str, i64 -> str | Repeat string n times |
-| `pad_left(s, width, pad)` | str, i64, str -> str | Left-pad to width |
-| `pad_right(s, width, pad)` | str, i64, str -> str | Right-pad to width |
-| `reverse(s)` | str -> str | Reverse string |
-| `count(s, sub)` | str, str -> i64 | Count occurrences |
-| `center(s, width, pad)` | str, i64, str -> str | Center-pad to width |
-| `is_empty(s)` | str -> bool | True if empty string |
-
-### std.cli
-
-ANSI terminal colors and styles. Functions wrap a string in escape codes and nest safely.
-
-```a
-use std.cli
-println(bold(red("error: ") + "something failed"))
-println(dim(gray("-- done --")))
-```
-
-**Colors**: `red(s)`, `green(s)`, `yellow(s)`, `blue(s)`, `magenta(s)`, `cyan(s)`, `gray(s)`
-
-**Styles**: `bold(s)`, `dim(s)`, `underline(s)`
-
-### std.testing
-
-Assertion library for test files. Assertions call `fail()` on mismatch.
-
-```a
-use std.testing
-
-fn test_addition() -> bool {
-  assert_eq(1 + 1, 2)
-}
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `assert_eq(actual, expected)` | any, any -> void | Fail if not equal |
-| `assert_int_eq(actual, expected)` | i64, i64 -> void | Fail if integers not equal |
-| `assert_true(val)` | bool -> void | Fail if not true |
-| `assert_false(val)` | bool -> void | Fail if not false |
-| `assert_contains(haystack, needle)` | str, str -> void | Fail if not substring |
-| `assert_not_eq(actual, expected)` | any, any -> void | Fail if equal |
-
-### std.re
-
-Regex engine written in `a`. This is the only regex implementation; there are no `regex.*` builtins.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `test(pattern, text)` | str, str -> bool | Full match test |
-| `search(pattern, text)` | str, str -> map/false | First match with position |
-| `find_all(pattern, text)` | str, str -> [str] | All matches |
-| `replace(pattern, text, rep)` | str, str, str -> str | Replace all |
-| `replace_first(pattern, text, rep)` | str, str, str -> str | Replace first |
-| `split(pattern, text)` | str, str -> [str] | Split on pattern |
-
-### std.path
-
-Path manipulation utilities. Pure "a" module, Unix-oriented.
-
-```a
-use std.path
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `join(a, b)` | str, str -> str | Join path segments with `/` |
-| `join3(a, b, c)` | str, str, str -> str | Join three segments |
-| `dirname(p)` | str -> str | Parent directory |
-| `basename(p)` | str -> str | Final path component |
-| `extension(p)` | str -> str | File extension (empty if none) |
-| `stem(p)` | str -> str | Basename without extension |
-| `with_extension(p, ext)` | str, str -> str | Replace file extension |
-| `is_absolute(p)` | str -> bool | True if starts with `/` |
-| `segments(p)` | str -> [str] | Split into path components |
-| `normalize(p)` | str -> str | Collapse `//`, resolve `.` and `..` |
-| `home()` | -> str | `$HOME` (or `$USERPROFILE`) |
-| `temp()` | -> str | Temp directory from `$TMPDIR`/`$TEMP`, else `/tmp` |
-| `a_home()` | -> str | Where `a` persists user state (plugins, agent checkpoints): `$A_HOME` if set, else `~/.a`, else `/tmp/a_home`. Every stdlib module that writes to the home directory goes through this, so setting `A_HOME` sandboxes them all. |
-
-### std.datetime
-
-Date and time utilities. Timestamps are Unix epoch milliseconds.
-
-```a
-use std.datetime
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `now()` | -> i64 | Current epoch milliseconds |
-| `timestamp()` | -> i64 | Current epoch seconds |
-| `sleep(ms)` | i64 -> void | Sleep for milliseconds |
-| `to_parts(epoch_ms)` | i64 -> map | Decompose to `year`, `month`, `day`, `hour`, `minute`, `second`, `ms` |
-| `from_parts(y, mo, d, h, mi, s)` | i64... -> i64 | Construct epoch ms from components |
-| `format(epoch_ms, fmt)` | i64, str -> str | Format with `%Y`, `%m`, `%d`, `%H`, `%M`, `%S`, `%F`, `%T` |
-| `iso(epoch_ms)` | i64 -> str | ISO 8601 format (`2026-04-10T15:30:00Z`) |
-| `add_ms(epoch_ms, n)` | i64, i64 -> i64 | Add milliseconds |
-| `add_seconds(epoch_ms, n)` | i64, i64 -> i64 | Add seconds |
-| `add_minutes(epoch_ms, n)` | i64, i64 -> i64 | Add minutes |
-| `add_hours(epoch_ms, n)` | i64, i64 -> i64 | Add hours |
-| `add_days(epoch_ms, n)` | i64, i64 -> i64 | Add days |
-| `diff_ms(a, b)` | i64, i64 -> i64 | Absolute difference in ms |
-| `diff_seconds(a, b)` | i64, i64 -> i64 | Absolute difference in seconds |
-
-### std.hash
-
-Hashing utilities. Wraps `hash.sha256` and `hash.md5` builtins with convenience functions.
-
-```a
-use std.hash
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `sha256(s)` | str -> str | SHA-256 hex digest |
-| `md5(s)` | str -> str | MD5 hex digest |
-| `sha256_file(path)` | str -> str | SHA-256 of file contents |
-| `md5_file(path)` | str -> str | MD5 of file contents |
-| `quick(s)` | str -> str | Short md5 hash (16 hex chars) for cache keys |
-
-### std.encoding
-
-Base64, hex, and URL encoding/decoding. Pure "a" module.
-
-```a
-use std.encoding
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `base64_encode(s)` | str -> str | Base64 encode |
-| `base64_decode(s)` | str -> str | Base64 decode |
-| `hex_encode(s)` | str -> str | Hex encode (each byte -> 2 hex chars) |
-| `hex_decode(s)` | str -> str | Hex decode |
-| `url_encode(s)` | str -> str | Percent-encode for URLs |
-| `url_decode(s)` | str -> str | Percent-decode (handles `+` as space) |
-
-### std.csv
-
-CSV parsing and generation. RFC 4180 compliant. Pure "a" module.
-
-```a
-use std.csv
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(text)` | str -> [[str]] | Parse CSV to array of rows |
-| `parse_records(text)` | str -> [map] | Parse with first row as headers |
-| `stringify(rows)` | [[str]] -> str | Convert rows to CSV text |
-| `stringify_records(records, headers)` | [map], [str] -> str | Convert maps to CSV |
-| `parse_row(line)` | str -> [str] | Parse a single CSV line |
-| `escape_field(field)` | str -> str | Quote/escape a field if needed |
-
-### std.template
-
-Mustache-style string templating. Pure "a" module.
-
-```a
-use std.template
-```
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `render(tmpl, vars)` | str, map -> str | Render template with variable map |
-| `render_file(path, vars)` | str, map -> str | Read template file and render |
-
-Template syntax:
-
-- `{{name}}` -- variable substitution
-- `{{#if key}}...{{/if}}` -- conditional block
-- `{{#if key}}...{{#else}}...{{/if}}` -- conditional with else
-- `{{#each items}}...{{/each}}` -- iteration over array
-- `{{.}}` -- current item in each block
-- `{{@index}}` -- current index in each block
-- `{{#each items}}...{{#else}}...{{/each}}` -- iteration with empty fallback
-
-### std.yaml
-
-YAML 1.2 subset parser and serializer.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(text)` | str -> any | Parse YAML to value |
-| `stringify(val)` | any -> str | Serialize value to YAML |
-
-### std.toml
-
-TOML parser and serializer (tables, arrays of tables, all value types).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(text)` | str -> map | Parse TOML to map |
-| `stringify(val)` | map -> str | Serialize map to TOML |
-
-### std.html
-
-HTML DOM parser with CSS selector queries.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(html)` | str -> node | Parse HTML to DOM tree |
-| `select(node, selector)` | node, str -> [node] | CSS selector query |
-| `text(node)` | node -> str | Extract text content |
-
-### std.url
-
-URL parsing, encoding, and construction.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(url_str)` | str -> map | Parse URL to `{scheme, host, port, path, query, fragment}` |
-| `encode(s)` | str -> str | Percent-encode |
-| `decode(s)` | str -> str | Percent-decode |
-| `build(parts)` | map -> str | Construct URL from parts map |
-
-### std.llm
-
-Unified LLM client for OpenAI, Anthropic, and Google AI.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `chat(provider, model, messages, opts)` | str, str, [map], map -> map | Send chat request, returns `{content, role, usage, tool_calls}` |
-| `stream(provider, model, messages, on_chunk, opts)` | str, str, [map], fn, map -> map | Stream tokens; `on_chunk(text)` called per token |
-| `models(provider)` | str -> [str] | List available models for provider |
-
-```a
-use std.llm
-let reply = llm.chat("openai", "gpt-4", [#{"role": "user", "content": "Hello"}], #{})
-println(reply["content"])
-```
-
-### std.local_llm
-
-GGUF model load/inference in-process (CPU-only, native builds only).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `load(path)` | str -> handle | Load GGUF model (Q4_0, Q8_0, F16, F32) |
-| `generate(h, prompt, opts)` | handle, str, map -> str | Generate text |
-| `chat(h, messages, opts)` | handle, [map], map -> str | Chat completion |
-| `embed(h, text)` | handle, str -> [f64] | Generate embedding vector |
-| `tokenize(h, text)` | handle, str -> [i64] | Tokenize text |
-| `detokenize(h, tokens)` | handle, [i64] -> str | Detokenize tokens |
-| `vocab_size(h)` | handle -> i64 | Vocabulary size |
-| `info(h)` | handle -> map | Model metadata |
-| `is_loaded(h)` | handle -> bool | Check if handle is valid |
-| `unload(h)` | handle -> void | Free model resources |
-
-### std.log
-
-Structured JSON logging to stderr with levels and context.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `set_level(level)` | str -> void | Set minimum level: `"debug"`, `"info"`, `"warn"`, `"error"` |
-| `debug(msg)` | str -> void | Log at debug level |
-| `info(msg)` | str -> void | Log at info level |
-| `warn(msg)` | str -> void | Log at warn level |
-| `error(msg)` | str -> void | Log at error level |
-| `infof(msg, ctx)` | str, map -> void | Log with structured context |
-| `timed(label, f)` | str, fn -> void | Log function duration |
-
-### std.args
-
-Declarative CLI argument parser with flags, options, positionals, and auto-help.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `spec()` | -> map | Create empty argument spec |
-| `name(s, n)` | map, str -> map | Set program name |
-| `desc(s, d)` | map, str -> map | Set description |
-| `flag(s, long, short, desc)` | map, str, str, str -> map | Add boolean flag |
-| `option(s, long, short, desc, default)` | map, str, str, str, str -> map | Add option with default |
-| `positional(s, name, desc)` | map, str, str -> map | Add positional argument |
-| `parse(s)` | map -> map | Parse `args()` against spec |
-
-```a
-use std.args
-let s = args.spec()
-  |> args.name("mytool")
-  |> args.flag("verbose", "v", "Enable verbose output")
-  |> args.option("output", "o", "Output file", "out.txt")
-  |> args.positional("input", "Input file")
-let parsed = args.parse(s)
-```
-
-### std.schema
-
-JSON Schema draft-07 validation.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `validate(value, schema)` | any, map -> Result | Validate value against schema, Ok or Err with details |
-| `from_type(type_str)` | str -> map | Generate schema from type string |
-
-### std.diff
-
-Myers algorithm unified diff with structured ops and patch application.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `lines(a, b)` | str, str -> [map] | Structured line-level diff ops |
-| `text(a, b)` | str, str -> str | Unified diff text (with `+`/`-` markers) |
-| `patch(original, diff_str)` | str, str -> str | Apply a unified diff |
-
-### std.config
-
-Layered configuration loading from TOML, dotenv, and environment variables.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `load(path)` | str -> map | Load TOML config file |
-| `from_env(prefix)` | str -> map | Load env vars with prefix (e.g. `"APP_"`) |
-| `dotenv(path)` | str -> void | Load `.env` file into environment |
-| `merge(base, over)` | map, map -> map | Deep-merge two configs (over wins) |
-| `require(cfg, keys)` | map, [str] -> void | Fail if any key is missing |
-
-### std.migrate
-
-SQLite migration runner with idempotent execution.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `run(handle, dir)` | handle, str -> map | Run pending migrations from directory |
-| `status(handle, dir)` | handle, str -> [map] | List migration status |
-| `create(dir, name)` | str, str -> str | Create new migration file |
-
-### std.semver
-
-Semantic versioning parse, compare, and constraint matching.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(s)` | str -> map | Parse `"1.2.3"` to `{major, minor, patch}` |
-| `format(v)` | map -> str | Format version map to string |
-| `compare(a, b)` | map, map -> i64 | -1, 0, or 1 |
-| `satisfies(version, constraint)` | str, str -> bool | Check `">=1.0.0 <2.0.0"` style constraints |
-| `best_match(versions, constraint)` | [str], str -> str | Best matching version |
-
-### std.pkg
-
-Package manager with manifest, dependency resolution, and installation.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `init(dir)` | str -> void | Create `pkg.toml` manifest |
-| `read_manifest(dir)` | str -> map | Parse `pkg.toml` |
-| `add_dep(dir, name, source)` | str, str, str -> void | Add dependency |
-| `install(dir)` | str -> map | Install all dependencies |
-| `parse_source(source)` | str -> map | Parse source string (git URL, path, etc.) |
-
-### std.cron
-
-Task scheduler with intervals, one-shot timers, and cancellation.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `schedule(interval_ms, f)` | i64, fn -> map | Create recurring task |
-| `once(delay_ms, f)` | i64, fn -> map | Create one-shot timer |
-| `cancel(task)` | map -> map | Cancel a scheduled task |
-| `run_loop(tasks)` | [map] -> void | Run scheduler (blocks forever) |
-| `run_for(tasks, duration_ms)` | [map], i64 -> void | Run scheduler for duration |
-
-### std.kv
-
-Persistent key-value store backed by SQLite.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `open(path)` | str -> handle | Open (or create) KV store |
-| `get(h, key)` | handle, str -> Result | Get value (Ok or Err) |
-| `set(h, key, value)` | handle, str, any -> void | Set value (JSON-serialized) |
-| `delete(h, key)` | handle, str -> void | Remove key |
-| `has(h, key)` | handle, str -> bool | Key exists |
-| `keys(h)` | handle -> [str] | All keys |
-| `list(h, prefix)` | handle, str -> [map] | Keys matching prefix |
-| `count(h)` | handle -> i64 | Number of entries |
-| `clear(h)` | handle -> void | Remove all entries |
-| `close(h)` | handle -> void | Close store |
-
-### std.vector
-
-Vector store with cosine similarity search (SQLite-backed).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `open(path, dim)` | str, i64 -> map | Open store with embedding dimension |
-| `add(store, id, embedding)` | map, str, [f64] -> void | Add embedding |
-| `add_with(store, id, embedding, metadata)` | map, str, [f64], map -> void | Add with metadata |
-| `get(store, id)` | map, str -> Result | Retrieve by ID |
-| `remove(store, id)` | map, str -> void | Remove entry |
-| `search(store, query, k)` | map, [f64], i64 -> [map] | Top-k cosine similarity search |
-| `count(store)` | map -> i64 | Number of entries |
-| `clear(store)` | map -> void | Remove all entries |
-| `close(store)` | map -> void | Close store |
-
-### std.cache
-
-Cache with TTL expiry and LRU eviction (SQLite-backed or in-memory).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `open(path)` | str -> map | Open persistent cache |
-| `create(max_size)` | i64 -> map | Create in-memory cache with max entries |
-| `get(c, key)` | map, str -> Result | Get value (Ok or Err if expired/missing) |
-| `set(c, key, value, ttl_ms)` | map, str, any, i64 -> void | Set with TTL (0 = no expiry) |
-| `get_or_set(c, key, ttl_ms, f)` | map, str, i64, fn -> any | Get or compute and cache |
-| `delete(c, key)` | map, str -> void | Remove entry |
-| `has(c, key)` | map, str -> bool | Key exists and not expired |
-| `count(c)` | map -> i64 | Number of entries |
-| `clear(c)` | map -> void | Remove all entries |
-| `close(c)` | map -> void | Close cache |
-
-### std.pool
-
-Generic resource pool with factory, acquire/release, and stats.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `create(factory, max_size)` | fn, i64 -> map | Create pool; factory is called to create new resources |
-| `acquire(p)` | map -> any | Get resource (reuse or create) |
-| `release(p, resource)` | map, any -> map | Return resource to pool |
-| `drain(p)` | map -> map | Clear all pooled resources |
-| `size(p)` | map -> i64 | Available resources |
-| `stats(p)` | map -> map | Pool statistics |
-
-### std.channel
-
-SQLite-backed inter-process message queues with independent cursors.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `create(name)` | str -> map | Create new channel |
-| `open(name)` | str -> map | Open existing channel |
-| `send(ch, msg)` | map, any -> void | Send message (JSON-serialized) |
-| `try_recv(ch)` | map -> Result | Non-blocking receive |
-| `recv(ch)` | map -> any | Blocking receive |
-| `recv_timeout(ch, ms)` | map, i64 -> Result | Receive with timeout |
-| `peek(ch)` | map -> Result | Peek without consuming |
-| `count(ch)` | map -> i64 | Unread message count |
-| `drain(ch)` | map -> [map] | Receive all pending messages |
-| `purge(ch)` | map -> void | Clear all messages |
-| `close(ch)` | map -> void | Close channel |
-| `destroy(name)` | str -> void | Remove channel entirely |
-
-### std.rpc
-
-JSON-RPC 2.0 over HTTP with file-based service discovery.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `serve(name, port, handlers)` | str, i64, map -> void | Start RPC server; handlers map method names to functions |
-| `register(name, port)` | str, i64 -> void | Register service for discovery |
-| `discover(name)` | str -> Result | Find service address |
-| `list_agents()` | -> [map] | List all registered services |
-| `call(target, method, params)` | str, str, any -> Result | Call method on named service |
-| `call_addr(addr, method, params)` | str, str, any -> Result | Call method at specific address |
-| `notify(target, method, params)` | str, str, any -> void | Fire-and-forget notification |
-
-### std.mcp
-
-MCP (Model Context Protocol) server and client -- JSON-RPC 2.0 over stdio.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `server(name, version)` | str, str -> map | Create MCP server |
-| `add_tool(srv, name, desc, schema, handler)` | map, str, str, map, fn -> map | Register tool |
-| `add_resource(srv, uri, name, desc, handler)` | map, str, str, str, fn -> map | Register resource |
-| `serve(srv)` | map -> void | Start serving over stdio |
-| `connect(cmd)` | str -> map | Connect to MCP server process |
-| `list_tools(client)` | map -> [map] | List server's tools |
-| `call_tool(client, name, args)` | map, str, map -> map | Call a tool |
-| `list_resources(client)` | map -> [map] | List server's resources |
-| `read_resource(client, uri)` | map, str -> any | Read a resource |
-| `close(client)` | map -> void | Disconnect |
+Generated by `a doc` from `std/*.a` and `std/compiler/*.a`. Do not edit by hand.
+Import with `use std.<module>`. Names starting with `_` are omitted.
 
 ### std.agent
 
-Agent OS -- registration, discovery, delegation, persistent state, and self-update.
+std/agent.a -- Agent OS: registry, delegation, checkpoint, self-update Also includes operational primitives: retry, batch, pipeline, timeout, rate_limit.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `register(name, capabilities)` | str, [str] -> void | Register agent in local registry |
-| `unregister(name)` | str -> void | Remove agent from registry |
-| `discover(name)` | str -> Result | Find agent by name |
-| `find_by_capability(cap)` | str -> [map] | Find agents with capability |
-| `list()` | -> [map] | List all registered agents |
-| `delegate(target, task, params)` | str, str, map -> Result | Delegate task to another agent |
-| `heartbeat(name)` | str -> void | Update agent's last-seen timestamp |
-| `checkpoint(name, state)` | str, map -> void | Save agent state |
-| `restore(name)` | str -> Result | Restore saved state |
-| `save_plan(name, plan)` | str, map -> void | Persist execution plan |
-| `restore_plan(name)` | str -> Result | Restore saved plan |
-| `save_trace(name, trace)` | str, map -> void | Persist execution trace |
-| `restore_trace(name)` | str -> Result | Restore saved trace |
-| `update(source_path)` | str -> void | Self-update (exit code 42 triggers supervisor restart) |
-| `version()` | -> str | Agent framework version |
+| Function | Signature |
+|----------|-----------|
+| `retry` | `fn(max_attempts: int, delay_ms: int, f)` |
+| `batch` | `fn(items, size: int, f)` |
+| `pipeline` | `fn(steps, input)` |
+| `timeout` | `fn(ms: int, f)` |
+| `rate_limit` | `fn(min_interval_ms: int, last_call_ms: int, f)` |
+| `register` | `fn(name, capabilities)` |
+| `unregister` | `fn(name)` |
+| `discover` | `fn(name)` |
+| `find_by_capability` | `fn(cap)` |
+| `list` | `fn() -> [map]` |
+| `heartbeat` | `fn(name)` |
+| `delegate` | `fn(target, task, params)` |
+| `checkpoint` | `fn(name, state)` |
+| `restore` | `fn(name)` |
+| `save_plan` | `fn(name, p)` |
+| `restore_plan` | `fn(name)` |
+| `save_trace` | `fn(name, t)` |
+| `restore_trace` | `fn(name)` |
+| `update` | `fn(source_path)` |
+| `update_from_git` | `fn(source_dir)` |
+| `version` | `fn() -> str` |
 
-### std.swarm
+### std.args
 
-Multi-agent coordination with pluggable strategies.
+std/args.a -- Declarative CLI argument parsing
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `create(task, agents, strategy)` | str, [str], str -> Result | Coordinate agents: `"divide"`, `"vote"`, `"race"`, `"chain"` |
-| `create_async(task, agents, strategy)` | str, [str], str -> handle | Non-blocking swarm |
-| `cancel(agents)` | [str] -> void | Cancel running agents |
+| Function | Signature |
+|----------|-----------|
+| `spec` | `fn() -> map` |
+| `name` | `fn(s: map, n: str) -> map` |
+| `desc` | `fn(s: map, d: str) -> map` |
+| `flag` | `fn(s: map, long: str, short: str, description: str) -> map` |
+| `option` | `fn(s: map, long: str, short: str, description: str, default: str) -> map` |
+| `positional` | `fn(s: map, pname: str, description: str) -> map` |
+| `parse` | `fn(s: map) -> map` |
 
-Strategies:
-- `"divide"` -- split work across agents, merge results
-- `"vote"` -- all agents answer, majority wins
-- `"race"` -- first agent to finish wins
-- `"chain"` -- sequential handoff, each agent's output feeds the next
+### std.cache
 
-### std.plan
+std/cache.a -- Caching layer with TTL and LRU eviction
 
-DAG-based task decomposition with dependency tracking.
+| Function | Signature |
+|----------|-----------|
+| `open` | `fn(path) -> map` |
+| `close` | `fn(c)` |
+| `get` | `fn(c, key)` |
+| `set` | `fn(c, key, value, ttl_ms)` |
+| `delete` | `fn(c, key)` |
+| `has` | `fn(c, key) -> bool` |
+| `evict_expired` | `fn(c)` |
+| `evict_lru` | `fn(c, max_size)` |
+| `count` | `fn(c) -> int` |
+| `clear` | `fn(c)` |
+| `get_or_set` | `fn(c, key, ttl_ms, f)` |
+| `create` | `fn(max_size) -> map` |
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `create(goal)` | str -> map | Create plan with goal |
-| `add_step(p, id, desc, deps)` | map, str, str, [str] -> map | Add step with dependencies |
-| `execute(p, step_fn)` | map, fn -> map | Execute all steps (respecting deps) |
-| `status(p)` | map -> map | Status summary |
-| `summary(p)` | map -> str | Human-readable summary |
-| `is_complete(p)` | map -> bool | All steps done |
-| `step_ids(p)` | map -> [str] | List step IDs |
-| `failed_steps(p)` | map -> [map] | Steps that failed |
-| `serialize(p)` | map -> str | Serialize to JSON |
-| `deserialize(json_str)` | str -> map | Deserialize from JSON |
+### std.channel
 
-### std.trace
+std/channel.a -- Inter-process message channels backed by SQLite Enables decoupled producer/consumer communication between agents. Multiple writers, multiple readers (each with independent cursor).
 
-Execution tracing with spans, events, and export to Chrome/OpenTelemetry format.
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(name) -> map` |
+| `open` | `fn(name) -> map` |
+| `open_as` | `fn(name, cursor_name) -> map` |
+| `send` | `fn(ch, msg)` |
+| `try_recv` | `fn(ch)` |
+| `recv` | `fn(ch)` |
+| `recv_timeout` | `fn(ch, timeout_ms)` |
+| `peek` | `fn(ch)` |
+| `count` | `fn(ch) -> int` |
+| `total` | `fn(ch) -> int` |
+| `drain` | `fn(ch) -> [map]` |
+| `purge` | `fn(ch)` |
+| `close` | `fn(ch)` |
+| `destroy` | `fn(name)` |
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `create(name)` | str -> map | Create tracer |
-| `begin(t, name)` | map, str -> map | Start a span |
-| `end(t, name, data)` | map, str, map -> map | End a span |
-| `event(t, name, data)` | map, str, map -> map | Record instant event |
-| `counter(t, name, values)` | map, str, map -> map | Record counter values |
-| `measure(t, name, f)` | map, str, fn -> map | Measure function duration |
-| `spans(t)` | map -> [map] | Extract completed spans |
-| `find_events(t, name)` | map, str -> [map] | Find events by name |
-| `export_json(t)` | map -> str | Export as JSON |
-| `export_chrome(t)` | map -> str | Export as Chrome trace format |
-| `export_otel(t)` | map -> str | Export as OpenTelemetry format |
-| `clear(t)` | map -> map | Reset tracer |
+### std.cli
 
-### std.reflect
+std/cli.a -- terminal colors and CLI formatting utilities
 
-Runtime self-inspection with profiling and health checks.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `memory_mb()` | -> f64 | RSS in megabytes |
-| `memory_kb()` | -> i64 | RSS in kilobytes |
-| `info()` | -> map | System info (pid, uptime, memory, platform) |
-| `health()` | -> map | Health check (memory, uptime) |
-| `profiler()` | -> map | Create code profiler |
-| `tick(p, name)` | map, str -> map | Increment call counter |
-| `tick_ms(p, name, ms)` | map, str, i64 -> map | Record timed call |
-| `hot_paths(p, limit)` | map, i64 -> [map] | Top-N hottest functions |
-| `stats(p)` | map -> map | Profiler summary |
-| `reset(p)` | map -> map | Clear profiler data |
-
-### std.sandbox
-
-Run untrusted `a` code under a capability set. The decision is made by effect
-inference (see Effects): the program and every module it uses are parsed,
-checked, and their whole-program effect set computed; if it contains an effect
-the capabilities do not grant, the program is refused *before it is compiled*.
-Nothing is rewritten, so there is nothing to bypass -- `exec_timeout`, a
-function value passed to `map`, a lambda, a helper in a `use`d module all
-carry their effects. Granted effects are unrestricted: `fs_read: true` means
-any file the process can read (path- or host-level limits need an OS sandbox).
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `run(source, caps)` | str, map -> map | Refuse (`ok: false`, `denied: [effects]`) or run under `timeout_ms` (killed on deadline, `timed_out: true`). Result also has `stdout` (cut to `max_output`), `stderr`, `code`, `effects` |
-| `run_file(path, caps)` | str, map -> map | `run` on a file's contents |
-| `validate(source)` | str -> map | Static verdict: `safe` (needs nothing beyond `deny_all()`), `effects`, `issues` |
-| `analyze(source)` | str -> map | Parse + check + infer: `ok`, `effects`, `errors` |
-| `capabilities(opts)` | map -> map | Defaults (`io`, `time`, `rand` granted; everything else denied; 5 s; 64 KiB) overridden by `opts` |
-| `deny_all()` | -> map | Compute-and-print only |
-| `allow_all()` | -> map | Every effect, 30 s |
-| `allow_read_only()` | -> map | `deny_all` plus `fs_read` |
-| `allow_network()` | -> map | `deny_all` plus `net` |
-| `denied_effects(effects, caps)` | [str], map -> [str] | Effects in the list that `caps` does not grant |
-
-A snippet without `fn main` is wrapped in one, so `sandbox.run("println(1 + 2)", sandbox.deny_all())` works.
-
-### std.plugin
-
-Plugin management with install, load, and execute.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `init(dir, name)` | str, str -> void | Create plugin scaffold |
-| `install(source_dir)` | str -> void | Install plugin from directory |
-| `install_git(repo)` | str -> void | Install plugin from git repo |
-| `remove(name)` | str -> void | Uninstall plugin |
-| `list()` | -> [map] | List installed plugins |
-| `get(name)` | str -> Result | Get plugin info |
-| `is_installed(name)` | str -> bool | Check if installed |
-| `load(name)` | str -> str | Load plugin source |
-| `run(name)` | str -> void | Execute plugin |
-
-### std.meta
-
-Metaprogramming toolkit -- full AST access for code generation, analysis, and transformation.
-
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `parse(source)` | str -> map | Parse "a" source to AST |
-| `parse_file(path)` | str -> map | Parse file to AST |
-| `emit(prog_ast)` | map -> str | Pretty-print AST to "a" source |
-| `walk(node, visitor_fn)` | map, fn -> void | Walk AST, call visitor on each node |
-| `find_all(node, pred_fn)` | map, fn -> [map] | Find all nodes matching predicate |
-| `find_fns(prog_ast)` | map -> [map] | Find all function declarations |
-| `find_calls(node)` | map -> [map] | Find all function calls |
-| `fn_names(prog_ast)` | map -> [str] | Extract function names |
-| `fn_signatures(prog_ast)` | map -> [map] | Extract function signatures |
-| `uses(prog_ast)` | map -> [str] | Extract `use` imports |
-| `call_graph(prog_ast)` | map -> map | Build call graph |
-| `transform(source, fn)` | str, fn -> str | Transform source via AST |
-| `gen_fn(name, params, body)` | str, [str], [map] -> map | Generate function AST node |
-| `gen_test(name, body)` | str, [map] -> map | Generate test function |
-| `gen_call(fn_name, args)` | str, [map] -> map | Generate function call |
+| Function | Signature |
+|----------|-----------|
+| `esc_code` | `fn() -> str` |
+| `wrap` | `fn(s: str, code: str) -> str` |
+| `red` | `fn(s: str) -> str` |
+| `green` | `fn(s: str) -> str` |
+| `yellow` | `fn(s: str) -> str` |
+| `blue` | `fn(s: str) -> str` |
+| `magenta` | `fn(s: str) -> str` |
+| `cyan` | `fn(s: str) -> str` |
+| `gray` | `fn(s: str) -> str` |
+| `bold` | `fn(s: str) -> str` |
+| `dim` | `fn(s: str) -> str` |
+| `underline` | `fn(s: str) -> str` |
 
 ### std.codegen
 
-Compile-time checking, sandboxed execution, and LLM-assisted code generation.
+std/codegen.a -- Code generation, compilation checking, sandboxed execution, and testing. Part of the self-improvement loop: the language can analyze, generate, test, and modify its own code.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `compile_check(source)` | str -> map | Parse and check code for errors |
-| `run_in_sandbox(source, opts)` | str, map -> map | Run code through `std.sandbox` with `sandbox.capabilities(opts)` -- compute-and-print only unless `opts` grants more |
-| `test(source, test_cases)` | str, [map] -> map | Run code against test cases |
-| `generate(description, context, opts)` | str, str, map -> map | LLM-generate code from description |
+| Function | Signature |
+|----------|-----------|
+| `compile_check` | `fn(source)` |
+| `run_in_sandbox` | `fn(source, opts)` |
+| `test` | `fn(source, test_cases)` |
+| `generate` | `fn(description, context, opts)` |
+
+### std.collections
+
+std/collections.a -- Higher-order collection utilities
+
+| Function | Signature |
+|----------|-----------|
+| `group_by` | `fn(arr, key_fn) -> map` |
+| `freq` | `fn(arr) -> map` |
+| `partition` | `fn(arr, pred_fn) -> [array]` |
+| `flatten` | `fn(arr) -> array` |
+| `index_of` | `fn(arr, target) -> int` |
+| `last_index_of` | `fn(arr, target) -> int` |
+| `compact` | `fn(arr) -> array` |
+| `interleave` | `fn(a, b) -> array` |
+| `sliding_window` | `fn(arr, size: int) -> [array]` |
+| `pluck` | `fn(arr, key: str) -> array` |
+| `key_by` | `fn(arr, key: str) -> map` |
+| `sum_by` | `fn(arr, val_fn) -> int` |
+| `count_by` | `fn(arr, pred_fn) -> int` |
+| `first` | `fn(arr, pred_fn)` |
+| `last` | `fn(arr, pred_fn)` |
+| `uniq_by` | `fn(arr, key_fn) -> array` |
+| `pairs_to_map` | `fn(arr) -> map` |
+| `repeat_val` | `fn(val, n: int) -> array` |
+
+### std.config
+
+std/config.a -- Layered configuration loading
+
+| Function | Signature |
+|----------|-----------|
+| `load` | `fn(path: str) -> map` |
+| `from_env` | `fn(prefix: str) -> map` |
+| `dotenv` | `fn(path: str) -> void` |
+| `merge` | `fn(base: map, over: map) -> map` |
+| `require` | `fn(cfg: map, keys)` |
+
+### std.cron
+
+std/cron.a -- Lightweight task scheduler schedule, once, cancel, run_loop, run_for
+
+| Function | Signature |
+|----------|-----------|
+| `schedule` | `fn(interval_ms, f) -> map` |
+| `once` | `fn(delay_ms, f) -> map` |
+| `cancel` | `fn(task) -> map` |
+| `run_loop` | `fn(tasks) -> void` |
+| `run_for` | `fn(tasks, duration_ms) -> void` |
+
+### std.csv
+
+std/csv.a -- CSV parsing and generation (RFC 4180)
+
+| Function | Signature |
+|----------|-----------|
+| `escape_field` | `fn(field: str) -> str` |
+| `parse_row` | `fn(line: str) -> [str]` |
+| `parse` | `fn(text: str) -> [[str]]` |
+| `parse_records` | `fn(text: str) -> [map]` |
+| `stringify` | `fn(rows: [[str]]) -> str` |
+| `stringify_records` | `fn(records: [map], headers: [str]) -> str` |
+
+### std.datetime
+
+std/datetime.a -- Date and time utilities Epoch-based: all timestamps are Unix epoch milliseconds (i64)
+
+| Function | Signature |
+|----------|-----------|
+| `now` | `fn() -> int` |
+| `timestamp` | `fn() -> int` |
+| `sleep` | `fn(ms: int) -> void` |
+| `to_parts` | `fn(epoch_ms: int) -> map` |
+| `from_parts` | `fn(y: int, mo: int, d: int, h: int, mi: int, s: int) -> int` |
+| `format` | `fn(epoch_ms: int, fmt: str) -> str` |
+| `iso` | `fn(epoch_ms: int) -> str` |
+| `add_ms` | `fn(epoch_ms: int, ms: int) -> int` |
+| `add_seconds` | `fn(epoch_ms: int, s: int) -> int` |
+| `add_minutes` | `fn(epoch_ms: int, m: int) -> int` |
+| `add_hours` | `fn(epoch_ms: int, h: int) -> int` |
+| `add_days` | `fn(epoch_ms: int, d: int) -> int` |
+| `diff_ms` | `fn(a: int, b: int) -> int` |
+| `diff_seconds` | `fn(a: int, b: int) -> int` |
+| `diff_minutes` | `fn(a: int, b: int) -> int` |
+| `diff_hours` | `fn(a: int, b: int) -> int` |
+| `diff_days` | `fn(a: int, b: int) -> int` |
+| `unix` | `fn(epoch_ms: int) -> int` |
+| `from_unix` | `fn(secs: int) -> int` |
+| `is_leap_year` | `fn(y: int) -> bool` |
+| `days_in_month` | `fn(y: int, m: int) -> int` |
+| `day_of_week` | `fn(epoch_ms: int) -> int` |
+| `day_of_year` | `fn(epoch_ms: int) -> int` |
+| `week_of_year` | `fn(epoch_ms: int) -> int` |
+| `start_of_day` | `fn(epoch_ms: int) -> int` |
+| `end_of_day` | `fn(epoch_ms: int) -> int` |
+| `start_of_month` | `fn(epoch_ms: int) -> int` |
+| `end_of_month` | `fn(epoch_ms: int) -> int` |
+| `start_of_year` | `fn(epoch_ms: int) -> int` |
+| `is_before` | `fn(a: int, b: int) -> bool` |
+| `is_after` | `fn(a: int, b: int) -> bool` |
+| `is_same_day` | `fn(a: int, b: int) -> bool` |
+| `add_months` | `fn(epoch_ms: int, months: int) -> int` |
+| `add_years` | `fn(epoch_ms: int, years: int) -> int` |
+| `day_name` | `fn(epoch_ms: int) -> str` |
+| `month_name` | `fn(epoch_ms: int) -> str` |
+| `parse_iso` | `fn(s: str) -> int` |
+| `relative` | `fn(epoch_ms: int) -> str` |
+
+### std.diff
+
+std/diff.a -- Text diff (Myers algorithm), patch, unified format
+
+| Function | Signature |
+|----------|-----------|
+| `lines` | `fn(a: str, b: str) -> array` |
+| `text` | `fn(a: str, b: str) -> str` |
+| `patch` | `fn(original: str, diff_str: str) -> str` |
+
+### std.encoding
+
+std/encoding.a -- Base64, hex, and URL encoding/decoding
+
+| Function | Signature |
+|----------|-----------|
+| `base64_encode` | `fn(s: str) -> str` |
+| `base64_decode` | `fn(s: str) -> str` |
+| `hex_encode` | `fn(s: str) -> str` |
+| `hex_decode` | `fn(s: str) -> str` |
+| `url_encode` | `fn(s: str) -> str` |
+| `url_decode` | `fn(s: str) -> str` |
+| `base64url_encode` | `fn(s: str) -> str` |
+| `base64url_decode` | `fn(s: str) -> str` |
+| `html_escape` | `fn(s: str) -> str` |
+| `html_unescape` | `fn(s: str) -> str` |
+| `json_escape` | `fn(s: str) -> str` |
+| `json_unescape` | `fn(s: str) -> str` |
+| `rot13` | `fn(s: str) -> str` |
+
+### std.fs_tx
+
+std/fs_tx.a -- Transactional file operations with automatic rollback
+
+| Function | Signature |
+|----------|-----------|
+| `begin` | `fn(paths) -> map` |
+| `commit` | `fn(tx) -> map` |
+| `rollback` | `fn(tx) -> map` |
+| `run` | `fn(paths, f)` |
+
+### std.git
+
+std/git.a -- Structured git operations
+
+| Function | Signature |
+|----------|-----------|
+| `init` | `fn(path)` |
+| `clone` | `fn(url, path, opts)` |
+| `status` | `fn(path) -> [map]` |
+| `is_clean` | `fn(path) -> bool` |
+| `diff` | `fn(path, opts) -> [map]` |
+| `diff_stat` | `fn(path, opts) -> [map]` |
+| `log` | `fn(path, opts) -> [map]` |
+| `log_short` | `fn(path, n) -> [map]` |
+| `add` | `fn(path, files)` |
+| `add_all` | `fn(path)` |
+| `reset` | `fn(path, files)` |
+| `commit` | `fn(path, message)` |
+| `commit_all` | `fn(path, message)` |
+| `branch` | `fn(path) -> str` |
+| `branches` | `fn(path) -> [map]` |
+| `checkout` | `fn(path, branch_name)` |
+| `create_branch` | `fn(path, name)` |
+| `delete_branch` | `fn(path, name)` |
+| `merge` | `fn(path, branch_name)` |
+| `remote` | `fn(path) -> [map]` |
+| `remote_url` | `fn(path, name) -> str` |
+| `push` | `fn(path, remote_name, branch_name)` |
+| `pull` | `fn(path, remote_name, branch_name)` |
+| `fetch` | `fn(path, remote_name)` |
+| `tag` | `fn(path, name)` |
+| `tag_annotated` | `fn(path, name, message)` |
+| `tags` | `fn(path) -> [str]` |
+| `delete_tag` | `fn(path, name)` |
+| `stash` | `fn(path)` |
+| `stash_pop` | `fn(path)` |
+| `stash_list` | `fn(path) -> [str]` |
+| `blame` | `fn(path, file) -> [map]` |
+| `head` | `fn(path) -> str` |
+| `head_short` | `fn(path) -> str` |
+| `show` | `fn(path, ref, file) -> str` |
+| `is_repo` | `fn(path) -> bool` |
+| `root` | `fn(path) -> str` |
+| `changed_files` | `fn(path, ref1, ref2) -> [str]` |
+| `untracked` | `fn(path) -> [str]` |
+| `tracked` | `fn(path) -> [str]` |
+
+### std.hash
+
+std/hash.a -- Hashing utilities (wraps hash.sha256 / hash.md5 builtins)
+
+| Function | Signature |
+|----------|-----------|
+| `sha256` | `fn(s: str) -> str` |
+| `md5` | `fn(s: str) -> str` |
+| `sha256_file` | `fn(path: str) -> str` |
+| `md5_file` | `fn(path: str) -> str` |
+| `quick` | `fn(s: str) -> str` |
+| `hash_int` | `fn(s: str) -> int` |
+| `equal` | `fn(a: str, b: str) -> bool` |
+| `combine` | `fn(a: str, b: str) -> str` |
+| `sha256_hex` | `fn(s: str) -> str` |
+| `md5_hex` | `fn(s: str) -> str` |
+| `fingerprint` | `fn(s: str) -> str` |
+
+### std.html
+
+std/html.a -- HTML parser, DOM tree, and CSS selector engine Parses HTML into a tree of tagged maps, queries with CSS selectors. Node: #{ "tag": "div", "attrs": #{ "class": "main" }, "children": [...] } Text: #{ "tag": "#text", "text": "hello" }
+
+| Function | Signature |
+|----------|-----------|
+| `parse` | `fn(html)` |
+| `text` | `fn(node) -> str` |
+| `select` | `fn(node, selector) -> [map]` |
+
+### std.index
+
+std/index.a -- Codebase intelligence
+
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(project_path, opts) -> map` |
+| `files` | `fn(idx) -> [str]` |
+| `symbols` | `fn(idx) -> [map]` |
+| `find` | `fn(idx, name) -> [map]` |
+| `find_fuzzy` | `fn(idx, pattern) -> [map]` |
+| `functions` | `fn(idx) -> [map]` |
+| `types` | `fn(idx) -> [map]` |
+| `symbols_in` | `fn(idx, file) -> [map]` |
+| `exports` | `fn(idx, file) -> [map]` |
+| `imports` | `fn(idx, file) -> [str]` |
+| `callers` | `fn(idx, fn_name) -> [map]` |
+| `callees` | `fn(idx, fn_name) -> [str]` |
+| `call_graph` | `fn(idx) -> map` |
+| `dependencies` | `fn(idx, file) -> [str]` |
+| `dependents` | `fn(idx, file) -> [str]` |
+| `search` | `fn(idx, query) -> [map]` |
+| `stats` | `fn(idx) -> map` |
+| `save` | `fn(idx, path)` |
+| `load` | `fn(path) -> map` |
+| `update` | `fn(idx, changed_files) -> map` |
+
+### std.kv
+
+std/kv.a -- Persistent key-value store backed by SQLite
+
+| Function | Signature |
+|----------|-----------|
+| `open` | `fn(path)` |
+| `close` | `fn(handle)` |
+| `get` | `fn(handle, key)` |
+| `set` | `fn(handle, key, value)` |
+| `delete` | `fn(handle, key)` |
+| `has` | `fn(handle, key) -> bool` |
+| `list` | `fn(handle, prefix) -> [map]` |
+| `keys` | `fn(handle) -> [str]` |
+| `count` | `fn(handle) -> int` |
+| `clear` | `fn(handle)` |
+
+### std.lexer
+
+Standard "a" language lexer module. Tokenizes "a" source into a flat array: [kind0, text0, kind1, text1, ...]
+
+| Function | Signature |
+|----------|-----------|
+| `is_ws` | `fn(c: str) -> bool` |
+| `is_id_start` | `fn(c: str) -> bool` |
+| `is_id_char` | `fn(c: str) -> bool` |
+| `keyword_or_ident` | `fn(word: str) -> str` |
+| `lex` | `fn(src: str) -> [str]` |
+| `tk` | `fn(toks: [str], i: i64) -> str` |
+| `tv` | `fn(toks: [str], i: i64) -> str` |
+| `tcount` | `fn(toks: [str]) -> i64` |
+| `skip_nl` | `fn(toks: [str], p: i64) -> i64` |
+
+### std.llm
+
+std/llm.a -- Unified LLM client for OpenAI, Anthropic, and Google AI Pure "a" implementation using http.post, json.parse/stringify, env.get.
+
+| Function | Signature |
+|----------|-----------|
+| `chat` | `fn(provider, model, messages, opts)` |
+| `stream` | `fn(provider, model, messages, on_chunk, opts)` |
+| `models` | `fn(provider) -> [str]` |
+
+### std.local_llm
+
+std/local_llm.a -- Local LLM inference via GGUF models
+
+| Function | Signature |
+|----------|-----------|
+| `load` | `fn(model_path)` |
+| `generate` | `fn(handle, prompt, opts)` |
+| `chat` | `fn(handle, messages, opts)` |
+| `embed` | `fn(handle, text)` |
+| `info` | `fn(handle)` |
+| `unload` | `fn(handle)` |
+| `tokenize` | `fn(handle, text)` |
+| `detokenize` | `fn(handle, tokens)` |
+| `vocab_size` | `fn(handle)` |
+| `is_loaded` | `fn(handle)` |
+| `complete` | `fn(handle, prompt, max_tokens)` |
+| `classify` | `fn(handle, text, labels)` |
+| `summarize` | `fn(handle, text, max_len)` |
+
+### std.log
+
+std/log.a -- Structured JSON logging to stderr
+
+| Function | Signature |
+|----------|-----------|
+| `set_level` | `fn(level: str) -> void` |
+| `log` | `fn(level: str, msg: str, ctx) -> void` |
+| `debug` | `fn(msg: str) -> void` |
+| `info` | `fn(msg: str) -> void` |
+| `warn` | `fn(msg: str) -> void` |
+| `error` | `fn(msg: str) -> void` |
+| `with` | `fn(key: str, val) -> map` |
+| `debugf` | `fn(msg: str, ctx) -> void` |
+| `infof` | `fn(msg: str, ctx) -> void` |
+| `warnf` | `fn(msg: str, ctx) -> void` |
+| `errorf` | `fn(msg: str, ctx) -> void` |
+| `timed` | `fn(label: str, f) -> void` |
+| `with2` | `fn(k1: str, v1, k2: str, v2) -> map` |
+| `child` | `fn(base_ctx) -> map` |
+| `child_log` | `fn(level: str, msg: str, base_ctx, extra) -> void` |
+
+### std.math
+
+| Function | Signature |
+|----------|-----------|
+| `max` | `fn(a: i64, b: i64) -> i64` |
+| `min` | `fn(a: i64, b: i64) -> i64` |
+| `clamp` | `fn(val: i64, lo: i64, hi: i64) -> i64` |
+| `fmax` | `fn(a: f64, b: f64) -> f64` |
+| `fmin` | `fn(a: f64, b: f64) -> f64` |
+| `pow` | `fn(base: i64, exp: i64) -> i64` |
+| `sum` | `fn(arr: [i64]) -> i64` |
+| `range` | `fn(start: i64, end: i64) -> [i64]` |
+| `range_step` | `fn(start: i64, end: i64, step: i64) -> [i64]` |
+| `sign` | `fn(x: i64) -> i64` |
+| `fsign` | `fn(x: f64) -> f64` |
+| `is_even` | `fn(n: i64) -> bool` |
+| `is_odd` | `fn(n: i64) -> bool` |
+| `gcd` | `fn(a: i64, b: i64) -> i64` |
+| `lcm` | `fn(a: i64, b: i64) -> i64` |
+| `factorial` | `fn(n: i64) -> i64` |
+| `divmod` | `fn(a: i64, b: i64) -> [i64]` |
+| `wrap` | `fn(val: i64, lo: i64, hi: i64) -> i64` |
+| `fclamp` | `fn(val: f64, lo: f64, hi: f64) -> f64` |
+| `fpow` | `fn(base: f64, exp: i64) -> f64` |
+| `lerp` | `fn(a: f64, b: f64, t: f64) -> f64` |
+| `map_range` | `fn(val: f64, in_lo: f64, in_hi: f64, out_lo: f64, out_hi: f64) -> f64` |
+| `average` | `fn(arr: [i64]) -> f64` |
+| `fsum` | `fn(arr: [f64]) -> f64` |
+| `faverage` | `fn(arr: [f64]) -> f64` |
+| `product` | `fn(arr: [i64]) -> i64` |
+| `median` | `fn(arr: [i64]) -> f64` |
+
+### std.mcp
+
+std/mcp.a -- MCP (Model Context Protocol) server and client JSON-RPC 2.0 over stdio transport.
+
+| Function | Signature |
+|----------|-----------|
+| `server` | `fn(name, version)` |
+| `add_tool` | `fn(srv, name, description, input_schema, handler)` |
+| `add_resource` | `fn(srv, uri, name, description, handler)` |
+| `serve` | `fn(srv)` |
+| `connect` | `fn(cmd)` |
+| `list_tools` | `fn(client)` |
+| `call_tool` | `fn(client, name, args)` |
+| `list_resources` | `fn(client)` |
+| `read_resource` | `fn(client, uri)` |
+| `close` | `fn(client)` |
+
+### std.meta
+
+std/meta.a Metaprogramming toolkit for the "a" language. High-level utilities for AST walking, searching, transformation, and code generation. Built on std/compiler/parser.a, emitter.a, and ast.a.
+
+| Function | Signature |
+|----------|-----------|
+| `parse` | `fn(source)` |
+| `parse_file` | `fn(path)` |
+| `emit` | `fn(prog_ast)` |
+| `emit_to_file` | `fn(prog_ast, path)` |
+| `walk` | `fn(node, visitor_fn)` |
+| `collect_inner` | `fn(node, pred_fn, results)` |
+| `find_all` | `fn(node, pred_fn)` |
+| `find_fns` | `fn(prog_ast)` |
+| `find_calls` | `fn(node)` |
+| `fn_names` | `fn(prog_ast)` |
+| `fn_signatures` | `fn(prog_ast)` |
+| `uses` | `fn(prog_ast)` |
+| `extract_call_name` | `fn(call_node)` |
+| `call_graph` | `fn(prog_ast)` |
+| `transform` | `fn(source, transform_fn)` |
+| `transform_file` | `fn(path, transform_fn)` |
+| `map_items` | `fn(prog_ast, map_fn)` |
+| `filter_items` | `fn(prog_ast, pred_fn)` |
+| `add_items` | `fn(prog_ast, new_items)` |
+| `inject_stmt` | `fn(fn_node, position, stmt_node)` |
+| `gen_fn` | `fn(name, param_names, body_stmts)` |
+| `gen_test` | `fn(name, body_stmts)` |
+| `gen_call` | `fn(fn_name, arg_exprs)` |
+
+### std.migrate
+
+std/migrate.a -- SQLite migration runner
+
+| Function | Signature |
+|----------|-----------|
+| `run` | `fn(handle, dir: str) -> map` |
+| `status` | `fn(handle, dir: str)` |
+| `create` | `fn(dir: str, name: str) -> str` |
+
+### std.path
+
+std/path.a -- Path manipulation utilities
+
+| Function | Signature |
+|----------|-----------|
+| `join` | `fn(a: str, b: str) -> str` |
+| `join3` | `fn(a: str, b: str, c: str) -> str` |
+| `dirname` | `fn(p: str) -> str` |
+| `basename` | `fn(p: str) -> str` |
+| `extension` | `fn(p: str) -> str` |
+| `stem` | `fn(p: str) -> str` |
+| `with_extension` | `fn(p: str, ext: str) -> str` |
+| `is_absolute` | `fn(p: str) -> bool` |
+| `segments` | `fn(p: str) -> [str]` |
+| `normalize` | `fn(p: str) -> str` |
+| `home` | `fn() -> str` |
+| `a_home` | `fn() -> str` |
+| `temp` | `fn() -> str` |
+| `relative` | `fn(from: str, to: str) -> str` |
+| `has_extension` | `fn(p: str, ext: str) -> bool` |
+| `join_all` | `fn(parts: [str]) -> str` |
+| `is_hidden` | `fn(p: str) -> bool` |
+
+### std.pkg
+
+std/pkg.a -- Package manager: manifest, dependency resolution, git fetch
+
+| Function | Signature |
+|----------|-----------|
+| `parse_source` | `fn(source: str) -> map` |
+| `init` | `fn(dir: str) -> void` |
+| `read_manifest` | `fn(dir: str) -> map` |
+| `write_manifest` | `fn(dir: str, manifest: map) -> void` |
+| `add_dep` | `fn(dir: str, name: str, source: str) -> void` |
+| `install` | `fn(dir: str) -> map` |
+
+### std.plan
+
+std/plan.a -- Structured task decomposition for deliberative agents Plans are data: serializable, inspectable, resumable. A failed step marks itself failed and lets the agent decide.
+
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(goal) -> map` |
+| `add_step` | `fn(p, id, description, deps) -> map` |
+| `execute` | `fn(p, step_fn) -> map` |
+| `get_step` | `fn(p, id)` |
+| `get_result` | `fn(p, id)` |
+| `mark_done` | `fn(p, id, value) -> map` |
+| `mark_failed` | `fn(p, id, reason) -> map` |
+| `reset_step` | `fn(p, id) -> map` |
+| `status` | `fn(p) -> map` |
+| `summary` | `fn(p) -> str` |
+| `serialize` | `fn(p) -> str` |
+| `deserialize` | `fn(json_str) -> map` |
+| `steps` | `fn(p)` |
+| `step_ids` | `fn(p) -> [str]` |
+| `is_complete` | `fn(p) -> bool` |
+| `failed_steps` | `fn(p) -> [map]` |
+
+### std.plugin
+
+std/plugin.a -- Plugin system for runtime extensibility Plugins are "a" modules installed to <a_home>/plugins/ with metadata, where <a_home> is $A_HOME or ~/.a (see path.a_home).
+
+| Function | Signature |
+|----------|-----------|
+| `install` | `fn(source_dir)` |
+| `install_git` | `fn(repo)` |
+| `remove` | `fn(name)` |
+| `list` | `fn() -> [map]` |
+| `get` | `fn(name)` |
+| `is_installed` | `fn(name) -> bool` |
+| `load` | `fn(name)` |
+| `run` | `fn(name)` |
+| `create_manifest` | `fn(name, version, desc, ep) -> str` |
+| `init` | `fn(dir, name)` |
+
+### std.pool
+
+std/pool.a -- Generic resource pool with configurable max size Uses functional state: pool operations return updated pool maps.
+
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(factory, max_size) -> map` |
+| `acquire` | `fn(p)` |
+| `release` | `fn(p, conn) -> map` |
+| `drain` | `fn(p) -> map` |
+| `size` | `fn(p) -> int` |
+| `stats` | `fn(p) -> map` |
+
+### std.re
+
+| Function | Signature |
+|----------|-----------|
+| `is_meta` | `fn(c: str) -> bool` |
+| `class_match` | `fn(class_chars: [str], negated: bool, c: str) -> bool` |
+| `shorthand_match` | `fn(code: str, c: str) -> bool` |
+| `parse_pattern` | `fn(pat: str) -> [[str]]` |
+| `node_matches_char` | `fn(node: [str], c: str) -> bool` |
+| `is_quantifier` | `fn(nodes: [[str]], idx: i64) -> str` |
+| `try_match` | `fn(nodes: [[str]], ni: i64, text_chars: [str], ti: i64) -> i64` |
+| `handle_alternation` | `fn(nodes: [[str]], text_chars: [str], start: i64) -> i64` |
+| `has_alt` | `fn(nodes: [[str]]) -> bool` |
+| `match_full` | `fn(pattern: str, text: str) -> bool` |
+| `search` | `fn(pattern: str, text: str) -> [str]` |
+| `find_all` | `fn(pattern: str, text: str) -> [[str]]` |
+| `test` | `fn(pattern: str, text: str) -> bool` |
+| `replace` | `fn(pattern: str, text: str, replacement: str) -> str` |
+| `replace_first` | `fn(pattern: str, text: str, replacement: str) -> str` |
+| `split` | `fn(pattern: str, text: str) -> [str]` |
 
 ### std.refactor
 
-AST-level code refactoring.
+std/refactor.a -- AST-level refactoring: rename, extract function, inline function. All functions take source strings and return transformed source strings.
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `rename(source, old, new)` | str, str, str -> str | Rename symbol across source |
-| `extract_fn(source, start, end, name)` | str, i64, i64, str -> str | Extract lines into new function |
-| `inline_fn(source, fn_name)` | str, str -> str | Inline function at all call sites |
+| Function | Signature |
+|----------|-----------|
+| `rename` | `fn(source, old_name, new_name) -> str` |
+| `extract_fn` | `fn(source, start_line, end_line, fn_name) -> str` |
+| `inline_fn` | `fn(source, fn_name) -> str` |
+
+### std.reflect
+
+std/reflect.a -- Runtime self-inspection for agents Combines C builtins (memory, uptime, pid) with pure-"a" instrumentation (call counters, hot path tracking).
+
+| Function | Signature |
+|----------|-----------|
+| `memory_mb` | `fn() -> float` |
+| `memory_kb` | `fn() -> int` |
+| `info` | `fn() -> map` |
+| `profiler` | `fn() -> map` |
+| `tick` | `fn(p, name) -> map` |
+| `tick_ms` | `fn(p, name, elapsed_ms) -> map` |
+| `call_count` | `fn(p, name) -> int` |
+| `total_time` | `fn(p, name) -> int` |
+| `avg_time` | `fn(p, name) -> float` |
+| `hot_paths` | `fn(p, limit) -> [map]` |
+| `stats` | `fn(p) -> map` |
+| `reset` | `fn(p) -> map` |
+| `health` | `fn() -> map` |
+
+### std.rpc
+
+std/rpc.a -- Lightweight RPC over HTTP with service discovery JSON-RPC 2.0 over HTTP POST. Agents register by name, discover each other.
+
+| Function | Signature |
+|----------|-----------|
+| `register` | `fn(name, port)` |
+| `unregister` | `fn(name)` |
+| `discover` | `fn(name)` |
+| `list_agents` | `fn() -> [map]` |
+| `call_addr` | `fn(addr, method, params)` |
+| `call` | `fn(target, method, params)` |
+| `notify_addr` | `fn(addr, method, params)` |
+| `notify` | `fn(target, method, params)` |
+| `serve` | `fn(name, port, handlers)` |
+
+### std.sandbox
+
+std/sandbox.a -- run untrusted `a` code under a capability set.
+
+| Function | Signature |
+|----------|-----------|
+| `capabilities` | `fn(opts) -> map` |
+| `deny_all` | `fn() -> map` |
+| `allow_all` | `fn() -> map` |
+| `allow_read_only` | `fn() -> map` |
+| `allow_network` | `fn() -> map` |
+| `denied_effects` | `fn(program_effects: [str], caps: map) -> [str]` |
+| `analyze` | `fn(source: str) -> map` |
+| `validate` | `fn(source) -> map` |
+| `run` | `fn(source, caps) -> map` |
+| `run_file` | `fn(fpath, caps) -> map` |
+
+### std.schema
+
+std/schema.a -- JSON Schema (draft-07 subset) validation
+
+| Function | Signature |
+|----------|-----------|
+| `validate` | `fn(value, schema)` |
+| `from_type` | `fn(type_str: str) -> map` |
+
+### std.semver
+
+std/semver.a -- Semantic versioning: parse, compare, satisfies
+
+| Function | Signature |
+|----------|-----------|
+| `parse` | `fn(s: str) -> map` |
+| `format` | `fn(v: map) -> str` |
+| `compare` | `fn(a: map, b: map) -> int` |
+| `satisfies` | `fn(version: str, constraint: str) -> bool` |
+| `best_match` | `fn(versions, constraint: str) -> str` |
+
+### std.strings
+
+| Function | Signature |
+|----------|-----------|
+| `repeat` | `fn(s: str, n: i64) -> str` |
+| `pad_left` | `fn(s: str, width: i64, pad: str) -> str` |
+| `pad_right` | `fn(s: str, width: i64, pad: str) -> str` |
+| `reverse` | `fn(s: str) -> str` |
+| `count` | `fn(s: str, sub: str) -> i64` |
+| `center` | `fn(s: str, width: i64, pad: str) -> str` |
+| `is_empty` | `fn(s: str) -> bool` |
+| `char_at` | `fn(s: str, idx: i64) -> str` |
+| `chars_count` | `fn(s: str) -> i64` |
+| `truncate` | `fn(s: str, max_len: i64, suffix: str) -> str` |
+| `words` | `fn(s: str) -> [str]` |
+| `capitalize` | `fn(s: str) -> str` |
+| `title_case` | `fn(s: str) -> str` |
+| `snake_case` | `fn(s: str) -> str` |
+| `camel_case` | `fn(s: str) -> str` |
+| `kebab_case` | `fn(s: str) -> str` |
+| `is_numeric` | `fn(s: str) -> bool` |
+| `is_upper` | `fn(s: str) -> bool` |
+| `is_lower` | `fn(s: str) -> bool` |
+| `indent` | `fn(s: str, n: i64) -> str` |
+| `dedent` | `fn(s: str) -> str` |
+| `squeeze` | `fn(s: str) -> str` |
+| `strip_prefix` | `fn(s: str, prefix: str) -> str` |
+| `strip_suffix` | `fn(s: str, suffix: str) -> str` |
+| `join_with` | `fn(arr: [str], sep: str, last_sep: str) -> str` |
+| `wrap_text` | `fn(s: str, width: i64) -> str` |
+| `replace_first` | `fn(s: str, old: str, new: str) -> str` |
+
+### std.swarm
+
+std/swarm.a -- Swarm coordination primitives Multi-agent strategies: divide, vote, race, chain.
+
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(task, agents, strategy)` |
+| `create_async` | `fn(task, agents, strategy)` |
+| `cancel` | `fn(agents)` |
+
+### std.template
+
+std/template.a -- Mustache-style string templating Supports: var, #if key...{{/if}}, #else, #each arr..../each, dot, @index
+
+| Function | Signature |
+|----------|-----------|
+| `render` | `fn(tmpl: str, vars) -> str` |
+| `render_file` | `fn(path: str, vars) -> str` |
 
 ### std.testgen
 
-Automatic test generation from source analysis.
+std/testgen.a -- Automatic test generation from source analysis
 
-| Function | Signature | Description |
-|----------|-----------|-------------|
-| `gen_tests(source)` | str -> str | Generate test source from "a" source |
-| `gen_tests_for_file(path)` | str -> str | Generate tests for a file |
-| `analyze(source)` | str -> map | Analyze source for functions, types, imports |
+| Function | Signature |
+|----------|-----------|
+| `gen_tests` | `fn(source) -> str` |
+| `gen_tests_for_file` | `fn(filepath) -> str` |
+| `analyze` | `fn(source) -> map` |
 
-### std.compiler.*
+### std.testing
 
-The self-hosting compiler toolchain (all written in "a"):
+Test assertion library for "a". Assertions call fail() on mismatch, which is a catchable runtime failure. `a test` runs every `test_*.a` file. If a file has no `fn main` but has nullary `fn test_*()`, the compiler synthesizes a main that calls them.
 
-| Module | Description |
-|--------|-------------|
-| `std.compiler.lexer` | Tokenize "a" source into token arrays |
-| `std.compiler.parser` | Parse token arrays into tagged-map ASTs |
-| `std.compiler.ast` | AST node constructors and accessors |
-| `std.compiler.compiler` | Compile ASTs to bytecode |
-| `std.compiler.cgen` | Compile ASTs to C source (native compilation) |
-| `std.compiler.wasmgen` | Compile ASTs to WebAssembly Text Format (WAT) |
-| `std.compiler.emitter` | Pretty-print ASTs back to "a" source |
-| `std.compiler.checker` | Static analysis (undefined vars, arity, unused, unreachable) |
-| `std.compiler.serialize` | Serialize/deserialize compiled programs |
-| `std.compiler.profiler` | Instrument code with hit counters for profiling |
-| `std.compiler.optimizer` | Analyze profiles, identify hot paths, suggest optimizations |
+| Function | Signature |
+|----------|-----------|
+| `assert_eq` | `fn(actual: any, expected: any) -> void` |
+| `assert_int_eq` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_true` | `fn(val: bool) -> void` |
+| `assert_false` | `fn(val: bool) -> void` |
+| `assert_contains` | `fn(haystack: str, needle: str) -> void` |
+| `assert_not_eq` | `fn(actual: any, expected: any) -> void` |
+| `assert_float_eq` | `fn(actual: f64, expected: f64, epsilon: f64) -> void` |
+| `assert_gt` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_gte` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_lt` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_lte` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_len` | `fn(arr, expected: i64) -> void` |
+| `assert_empty` | `fn(arr) -> void` |
+| `assert_not_empty` | `fn(arr) -> void` |
+| `assert_starts_with` | `fn(s: str, prefix: str) -> void` |
+| `assert_ends_with` | `fn(s: str, suffix: str) -> void` |
+| `assert_int_not_eq` | `fn(actual: i64, expected: i64) -> void` |
+| `assert_between` | `fn(val: i64, lo: i64, hi: i64) -> void` |
+| `assert_not_contains` | `fn(haystack: str, needle: str) -> void` |
+
+### std.toml
+
+std/toml.a -- TOML parser and emitter Supports: key-value pairs, tables [section], arrays of tables [[section]], basic/literal strings, integers, floats, booleans, arrays, inline tables, dotted keys, and comments.
+
+| Function | Signature |
+|----------|-----------|
+| `parse` | `fn(text)` |
+| `stringify` | `fn(val) -> str` |
+
+### std.trace
+
+std/trace.a -- Execution tracing and structured timeline Captures function calls, decisions, API responses as structured events. Exports to JSON array or Chrome trace viewer format (chrome://tracing).
+
+| Function | Signature |
+|----------|-----------|
+| `create` | `fn(name) -> map` |
+| `begin` | `fn(t, name) -> map` |
+| `end` | `fn(t, name, data) -> map` |
+| `event` | `fn(t, name, data) -> map` |
+| `counter` | `fn(t, name, values) -> map` |
+| `measure` | `fn(t, name, f) -> map` |
+| `duration_ms` | `fn(t) -> int` |
+| `count` | `fn(t) -> int` |
+| `spans` | `fn(t) -> [map]` |
+| `find_events` | `fn(t, name) -> [map]` |
+| `export_json` | `fn(t) -> str` |
+| `export_chrome` | `fn(t) -> str` |
+| `export_otel` | `fn(t) -> str` |
+| `clear` | `fn(t) -> map` |
+
+### std.url
+
+std/url.a -- URL parsing, encoding, and building parse("https://user:pass@host:8080/path?q=1&r=2#frag") returns a map with scheme, user, password, host, port, path, query, params, fragment.
+
+| Function | Signature |
+|----------|-----------|
+| `parse` | `fn(url_str)` |
+| `encode` | `fn(s) -> str` |
+| `decode` | `fn(s) -> str` |
+| `build` | `fn(parts) -> str` |
+
+### std.uuid
+
+std/uuid.a -- UUID generation and validation
+
+| Function | Signature |
+|----------|-----------|
+| `v4` | `fn() -> str` |
+| `nil` | `fn() -> str` |
+| `is_valid` | `fn(s: str) -> bool` |
+| `is_nil` | `fn(s: str) -> bool` |
+| `short` | `fn(s: str) -> str` |
+| `from_short` | `fn(s: str) -> str` |
+
+### std.vector
+
+std/vector.a -- In-process vector store backed by SQLite
+
+| Function | Signature |
+|----------|-----------|
+| `open` | `fn(path, dim) -> map` |
+| `close` | `fn(store)` |
+| `add` | `fn(store, id, embedding)` |
+| `add_with` | `fn(store, id, embedding, metadata)` |
+| `remove` | `fn(store, id)` |
+| `count` | `fn(store) -> int` |
+| `get` | `fn(store, id)` |
+| `search` | `fn(store, query_embedding, k) -> [map]` |
+| `clear` | `fn(store)` |
+
+### std.yaml
+
+std/yaml.a -- YAML 1.2 subset parser and emitter Supports: mappings, sequences, nested structures, scalars (strings, integers, floats, booleans, null), single/double-quoted strings, flow sequences [...], flow mappings {...}, block scalars (| and >), and comments.
+
+| Function | Signature |
+|----------|-----------|
+| `stringify` | `fn(val) -> str` |
+| `parse` | `fn(text)` |
+
+### Compiler modules
+
+These are the self-hosting toolchain. Import with `use std.compiler.<name>`.
+
+| Module | Summary |
+|--------|----------|
+| `std.compiler.ast` | Self-hosted AST node constructors. Every node is a tagged map: #{"tag": "NodeType", ...fields} This mirrors src/ast.rs exactly. |
+| `std.compiler.builtin_arity` | GENERATED by scripts/gen_builtin_arity.a from c_runtime/runtime.h -- do not edit. Builtin name -> number of arguments, for builtins with a fixed arity. |
+| `std.compiler.builtin_sigs` | std/compiler/builtin_sigs.a -- The one table describing every builtin. |
+| `std.compiler.cgen` | std/compiler/cgen.a -- C code generation backend Reads an "a" source file, parses to AST, emits C source to stdout. Supports `use` module inlining, closures/lambdas, HOFs, pipes. Usage: a run std/compiler/cgen.a -- input.a > output.c |
+| `std.compiler.checker` | std/compiler/checker.a -- Static analysis: scope, arity, unused variables, unreachable code. |
+| `std.compiler.compiler` | Self-hosted bytecode compiler for the "a" language. Mirrors src/compiler.rs: tagged-map AST -> bytecode opcodes. |
+| `std.compiler.describe` | What an agent needs to write `a`, taken from the compiler rather than a hand-maintained cheat sheet. `a describe` prints `prompt`; `a describe --json` prints `as_json`. |
+| `std.compiler.diag_codes` | Diagnostic codes for the checker. |
+| `std.compiler.docgen` | Generates the builtin and standard-library sections of REFERENCE.md from the signature table and the source tree. Sections 1-11 and the closing example stay handwritten. `a doc --check` fails when the generated text is stale. |
+| `std.compiler.effect_check` | Effect inference. |
+| `std.compiler.emitter` | std/compiler/emitter.a AST-to-source pretty printer for the "a" language. Converts tagged-map ASTs (from std/compiler/ast.a) into formatted source code. This closes the metaprogramming loop: source -> parse -> transform -> emit -> source. |
+| `std.compiler.lexer` | Self-hosted "a" language lexer -- full parity with src/lexer.rs Tokenizes source into flat array: [kind0, text0, kind1, text1, ...] Supports string interpolation (InterpStart, InterpMid, InterpEnd), DotDotDot (...), Underscore (_), and all escape sequences. |
+| `std.compiler.optimizer` | std/compiler/optimizer.a -- Compiler self-improvement and optimization analysis |
+| `std.compiler.parser` | Self-hosted recursive-descent parser for the "a" language. Produces tagged-map AST nodes (see std/compiler/ast.a). Every parse function takes (toks, pos) and returns [result, new_pos]. On error, result is #{"tag": "ParseError", "msg": "..."}. |
+| `std.compiler.profiler` | std/compiler/profiler.a -- Profile-guided optimization instrumentation |
+| `std.compiler.serialize` |  |
+| `std.compiler.types` | std/compiler/types.a -- Gradual type representation for the checker. |
+| `std.compiler.wasmgen` | std/compiler/wasmgen.a -- WebAssembly Text Format (WAT) code generator Generates WAT from the "a" AST, targeting WASI for I/O. |
 
 ---
 

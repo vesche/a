@@ -51,6 +51,7 @@ jobs:
           diff -u std/compiler/builtin_arity.a /tmp/arity.a || { echo "std/compiler/builtin_arity.a is stale: ./a run scripts/gen_builtin_arity.a > std/compiler/builtin_arity.a"; exit 1; }
           ./a run scripts/status.a > /tmp/STATUS.md
           diff -u STATUS.md /tmp/STATUS.md || { echo "STATUS.md is stale: ./a run scripts/status.a > STATUS.md"; exit 1; }
+          ./a doc --check
 
       # The static checker must be clean on everything we ship.
       - name: Static check (a check)

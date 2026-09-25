@@ -121,62 +121,11 @@ fn _modules_needing_tests() -> [str] {
 ; ── Prompt construction ──
 
 fn _lang_reference() -> str {
-  let nl = "\n"
-  let lb = from_code(123)
-  let rb = from_code(125)
-  let mut p = "# The 'a' Programming Language -- Quick Reference" + nl + nl
-  p = p + "## Syntax" + nl
-  p = p + "- Functions: fn name(param1, param2) " + lb + " body " + rb + nl
-  p = p + "- Typed params: fn name(x: int, s: str) -> str " + lb + " ... " + rb + nl
-  p = p + "- Variables: let x = expr   or   let mut x = expr" + nl
-  p = p + "- Return: ret expr" + nl
-  p = p + "- Strings: double quotes only. Interpolation: \"hello " + lb + "name" + rb + "\"" + nl
-  p = p + "- Maps: #" + lb + "\"key\": value, \"key2\": value2" + rb + nl
-  p = p + "- Arrays: [1, 2, 3]" + nl
-  p = p + "- Comments: ; (semicolon to end of line)" + nl
-  p = p + "- If/else: if cond " + lb + " ... " + rb + " else " + lb + " ... " + rb + nl
-  p = p + "- While loop: while cond " + lb + " ... " + rb + nl
-  p = p + "- For loop: for item in iterable " + lb + " ... " + rb + nl
-  p = p + "- Results: Ok(value), Err(msg), is_ok(r), is_err(r), unwrap(r)" + nl
-  p = p + "- Pipe: expr |> fn_name" + nl
-  p = p + "- Lambda: fn(x) => x + 1" + nl
-  p = p + "- Import: use std.module_name  (then call as module_name.fn())" + nl
-  p = p + "- Boolean: true, false" + nl
-  p = p + "- Mutable reassign: x = new_val  (only if declared let mut)" + nl
-  p = p + "- continue / break in loops" + nl
-  p = p + "- Concatenation: arrays with concat_arr(a, b), strings with +" + nl + nl
-
-  p = p + "## Key Builtins" + nl
-  p = p + "- println(x), print(x), eprintln(x)" + nl
-  p = p + "- len(x), push(arr, item), pop(arr), slice(arr, start, end)" + nl
-  p = p + "- to_str(x), int(x), float(x), type_of(x)" + nl
-  p = p + "- str.split, str.join, str.contains, str.replace, str.trim" + nl
-  p = p + "- str.starts_with, str.ends_with, str.upper, str.lower" + nl
-  p = p + "- str.chars, str.lines, str.slice, str.find, str.count, str.concat" + nl
-  p = p + "- map.get, map.set, map.has, map.keys, map.values, map.entries" + nl
-  p = p + "- sort(arr), contains(arr, item), range(n)" + nl
-  p = p + "- io.read_file(path), io.write_file(path, content)" + nl
-  p = p + "- fs.exists(path), fs.ls(dir), fs.mkdir(path), fs.rm(path)" + nl
-  p = p + "- exec(cmd) -> #" + lb + "\"stdout\": str, \"stderr\": str, \"code\": int" + rb + nl
-  p = p + "- json.parse(s), json.stringify(obj)" + nl
-  p = p + "- time.now(), time.sleep(ms)" + nl
-  p = p + "- env.get(name), env.all()" + nl
-  p = p + "- math.sqrt, math.abs, math.floor, math.ceil, math.pow" + nl
-  p = p + "- fail(msg) -- abort with error message" + nl
-  p = p + "- assert(cond) -- abort if false" + nl
-  p = p + "- char_code(ch), from_code(n), is_alpha(ch), is_digit(ch)" + nl + nl
-
-  p = p + "## CRITICAL RULES" + nl
-  p = p + "- There is NO 'return' keyword. Use 'ret' instead." + nl
-  p = p + "- There is NO 'elif' keyword. Use 'else " + lb + " if ... " + rb + "' or '" + rb + " else " + lb + "' followed by 'if'." + nl
-  p = p + "- There is NO 'def' or 'function' keyword. Use 'fn'." + nl
-  p = p + "- There is NO '===' operator. Use '=='." + nl
-  p = p + "- Semicolons are COMMENTS, not statement terminators." + nl
-  p = p + "- String interpolation uses bare braces: \"value is " + lb + "x" + rb + "\" not $" + lb + "x" + rb + "." + nl
-  p = p + "- Map literals use #" + lb + rb + " not " + lb + rb + "." + nl
-  p = p + "- The 'let' keyword is required for variable declarations." + nl
-  p = p + "- 'let' variables are immutable. Use 'let mut' for mutable." + nl
-  ret p
+  let r = exec_timeout(_cli() + " describe", 15000)
+  if r["code"] != 0 {
+    fail("a describe failed: " + r["stderr"])
+  }
+  ret r["stdout"]
 }
 
 fn _test_format_instructions() -> str {

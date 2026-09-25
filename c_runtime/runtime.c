@@ -1108,7 +1108,7 @@ AValue a_map_from_entries(AValue arr) {
     for (int i = 0; i < arr.aval->len; i++) {
         AValue entry = arr.aval->items[i];
         if (entry.tag == TAG_ARRAY && entry.aval->len >= 2)
-            m = a_map_set(m, entry.aval->items[0], a_retain(entry.aval->items[1]));
+            m = a_map_set_move(m, entry.aval->items[0], entry.aval->items[1]);
     }
     return m;
 }
@@ -1267,6 +1267,8 @@ AValue a_proc_spawn(AValue cmd) {
         return a_err(a_string("proc.spawn: pipe failed"));
 
     pid_t parent = getpid();
+    fflush(stdout);
+    fflush(stderr);
     pid_t pid = fork();
     if (pid < 0) {
         close(to_child[0]); close(to_child[1]);
@@ -1959,6 +1961,7 @@ AValue a_try_unwrap(AValue v) {
         if (A_RESULT_OK(v)) return *v.rval.inner;
         if (a_try_depth > 0) {
             a_try_err = a_retain(*v.rval.inner);
+            a_release(v);
             longjmp(a_try_stack[a_try_depth - 1], 1);
         }
         fprintf(stderr, "uncaught error: ");
@@ -2662,7 +2665,8 @@ AValue a_signal_on(AValue name, AValue handler) {
     int signum = signal_name_to_num(name.sval->data);
     if (signum < 0)
         return a_err(a_string("signal.on: unknown signal (use SIGINT, SIGTERM, SIGHUP, SIGUSR1, SIGUSR2)"));
-    signal_handlers[signum] = handler;
+    a_release(signal_handlers[signum]);
+    signal_handlers[signum] = a_retain(handler);
     struct sigaction sa;
     memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signal_dispatcher;
@@ -3330,6 +3334,10 @@ static void http_conn_close(HttpConn* c) {
     c->fd = -1;
 }
 
+/* Caps for attacker-controlled lengths. 64 MiB bodies, 16 MiB websocket frames. */
+#define A_HTTP_MAX_BODY (64 * 1024 * 1024)
+#define A_WS_MAX_PAYLOAD (16 * 1024 * 1024)
+
 /* --- HTTP/1.1 request/response --- */
 
 static int http_io_write_all(HttpConn* c, const char* buf, int len) {
@@ -3491,6 +3499,14 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
             }
             long csize = strtol(chunk_data, NULL, 16);
             if (csize <= 0) break;
+            if (csize > A_HTTP_MAX_BODY || body_total > A_HTTP_MAX_BODY - (int)csize) {
+                free(chunk_data);
+                free(body_buf);
+                free(resp_buf);
+                a_release(resp_headers);
+                http_conn_close(&conn);
+                return a_err(a_string("http: response body too large"));
+            }
             int off = (int)(crlf - chunk_data) + 2;
             while (chunk_len - off < (int)csize + 2) {
                 if (chunk_len >= (int)resp_cap - 1) { resp_cap *= 2; chunk_data = realloc(chunk_data, resp_cap); }
@@ -3510,6 +3526,12 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
         chunk_done:
         free(chunk_data);
     } else if (content_length >= 0) {
+        if (content_length > A_HTTP_MAX_BODY) {
+            free(resp_buf);
+            a_release(resp_headers);
+            http_conn_close(&conn);
+            return a_err(a_string("http: response body too large"));
+        }
         body_buf = malloc(content_length + 1);
         if (already > 0) { memcpy(body_buf, body_start, already > content_length ? content_length : already); }
         body_total = already > content_length ? content_length : already;
@@ -3524,6 +3546,13 @@ static AValue http_request_inprocess(const char* method, const char* url_str,
         if (already > 0) { memcpy(body_buf, body_start, already); }
         body_total = already;
         for (;;) {
+            if (body_total >= A_HTTP_MAX_BODY) {
+                free(body_buf);
+                free(resp_buf);
+                a_release(resp_headers);
+                http_conn_close(&conn);
+                return a_err(a_string("http: response body too large"));
+            }
             if (body_total >= (int)bcap - 1) { bcap *= 2; body_buf = realloc(body_buf, bcap); }
             int n = http_io_read(&conn, body_buf + body_total, (int)(bcap - body_total - 1));
             if (n <= 0) break;
@@ -3874,6 +3903,12 @@ static AValue http_parse_request(const char* raw, int raw_len, int fd) {
     }
     req = a_map_set(req, a_string("headers"), hdrs);
 
+    if (content_length < 0 || content_length > A_HTTP_MAX_BODY) {
+        req = a_map_set(req, a_string("body"), a_string(""));
+        req = a_map_set(req, a_string("_reject"), a_int(413));
+        return req;
+    }
+
     const char* body_start = strstr(raw, "\r\n\r\n");
     AValue body = a_string("");
     if (body_start && content_length > 0) {
@@ -3994,6 +4029,16 @@ AValue a_http_serve(AValue port, AValue handler) {
         if (n <= 0) { close(fd); continue; }
 
         AValue req = http_parse_request(buf, n, fd);
+        AValue reject_key = a_string("_reject");
+        AValue reject = a_map_get(req, reject_key);
+        a_release(reject_key);
+        if (reject.tag == TAG_INT && reject.ival == 413) {
+            const char* r = "HTTP/1.1 413 Payload Too Large\r\nContent-Length: 17\r\nConnection: close\r\n\r\nPayload Too Large";
+            send(fd, r, strlen(r), 0);
+            close(fd);
+            a_release(req);
+            continue;
+        }
         AValue resp = a_closure_call(handler, 1, req);
 
         if (resp.tag != TAG_MAP) {
@@ -4109,8 +4154,20 @@ AValue a_http_serve_static(AValue port, AValue dir) {
 
         fseek(f, 0, SEEK_END);
         long fsz = ftell(f);
+        if (fsz < 0 || fsz > A_HTTP_MAX_BODY) {
+            fclose(f);
+            const char* r = "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 21\r\nConnection: close\r\n\r\nInternal Server Error";
+            send(fd, r, strlen(r), 0);
+            close(fd);
+            continue;
+        }
         fseek(f, 0, SEEK_SET);
-        char* fbuf = malloc(fsz);
+        char* fbuf = malloc((size_t)fsz);
+        if (!fbuf) {
+            fclose(f);
+            close(fd);
+            continue;
+        }
         size_t fread_n = fread(fbuf, 1, fsz, f);
         fclose(f);
 
@@ -4353,7 +4410,10 @@ AValue a_ws_recv(AValue handle) {
             if (ws_read_exact(&ws->conn, mask_key, 4) < 0) return a_err(a_string("closed"));
         }
 
+        if (payload_len > (uint64_t)A_WS_MAX_PAYLOAD)
+            return a_err(a_string("ws: payload too large"));
         char* payload = malloc((size_t)payload_len + 1);
+        if (!payload) return a_err(a_string("ws: out of memory"));
         if (payload_len > 0) {
             if (ws_read_exact(&ws->conn, payload, (int)payload_len) < 0) {
                 free(payload);
@@ -4958,7 +5018,7 @@ AValue a_http_put(AValue url, AValue body, AValue hdr) { return a_err(a_string("
 AValue a_http_patch(AValue url, AValue body, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
 AValue a_http_delete(AValue url, AValue hdr) { return a_err(a_string("http: not available in WASM")); }
 AValue a_http_serve(AValue port, AValue handler) { return a_err(a_string("http.serve: not available in WASM")); }
-AValue a_http_static_serve(AValue port, AValue dir, AValue p) { return a_err(a_string("http: not available in WASM")); }
+AValue a_http_serve_static(AValue port, AValue dir) { return a_err(a_string("http: not available in WASM")); }
 AValue a_async_http_get(AValue u, AValue h) { return a_err(a_string("async: not available in WASM")); }
 AValue a_async_http_post(AValue u, AValue b, AValue h) { return a_err(a_string("async: not available in WASM")); }
 AValue a_async_http_put(AValue u, AValue b, AValue h) { return a_err(a_string("async: not available in WASM")); }
@@ -5049,6 +5109,7 @@ AValue a_db_query(AValue db, AValue sql, AValue params) {
     sqlite3_finalize(stmt);
 
     if (rc != SQLITE_DONE) {
+        a_release(rows);
         const char* msg = sqlite3_errmsg((sqlite3*)db.pval);
         return a_err(a_string(msg ? msg : "db.query: step failed"));
     }

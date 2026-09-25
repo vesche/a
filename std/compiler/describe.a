@@ -1,0 +1,79 @@
+; What an agent needs to write `a`, taken from the compiler rather than a
+; hand-maintained cheat sheet. `a describe` prints `prompt`; `a describe
+; --json` prints `as_json`.
+
+use std.compiler.builtin_sigs
+
+fn _rules() -> str {
+  ret "Rules an agent gets wrong:\n" +
+    "- ret, not return. fn, not def. No elif, no ===.\n" +
+    "- A semicolon starts a comment. It does not end a statement.\n" +
+    "- Strings are double quotes. Interpolation is \"value is \{x\}\".\n" +
+    "- Maps are #\{\"k\": v\}. Arrays are [1, 2]. Records are maps with known fields.\n" +
+    "- let is immutable. let mut is the one you can assign.\n" +
+    "- use std.mod, then call mod.fn. Ok/Err, and expr? in a Result function.\n" +
+    "- try \{ ... \} catches fail, unwrap on Err, and division by zero.\n" +
+    "- effects [pure] means no effects. A declared list must cover every callee.\n" +
+    "- Tests live in tests/native/test_*.a. a test runs that directory, not tests/.\n"
+}
+
+fn _stem(name: str) -> str {
+  if str.ends_with(name, ".a") { ret str.slice(name, 0, len(name) - 2) }
+  ret ""
+}
+
+fn _modules_in(dir: str, prefix: str) -> [str] {
+  if !fs.exists(dir) { ret [] }
+  let entries = fs.ls(dir)
+  if type_of(entries) != "array" { ret [] }
+  let mut names = []
+  for e in entries {
+    let stem = _stem(e["name"])
+    if len(stem) > 0 { names = push(names, prefix + stem) }
+  }
+  ret names
+}
+
+fn modules() -> [str] {
+  let names = concat_arr(_modules_in("std", "std."), _modules_in("std/compiler", "std.compiler."))
+  ret sort(names)
+}
+
+fn _builtin_lines() -> [str] {
+  let sigs = builtin_sigs.sigs()
+  let fx = builtin_sigs.effect_table()
+  let mut lines = []
+  for name in sort(map.keys(sigs)) {
+    let mut line = name + ": " + sigs[name]
+    if map.has(fx, name) {
+      line = line + " effects [" + str.join(fx[name], ", ") + "]"
+    }
+    lines = push(lines, line)
+  }
+  ret lines
+}
+
+fn prompt(version: str) -> str {
+  ret "a " + version + "\n" +
+    _rules() +
+    "\nbuiltins (no effect list means pure):\n" +
+    str.join(_builtin_lines(), "\n") + "\n" +
+    "\nmodules: " + str.join(modules(), " ") + "\n"
+}
+
+fn as_json(version: str) -> str {
+  let sigs = builtin_sigs.sigs()
+  let fx = builtin_sigs.effect_table()
+  let mut builtins = []
+  for name in sort(map.keys(sigs)) {
+    let mut b = #{"name": name, "sig": sigs[name], "effects": []}
+    if map.has(fx, name) { b = map.set(b, "effects", fx[name]) }
+    builtins = push(builtins, b)
+  }
+  ret json.stringify(#{
+    "version": version,
+    "effects": builtin_sigs.effect_names(),
+    "builtins": builtins,
+    "modules": modules()
+  })
+}

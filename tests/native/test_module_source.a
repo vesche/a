@@ -1,0 +1,16 @@
+; An imported module is the file on disk when that file exists. The copy
+; embedded in the compiler is the fallback for an install with no std/ tree,
+; not a shadow that hides an edit.
+
+use std.testing
+use std.compiler.cgen
+
+fn main() {
+  let loaded = cgen.load_module_source(["std", "compiler", "cgen"], cgen.empty_parse_cache())
+  let got = loaded["got"]
+  testing.assert_eq(got["status"], "ok")
+  let disk = io.read_file(got["file"])
+  testing.assert_eq(is_err(disk), false)
+  testing.assert_eq(got["source"], disk)
+  println("PASS: imported modules follow the file on disk")
+}

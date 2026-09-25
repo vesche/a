@@ -1,0 +1,30 @@
+; The generated reference covers every builtin and can be spliced back
+; into REFERENCE.md without losing the handwritten example.
+
+use std.compiler.docgen
+use std.compiler.builtin_sigs
+
+fn main() {
+  let md = docgen.builtins_md()
+  for name in map.keys(builtin_sigs.sigs()) {
+    if !str.contains(md, "`" + name + "(...)`") {
+      fail("builtin missing from reference: " + name)
+    }
+  }
+  if !str.contains(md, "println(...)") { fail("missing println row") }
+  if !str.contains(md, "effects [io]") && !str.contains(md, "| io |") {
+    fail("println should record the io effect")
+  }
+  let stdlib = docgen.stdlib_md()
+  if !str.contains(stdlib, "### std.math") { fail("missing std.math") }
+  if !str.contains(stdlib, "`fn(a: i64, b: i64) -> i64`") { fail("missing math.max") }
+  if !str.contains(stdlib, "### std.compiler.cgen") && !str.contains(stdlib, "`std.compiler.cgen`") {
+    fail("missing cgen module")
+  }
+  let ref = io.read_file("REFERENCE.md")
+  let next = docgen.splice(ref)
+  if !str.contains(next, "## 2. Syntax Basics") { fail("lost the language core") }
+  if !str.contains(next, "## 14. Complete Example") { fail("lost the example") }
+  if !str.contains(next, "## 12. Builtin Functions Reference") { fail("lost builtins") }
+  println("PASS: docgen")
+}

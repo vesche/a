@@ -299,17 +299,17 @@ fn _ea_collect_idents(expr) -> [str] {
     for e in expr["elems"] { ids = concat_arr(ids, _ea_collect_idents(e)) }
     ret ids
   }
-  if tag == "Map" {
+  if tag == "MapLiteral" {
     let mut ids = []
     for e in expr["entries"] { ids = concat_arr(ids, _ea_collect_idents(e["value"])) }
     ret ids
   }
   if tag == "Spread" { ret _ea_collect_idents(expr["expr"]) }
   if tag == "Pipe" { ret concat_arr(_ea_collect_idents(expr["left"]), _ea_collect_idents(expr["right"])) }
-  if tag == "InterpolatedString" {
+  if tag == "Interpolation" {
     let mut ids = []
     for p in expr["parts"] {
-      if p["tag"] == "Expr" { ids = concat_arr(ids, _ea_collect_idents(p["expr"])) }
+      if p["tag"] != "InterpLit" { ids = concat_arr(ids, _ea_collect_idents(p["expr"])) }
     }
     ret ids
   }
@@ -1033,6 +1033,8 @@ fn emit_expr(node, bm, ctx, li) {
     } else {
       code = str.concat(code, str.concat("            __try_result = a_ok(a_void());", nl))
     }
+    ; a_ok retained the tail; A_T temps from the success path die here
+    code = code + "            a_tmp_release(__try_tm);" + nl
     code = str.concat(code, str.concat("        \} else \{", nl))
     code = str.concat(code, str.concat("            a_try_depth--;", nl))
     code = str.concat(code, str.concat("            A_UNWIND(__try_frames);", nl))
@@ -1380,7 +1382,7 @@ fn _emit_match_expr(node, bm, ctx, li) {
   let arms = node["arms"]
 
   let mut code = str.concat("(\{", nl)
-  code = str.concat(code, str.concat("        AValue __match = ", str.concat(er[0], str.concat(";", nl))))
+  code = str.concat(code, str.concat("        AValue __match = ", str.concat(_tmp(node["expr"], er[0], ctx), str.concat(";", nl))))
   code = str.concat(code, str.concat("        AValue __match_result = a_void();", nl))
   code = str.concat(code, str.concat("        int __matched = 0;", nl))
 
@@ -1419,7 +1421,7 @@ fn _emit_match_expr(node, bm, ctx, li) {
       let gr = emit_expr(guard, bm, ctx, li)
       li = gr[1]
       lifted = concat_arr(lifted, gr[2])
-      code = str.concat(code, str.concat("            if (a_truthy(", str.concat(gr[0], str.concat(")) \{", nl))))
+      code = str.concat(code, str.concat("            if (a_truthy(", str.concat(_tmp(guard, gr[0], ctx), str.concat(")) \{", nl))))
 
       let body_r = _emit_match_expr_body(body, bm, ctx, li)
       li = body_r[1]
@@ -2118,11 +2120,23 @@ fn load_module_source(path_arr, cache) -> map {
     ret #{"cache": cache, "got": cache[file_path]}
   }
   let rel = str.concat(str.join(path_arr, "/"), ".a")
-  let mut source = embedded_file(rel)
-  if type_of(source) == "void" || len(source) == 0 {
-    source = io.read_file(file_path)
+  ; The file on disk is the source an editor just saved. The copy embedded
+  ; in the compiler binary is only the fallback for an install that shipped
+  ; without its std/ tree.
+  let mut source = ""
+  let mut saw_disk = false
+  if fs.exists(file_path) {
+    let disk = io.read_file(file_path)
+    if type_of(disk) == "str" {
+      source = disk
+      saw_disk = true
+    }
   }
-  let mut got = #{"status": "missing", "file": file_path, "rel": rel}
+  if !saw_disk {
+    let emb = embedded_file(rel)
+    if type_of(emb) == "str" { source = emb }
+  }
+  let mut got = #{"status": "missing", "file": file_path, "rel": rel, "source": source}
   if type_of(source) == "str" && len(source) > 0 {
     let ast = parser.parse(source)
     if type_of(ast) == "map" && map.has(ast, "tag") && ast["tag"] == "ParseError" {
@@ -2130,9 +2144,9 @@ fn load_module_source(path_arr, cache) -> map {
       let mut col = 0
       if map.has(ast, "line") { line = ast["line"] }
       if map.has(ast, "col") { col = ast["col"] }
-      got = #{"status": "parse", "file": file_path, "rel": rel, "ast": ast, "msg": ast["msg"], "line": line, "col": col}
+      got = #{"status": "parse", "file": file_path, "rel": rel, "ast": ast, "msg": ast["msg"], "line": line, "col": col, "source": source}
     } else {
-      got = #{"status": "ok", "file": file_path, "rel": rel, "ast": ast}
+      got = #{"status": "ok", "file": file_path, "rel": rel, "ast": ast, "source": source}
     }
   }
   ret #{"cache": map.set(cache, file_path, got), "got": got}

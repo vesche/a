@@ -1,0 +1,21 @@
+; `a describe` is generated from the signature table and the std/ tree,
+; not from a second handwritten list.
+
+use std.compiler.describe
+use std.compiler.builtin_sigs
+
+fn main() {
+  let text = describe.prompt("2.4.0")
+  if !str.contains(text, "a 2.4.0") { fail("missing version") }
+  if !str.contains(text, "push: fn([T], T) -> [T]") { fail("missing push signature") }
+  if !str.contains(text, "println: fn(any) -> void effects [io]") { fail("missing println effects") }
+  if !str.contains(text, "std.testing") { fail("missing std.testing") }
+  if !str.contains(text, "std.compiler.checker") { fail("missing compiler module") }
+  if !str.contains(text, "ret, not return") { fail("missing ret rule") }
+
+  let doc = json.parse(describe.as_json("2.4.0"))
+  if doc["version"] != "2.4.0" { fail("json version") }
+  if len(doc["builtins"]) != len(map.keys(builtin_sigs.sigs())) { fail("json builtin count") }
+  if !contains(doc["modules"], "std.testing") { fail("json modules") }
+  println("PASS: describe")
+}
